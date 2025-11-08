@@ -474,6 +474,43 @@ class TestLoggingSystem(TestLoggingSystemBase):
         logger.info("This should not cause an error")
         logger.error("Error after shutdown")
 
+    def test_health_check(self):
+        """测试健康检查功能"""
+        logging_system = LoggingSystem(self.config)
+        
+        # 获取健康状态
+        health = logging_system.health_check()
+        
+        # 验证健康状态字段
+        self.assertIn('status', health)
+        self.assertEqual(health['status'], 'healthy')
+        self.assertTrue(health['initialized'])
+        self.assertFalse(health['shutdown'])
+        self.assertIn('handlers', health)
+        self.assertIn('uptime_seconds', health)
+        
+        logging_system.shutdown()
+
+    def test_config_reload(self):
+        """测试配置热重载"""
+        logging_system = LoggingSystem(self.config)
+        
+        # 创建新配置
+        new_config = LogConfig(
+            level=LogLevel.ERROR,  # 从 INFO 改为 ERROR
+            destinations=[LogDestination.CONSOLE],
+            file_path=os.path.join(self.temp_dir, "new_test.log")
+        )
+        
+        # 重载配置
+        logging_system.reload_config(new_config)
+        
+        # 验证级别已更新
+        logger = logging_system.get_logger("test_reload")
+        self.assertEqual(logger.getEffectiveLevel(), logging.ERROR)
+        
+        logging_system.shutdown()
+
 
 class TestGlobalLoggingFunctions(TestLoggingSystemBase):
     """测试全局日志函数"""

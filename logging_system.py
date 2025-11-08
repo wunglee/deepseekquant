@@ -16,6 +16,7 @@ import threading
 from enum import Enum
 import gzip
 import hashlib
+import time
 from dataclasses import dataclass, asdict, field
 
 from common import DEFAULT_LOG_LEVEL, DEFAULT_LOG_FORMAT, DEFAULT_LOG_DATE_FORMAT, MAX_LOG_FILE_SIZE, BACKUP_LOG_COUNT, \
@@ -481,7 +482,8 @@ class LoggingSystem:
             'critical_logs': 0,
             'audit_logs': 0,
             'performance_logs': 0,
-            'last_flush': datetime.now().isoformat()
+            'last_flush': datetime.now().isoformat(),
+            'start_time': datetime.now().isoformat()
         }
 
         # 初始化日志系统
@@ -1028,23 +1030,57 @@ class LoggingSystem:
                             except Exception as e:
                                 self.get_logger(__name__).error(f"日志清理失败 {filename}: {e}")
 
-    def get_stats(self) -> Dict[str, Any]:
-        """获取日志系统统计信息"""
+    def health_check(self) -> Dict[str, Any]:
+        """
+        健康检查
+        
+        Returns:
+            健康状态信息
+        """
         with self._lock:
-            stats = self.stats.copy()
-            stats['loggers_count'] = len(self.loggers)
-            stats['handlers_count'] = len(self.handlers)
-            stats['initialized'] = self._initialized
-            stats['shutdown'] = self._shutdown
-            stats['current_time'] = datetime.now().isoformat()
-
-            # 添加文件大小信息
-            stats['file_sizes'] = self._get_log_file_sizes()
-
-            return stats
+            # 检查处理器状态
+            working_handlers = 0
+            failed_handlers = []
+            
+            for name, handler in self.handlers.items():
+                try:
+                    # 简单测试：尝试格式化一个测试记录
+                    test_record = logging.LogRecord(
+                        name='health_check',
+                        level=logging.INFO,
+                        pathname='',
+                        lineno=0,
+                        msg='health check',
+                        args=(),
+                        exc_info=None
+                    )
+                    handler.format(test_record)
+                    working_handlers += 1
+                except Exception as e:
+                    failed_handlers.append({'handler': name, 'error': str(e)})
+            
+            # 计算运行时间
+            start_time = datetime.fromisoformat(self.stats.get('start_time', datetime.now().isoformat()))
+            uptime_seconds = (datetime.now() - start_time).total_seconds()
+            
+            return {
+                'status': 'healthy' if self._initialized and not self._shutdown else 'unhealthy',
+                'initialized': self._initialized,
+                'shutdown': self._shutdown,
+                'uptime_seconds': uptime_seconds,
+                'handlers': {
+                    'total': len(self.handlers),
+                    'working': working_handlers,
+                    'failed': len(failed_handlers),
+                    'failed_details': failed_handlers
+                },
+                'loggers_count': len(self.loggers),
+                'last_flush': self.stats.get('last_flush'),
+                'total_logs': self.stats.get('total_logs', 0),
+                'error_rate': self.stats.get('error_rate', 0.0)
+            }
 
     def _get_log_file_sizes(self) -> Dict[str, int]:
-        """获取日志文件大小信息"""
         file_sizes = {}
         log_files = [
             self.config.file_path,
@@ -1063,6 +1099,68 @@ class LoggingSystem:
                 file_sizes[os.path.basename(filepath)] = 0
 
         return file_sizes
+
+    def reload_config(self, new_config: LogConfig):
+        """
+        热重载配置（部分配置支持动态更新）
+        
+        Args:
+            new_config: 新的日志配置
+        """
+        with self._lock:
+            if self._shutdown:
+                raise RuntimeError("日志系统已关闭，无法重载配置")
+            
+            # 记录配置变更
+            self.get_logger(__name__).info("开始热重载日志配置")
+            
+            # 更新日志级别（可以安全热更新）
+            if new_config.level != self.config.level:
+                old_level = self.config.level
+                self.set_level(new_config.level)
+                self.get_logger(__name__).info(
+                    f"日志级别已更新: {old_level.value} -> {new_config.level.value}"
+                )
+            
+            # 更新配置对象
+            self.config = new_config
+            
+            self.get_logger(__name__).info("配置热重载完成")
+
+    def _record_performance(self, operation: str, start_time: float):
+        """
+        记录内部操作性能
+        
+        Args:
+            operation: 操作名称
+            start_time: 开始时间
+        """
+        duration = time.time() - start_time
+        
+        # 超过1秒的操作记录警告
+        if duration > 1.0:
+            try:
+                self.get_logger(__name__).warning(
+                    f"操作 {operation} 耗时 {duration:.3f}s，可能存在性能问题"
+                )
+            except Exception:
+                # 避免性能监控本身导致问题
+                pass
+
+    def get_stats(self) -> Dict[str, Any]:
+        """获取日志系统统计信息"""
+        with self._lock:
+            stats = self.stats.copy()
+            stats['loggers_count'] = len(self.loggers)
+            stats['handlers_count'] = len(self.handlers)
+            stats['initialized'] = self._initialized
+            stats['shutdown'] = self._shutdown
+            stats['current_time'] = datetime.now().isoformat()
+
+            # 添加文件大小信息
+            stats['file_sizes'] = self._get_log_file_sizes()
+
+            return stats
 
     def get_log_entries(self, level: Optional[LogLevel] = None,
                         start_time: Optional[str] = None,
@@ -1119,6 +1217,8 @@ class LoggingSystem:
 
     def shutdown(self):
         """关闭日志系统"""
+        start_time = time.time()
+        
         with self._lock:
             if self._shutdown:
                 return
@@ -1143,6 +1243,9 @@ class LoggingSystem:
                 # 使用基本日志记录最后一条消息
                 basic_logger = logging.getLogger('LoggingSystem')
                 basic_logger.info("日志系统已关闭")
+                
+                # 记录关闭性能
+                self._record_performance('shutdown', start_time)
 
             except Exception as e:
                 print(f"CRITICAL: Logging system shutdown error: {e}", file=sys.stderr)
