@@ -196,36 +196,111 @@ class LogConfig:
         if any(not isinstance(dest, LogDestination) for dest in self.destinations):
             raise ValueError("destinations must contain only LogDestination instances")
         
-        # 文件路径可写性验证
+        # 环境特定验证
+        self._validate_environment_specific_config()
+        
+        # 文件路径和权限验证
+        self._validate_file_paths_and_permissions()
+        
+        # 网络端点验证
+        self._validate_network_endpoints()
+        
+        # 数据库连接验证
+        self._validate_database_connections()
+    
+    def _validate_environment_specific_config(self):
+        """环境特定的配置验证"""
+        import warnings
+        
+        # 生产环境验证
+        if self.level == LogLevel.DEBUG and self.destinations == [LogDestination.FILE]:
+            warnings.warn(
+                "生产环境建议使用 INFO 级别或添加控制台输出",
+                RuntimeWarning
+            )
+    
+    def _validate_file_paths_and_permissions(self):
+        """文件路径和权限验证"""
+        file_paths_to_check = []
+        
         if LogDestination.FILE in self.destinations:
+            file_paths_to_check.append(self.file_path)
+        
+        if self.audit_log_enabled:
+            file_paths_to_check.append(self.audit_log_path)
+        
+        if self.performance_log_enabled:
+            file_paths_to_check.append(self.performance_log_path)
+        
+        if self.error_log_enabled:
+            file_paths_to_check.append(self.error_log_path)
+        
+        for file_path in file_paths_to_check:
             try:
-                log_dir = os.path.dirname(self.file_path)
+                # 创建目录
+                log_dir = os.path.dirname(file_path)
                 if log_dir and not os.path.exists(log_dir):
                     os.makedirs(log_dir, exist_ok=True)
+                
                 # 测试文件可写性
-                with open(self.file_path, 'a') as f:
+                with open(file_path, 'a', encoding=self.encoding) as f:
                     pass  # 只是测试打开
-            except (OSError, IOError) as e:
-                raise ValueError(f"Invalid file path {self.file_path}: {e}")
-        
-        # HTTP端点验证
+                
+                # 检查磁盘空间
+                if os.path.exists(file_path):
+                    self._check_disk_space(file_path)
+                    
+            except (OSError, IOError, PermissionError) as e:
+                raise ValueError(f"文件路径不可写 {file_path}: {e}")
+    
+    def _check_disk_space(self, file_path: str):
+        """检查磁盘空间"""
+        try:
+            import shutil
+            import warnings
+            stat = shutil.disk_usage(os.path.dirname(file_path))
+            free_space_gb = stat.free / (1024 ** 3)
+            
+            if free_space_gb < 1:  # 小于1GB空间警告
+                warnings.warn(
+                    f"日志目录磁盘空间不足: {free_space_gb:.2f}GB 剩余",
+                    ResourceWarning
+                )
+        except Exception:
+            pass  # 磁盘空间检查失败不影响主流程
+    
+    def _validate_network_endpoints(self):
+        """网络端点验证"""
         if LogDestination.HTTP in self.destinations and self.http_endpoint:
             from urllib.parse import urlparse
             try:
                 result = urlparse(self.http_endpoint)
                 if not all([result.scheme, result.netloc]):
-                    raise ValueError("HTTP endpoint must have scheme and netloc")
+                    raise ValueError("HTTP端点必须包含协议和网络地址")
                 if result.scheme not in ('http', 'https'):
-                    raise ValueError("HTTP endpoint scheme must be http or https")
+                    raise ValueError("HTTP端点协议必须是 http 或 https")
             except Exception as e:
-                raise ValueError(f"Invalid HTTP endpoint: {e}")
-        
-        # 数据库连接验证
+                raise ValueError(f"HTTP端点验证失败: {e}")
+    
+    def _validate_database_connections(self):
+        """数据库连接验证"""
         if LogDestination.DATABASE in self.destinations and self.database_connection:
             if not isinstance(self.database_connection, str):
-                raise ValueError("database_connection must be a string")
-            if not self.database_connection.startswith(('sqlite:///', 'postgresql://', 'mysql://', 'mongodb://')):
-                raise ValueError("Invalid database connection string format (supported: sqlite, postgresql, mysql, mongodb)")
+                raise ValueError("database_connection必须为字符串")
+            
+            valid_schemes = ('sqlite:///', 'postgresql://', 'mysql://', 'mongodb://')
+            if not self.database_connection.startswith(valid_schemes):
+                raise ValueError(f"不支持的数据库连接格式 (supported: {', '.join(valid_schemes)})")
+            
+            # SQLite特定验证
+            if self.database_connection.startswith('sqlite:///'):
+                db_path = self.database_connection[10:]  # 移除'sqlite:///'
+                db_dir = os.path.dirname(db_path)
+                if db_dir and not os.path.exists(db_dir):
+                    try:
+                        os.makedirs(db_dir, exist_ok=True)
+                    except Exception as e:
+                        raise ValueError(f"SQLite数据库目录创建失败: {e}")
 
 
 class DeepSeekQuantFormatter(logging.Formatter):
