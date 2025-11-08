@@ -1,0 +1,59 @@
+name: deepseekquant
+channels:
+  - conda-forge
+  - defaults
+  - apple
+  - pytorch
+dependencies:
+  # Python 版本（取稳定版本范围）
+  - python>=3.9,<3.11
+
+  # 核心数据处理
+  - numpy>=1.21.0
+  - pandas>=1.5.0
+  - scipy>=1.9.0
+  - scikit-learn>=1.0.0
+
+  # 基础机器学习
+  - pytorch>=1.13.0
+  - torchvision>=0.14.0
+  - torchaudio>=0.13.0
+  - xgboost>=1.6.0
+  - lightgbm>=3.3.0
+
+  # 金融数据
+  - yfinance>=0.1.87
+
+  # 数据库
+  - sqlalchemy>=1.4.0
+  - pg8000>=1.29.0
+  - psycopg2-binary>=2.9.0  # [x86_64]
+
+  # Web框架
+  - fastapi>=0.85.0
+  - uvicorn>=0.18.0
+
+  # 基础工具
+  - requests>=2.28.0
+  - pyyaml>=6.0
+  - python-dotenv>=0.19.0
+
+  # 监控
+  - psutil>=5.9.0
+
+  # 安全
+  - cryptography>=37.0.0
+
+  # 可视化
+  - matplotlib>=3.6.0
+  - seaborn>=0.12.0
+
+  - pip
+  - pip:
+    - tensorflow>=2.9.0; platform_machine != "arm64" and sys_platform != "darwin"
+    - tensorflow-macos>=2.9.0; platform_machine == "arm64" and sys_platform == "darwin"
+    - alpha-vantage>=2.3.0
+    - prometheus-client>=0.14.0
+    - redis>=4.3.0
+variables:
+  PYTHONPATH: "."

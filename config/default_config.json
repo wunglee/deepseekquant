@@ -1,0 +1,193 @@
+{
+  "system": {
+    "name": "DeepSeekQuant_Production",
+    "version": "1.0.0",
+    "trading_mode": "paper_trading",
+    "log_level": "INFO",
+    "max_memory_mb": 2048,
+    "max_trading_history": 1000,
+    "max_performance_data": 5000,
+    "max_audit_log": 5000,
+    "max_error_log": 1000,
+    "performance_monitoring": true,
+    "auto_recovery": true,
+    "backup_interval": 3600
+  },
+  "data_sources": {
+    "primary": "yahoo",
+    "fallback_sources": ["alpha_vantage"],
+    "cache_enabled": true,
+    "cache_duration": 300,
+    "real_time_data": false,
+    "lookback_period": "1y",
+    "interval": "1d",
+    "yahoo": {
+      "enabled": true,
+      "timeout": 30,
+      "retry_attempts": 3
+    },
+    "alpha_vantage": {
+      "enabled": false,
+      "api_key": "your_api_key_here",
+      "timeout": 30
+    },
+    "custom_source": {
+      "enabled": false,
+      "api_endpoint": "",
+      "api_key": ""
+    }
+  },
+  "signal_engine": {
+    "enabled": true,
+    "signal_refresh_interval": 60,
+    "enabled_strategies": ["momentum", "mean_reversion", "volatility", "risk_adjusted"],
+    "strategy_weights": {
+      "momentum": 0.3,
+      "mean_reversion": 0.3,
+      "volatility": 0.2,
+      "risk_adjusted": 0.2
+    },
+    "min_confidence_threshold": 0.3,
+    "max_signals_per_asset": 3
+  },
+  "portfolio_management": {
+    "enabled": true,
+    "rebalance_interval": 3600,
+    "allocation_method": "risk_parity",
+    "max_position_size": 0.15,
+    "min_position_size": 0.01,
+    "rebalance_threshold": 0.05,
+    "target_volatility": 0.15,
+    "diversification_constraints": {
+      "max_sector_weight": 0.3,
+      "max_country_weight": 0.4,
+      "max_asset_class_weight": 0.5
+    }
+  },
+  "risk_management": {
+    "enabled": true,
+    "monitoring_interval": 10,
+    "max_drawdown": 0.10,
+    "var_limit": 0.05,
+    "cvar_limit": 0.08,
+    "max_leverage": 2.0,
+    "stop_loss_pct": 0.08,
+    "take_profit_pct": 0.15,
+    "max_single_position_risk": 0.05,
+    "liquidity_constraints": {
+      "min_liquidity_score": 0.4,
+      "max_trade_size_ratio": 0.1,
+      "min_volume_requirement": 1000000
+    },
+    "stress_test_scenarios": ["market_crash_2008", "flash_crash_2010", "covid_crash_2020"]
+  },
+  "execution": {
+    "enabled": true,
+    "order_timeout": 30,
+    "commission_rate": 0.0005,
+    "slippage_model": "linear",
+    "impact_parameter": 0.1,
+    "min_trade_value": 1000,
+    "max_trade_size_ratio": 0.15,
+    "execution_strategies": ["VWAP", "TWAP", "Iceberg"],
+    "smart_order_routing": true,
+    "best_execution": true
+  },
+  "optimization": {
+    "enabled": true,
+    "max_iterations": 100,
+    "initial_points": 10,
+    "acquisition_function": "ei",
+    "random_state": 42,
+    "verbose": true,
+    "objectives": [
+      {"name": "sharpe_ratio", "weight": 0.7, "direction": "maximize"},
+      {"name": "max_drawdown", "weight": 0.3, "direction": "minimize"}
+    ],
+    "parameter_constraints": {
+      "learning_rate": {"min": 0.001, "max": 0.1, "type": "logarithmic"},
+      "n_estimators": {"min": 50, "max": 200, "type": "integer"},
+      "max_depth": {"min": 3, "max": 10, "type": "integer"}
+    }
+  },
+  "backtesting": {
+    "enabled": true,
+    "initial_capital": 1000000,
+    "commission_rate": 0.0005,
+    "slippage_rate": 0.0002,
+    "warmup_period": 20,
+    "benchmark": "SPY",
+    "performance_metrics": ["sharpe_ratio", "sortino_ratio", "max_drawdown", "calmar_ratio"],
+    "walk_forward": {
+      "enabled": true,
+      "window_size": 252,
+      "step_size": 63
+    }
+  },
+  "performance_analytics": {
+    "enabled": true,
+    "reporting_interval": 86400,
+    "metrics": ["sharpe_ratio", "sortino_ratio", "max_drawdown", "information_ratio"],
+    "benchmarks": ["SPY", "QQQ", "IWM"],
+    "attribution_analysis": true,
+    "risk_factor_analysis": true
+  },
+  "monitoring": {
+    "enabled": true,
+    "update_interval": 5,
+    "alert_thresholds": {
+      "cpu_usage": 80,
+      "memory_usage": 85,
+      "disk_usage": 90,
+      "error_rate": 5
+    },
+    "alert_channels": ["email", "slack", "sms"],
+    "performance_dashboard": true,
+    "real_time_metrics": true
+  },
+  "api_gateway": {
+    "enabled": true,
+    "host": "0.0.0.0",
+    "port": 8000,
+    "cors_enabled": true,
+    "rate_limiting": {
+      "enabled": true,
+      "requests_per_minute": 60,
+      "burst_capacity": 10
+    },
+    "authentication": {
+      "enabled": true,
+      "jwt_secret": "your_jwt_secret_here",
+      "token_expiry": 3600
+    }
+  },
+  "disaster_recovery": {
+    "enabled": true,
+    "backup_interval": 3600,
+    "retention_days": 7,
+    "auto_recovery": true,
+    "recovery_time_objective": 300,
+    "recovery_point_objective": 60,
+    "backup_strategy": "incremental"
+  },
+  "logging": {
+    "enabled": true,
+    "level": "INFO",
+    "file_logging": true,
+    "log_file": "logs/deepseekquant.log",
+    "max_file_size": 10485760,
+    "backup_count": 5,
+    "json_format": false,
+    "log_rotation": true
+  },
+  "trading": {
+    "symbols": ["SPY", "QQQ", "TLT", "GLD", "IWM"],
+    "trading_hours": "9:30-16:00",
+    "timezone": "America/New_York",
+    "min_capital": 10000,
+    "max_daily_trades": 20,
+    "position_sizing": "risk_based",
+    "hedging_enabled": true,
+    "short_selling_enabled": false
+  }
+}
