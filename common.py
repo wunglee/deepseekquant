@@ -10,13 +10,8 @@ from dataclasses import dataclass, field, asdict
 from datetime import datetime
 import json
 from typing import Type, TypeVar
-try:
-    import numpy as np
-    ANNUALIZATION_FACTOR = np.sqrt(TRADING_DAYS_PER_YEAR)
-except ImportError:
-    # 如果没有安装 numpy，使用 math 替代
-    import math
-    ANNUALIZATION_FACTOR = math.sqrt(TRADING_DAYS_PER_YEAR)
+import math
+
 T = TypeVar('T')
 
 class SignalType(Enum):
@@ -532,7 +527,12 @@ TRADING_HOURS_PER_DAY = 6.5  # 美股交易时间
 
 # 数学常量
 EPSILON = 1e-10  # 极小值，避免除以零
-ANNUALIZATION_FACTOR = np.sqrt(TRADING_DAYS_PER_YEAR)  # 年化因子
+try:
+    import numpy as np
+    ANNUALIZATION_FACTOR = np.sqrt(TRADING_DAYS_PER_YEAR)  # 年化因子
+except ImportError:
+    # 如果没有安装 numpy，使用 math 替代
+    ANNUALIZATION_FACTOR = math.sqrt(TRADING_DAYS_PER_YEAR)  # 年化因子
 
 def enum_to_dict(enum_class: Type[Enum]) -> Dict[str, Any]:
     """将枚举类转换为字典"""
@@ -564,14 +564,14 @@ def deserialize_dict(data_str: str) -> Dict[str, Any]:
 
 class DeepSeekQuantEncoder(json.JSONEncoder):
     """自定义JSON编码器，支持枚举和日期时间"""
-    def default(self, obj):
-        if isinstance(obj, Enum):
-            return obj.value
-        if isinstance(obj, datetime):
-            return obj.isoformat()
-        if hasattr(obj, 'to_dict'):
-            return obj.to_dict()
-        return super().default(obj)
+    def default(self, o):
+        if isinstance(o, Enum):
+            return o.value
+        if isinstance(o, datetime):
+            return o.isoformat()
+        if hasattr(o, 'to_dict'):
+            return o.to_dict()
+        return super().default(o)
 
 def deep_seek_quant_object_hook(dct):
     """自定义JSON对象钩子，用于反序列化"""
