@@ -6,18 +6,19 @@ DeepSeekQuant 日志系统
 
 import logging
 import logging.handlers
-from typing import Dict, Any, Optional, List, Union
+from typing import Dict, Any, Optional, List, Union, Callable, Pattern
 from pathlib import Path
 import os
 import json
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 import threading
 from enum import Enum
 import gzip
 import hashlib
 import time
 import queue
+import re
 from dataclasses import dataclass, asdict, field
 
 from common import DEFAULT_LOG_LEVEL, DEFAULT_LOG_FORMAT, DEFAULT_LOG_DATE_FORMAT, MAX_LOG_FILE_SIZE, BACKUP_LOG_COUNT, \
@@ -600,6 +601,377 @@ class AsyncLogHandler(logging.Handler):
         super().close()
 
 
+class BufferedLogHandler(logging.Handler):
+    """通用缓冲日志处理器"""
+    
+    def __init__(self, target_handler: logging.Handler, 
+                 buffer_size: int = 1000,
+                 flush_interval: float = 5.0):
+        super().__init__()
+        self.target_handler = target_handler
+        self.buffer_size = buffer_size
+        self.flush_interval = flush_interval
+        self.buffer: List[logging.LogRecord] = []
+        self.buffer_lock = threading.RLock()
+        self.flush_timer: Optional[threading.Timer] = None
+        self.last_flush = time.time()
+        
+        self._start_flush_timer()
+    
+    def _start_flush_timer(self):
+        """启动定时刷新计时器"""
+        def flush_buffer():
+            with self.buffer_lock:
+                if self.buffer:
+                    self._flush_to_target()
+                # 重启定时器
+                self._start_flush_timer()
+        
+        if self.flush_timer:
+            self.flush_timer.cancel()
+        
+        self.flush_timer = threading.Timer(self.flush_interval, flush_buffer)
+        self.flush_timer.daemon = True
+        self.flush_timer.start()
+    
+    def emit(self, record):
+        """缓冲日志记录"""
+        with self.buffer_lock:
+            self.buffer.append(record)
+            
+            # 缓冲区满时立即刷新
+            if len(self.buffer) >= self.buffer_size:
+                self._flush_to_target()
+    
+    def _flush_to_target(self):
+        """刷新缓冲区到目标处理器"""
+        if not self.buffer:
+            return
+        
+        try:
+            # 批量处理日志记录
+            for record in self.buffer:
+                self.target_handler.emit(record)
+            
+            self.buffer.clear()
+            self.last_flush = time.time()
+            
+        except Exception as e:
+            # 记录错误但不影响主流程
+            try:
+                fallback_handler = logging.StreamHandler(sys.stderr)
+                for record in self.buffer:
+                    fallback_handler.emit(record)
+            except:
+                pass
+            finally:
+                self.buffer.clear()
+    
+    def flush(self):
+        """立即刷新缓冲区"""
+        with self.buffer_lock:
+            self._flush_to_target()
+        self.target_handler.flush()
+    
+    def close(self):
+        """关闭处理器"""
+        if self.flush_timer:
+            self.flush_timer.cancel()
+        
+        self.flush()  # 确保所有日志都被刷新
+        self.target_handler.close()
+        super().close()
+
+
+class LogQueryEngine:
+    """日志查询引擎"""
+    
+    def __init__(self, log_directory: str = "logs", log_format: LogFormat = LogFormat.JSON):
+        self.log_directory = log_directory
+        self.log_format = log_format
+        self.index: Dict[str, List[Dict[str, Any]]] = {}  # 简单的内存索引
+    
+    def build_index(self, rebuild: bool = False):
+        """构建日志索引"""
+        if self.index and not rebuild:
+            return
+        
+        self.index.clear()
+        if not os.path.exists(self.log_directory):
+            return
+        
+        for filename in os.listdir(self.log_directory):
+            if filename.endswith('.log'):
+                filepath = os.path.join(self.log_directory, filename)
+                self._index_file(filepath, filename)
+    
+    def _index_file(self, filepath: str, filename: str):
+        """索引单个日志文件"""
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                for i, line in enumerate(f):
+                    try:
+                        if self.log_format == LogFormat.JSON:
+                            log_data = json.loads(line.strip())
+                            timestamp = log_data.get('timestamp', '')
+                        else:
+                            # 解析文本格式的时间戳
+                            timestamp_match = re.search(r'\d{4}-\d{2}-\d{2}', line)
+                            timestamp = timestamp_match.group() if timestamp_match else ''
+                        
+                        if timestamp:
+                            date_key = timestamp[:10]  # YYYY-MM-DD
+                            if date_key not in self.index:
+                                self.index[date_key] = []
+                            self.index[date_key].append({
+                                'file': filename,
+                                'line': i,
+                                'timestamp': timestamp
+                            })
+                    except (json.JSONDecodeError, ValueError):
+                        continue
+        except Exception as e:
+            logging.getLogger('LogQueryEngine').error(f"Indexing failed for {filepath}: {e}")
+    
+    def search(self, query: str, level: Optional[LogLevel] = None,
+               start_time: Optional[str] = None,
+               end_time: Optional[str] = None,
+               max_results: int = 1000) -> List[LogEntry]:
+        """增强的日志搜索"""
+        self.build_index()
+        
+        results = []
+        query_pattern = re.compile(re.escape(query), re.IGNORECASE) if query else None
+        
+        # 确定搜索的文件范围
+        search_files = self._get_search_files(start_time, end_time)
+        
+        for filepath in search_files:
+            if len(results) >= max_results:
+                break
+                
+            results.extend(self._search_file(filepath, query_pattern, level, max_results - len(results)))
+        
+        # 按时间排序
+        results.sort(key=lambda x: x.timestamp)
+        return results
+    
+    def _get_search_files(self, start_time: Optional[str], end_time: Optional[str]) -> List[str]:
+        """获取需要搜索的文件列表"""
+        files = set()
+        
+        if start_time and end_time:
+            start_date = start_time[:10]
+            end_date = end_time[:10]
+            
+            # 遍历日期范围
+            current_dt = datetime.strptime(start_date, '%Y-%m-%d')
+            end_dt = datetime.strptime(end_date, '%Y-%m-%d')
+            
+            while current_dt <= end_dt:
+                current_date = current_dt.strftime('%Y-%m-%d')
+                if current_date in self.index:
+                    for entry in self.index[current_date]:
+                        files.add(os.path.join(self.log_directory, entry['file']))
+                current_dt += timedelta(days=1)
+        else:
+            # 搜索所有文件
+            if os.path.exists(self.log_directory):
+                for filename in os.listdir(self.log_directory):
+                    if filename.endswith('.log'):
+                        files.add(os.path.join(self.log_directory, filename))
+        
+        return sorted(files)
+    
+    def _search_file(self, filepath: str, query_pattern: Optional[Pattern], 
+                    level: Optional[LogLevel], max_results: int) -> List[LogEntry]:
+        """在单个文件中搜索"""
+        results = []
+        
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                for line in f:
+                    if len(results) >= max_results:
+                        break
+                    
+                    line = line.strip()
+                    if not line:
+                        continue
+                    
+                    try:
+                        if self.log_format == LogFormat.JSON:
+                            log_data = json.loads(line)
+                            message = log_data.get('message', '')
+                            log_level = log_data.get('level', '')
+                            
+                            # 级别过滤
+                            if level and log_level != level.value:
+                                continue
+                                
+                            if not query_pattern or query_pattern.search(message) or query_pattern.search(str(log_data)):
+                                entry = LogEntry.from_dict(log_data)
+                                results.append(entry)
+                        else:
+                            # 文本格式搜索
+                            if not query_pattern or query_pattern.search(line):
+                                # 简化解析文本日志
+                                entry = self._parse_text_log(line)
+                                if entry and (not level or entry.level == level):
+                                    results.append(entry)
+                    except (json.JSONDecodeError, ValueError):
+                        continue
+                        
+        except Exception as e:
+            logging.getLogger('LogQueryEngine').error(f"Search failed for {filepath}: {e}")
+        
+        return results
+    
+    def _parse_text_log(self, line: str) -> Optional[LogEntry]:
+        """解析文本格式日志"""
+        try:
+            # 简化的文本日志解析
+            timestamp_match = re.search(r'(\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}:\d{2})', line)
+            level_match = re.search(r'\b(DEBUG|INFO|WARNING|ERROR|CRITICAL)\b', line)
+            
+            if timestamp_match and level_match:
+                return LogEntry(
+                    timestamp=timestamp_match.group(),
+                    level=LogLevel(level_match.group()),
+                    logger_name='text_parser',
+                    message=line,
+                    module='',
+                    function='',
+                    line_number=0,
+                    process_id=0,
+                    thread_id=0,
+                    thread_name=''
+                )
+        except Exception:
+            pass
+        return None
+
+
+@dataclass
+class AlertRule:
+    """告警规则"""
+    name: str
+    condition: Callable[[Dict[str, Any]], bool]
+    action: Callable[[str, Dict[str, Any]], None]
+    cooldown: int = 300  # 冷却时间（秒）
+    last_triggered: Optional[float] = None
+    
+    def should_trigger(self, current_time: float) -> bool:
+        """检查是否应该触发告警"""
+        if self.last_triggered is None:
+            return True
+        return current_time - self.last_triggered >= self.cooldown
+
+
+class AlertManager:
+    """告警管理器"""
+    
+    def __init__(self, logging_system: 'LoggingSystem'):
+        self.logging_system = logging_system
+        self.rules: Dict[str, AlertRule] = {}
+        self.stats = {
+            'total_alerts': 0,
+            'triggered_alerts': 0,
+            'suppressed_alerts': 0
+        }
+    
+    def add_rule(self, rule: AlertRule):
+        """添加告警规则"""
+        self.rules[rule.name] = rule
+    
+    def remove_rule(self, rule_name: str):
+        """移除告警规则"""
+        if rule_name in self.rules:
+            del self.rules[rule_name]
+    
+    def check_alerts(self):
+        """检查所有告警规则"""
+        current_time = time.time()
+        stats = self.logging_system.get_stats()
+        
+        for rule_name, rule in self.rules.items():
+            try:
+                if rule.condition(stats) and rule.should_trigger(current_time):
+                    rule.last_triggered = current_time
+                    rule.action(f"Alert: {rule_name}", stats)
+                    self.stats['triggered_alerts'] += 1
+                    self.stats['total_alerts'] += 1
+                    
+                    # 记录告警
+                    self.logging_system.get_logger('AlertManager').warning(
+                        f"告警触发: {rule_name}"
+                    )
+                elif rule.condition(stats) and not rule.should_trigger(current_time):
+                    # 在冷却期内
+                    self.stats['suppressed_alerts'] += 1
+            except Exception as e:
+                self.logging_system.get_logger('AlertManager').error(
+                    f"告警规则执行失败 {rule_name}: {e}"
+                )
+    
+    def create_error_rate_alert(self, threshold: float = 0.1):
+        """创建错误率告警规则"""
+        def condition(stats: Dict[str, Any]) -> bool:
+            total_logs = stats.get('total_logs', 1)
+            error_logs = stats.get('error_logs', 0)
+            error_rate = error_logs / total_logs if total_logs > 0 else 0
+            return error_rate > threshold
+        
+        def action(alert_name: str, stats: Dict[str, Any]):
+            error_rate = stats.get('error_logs', 0) / max(stats.get('total_logs', 1), 1)
+            message = f"错误率过高: {error_rate:.2%} (阈值: {threshold:.0%})"
+            self._send_alert_notification(alert_name, message)
+        
+        rule = AlertRule(
+            name="high_error_rate",
+            condition=condition,
+            action=action,
+            cooldown=300  # 5分钟冷却
+        )
+        self.add_rule(rule)
+        return rule
+    
+    def create_disk_space_alert(self, threshold_mb: int = 100):
+        """创建磁盘空间告警规则"""
+        def condition(stats: Dict[str, Any]) -> bool:
+            file_sizes = stats.get('file_sizes', {})
+            total_size = sum(file_sizes.values()) / (1024 * 1024)  # 转换为MB
+            return total_size > threshold_mb
+        
+        def action(alert_name: str, stats: Dict[str, Any]):
+            file_sizes = stats.get('file_sizes', {})
+            total_size_mb = sum(file_sizes.values()) / (1024 * 1024)
+            message = f"日志文件总大小超过阈值: {total_size_mb:.1f}MB (阈值: {threshold_mb}MB)"
+            self._send_alert_notification(alert_name, message)
+        
+        rule = AlertRule(
+            name="large_log_files",
+            condition=condition,
+            action=action,
+            cooldown=3600  # 1小时冷却
+        )
+        self.add_rule(rule)
+        return rule
+    
+    def _send_alert_notification(self, subject: str, message: str):
+        """发送告警通知（示例实现）"""
+        try:
+            # 这里可以实现邮件、Slack、Webhook等通知方式
+            print(f"ALERT: {subject} - {message}")
+            
+            # 示例：发送邮件（需要配置SMTP）
+            # self._send_email_alert(subject, message)
+            
+        except Exception as e:
+            self.logging_system.get_logger('AlertManager').error(
+                f"发送告警通知失败: {e}"
+            )
+
+
 class LoggingSystem:
     """DeepSeekQuant 日志系统 - 完整生产实现"""
 
@@ -634,6 +1006,15 @@ class LoggingSystem:
             'last_flush': datetime.now().isoformat(),
             'start_time': datetime.now().isoformat()
         }
+        
+        # 日志查询引擎
+        self.query_engine = LogQueryEngine(
+            log_directory=os.path.dirname(config.file_path) if config.file_path else "logs",
+            log_format=config.format
+        )
+        
+        # 告警管理器
+        self.alert_manager = AlertManager(self)
 
         # 初始化日志系统
         self._initialize()
@@ -1310,6 +1691,59 @@ class LoggingSystem:
             stats['file_sizes'] = self._get_log_file_sizes()
 
             return stats
+
+    def advanced_search(self, query: str, level: Optional[LogLevel] = None,
+                       start_time: Optional[str] = None,
+                       end_time: Optional[str] = None,
+                       max_results: int = 1000) -> List[LogEntry]:
+        """
+        增强的日志搜索
+        
+        Args:
+            query: 搜索关键词
+            level: 日志级别过滤
+            start_time: 开始时间
+            end_time: 结束时间
+            max_results: 最大结果数
+            
+        Returns:
+            搜索结果列表
+        """
+        return self.query_engine.search(query, level, start_time, end_time, max_results)
+    
+    def get_logs_by_time_range(self, start_time: str, end_time: str) -> List[LogEntry]:
+        """
+        按时间范围获取日志
+        
+        Args:
+            start_time: 开始时间
+            end_time: 结束时间
+            
+        Returns:
+            日志条目列表
+        """
+        return self.query_engine.search('', None, start_time, end_time, 10000)
+    
+    def check_alerts(self):
+        """检查告警"""
+        self.alert_manager.check_alerts()
+    
+    def add_alert_rule(self, rule: AlertRule):
+        """
+        添加自定义告警规则
+        
+        Args:
+            rule: 告警规则
+        """
+        self.alert_manager.add_rule(rule)
+    
+    def setup_default_alerts(self):
+        """设置默认告警规则"""
+        # 错误率超过10%时告警
+        self.alert_manager.create_error_rate_alert(threshold=0.1)
+        
+        # 日志文件总大小超过1GB时告警
+        self.alert_manager.create_disk_space_alert(threshold_mb=1024)
 
     def get_log_entries(self, level: Optional[LogLevel] = None,
                         start_time: Optional[str] = None,
