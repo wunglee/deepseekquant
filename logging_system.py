@@ -18,7 +18,7 @@ import gzip
 import hashlib
 from dataclasses import dataclass, asdict, field
 
-from .common import DEFAULT_LOG_LEVEL, DEFAULT_LOG_FORMAT, DEFAULT_LOG_DATE_FORMAT, MAX_LOG_FILE_SIZE, BACKUP_LOG_COUNT, \
+from common import DEFAULT_LOG_LEVEL, DEFAULT_LOG_FORMAT, DEFAULT_LOG_DATE_FORMAT, MAX_LOG_FILE_SIZE, BACKUP_LOG_COUNT, \
     DEFAULT_ENCODING
 
 
@@ -213,7 +213,7 @@ class DeepSeekQuantFormatter(logging.Formatter):
 
         # 添加额外数据
         if hasattr(record, 'extra_data'):
-            log_entry['extra_data'] = record.extra_data
+            log_entry['extra_data'] = record.extra_data  # type: ignore[attr-defined]
 
         return json.dumps(log_entry, ensure_ascii=False)
 
@@ -234,8 +234,7 @@ class AuditLogFilter(logging.Filter):
 
     def filter(self, record: logging.LogRecord) -> bool:
         """过滤审计日志"""
-        return (hasattr(record, 'is_audit') and record.is_audit) or \
-            record.levelno >= logging.WARNING
+        return (hasattr(record, 'is_audit') and record.is_audit) or record.levelno >= logging.WARNING  # type: ignore[attr-defined]
 
 
 class PerformanceLogFilter(logging.Filter):
@@ -243,8 +242,7 @@ class PerformanceLogFilter(logging.Filter):
 
     def filter(self, record: logging.LogRecord) -> bool:
         """过滤性能日志"""
-        return (hasattr(record, 'is_performance') and record.is_performance) or \
-            'performance' in record.name.lower()
+        return (hasattr(record, 'is_performance') and record.is_performance) or 'performance' in record.name.lower()  # type: ignore[attr-defined]
 
 
 class ErrorLogFilter(logging.Filter):
@@ -260,11 +258,11 @@ class ThreadSafeRotatingFileHandler(logging.handlers.RotatingFileHandler):
 
     def __init__(self, filename, mode='a', maxBytes=0, backupCount=0, encoding=None, delay=False):
         super().__init__(filename, mode, maxBytes, backupCount, encoding, delay)
-        self.lock = threading.RLock()
+        self.lock = threading.RLock()  # type: ignore[assignment]
 
     def emit(self, record):
         """线程安全地输出日志记录"""
-        with self.lock:
+        with self.lock:  # type: ignore[attr-defined]
             super().emit(record)
 
 
@@ -276,8 +274,8 @@ class CompressedRotatingFileHandler(ThreadSafeRotatingFileHandler):
         self.compression = compression
 
     def doRollover(self):
-        """执行日志轮转并压缩旧文件"""
-        with self.lock:
+        """执行日志转转并压缩旧文件"""
+        with self.lock:  # type: ignore[attr-defined]
             super().doRollover()
 
             if self.compression and self.backupCount > 0:
@@ -339,7 +337,7 @@ class DatabaseLogHandler(logging.Handler):
             'line_number': record.lineno,
             'process_id': record.process,
             'thread_id': record.thread,
-            'exception_info': self.formatException(record.exc_info) if record.exc_info else None,
+            'exception_info': self.formatException(record.exc_info) if record.exc_info else None,  # type: ignore[attr-defined]
             'extra_data': getattr(record, 'extra_data', {})
         }
 
@@ -734,7 +732,7 @@ class LoggingSystem:
         return self.error_logger
 
     def log_audit(self, action: str, user: str, resource: str,
-                  status: str, details: Dict[str, Any] = None):
+                  status: str, details: Optional[Dict[str, Any]] = None):
         """记录审计日志"""
         if not self.audit_logger:
             return
@@ -767,7 +765,7 @@ class LoggingSystem:
             self._log_internal_error("audit_log", e)
 
     def log_performance(self, operation: str, duration: float,
-                        success: bool, metrics: Dict[str, Any] = None):
+                        success: bool, metrics: Optional[Dict[str, Any]] = None):
         """记录性能日志"""
         if not self.performance_logger:
             return
@@ -801,7 +799,7 @@ class LoggingSystem:
             self._log_internal_error("performance_log", e)
 
     def log_error(self, error_type: str, error_message: str,
-                  context: Dict[str, Any] = None, exception: Exception = None):
+                  context: Optional[Dict[str, Any]] = None, exception: Optional[Exception] = None):
         """记录错误日志"""
         if not self.error_logger:
             return
@@ -814,7 +812,7 @@ class LoggingSystem:
                 lineno=0,
                 msg=f"{error_type}: {error_message}",
                 args=(),
-                exc_info=exception
+                exc_info=sys.exc_info() if exception else None  # type: ignore[arg-type]
             )
 
             # 添加错误特定属性
@@ -930,9 +928,9 @@ class LoggingSystem:
         """轮转日志文件"""
         with self._lock:
             for handler_name, handler in self.handlers.items():
-                if hasattr(handler, 'doRollover'):
+                if hasattr(handler, 'doRollover'):  # type: ignore[attr-defined]
                     try:
-                        handler.doRollover()
+                        handler.doRollover()  # type: ignore[attr-defined]
                         self.get_logger(__name__).info(f"已轮转日志文件: {handler_name}")
                     except Exception as e:
                         self.get_logger(__name__).error(f"日志轮转失败 {handler_name}: {e}")
@@ -1201,7 +1199,7 @@ def get_error_logger() -> logging.Logger:
     return _global_logging_system.get_error_logger()
 
 def log_audit(action: str, user: str, resource: str,
-              status: str, details: Dict[str, Any] = None):
+              status: str, details: Optional[Dict[str, Any]] = None):
     """记录全局审计日志"""
     global _global_logging_system
 
@@ -1209,7 +1207,7 @@ def log_audit(action: str, user: str, resource: str,
         _global_logging_system.log_audit(action, user, resource, status, details)
 
 def log_performance(operation: str, duration: float,
-                    success: bool, metrics: Dict[str, Any] = None):
+                    success: bool, metrics: Optional[Dict[str, Any]] = None):
     """记录全局性能日志"""
     global _global_logging_system
 
@@ -1217,7 +1215,7 @@ def log_performance(operation: str, duration: float,
         _global_logging_system.log_performance(operation, duration, success, metrics)
 
 def log_error(error_type: str, error_message: str,
-              context: Dict[str, Any] = None, exception: Exception = None):
+              context: Optional[Dict[str, Any]] = None, exception: Optional[Exception] = None):
     """记录全局错误日志"""
     global _global_logging_system
 

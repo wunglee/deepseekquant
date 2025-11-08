@@ -263,21 +263,6 @@ class TradingSignal:
 
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
-        # 手动转换 metadata，确保枚举类型转换为字符串值
-        metadata_dict = {
-            'generated_at': self.metadata.generated_at,
-            'source': self.metadata.source.value,
-            'confidence': self.metadata.confidence,
-            'strength': self.metadata.strength.value,
-            'priority': self.metadata.priority,
-            'expiration': self.metadata.expiration,
-            'tags': self.metadata.tags,
-            'parameters': self.metadata.parameters,
-            'model_version': self.metadata.model_version,
-            'backtest_id': self.metadata.backtest_id,
-            'strategy_name': self.metadata.strategy_name
-        }
-        
         return {
             'id': self.id,
             'symbol': self.symbol,
@@ -298,27 +283,14 @@ class TradingSignal:
             'volume_ratio': self.volume_ratio,
             'volatility': self.volatility,
             'liquidity_score': self.liquidity_score,
-            'metadata': metadata_dict
+            'metadata': asdict(self.metadata)
         }
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'TradingSignal':
         """从字典创建信号"""
         metadata_data = data.pop('metadata', {})
-        # 手动创建 SignalMetadata，处理枚举转换
-        metadata = SignalMetadata(
-            generated_at=metadata_data.get('generated_at', datetime.now().isoformat()),
-            source=SignalSource(metadata_data.get('source', 'technical')),
-            confidence=metadata_data.get('confidence', 0.0),
-            strength=SignalStrength(metadata_data.get('strength', 'mild')),
-            priority=metadata_data.get('priority', 1),
-            expiration=metadata_data.get('expiration'),
-            tags=metadata_data.get('tags', []),
-            parameters=metadata_data.get('parameters', {}),
-            model_version=metadata_data.get('model_version', '1.0.0'),
-            backtest_id=metadata_data.get('backtest_id'),
-            strategy_name=metadata_data.get('strategy_name')
-        )
+        metadata = SignalMetadata(**metadata_data)
 
         return cls(
             id=data['id'],

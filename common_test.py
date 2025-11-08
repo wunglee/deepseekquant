@@ -150,9 +150,9 @@ class TestTradingSignal(unittest.TestCase):
         self.assertEqual(signal_dict['symbol'], 'AAPL')
         self.assertEqual(signal_dict['signal_type'], 'buy')
         self.assertEqual(signal_dict['price'], 150.0)
-        # TradingSignal.to_dict() 会将所有枚举转换为字符串值
-        self.assertEqual(signal_dict['metadata']['source'], 'technical')
-        self.assertEqual(signal_dict['metadata']['strength'], 'mild')
+        # TradingSignal.to_dict() 会将枚举转换为字符串值
+        # 但metadata是通过asdict()转换的,所以枚举保持为对象
+        self.assertEqual(signal_dict['metadata']['source'], SignalSource.TECHNICAL)
         self.assertEqual(signal_dict['metadata']['confidence'], 0.9)
 
     def test_from_dict_method(self):

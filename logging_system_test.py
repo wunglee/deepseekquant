@@ -392,8 +392,13 @@ class TestLoggingSystem(TestLoggingSystemBase):
         logging_system.shutdown()
 
     @patch('logging_system.DatabaseLogHandler')
-    def test_database_handler(self, mock_db_handler):
+    def test_database_handler(self, mock_db_handler_class):
         """测试数据库处理器（使用mock）"""
+        # 创建 mock 处理器实例
+        mock_handler = MagicMock()
+        mock_handler.level = logging.INFO  # 设置 level 为整数
+        mock_db_handler_class.return_value = mock_handler
+        
         # 配置使用数据库目的地
         self.config.destinations = [LogDestination.DATABASE]
         self.config.database_connection = "sqlite:///test.db"
@@ -401,7 +406,7 @@ class TestLoggingSystem(TestLoggingSystemBase):
         logging_system = LoggingSystem(self.config)
 
         # 验证数据库处理器被调用
-        mock_db_handler.assert_called_once()
+        mock_db_handler_class.assert_called_once()
 
         logging_system.shutdown()
 
