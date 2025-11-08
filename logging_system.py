@@ -163,6 +163,25 @@ class LogConfig:
     compression_enabled: bool = True
     retention_days: int = 30
 
+    def __post_init__(self):
+        """配置验证"""
+        self._validate_config()
+
+    def _validate_config(self):
+        """验证配置的合理性"""
+        if self.max_file_size_mb <= 0:
+            raise ValueError("max_file_size_mb must be positive")
+        if self.backup_count < 0:
+            raise ValueError("backup_count cannot be negative")
+        if self.retention_days < 0:
+            raise ValueError("retention_days cannot be negative")
+        if self.buffer_size <= 0:
+            raise ValueError("buffer_size must be positive")
+        if self.flush_interval <= 0:
+            raise ValueError("flush_interval must be positive")
+        if self.syslog_port <= 0 or self.syslog_port > 65535:
+            raise ValueError("syslog_port must be between 1 and 65535")
+
 
 class DeepSeekQuantFormatter(logging.Formatter):
     """DeepSeekQuant 自定义日志格式化器"""
@@ -684,11 +703,18 @@ class LoggingSystem:
                 sys.__excepthook__(exc_type, exc_value, exc_traceback)
                 return
 
-            logger = self.get_logger('UncaughtException')
-            logger.critical(
-                "未捕获的异常",
-                exc_info=(exc_type, exc_value, exc_traceback)
-            )
+            try:
+                # 尝试使用日志系统记录异常
+                logger = self.get_logger('UncaughtException')
+                logger.critical(
+                    "未捕获的异常",
+                    exc_info=(exc_type, exc_value, exc_traceback)
+                )
+            except Exception:
+                # 如果日志系统失败，使用标准错误输出
+                import traceback
+                print("CRITICAL: Uncaught exception (logging failed):", file=sys.stderr)
+                traceback.print_exception(exc_type, exc_value, exc_traceback, file=sys.stderr)
 
         sys.excepthook = handle_uncaught_exception
 
@@ -702,16 +728,27 @@ class LoggingSystem:
         )
 
     def get_logger(self, name: str) -> logging.Logger:
-        """获取日志记录器"""
-        with self._lock:
-            if self._shutdown:
-                raise RuntimeError("日志系统已关闭")
+        """获取日志记录器，提供安全的错误处理"""
+        try:
+            with self._lock:
+                if self._shutdown:
+                    # 返回一个基本的日志记录器而不是抛出异常
+                    fallback_logger = logging.getLogger(name)
+                    if not fallback_logger.handlers:
+                        fallback_logger.addHandler(logging.NullHandler())
+                    return fallback_logger
 
-            if name not in self.loggers:
-                logger = logging.getLogger(name)
-                self.loggers[name] = logger
+                if name not in self.loggers:
+                    logger = logging.getLogger(name)
+                    self.loggers[name] = logger
 
-            return self.loggers[name]
+                return self.loggers[name]
+        except Exception as e:
+            # 确保即使在异常情况下也能返回可用的日志记录器
+            fallback_logger = logging.getLogger(name)
+            if not fallback_logger.handlers:
+                fallback_logger.addHandler(logging.NullHandler())
+            return fallback_logger
 
     def get_audit_logger(self) -> logging.Logger:
         """获取审计日志记录器"""

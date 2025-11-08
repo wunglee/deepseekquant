@@ -166,6 +166,44 @@ class TestLogConfig(unittest.TestCase):
         self.assertEqual(config.file_path, "custom.log")
         self.assertEqual(config.max_file_size_mb, 50)
 
+    def test_config_validation_max_file_size(self):
+        """测试配置验证 - 文件大小"""
+        with self.assertRaises(ValueError) as cm:
+            LogConfig(max_file_size_mb=0)
+        self.assertIn("max_file_size_mb must be positive", str(cm.exception))
+
+        with self.assertRaises(ValueError) as cm:
+            LogConfig(max_file_size_mb=-1)
+        self.assertIn("max_file_size_mb must be positive", str(cm.exception))
+
+    def test_config_validation_backup_count(self):
+        """测试配置验证 - 备份数量"""
+        with self.assertRaises(ValueError) as cm:
+            LogConfig(backup_count=-1)
+        self.assertIn("backup_count cannot be negative", str(cm.exception))
+
+    def test_config_validation_retention_days(self):
+        """测试配置验证 - 保留天数"""
+        with self.assertRaises(ValueError) as cm:
+            LogConfig(retention_days=-1)
+        self.assertIn("retention_days cannot be negative", str(cm.exception))
+
+    def test_config_validation_buffer_size(self):
+        """测试配置验证 - 缓冲区大小"""
+        with self.assertRaises(ValueError) as cm:
+            LogConfig(buffer_size=0)
+        self.assertIn("buffer_size must be positive", str(cm.exception))
+
+    def test_config_validation_syslog_port(self):
+        """测试配置验证 - syslog端口"""
+        with self.assertRaises(ValueError) as cm:
+            LogConfig(syslog_port=0)
+        self.assertIn("syslog_port must be between", str(cm.exception))
+
+        with self.assertRaises(ValueError) as cm:
+            LogConfig(syslog_port=70000)
+        self.assertIn("syslog_port must be between", str(cm.exception))
+
 
 class TestLogFilters(unittest.TestCase):
     """测试日志过滤器"""
@@ -351,18 +389,21 @@ class TestLoggingSystem(TestLoggingSystemBase):
     def test_log_level_change(self):
         """测试日志级别更改"""
         logging_system = LoggingSystem(self.config)
-
-        # 初始级别为INFO，DEBUG消息不应被记录
         logger = logging_system.get_logger("test_level")
-        with self.assertLogs('test_level', level='DEBUG') as cm:
-            logger.debug("This should not appear")
 
-        # 更改级别为DEBUG
+        # 验证初始级别为 INFO
+        self.assertEqual(logger.getEffectiveLevel(), logging.INFO)
+
+        # 更改级别为 DEBUG
         logging_system.set_level(LogLevel.DEBUG)
+        self.assertEqual(logger.getEffectiveLevel(), logging.DEBUG)
 
-        # 现在DEBUG消息应该被记录
-        with self.assertLogs('test_level', level='DEBUG') as cm:
-            logger.debug("This should appear now")
+        # 验证可以记录 DEBUG 级别的日志
+        logger.debug("This is a debug message")
+
+        # 更改回 ERROR 级别
+        logging_system.set_level(LogLevel.ERROR)
+        self.assertEqual(logger.getEffectiveLevel(), logging.ERROR)
 
         logging_system.shutdown()
 
@@ -419,6 +460,19 @@ class TestLoggingSystem(TestLoggingSystemBase):
 
         # 上下文退出后系统应关闭
         self.assertTrue(logging_system._shutdown)
+
+    def test_logger_after_shutdown(self):
+        """测试系统关闭后的安全降级"""
+        logging_system = LoggingSystem(self.config)
+        logging_system.shutdown()
+
+        # 关闭后应该返回一个安全的降级logger，而不是抛出异常
+        logger = logging_system.get_logger("test_after_shutdown")
+        self.assertIsInstance(logger, logging.Logger)
+
+        # 应该能够安全调用，不会抛出异常
+        logger.info("This should not cause an error")
+        logger.error("Error after shutdown")
 
 
 class TestGlobalLoggingFunctions(TestLoggingSystemBase):
