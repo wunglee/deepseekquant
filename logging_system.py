@@ -17,6 +17,7 @@ from enum import Enum
 import gzip
 import hashlib
 import time
+import queue
 from dataclasses import dataclass, asdict, field
 
 from common import DEFAULT_LOG_LEVEL, DEFAULT_LOG_FORMAT, DEFAULT_LOG_DATE_FORMAT, MAX_LOG_FILE_SIZE, BACKUP_LOG_COUNT, \
@@ -170,6 +171,7 @@ class LogConfig:
 
     def _validate_config(self):
         """验证配置的合理性"""
+        # 基本数值验证
         if self.max_file_size_mb <= 0:
             raise ValueError("max_file_size_mb must be positive")
         if self.backup_count < 0:
@@ -182,6 +184,47 @@ class LogConfig:
             raise ValueError("flush_interval must be positive")
         if self.syslog_port <= 0 or self.syslog_port > 65535:
             raise ValueError("syslog_port must be between 1 and 65535")
+        
+        # 增强验证：文件路径
+        if not self.file_path:
+            raise ValueError("file_path cannot be empty")
+        
+        # 增强验证：destinations 类型
+        if not isinstance(self.destinations, list):
+            raise ValueError("destinations must be a list")
+        if any(not isinstance(dest, LogDestination) for dest in self.destinations):
+            raise ValueError("destinations must contain only LogDestination instances")
+        
+        # 文件路径可写性验证
+        if LogDestination.FILE in self.destinations:
+            try:
+                log_dir = os.path.dirname(self.file_path)
+                if log_dir and not os.path.exists(log_dir):
+                    os.makedirs(log_dir, exist_ok=True)
+                # 测试文件可写性
+                with open(self.file_path, 'a') as f:
+                    pass  # 只是测试打开
+            except (OSError, IOError) as e:
+                raise ValueError(f"Invalid file path {self.file_path}: {e}")
+        
+        # HTTP端点验证
+        if LogDestination.HTTP in self.destinations and self.http_endpoint:
+            from urllib.parse import urlparse
+            try:
+                result = urlparse(self.http_endpoint)
+                if not all([result.scheme, result.netloc]):
+                    raise ValueError("HTTP endpoint must have scheme and netloc")
+                if result.scheme not in ('http', 'https'):
+                    raise ValueError("HTTP endpoint scheme must be http or https")
+            except Exception as e:
+                raise ValueError(f"Invalid HTTP endpoint: {e}")
+        
+        # 数据库连接验证
+        if LogDestination.DATABASE in self.destinations and self.database_connection:
+            if not isinstance(self.database_connection, str):
+                raise ValueError("database_connection must be a string")
+            if not self.database_connection.startswith(('sqlite:///', 'postgresql://', 'mysql://', 'mongodb://')):
+                raise ValueError("Invalid database connection string format (supported: sqlite, postgresql, mysql, mongodb)")
 
 
 class DeepSeekQuantFormatter(logging.Formatter):
@@ -449,6 +492,112 @@ class HttpLogHandler(logging.Handler):
         finally:
             with self.buffer_lock:
                 self.buffer.clear()
+
+
+class AsyncLogHandler(logging.Handler):
+    """异步日志处理器"""
+    
+    def __init__(self, base_handler: logging.Handler, max_queue_size: int = 10000):
+        super().__init__()
+        self.base_handler = base_handler
+        self.max_queue_size = max_queue_size
+        self.log_queue: queue.Queue = queue.Queue(maxsize=max_queue_size)
+        self.worker_thread: Optional[threading.Thread] = None
+        self._shutdown = False
+        self._start_worker()
+    
+    def _start_worker(self):
+        """启动工作线程"""
+        self.worker_thread = threading.Thread(target=self._process_logs, daemon=True)
+        self.worker_thread.start()
+    
+    def _process_logs(self):
+        """处理日志队列"""
+        while not self._shutdown:
+            try:
+                # 非阻塞获取，避免无法退出的问题
+                record = self.log_queue.get(timeout=1.0)
+                if record is None:  # 关闭信号
+                    break
+                self.base_handler.emit(record)
+                self.log_queue.task_done()
+            except queue.Empty:
+                continue
+            except Exception as e:
+                # 避免工作线程因异常退出
+                try:
+                    fallback_handler = logging.StreamHandler(sys.stderr)
+                    fallback_handler.emit(logging.makeLogRecord({
+                        'msg': f'Async log handler error: {e}',
+                        'levelname': 'ERROR',
+                        'levelno': logging.ERROR,
+                        'pathname': '',
+                        'filename': '',
+                        'module': '',
+                        'lineno': 0,
+                        'funcName': '',
+                        'created': time.time(),
+                        'msecs': 0,
+                        'relativeCreated': 0,
+                        'thread': 0,
+                        'threadName': '',
+                        'processName': '',
+                        'process': 0
+                    }))
+                except:
+                    pass
+    
+    def emit(self, record):
+        """异步发送日志记录"""
+        if self._shutdown:
+            return
+        
+        try:
+            # 非阻塞放入队列，如果队列满则丢弃
+            self.log_queue.put_nowait(record)
+        except queue.Full:
+            # 队列满时的降级处理
+            try:
+                fallback_handler = logging.StreamHandler(sys.stderr)
+                fallback_handler.emit(logging.makeLogRecord({
+                    'msg': 'Log queue full, message dropped',
+                    'levelname': 'WARNING',
+                    'levelno': logging.WARNING,
+                    'pathname': '',
+                    'filename': '',
+                    'module': '',
+                    'lineno': 0,
+                    'funcName': '',
+                    'created': time.time(),
+                    'msecs': 0,
+                    'relativeCreated': 0,
+                    'thread': 0,
+                    'threadName': '',
+                    'processName': '',
+                    'process': 0
+                }))
+            except:
+                pass
+    
+    def flush(self):
+        """刷新队列"""
+        self.log_queue.join()  # 等待所有任务完成
+        self.base_handler.flush()
+    
+    def close(self):
+        """关闭处理器"""
+        self._shutdown = True
+        # 发送关闭信号
+        try:
+            self.log_queue.put_nowait(None)
+        except:
+            pass
+        
+        if self.worker_thread and self.worker_thread.is_alive():
+            self.worker_thread.join(timeout=5.0)
+        
+        self.base_handler.close()
+        super().close()
 
 
 class LoggingSystem:
@@ -1403,6 +1552,31 @@ def create_development_config() -> LogConfig:
     config.level = LogLevel.DEBUG
     config.destinations = [LogDestination.CONSOLE]
     config.include_timestamp = True
+    config.include_module = True
+    config.include_function = True
+    config.include_line_number = True
+    return config
+
+def create_docker_config() -> LogConfig:
+    """创建Docker环境配置"""
+    config = LogConfig()
+    config.destinations = [LogDestination.CONSOLE]  # Docker推荐输出到stdout
+    config.format = LogFormat.JSON  # 便于日志收集器处理
+    config.level = LogLevel.INFO
+    config.include_timestamp = True
+    config.include_module = True
+    config.include_thread = False  # Docker中线程信息通常不重要
+    config.include_process = False
+    config.console_output = True
+    config.audit_log_enabled = False  # Docker中通常不需要单独的审计日志
+    config.performance_log_enabled = False
+    config.error_log_enabled = False
+    return config
+
+def create_kubernetes_config() -> LogConfig:
+    """创建Kubernetes环境配置"""
+    config = create_docker_config()
+    config.level = LogLevel.DEBUG  # K8s环境中通常需要更详细的日志
     config.include_module = True
     config.include_function = True
     config.include_line_number = True
