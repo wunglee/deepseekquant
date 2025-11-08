@@ -156,7 +156,7 @@ class ConfigManager:
             "max_threads": 20,
             "auto_recovery": True,
             "trading_mode": TradingMode.PAPER_TRADING.value,
-            "snapshots_dir": "config_snapshots",
+            "snapshots_dir": "config/snapshots",
             "max_change_history": 1000,
             "performance_monitoring": True,
             "alerting_enabled": True
@@ -844,7 +844,7 @@ class ConfigManager:
                 }
 
                 # 保存快照
-                snapshots_dir = self.config.get('system', {}).get('snapshots_dir', 'config_snapshots')
+                snapshots_dir = self.config.get('system', {}).get('snapshots_dir', 'config/snapshots')
                 os.makedirs(snapshots_dir, exist_ok=True)
 
                 snapshot_file = os.path.join(snapshots_dir, f"{snapshot_id}.json")
@@ -862,7 +862,7 @@ class ConfigManager:
         """从快照恢复配置"""
         with self._lock:
             try:
-                snapshots_dir = self.config.get('system', {}).get('snapshots_dir', 'config_snapshots')
+                snapshots_dir = self.config.get('system', {}).get('snapshots_dir', 'config/snapshots')
                 snapshot_file = os.path.join(snapshots_dir, f"{snapshot_id}.json")
 
                 if not os.path.exists(snapshot_file):
@@ -901,7 +901,7 @@ class ConfigManager:
     def list_snapshots(self) -> List[Dict[str, Any]]:
         """列出所有快照"""
         try:
-            snapshots_dir = self.config.get('system', {}).get('snapshots_dir', 'config_snapshots')
+            snapshots_dir = self.config.get('system', {}).get('snapshots_dir', 'config/snapshots')
             if not os.path.exists(snapshots_dir):
                 return []
 
@@ -933,7 +933,7 @@ class ConfigManager:
     def delete_snapshot(self, snapshot_id: str) -> bool:
         """删除配置快照"""
         try:
-            snapshots_dir = self.config.get('system', {}).get('snapshots_dir', 'config_snapshots')
+            snapshots_dir = self.config.get('system', {}).get('snapshots_dir', 'config/snapshots')
             snapshot_file = os.path.join(snapshots_dir, f"{snapshot_id}.json")
 
             if not os.path.exists(snapshot_file):
@@ -951,7 +951,7 @@ class ConfigManager:
     def cleanup_old_snapshots(self, max_age_days: int = 30, max_count: int = 100) -> int:
         """清理旧快照"""
         try:
-            snapshots_dir = self.config.get('system', {}).get('snapshots_dir', 'config_snapshots')
+            snapshots_dir = self.config.get('system', {}).get('snapshots_dir', 'config/snapshots')
             if not os.path.exists(snapshots_dir):
                 return 0
 

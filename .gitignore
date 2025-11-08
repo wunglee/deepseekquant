@@ -59,6 +59,9 @@ logs/
 .DS_Store
 .AppleDouble
 .LSOverride
-/core/config/
+
+# 配置文件和快照（排除运行时生成的文件）
+config/*.backup.*
+config/snapshots/
 /core/snapshots/
 /core/config_snapshots/
