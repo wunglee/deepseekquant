@@ -16,42 +16,23 @@ sys.path.insert(0, current_dir)
 print(f"运行测试的目录: {current_dir}")
 print(f"Python 路径: {sys.path}")
 
-# 导入 common 模块
-try:
-    # 尝试直接导入
-    import common
+# 导入 common 模块（直接导入，简化逻辑）
+import common
+from common import (
+    SignalType, SignalStrength, SignalSource, SignalStatus, RiskLevel,
+    PortfolioObjective, AllocationMethod, ExecutionStrategy, TradeDirection,
+    OrderType, OrderStatus, PositionStatus, DataFrequency, DataSourceType,
+    ProcessorState, TradingMode, ConfigFormat, ConfigSource,
+    AcquisitionFunctionType, OptimizationObjective,
+    SignalMetadata, TradingSignal, RiskAssessment, PerformanceMetrics, SystemStatus,
+    enum_to_dict, validate_enum_value, get_enum_values, get_enum_names,
+    serialize_dict, deserialize_dict, DeepSeekQuantEncoder,
+    DEFAULT_CONFIG_PATH, DEFAULT_LOG_LEVEL, DEFAULT_INITIAL_CAPITAL,
+    ERROR_CONFIG_LOAD, SUCCESS_CONFIG_LOAD, WARNING_CONFIG_DEFAULT,
+    INFO_SYSTEM_START, MILLISECONDS_PER_SECOND, TRADING_DAYS_PER_YEAR, EPSILON
+)
 
-    print("✓ 成功导入 common 模块")
-
-    # 导入所有需要的组件
-    from common import (
-        SignalType, SignalStrength, SignalSource, SignalStatus, RiskLevel,
-        PortfolioObjective, AllocationMethod, ExecutionStrategy, TradeDirection,
-        OrderType, OrderStatus, PositionStatus, DataFrequency, DataSourceType,
-        ProcessorState, TradingMode, ConfigFormat, ConfigSource,
-        AcquisitionFunctionType, OptimizationObjective,
-        SignalMetadata, TradingSignal, RiskAssessment, PerformanceMetrics, SystemStatus,
-        enum_to_dict, validate_enum_value, get_enum_values, get_enum_names,
-        serialize_dict, deserialize_dict, DeepSeekQuantEncoder,
-        DEFAULT_CONFIG_PATH, DEFAULT_LOG_LEVEL, DEFAULT_INITIAL_CAPITAL,
-        ERROR_CONFIG_LOAD, SUCCESS_CONFIG_LOAD, WARNING_CONFIG_DEFAULT,
-        INFO_SYSTEM_START, MILLISECONDS_PER_SECOND, TRADING_DAYS_PER_YEAR, EPSILON
-    )
-
-except ImportError as e:
-    print(f"✗ 直接导入失败: {e}")
-    # 尝试备用导入方法
-    import importlib.util
-
-    spec = importlib.util.spec_from_file_location("common", os.path.join(current_dir, "common.py"))
-    common_module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(common_module)
-
-    # 手动导入符号到全局命名空间
-    for name in dir(common_module):
-        if not name.startswith('_'):
-            globals()[name] = getattr(common_module, name)
-    print("✓ 使用备用导入方法成功")
+print("✓ 成功导入 common 模块")
 
 
 class TestCommonEnums(unittest.TestCase):
@@ -169,9 +150,9 @@ class TestTradingSignal(unittest.TestCase):
         self.assertEqual(signal_dict['symbol'], 'AAPL')
         self.assertEqual(signal_dict['signal_type'], 'buy')
         self.assertEqual(signal_dict['price'], 150.0)
-        # TradingSignal.to_dict() 会将枚举转换为字符串值
-        # 但metadata是通过asdict()转换的,所以枚举保持为对象
-        self.assertEqual(signal_dict['metadata']['source'], SignalSource.TECHNICAL)
+        # TradingSignal.to_dict() 会将所有枚举转换为字符串值
+        self.assertEqual(signal_dict['metadata']['source'], 'technical')
+        self.assertEqual(signal_dict['metadata']['strength'], 'mild')
         self.assertEqual(signal_dict['metadata']['confidence'], 0.9)
 
     def test_from_dict_method(self):
