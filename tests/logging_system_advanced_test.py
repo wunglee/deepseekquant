@@ -11,7 +11,7 @@ import json
 from datetime import datetime, timedelta
 import shutil
 
-from logging_system import (
+from infrastructure.logging_service import (
     LoggingSystem, LogConfig, LogLevel, LogDestination, LogFormat,
     AsyncLogHandler, BufferedLogHandler, LogQueryEngine,
     AlertManager, AlertRule, LogEntry,

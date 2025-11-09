@@ -1,5 +1,5 @@
 import unittest
-from core.services.event_bus_service import EventBusService
+from infrastructure.event_bus_service import EventBusService
 
 class TestEventBusService(unittest.TestCase):
     def test_publish_subscribe(self):

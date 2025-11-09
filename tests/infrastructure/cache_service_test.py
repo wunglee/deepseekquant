@@ -1,5 +1,5 @@
 import unittest
-from core.services.cache_service import CacheService
+from infrastructure.cache_service import CacheService
 
 class TestCacheService(unittest.TestCase):
     def test_get_set(self):

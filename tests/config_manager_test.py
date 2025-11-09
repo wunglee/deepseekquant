@@ -25,7 +25,7 @@ if parent_dir not in sys.path:
 from core.config_manager import ConfigManager, ConfigValidationError, ConfigEncryptionError, get_global_config_manager, shutdown_global_config_manager
 
 from common import ConfigFormat, ConfigSource, TradingMode, RiskLevel, DEFAULT_ENCODING
-from logging_system import get_logger
+from infrastructure.logging_service import get_logger
 
 # 使用测试日志记录器
 logger = get_logger('DeepSeekQuant.ConfigManager.Test')

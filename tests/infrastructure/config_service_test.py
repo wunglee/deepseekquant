@@ -1,5 +1,5 @@
 import unittest
-from core.services.config_service import ConfigService
+from infrastructure.config_service import ConfigService
 
 class TestConfigService(unittest.TestCase):
     def test_get_and_set(self):

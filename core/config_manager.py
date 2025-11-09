@@ -36,7 +36,7 @@ from common import (
 )
 
 # 从logging_system导入日志功能
-from logging_system import (
+from infrastructure.logging_service import (
     get_logger, get_audit_logger, get_performance_logger, get_error_logger,
     log_audit, log_performance, log_error, LogConfig, LogLevel
 )

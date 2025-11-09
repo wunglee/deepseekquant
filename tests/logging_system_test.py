@@ -11,7 +11,7 @@ from unittest.mock import patch, MagicMock
 # 添加模块路径
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from logging_system import (
+from infrastructure.logging_service import (
     LogLevel, LogDestination, LogEntry, LogFormat, LogRotationStrategy,
     LogConfig, DeepSeekQuantFormatter, AuditLogFilter, PerformanceLogFilter,
     ErrorLogFilter, ThreadSafeRotatingFileHandler, CompressedRotatingFileHandler,

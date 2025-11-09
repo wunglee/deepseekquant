@@ -1,7 +1,7 @@
 import unittest
-from core.services.config_service import ConfigService
-from core.services.event_bus_service import EventBusService
-from core.services.cache_service import CacheService
+from infrastructure.config_service import ConfigService
+from infrastructure.event_bus_service import EventBusService
+from infrastructure.cache_service import CacheService
 
 class TestServicesHealth(unittest.TestCase):
     def test_basic_health(self):

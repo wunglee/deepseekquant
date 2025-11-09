@@ -54,7 +54,7 @@ except ImportError:
 
 # 导入日志和配置系统
 try:
-    from logging_system import (
+    from infrastructure.logging_service import (
         get_logger, get_audit_logger, get_performance_logger, get_error_logger,
         log_audit, log_performance, log_error, LogLevel
     )

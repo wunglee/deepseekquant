@@ -9,7 +9,7 @@ from .interfaces import IProcessorManager
 
 # 统一导入日志和配置系统
 try:
-    from logging_system import get_logger
+    from infrastructure.logging_service import get_logger
 except ImportError:
     import logging
     get_logger = lambda name: logging.getLogger(name)
