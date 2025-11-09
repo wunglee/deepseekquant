@@ -10,7 +10,7 @@ import sys
 # 修复导入路径
 # sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from core.components.resource_monitor import ResourceMonitor, ResourceMonitorConfig
+from infrastructure.resource_monitor import ResourceMonitor, ResourceMonitorConfig
 from core.managers.resource_manager import ResourceManager
 from test_common import DeepSeekQuantTestBase
 

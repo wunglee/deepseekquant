@@ -12,7 +12,7 @@ from unittest.mock import patch
 # 修复导入路径
 # sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from core.components.circuit_breaker import CircuitBreaker, CircuitBreakerConfig
+from infrastructure.circuit_breaker import CircuitBreaker, CircuitBreakerConfig
 from test_common import DeepSeekQuantTestBase
 
 
@@ -76,7 +76,7 @@ class TestCircuitBreaker(DeepSeekQuantTestBase):
         recovery_timeout = self.config.recovery_timeout
         future_time = datetime.now() + timedelta(seconds=recovery_timeout + 1)
 
-        import core.components.circuit_breaker as cb_module
+        import infrastructure.circuit_breaker as cb_module
         with patch.object(cb_module, 'datetime') as mock_datetime:
             mock_datetime.now.return_value = future_time
             mock_datetime.fromisoformat = datetime.fromisoformat

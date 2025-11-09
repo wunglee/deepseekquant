@@ -26,10 +26,10 @@ from core.processors.base_processor import (
 )
 
 # 导入组件
-from core.components.circuit_breaker import CircuitBreaker, CircuitBreakerConfig, CircuitBreakerState
-from core.components.resource_monitor import ResourceMonitor, ResourceMonitorConfig, ResourceUsage
-from core.components.performance_tracker import PerformanceTracker, PerformanceConfig
-from core.components.error_handler import ErrorHandler, ErrorHandlerConfig, ErrorRecord
+from infrastructure.circuit_breaker import CircuitBreaker, CircuitBreakerConfig, CircuitBreakerState
+from infrastructure.resource_monitor import ResourceMonitor, ResourceMonitorConfig, ResourceUsage
+from infrastructure.performance_tracker import PerformanceTracker, PerformanceConfig
+from error_handler import ErrorHandler, ErrorHandlerConfig, ErrorRecord
 from core.managers.task_manager import TaskManager, TaskManagerConfig, TaskInfo
 
 class TestProcessor(BaseProcessor):

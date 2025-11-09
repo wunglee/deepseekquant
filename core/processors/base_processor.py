@@ -40,17 +40,14 @@ except ImportError:
 
 # 导入核心组件 - 使用统一的导入方式
 try:
-    from core.components.circuit_breaker import CircuitBreaker, CircuitBreakerConfig
-    from core.components.resource_monitor import ResourceMonitor, ResourceMonitorConfig, ResourceUsage
-    from core.components.performance_tracker import PerformanceTracker, PerformanceConfig
-    from core.components.error_handler import ErrorHandler, ErrorHandlerConfig, ErrorRecord
+    from infrastructure.circuit_breaker import CircuitBreaker, CircuitBreakerConfig
+    from infrastructure.resource_monitor import ResourceMonitor, ResourceMonitorConfig, ResourceUsage
+    from infrastructure.performance_tracker import PerformanceTracker, PerformanceConfig
+    from error_handler import ErrorHandler, ErrorHandlerConfig, ErrorRecord
     from core.managers.task_manager import TaskManager, TaskManagerConfig, TaskInfo
 except ImportError:
-    from ..components.circuit_breaker import CircuitBreaker, CircuitBreakerConfig
-    from ..components.resource_monitor import ResourceMonitor, ResourceMonitorConfig, ResourceUsage
-    from ..components.performance_tracker import PerformanceTracker, PerformanceConfig
-    from ..components.error_handler import ErrorHandler, ErrorHandlerConfig, ErrorRecord
-    from ..managers.task_manager import TaskManager, TaskManagerConfig, TaskInfo
+    # 备用导入已移除，infrastructure 和根目录为标准路径
+    raise
 
 # 导入日志和配置系统
 try:

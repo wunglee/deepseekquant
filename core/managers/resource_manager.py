@@ -8,9 +8,10 @@ from typing import Dict, Any
 from .interfaces import IResourceManager
 
 try:
-    from core.components.resource_monitor import ResourceMonitor
+    from infrastructure.resource_monitor import ResourceMonitor
 except ImportError:
-    from ..components.resource_monitor import ResourceMonitor
+    # 备用导入已移除，infrastructure 为标准路径
+    raise
 
 
 class ResourceManager(IResourceManager):
