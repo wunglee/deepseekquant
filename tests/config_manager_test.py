@@ -22,16 +22,7 @@ if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
 # 直接导入config_manager模块，避免通过core.__init__.py
-import importlib.util
-config_manager_path = os.path.join(os.path.dirname(__file__), "config_manager.py")
-spec = importlib.util.spec_from_file_location("config_manager", config_manager_path)
-config_manager_module = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(config_manager_module)
-
-# 从模块中导入需要的类和函数
-ConfigManager = config_manager_module.ConfigManager
-ConfigValidationError = config_manager_module.ConfigValidationError
-ConfigEncryptionError = config_manager_module.ConfigEncryptionError
+from core.config_manager import ConfigManager, ConfigValidationError, ConfigEncryptionError, get_global_config_manager, shutdown_global_config_manager
 
 from common import ConfigFormat, ConfigSource, TradingMode, RiskLevel, DEFAULT_ENCODING
 from logging_system import get_logger
@@ -648,8 +639,8 @@ class TestConfigManager(unittest.TestCase):
     def test_global_config_manager(self):
         """测试全局配置管理器"""
         # 从已加载的模块中获取函数
-        get_global = config_manager_module.get_global_config_manager
-        shutdown_global = config_manager_module.shutdown_global_config_manager
+        get_global = get_global_config_manager
+        shutdown_global = shutdown_global_config_manager
 
         # 获取全局实例
         global_manager1 = get_global()
@@ -781,7 +772,13 @@ class TestConfigManager(unittest.TestCase):
     def test_real_encryption_implementation(self):
         """测试真正的加密实现"""
         # 使用生成的Fernet密钥（正确格式）
-        from cryptography.fernet import Fernet
+        import importlib
+        try:
+            fernet_module = importlib.import_module("cryptography.fernet")  # type: ignore
+            Fernet = getattr(fernet_module, "Fernet")
+        except Exception:
+            self.skipTest('cryptography not installed')
+            return
         encryption_key = Fernet.generate_key().decode('utf-8')
         
         config_manager = ConfigManager(

@@ -7,6 +7,7 @@ import uuid
 from datetime import datetime
 from dataclasses import dataclass, field
 from typing import Dict, Any, List, Callable, Optional
+from .interfaces import ITaskManager
 from concurrent.futures import ThreadPoolExecutor, Future
 import threading
 
@@ -32,7 +33,7 @@ class TaskInfo:
     error: Optional[str] = None
 
 
-class TaskManager:
+class TaskManager(ITaskManager):
     """任务管理器"""
 
     def __init__(self, config: TaskManagerConfig, processor_name: str):

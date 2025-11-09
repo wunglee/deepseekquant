@@ -289,18 +289,17 @@ class ConfigManager:
             class ConfigFileHandler(FileSystemEventHandler):
                 def __init__(self, config_manager):
                     self.config_manager = config_manager
-                    self.last_modified = time.time()
+                    self.last_modified = 0
+                    self.debounce_interval = 2.0  # 防抖间隔（秒）
 
                 def on_modified(self, event):
                     if event.src_path == self.config_manager.config_path:
-                        # 防止重复触发
                         current_time = time.time()
-                        if current_time - self.last_modified < 1.0:
+                        if current_time - self.last_modified < self.debounce_interval:
                             return
                         self.last_modified = current_time
-
-                        logger.info(f"检测到配置文件变化: {event.src_path}，重新加载...")
-                        self.config_manager.load_config()
+                        # 统一处理配置变更
+                        self.config_manager._handle_config_change(event.src_path)
 
             observer = Observer()
             event_handler = ConfigFileHandler(self)
@@ -314,6 +313,22 @@ class ConfigManager:
             logger.warning("watchdog未安装，配置热重载功能不可用")
         except Exception as e:
             logger.error(f"配置热重载设置失败: {e}")
+
+    def _handle_config_change(self, changed_path: str):
+        """统一处理配置文件变更（热重载回调）"""
+        try:
+            if changed_path != self.config_path:
+                return
+            old_config = copy.deepcopy(self.config)
+            success = self.load_config()
+            if success:
+                # 通知全局观察者（监听所有变更）
+                self._notify_observers(None, old_config, self.config)
+                logger.info(f"配置文件热重载完成: {changed_path}")
+            else:
+                logger.warning(f"配置文件热重载失败，已回退默认配置: {changed_path}")
+        except Exception as e:
+            logger.error(f"处理配置文件变更时出错: {e}")
 
     def load_config(self) -> bool:
         """加载配置"""

@@ -40,18 +40,17 @@ except ImportError:
 
 # 导入核心组件 - 使用统一的导入方式
 try:
-    from core.circuit_breaker import CircuitBreaker, CircuitBreakerConfig
-    from core.resource_monitor import ResourceMonitor, ResourceMonitorConfig, ResourceUsage
-    from core.performance_tracker import PerformanceTracker, PerformanceConfig
-    from core.error_handler import ErrorHandler, ErrorHandlerConfig, ErrorRecord
-    from core.task_manager import TaskManager, TaskManagerConfig, TaskInfo
+    from core.components.circuit_breaker import CircuitBreaker, CircuitBreakerConfig
+    from core.components.resource_monitor import ResourceMonitor, ResourceMonitorConfig, ResourceUsage
+    from core.components.performance_tracker import PerformanceTracker, PerformanceConfig
+    from core.components.error_handler import ErrorHandler, ErrorHandlerConfig, ErrorRecord
+    from core.managers.task_manager import TaskManager, TaskManagerConfig, TaskInfo
 except ImportError:
-    # 如果使用core.前缀失败，尝试直接导入
-    from circuit_breaker import CircuitBreaker, CircuitBreakerConfig
-    from resource_monitor import ResourceMonitor, ResourceMonitorConfig, ResourceUsage
-    from performance_tracker import PerformanceTracker, PerformanceConfig
-    from error_handler import ErrorHandler, ErrorHandlerConfig, ErrorRecord
-    from task_manager import TaskManager, TaskManagerConfig, TaskInfo
+    from ..components.circuit_breaker import CircuitBreaker, CircuitBreakerConfig
+    from ..components.resource_monitor import ResourceMonitor, ResourceMonitorConfig, ResourceUsage
+    from ..components.performance_tracker import PerformanceTracker, PerformanceConfig
+    from ..components.error_handler import ErrorHandler, ErrorHandlerConfig, ErrorRecord
+    from ..managers.task_manager import TaskManager, TaskManagerConfig, TaskInfo
 
 # 导入日志和配置系统
 try:
@@ -60,22 +59,28 @@ try:
         log_audit, log_performance, log_error, LogLevel
     )
 except ImportError:
-    # 简化备选实现
     import logging
     get_logger = lambda name: logging.getLogger(name)
-    get_audit_logger = get_performance_logger = get_error_logger = get_logger
+    
+    def get_audit_logger():
+        return logging.getLogger('DeepSeekQuant.Audit')
+    
+    def get_performance_logger():
+        return logging.getLogger('DeepSeekQuant.Performance')
+    
+    def get_error_logger():
+        return logging.getLogger('DeepSeekQuant.Error')
 
 try:
     from core.config_manager import ConfigManager, get_global_config_manager
 except ImportError:
     try:
-        from config_manager import ConfigManager, get_global_config_manager
+        from ..config_manager import ConfigManager, get_global_config_manager
     except ImportError:
-        # 备选实现
-        class ConfigManager:
+        class _FallbackConfigManager:
             def __init__(self, *args, **kwargs): pass
             def get_config(self, key, default=None): return default or {}
-        get_global_config_manager = lambda: ConfigManager()
+        get_global_config_manager = lambda: _FallbackConfigManager()
 
 logger = get_logger('DeepSeekQuant.BaseProcessor')
 
@@ -139,47 +144,16 @@ class ProcessorConfig:
 
         return cls(**filtered_data)
 
-class ResourceManager:
-    """统一的资源管理器"""
+try:
+    from core.managers.resource_manager import ResourceManager
+except ImportError:
+    from ..managers.resource_manager import ResourceManager
 
-    def __init__(self, processor_name: str, resource_monitor: ResourceMonitor):
-        self.processor_name = processor_name
-        self.resource_monitor = resource_monitor
-        self.allocated_resources: Dict[str, Dict[str, Any]] = {}
-        self.lock = threading.RLock()
+try:
+    from core.managers.processor_manager import ProcessorManager, get_global_processor_manager
+except ImportError:
+    from ..managers.processor_manager import ProcessorManager, get_global_processor_manager
 
-    def _check_resource_limits(self, resource_type: str, size: int) -> bool:
-        """简单的资源限制检查"""
-        try:
-            usage = self.resource_monitor.get_usage()
-            if resource_type == 'memory':
-                max_mb = self.resource_monitor.config.max_memory_mb
-                return size <= max(0, max_mb - usage['memory_mb'])
-            if resource_type == 'cpu':
-                max_cpu = self.resource_monitor.config.max_cpu_percent
-                return size <= max(0, max_cpu - usage['cpu_percent'])
-            return True
-        except Exception:
-            # 无法获取使用数据时默认允许，避免阻塞
-            return True
-
-    def allocate_resource(self, resource_type: str, resource_id: str, size: int, timeout: int = 30) -> bool:
-        """分配资源"""
-        with self.lock:
-            if not self._check_resource_limits(resource_type, size):
-                return False
-            self.allocated_resources[resource_id] = {
-                'type': resource_type,
-                'size': size,
-                'timestamp': datetime.now().isoformat()
-            }
-            return True
-
-    def release_resource(self, resource_id: str):
-        """释放资源"""
-        with self.lock:
-            if resource_id in self.allocated_resources:
-                del self.allocated_resources[resource_id]
 
 class BaseProcessor(ABC):
     """
@@ -193,7 +167,7 @@ class BaseProcessor(ABC):
 
     def __init__(self,
                  config: Optional[Dict[str, Any]] = None,
-                 config_manager: Optional[ConfigManager] = None,
+                 config_manager: Optional[Any] = None,
                  processor_name: Optional[str] = None):
         """
         初始化基础处理器
@@ -528,10 +502,14 @@ class BaseProcessor(ABC):
 
         try:
             config_key = f"processors.{self.processor_name.lower()}"
-            self.config_manager.register_observer(
-                config_key, self._on_config_changed,
-                f"{self.processor_name}_config_observer"
-            )
+            observer_fn = getattr(self.config_manager, 'register_observer', None)
+            if callable(observer_fn):
+                observer_fn(
+                    config_key, self._on_config_changed,
+                    f"{self.processor_name}_config_observer"
+                )
+            else:
+                self.logger.warning("配置管理器不支持观察者注册接口")
         except Exception as e:
             self.logger.warning(f"配置观察者设置失败: {e}")
 
@@ -556,12 +534,11 @@ class BaseProcessor(ABC):
 
     def _apply_config_changes(self, old_config: ProcessorConfig, new_config: ProcessorConfig):
         """应用配置变更到各组件"""
-        # 各组件处理自己的配置变更
-        self.circuit_breaker.update_config(new_config.circuit_breaker)
-        self.resource_monitor.update_config(new_config.resource_monitor)
-        self.performance_tracker.update_config(new_config.performance_tracker)
-        self.error_handler.update_config(new_config.error_handler)
-        self.task_manager.update_config(new_config.task_manager)
+        self.circuit_breaker.update_config(CircuitBreakerConfig(**new_config.circuit_breaker))
+        self.resource_monitor.update_config(ResourceMonitorConfig(**new_config.resource_monitor))
+        self.performance_tracker.update_config(PerformanceConfig(**new_config.performance_tracker))
+        self.error_handler.update_config(ErrorHandlerConfig(**new_config.error_handler))
+        self.task_manager.update_config(TaskManagerConfig(**new_config.task_manager))
 
     def _check_dependencies(self) -> bool:
         """检查依赖是否可用"""
@@ -765,9 +742,13 @@ class BaseProcessor(ABC):
             if self.config_manager:
                 try:
                     config_key = f"processors.{self.processor_name.lower()}"
-                    self.config_manager.unregister_observer(
-                        config_key, f"{self.processor_name}_config_observer"
-                    )
+                    unregister_fn = getattr(self.config_manager, 'unregister_observer', None)
+                    if callable(unregister_fn):
+                        unregister_fn(
+                            config_key, f"{self.processor_name}_config_observer"
+                        )
+                    else:
+                        self.logger.warning("配置管理器不支持观察者取消接口")
                 except Exception as e:
                     self.logger.warning(f"取消观察者失败: {e}")
 
@@ -832,7 +813,7 @@ class BaseProcessor(ABC):
 
     # 类方法
     @classmethod
-    def _get_global_config_manager(cls) -> ConfigManager:
+    def _get_global_config_manager(cls):
         """获取全局配置管理器"""
         return get_global_config_manager()
 
@@ -848,71 +829,3 @@ class BaseProcessor(ABC):
         with cls._registry_lock:
             return copy.deepcopy(cls._processors_registry)
 
-# 处理器管理器（简化版本）
-class ProcessorManager:
-    """处理器管理器"""
-
-    def __init__(self, config_manager: Optional[ConfigManager] = None):
-        self.config_manager = config_manager or get_global_config_manager()
-        self.processors: Dict[str, BaseProcessor] = {}
-        self.manager_lock = threading.RLock()
-        self.logger = get_logger('DeepSeekQuant.ProcessorManager')
-
-    def register_processor(self, processor: BaseProcessor) -> bool:
-        """注册处理器"""
-        with self.manager_lock:
-            if processor.processor_name in self.processors:
-                return False
-            self.processors[processor.processor_name] = processor
-            return True
-
-    def initialize_all(self) -> Dict[str, bool]:
-        """初始化所有处理器"""
-        results = {}
-        with self.manager_lock:
-            for name, processor in self.processors.items():
-                try:
-                    results[name] = processor.initialize()
-                except Exception as e:
-                    results[name] = False
-                    self.logger.error(f"处理器初始化失败 {name}: {e}")
-        return results
-
-    # 在 base_processor.py 中修复 ProcessorManager
-    def get_health_report(self) -> Dict[str, Any]:
-        """获取健康报告"""
-        report = {
-            'timestamp': datetime.now().isoformat(),
-            'processor_details': {},
-            'total_processors': 0,  # 添加缺失字段
-            'healthy_processors': 0  # 添加缺失字段
-        }
-
-        with self.manager_lock:
-            report['total_processors'] = len(self.processors)
-            healthy_count = 0
-
-            for name, processor in self.processors.items():
-                try:
-                    health_status = processor.get_health_status()
-                    report['processor_details'][name] = health_status
-
-                    # 统计健康处理器数量
-                    if health_status.get('is_healthy', False):
-                        healthy_count += 1
-                except Exception as e:
-                    report['processor_details'][name] = {'error': str(e)}
-
-            report['healthy_processors'] = healthy_count
-
-        return report
-
-# 全局处理器管理器
-_global_processor_manager: Optional[ProcessorManager] = None
-
-def get_global_processor_manager() -> ProcessorManager:
-    """获取全局处理器管理器"""
-    global _global_processor_manager
-    if _global_processor_manager is None:
-        _global_processor_manager = ProcessorManager()
-    return _global_processor_manager

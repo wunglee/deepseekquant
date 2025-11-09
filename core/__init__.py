@@ -10,63 +10,39 @@ __author__ = "DeepSeek AI"
 __license__ = "MIT"
 __email__ = "quant@deepseek.com"
 
-from .main import DeepSeekQuantSystem
-from .config.config_manager import ConfigManager
-from .core.data_fetcher import DataFetcher
-from .core.signal_engine import SignalEngine, Signal, SignalType
-from .core.portfolio_manager import PortfolioManager, AllocationMethod
-from .core.risk_manager import RiskManager, RiskLevel, RiskAssessment
-from .core.execution_engine import ExecutionEngine, ExecutionStrategy, TradeCost
-from .core.bayesian_optimizer import BayesianOptimizer
-from .analytics.backtesting import BacktestingEngine
-from .analytics.performance import PerformanceAnalyzer
-from .infrastructure.monitoring import MonitoringSystem
-from .infrastructure.api_gateway import APIGateway
+# 轻量化初始化，避免在包导入时加载重模块
+try:
+    from .main import DeepSeekQuantSystem
+except Exception:
+    DeepSeekQuantSystem = None
 
-__all__ = [
-    'DeepSeekQuantSystem',
-    'ConfigManager',
-    'DataFetcher',
-    'SignalEngine',
-    'Signal',
-    'SignalType',
-    'PortfolioManager',
-    'AllocationMethod',
-    'RiskManager',
-    'RiskLevel',
-    'RiskAssessment',
-    'ExecutionEngine',
-    'ExecutionStrategy',
-    'TradeCost',
-    'BayesianOptimizer',
-    'BacktestingEngine',
-    'PerformanceAnalyzer',
-    'MonitoringSystem',
-    'APIGateway'
-]
+__all__ = []
 
 class DeepSeekQuant:
     """DeepSeekQuant 主类 - 提供简化的入口点"""
 
     def __init__(self, config_path: str = None):
         """初始化系统"""
-        self.system = DeepSeekQuantSystem(config_path)
+        if DeepSeekQuantSystem is not None:
+            self.system = DeepSeekQuantSystem(config_path)
+        else:
+            self.system = None
 
     def start(self):
         """启动系统"""
-        return self.system.start()
+        return self.system.start() if self.system else None
 
     def stop(self):
         """停止系统"""
-        return self.system.stop()
+        return self.system.stop() if self.system else None
 
     def run_backtest(self, strategy_config: dict):
         """运行回测"""
-        return self.system.run_backtest(strategy_config)
+        return self.system.run_backtest(strategy_config) if self.system else None
 
     def get_status(self):
         """获取系统状态"""
-        return self.system.get_status()
+        return self.system.get_status() if self.system else {'status': 'uninitialized'}
 
 # 版本兼容性
 try:
