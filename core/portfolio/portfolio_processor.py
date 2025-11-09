@@ -19,7 +19,7 @@ class PortfolioProcessor(BaseProcessor):
     def _process_core(self, *args, **kwargs) -> Any:
         positions: List[Dict[str, Any]] = kwargs.get('positions', [])
         method: AllocationMethod = kwargs.get('method', AllocationMethod.EQUAL_WEIGHT)
-        objective: PortfolioObjective = kwargs.get('objective', PortfolioObjective.MAX_SHARPE)
+        objective: PortfolioObjective = kwargs.get('objective', PortfolioObjective.MAXIMIZE_SHARPE)
 
         # 简化：按等权或按市值占比归一化
         weights: Dict[str, float] = {}
@@ -38,7 +38,7 @@ class PortfolioProcessor(BaseProcessor):
                 mv = p['quantity'] * p['price']
                 weights[p['symbol']] = round(mv / total_mv, 6)
 
-        self.logger.info(f"组合分配完成: method={method}, objective={objective}")
+        self.logger.info(f"组合分配完成: method={method.value}, objective={objective.value}")
         return {"status": "success", "weights": weights, "objective": objective.value}
 
     def _cleanup_core(self):
