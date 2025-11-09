@@ -1,6 +1,6 @@
 from typing import Any, Optional
 from core.base_processor import BaseProcessor
-from core.config_manager import ConfigManager
+from config_manager import ConfigManager
 
 class ConfigService(BaseProcessor):
     def __init__(self, *args, **kwargs):

@@ -12,7 +12,7 @@ import sys
 
 from infrastructure.orchestrator import ProcessorOrchestrator
 from common import ProcessorState
-from base_processor_test import TestProcessor
+from tests.core.base_processor_test import TestProcessor
 
 
 def add_unregister_method():

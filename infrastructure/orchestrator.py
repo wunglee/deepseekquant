@@ -15,7 +15,7 @@ except ImportError:
     get_logger = lambda name: logging.getLogger(name)
 
 try:
-    from core.config_manager import get_global_config_manager
+    from config_manager import get_global_config_manager
 except ImportError:
     # 标准路径不可用时抛出异常
     raise

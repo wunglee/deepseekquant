@@ -60,13 +60,34 @@ class ILoggingService(ABC):
     @abstractmethod
     def get_logger(self, name: str): ...
 
+    @abstractmethod
+    def set_level(self, name: str, level: str) -> None: ...
+
+    @abstractmethod
+    def add_handler(self, name: str, handler: Any) -> None: ...
+
+    @abstractmethod
+    def remove_handler(self, name: str, handler: Any) -> None: ...
+
+    @abstractmethod
+    def log(self, name: str, level: str, message: str, **kwargs) -> None: ...
+
 class IConfigService(ABC):
     @abstractmethod
     def process(self, *args, **kwargs) -> Any: ...
 
 class ICacheService(ABC):
     @abstractmethod
-    def process(self, *args, **kwargs) -> Any: ...
+    def get(self, key: str) -> Any: ...
+
+    @abstractmethod
+    def set(self, key: str, value: Any, ttl: int | None = None) -> None: ...
+
+    @abstractmethod
+    def invalidate(self, key: str) -> None: ...
+
+    @abstractmethod
+    def preload_pattern(self, pattern: str, loader: Callable, ttl: int = 300) -> None: ...
 
 class IEventBusService(ABC):
     @abstractmethod
@@ -74,6 +95,12 @@ class IEventBusService(ABC):
 
     @abstractmethod
     def subscribe(self, topic: str, callback: Callable) -> None: ...
+
+    @abstractmethod
+    def unsubscribe(self, topic: str, callback: Callable) -> None: ...
+
+    @abstractmethod
+    def list_topics(self) -> List[str]: ...
 
 
 # 工厂方法：统一创建基础设施服务（避免循环依赖）
