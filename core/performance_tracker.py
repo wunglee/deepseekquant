@@ -28,13 +28,13 @@ class PerformanceTracker:
         self.history: List[Dict[str, Any]] = []
         self.lock = threading.RLock()
 
-    def record_success(self, processing_time: float):
+    def record_success(self, processing_time: float, operation_type: str = "process", metadata: Optional[Dict[str, Any]] = None):
         """记录成功操作（统一入口）"""
-        self.record_operation("process", True, processing_time)
+        self.record_operation(operation_type, True, processing_time, metadata)
 
-    def record_failure(self, processing_time: float):
+    def record_failure(self, processing_time: float, operation_type: str = "process", metadata: Optional[Dict[str, Any]] = None):
         """记录失败操作（统一入口）"""
-        self.record_operation("process", False, processing_time)
+        self.record_operation(operation_type, False, processing_time, metadata)
 
     def record_operation(self, operation_type: str, success: bool,
                          processing_time: float, metadata: Optional[Dict[str, Any]] = None):

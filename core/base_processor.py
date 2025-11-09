@@ -621,7 +621,7 @@ class BaseProcessor(ABC):
                 # 处理失败但未抛出异常的情况
                 error_msg = result.get('message', '处理返回错误状态')
                 self.circuit_breaker.record_failure()
-                self.performance_tracker.record_failure(processing_time)
+                self.performance_tracker.record_failure(processing_time, "process", {"task_id": task_id})
                 # 增强错误记录
                 self.error_handler.record_error(Exception(error_msg), "process_error_status", extra_context={
                     'task_id': task_id,
@@ -633,7 +633,7 @@ class BaseProcessor(ABC):
             else:
                 # 更新成功状态
                 self.circuit_breaker.record_success()
-                self.performance_tracker.record_success(processing_time)
+                self.performance_tracker.record_success(processing_time, "process", {"task_id": task_id})
                 self.task_manager.record_task_success(task_id, result, processing_time)
 
             return result
@@ -642,7 +642,7 @@ class BaseProcessor(ABC):
             # 错误处理 - 增强版本带完整上下文
             processing_time = time.time() - start_time
             self.circuit_breaker.record_failure()
-            self.performance_tracker.record_failure(processing_time)
+            self.performance_tracker.record_failure(processing_time, "process", {"task_id": task_id})
             # 记录错误带完整上下文
             self.error_handler.record_error(e, "process", extra_context={
                 'task_id': task_id,
