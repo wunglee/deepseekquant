@@ -91,7 +91,7 @@ class ResourceMonitor:
 
             self.usage.timestamp = datetime.now().isoformat()
 
-    def get_usage(self) -> dict:
+    def get_usage(self) -> Dict[str, Any]:
         """获取资源使用情况"""
         with self.lock:
             return {

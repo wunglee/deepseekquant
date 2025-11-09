@@ -37,7 +37,7 @@ class PerformanceTracker:
         self.record_operation(operation_type, False, processing_time, metadata)
 
     def record_operation(self, operation_type: str, success: bool,
-                         processing_time: float, metadata: Optional[Dict[str, Any]] = None):
+                         processing_time: float, metadata: Optional[Dict[str, Any]] = None) -> None:
         """统一的操作记录方法"""
         if not self.config.enable_tracking:
             return
