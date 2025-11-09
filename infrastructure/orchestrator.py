@@ -9,8 +9,10 @@ from .interfaces import IOrchestrator
 
 # 统一导入日志和配置系统
 try:
-    from .logging_service import get_logger
-except ImportError:
+    from .interfaces import InfrastructureProvider
+    _logging_system = InfrastructureProvider.get('logging')
+    get_logger = _logging_system.get_logger
+except Exception:
     import logging
     get_logger = lambda name: logging.getLogger(name)
 

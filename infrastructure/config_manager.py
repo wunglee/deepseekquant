@@ -35,11 +35,31 @@ from common import (
     serialize_dict, deserialize_dict, validate_enum_value
 )
 
-# 从logging_system导入日志功能
-from infrastructure.logging_service import (
-    get_logger, get_audit_logger, get_performance_logger, get_error_logger,
-    log_audit, log_performance, log_error, LogConfig, LogLevel
-)
+# 日志系统通过 Provider 获取
+from .interfaces import InfrastructureProvider
+_logging_system = InfrastructureProvider.get('logging')
+get_logger = _logging_system.get_logger
+
+def log_audit(action: str, user: str, resource: str, status: str, details: Dict[str, Any]) -> None:
+    _logging_system.get_logger('DeepSeekQuant.Audit').info(
+        f"审计: {action}", extra={
+            'user': user,
+            'resource': resource,
+            'status': status,
+            **(details or {})
+        }
+    )
+
+def log_performance(operation: str, duration: float, success: bool, details: Dict[str, Any]) -> None:
+    _logging_system.get_logger('DeepSeekQuant.Performance').info(
+        f"性能: {operation} - {duration:.3f}s - {'成功' if success else '失败'}",
+        extra={'operation': operation, 'duration': duration, 'success': success, **(details or {})}
+    )
+
+def log_error(event: str, message: str, details: Dict[str, Any]) -> None:
+    _logging_system.get_logger('DeepSeekQuant.Error').error(
+        f"错误: {event} - {message}", extra={'event': event, **(details or {})}
+    )
 
 # 使用统一的日志记录器
 logger = get_logger('DeepSeekQuant.ConfigManager')

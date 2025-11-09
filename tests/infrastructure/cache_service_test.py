@@ -1,9 +1,9 @@
 import unittest
-from infrastructure.cache_service import CacheService
+from infrastructure.interfaces import InfrastructureProvider
 
 class TestCacheService(unittest.TestCase):
     def test_get_set(self):
-        svc = CacheService()
+        svc = InfrastructureProvider.get('cache')
         svc.initialize()
         r_set = svc.process(op='set', key='k', value='v')
         self.assertEqual(r_set['status'], 'success')

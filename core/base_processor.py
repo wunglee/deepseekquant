@@ -51,22 +51,31 @@ except ImportError:
 
 # 导入日志和配置系统
 try:
-    from infrastructure.logging_service import (
-        get_logger, get_audit_logger, get_performance_logger, get_error_logger,
-        log_audit, log_performance, log_error, LogLevel
-    )
-except ImportError:
+    from infrastructure.interfaces import InfrastructureProvider
+    _logging_system = InfrastructureProvider.get('logging')
+    get_logger = _logging_system.get_logger
+    def get_audit_logger():
+        return _logging_system.get_logger('DeepSeekQuant.Audit')
+    def get_performance_logger():
+        return _logging_system.get_logger('DeepSeekQuant.Performance')
+    def get_error_logger():
+        return _logging_system.get_logger('DeepSeekQuant.Error')
+except Exception:
     import logging
     get_logger = lambda name: logging.getLogger(name)
     
-    def get_audit_logger():
+    def _fallback_get_audit_logger():
         return logging.getLogger('DeepSeekQuant.Audit')
     
-    def get_performance_logger():
+    def _fallback_get_performance_logger():
         return logging.getLogger('DeepSeekQuant.Performance')
     
-    def get_error_logger():
+    def _fallback_get_error_logger():
         return logging.getLogger('DeepSeekQuant.Error')
+    
+    get_audit_logger = _fallback_get_audit_logger
+    get_performance_logger = _fallback_get_performance_logger
+    get_error_logger = _fallback_get_error_logger
 
 from infrastructure.interfaces import InfrastructureProvider
 get_global_config_manager = lambda: InfrastructureProvider.get('config')

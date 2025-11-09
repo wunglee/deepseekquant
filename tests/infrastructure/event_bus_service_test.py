@@ -1,9 +1,9 @@
 import unittest
-from infrastructure.event_bus_service import EventBusService
+from infrastructure.interfaces import InfrastructureProvider
 
 class TestEventBusService(unittest.TestCase):
     def test_publish_subscribe(self):
-        svc = EventBusService()
+        svc = InfrastructureProvider.get('event_bus')
         svc.initialize()
         received = []
         svc.subscribe('topic', lambda e: received.append(e))

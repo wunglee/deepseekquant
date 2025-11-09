@@ -1,11 +1,13 @@
 import unittest
-from infrastructure.config_service import ConfigService
-from infrastructure.event_bus_service import EventBusService
-from infrastructure.cache_service import CacheService
+from infrastructure.interfaces import InfrastructureProvider
 
 class TestServicesHealth(unittest.TestCase):
     def test_basic_health(self):
-        services = [ConfigService(), EventBusService(), CacheService()]
+        services = [
+            InfrastructureProvider.get('config'),
+            InfrastructureProvider.get('event_bus'),
+            InfrastructureProvider.get('cache'),
+        ]
         for svc in services:
             self.assertTrue(svc.initialize())
             health = svc.get_health_status()
