@@ -22,7 +22,7 @@ if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
 # 直接导入config_manager模块，避免通过core.__init__.py
-from config_manager import ConfigManager, ConfigValidationError, ConfigEncryptionError, get_global_config_manager, shutdown_global_config_manager
+from infrastructure.config_manager import ConfigManager, ConfigValidationError, ConfigEncryptionError, get_global_config_manager, shutdown_global_config_manager
 
 from common import ConfigFormat, ConfigSource, TradingMode, RiskLevel, DEFAULT_ENCODING
 from infrastructure.logging_service import get_logger

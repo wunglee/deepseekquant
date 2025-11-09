@@ -109,8 +109,8 @@ def create_logging_system() -> Any:
     return LoggingSystem(LogConfig())
 
 def create_config_service() -> Any:
-    from .config_service import ConfigService
-    return ConfigService()
+    from .config_manager import get_global_config_manager
+    return get_global_config_manager()
 
 def create_cache_service() -> Any:
     from .cache_service import CacheService

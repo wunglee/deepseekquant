@@ -1,21 +1,19 @@
 from typing import Any, Optional
-from core.base_processor import BaseProcessor
-from config_manager import ConfigManager
+from .config_manager import ConfigManager
 
-class ConfigService(BaseProcessor):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+class ConfigService:
+    def __init__(self):
         self.cm: Optional[ConfigManager] = None
 
-    def _initialize_core(self) -> bool:
+    def initialize(self) -> bool:
         try:
             self.cm = ConfigManager(config_path=None)
             return True
         except Exception as e:
-            self.error_handler.record_error(e, 'config_service_init')
+            # 纯服务不依赖 BaseProcessor 的 error_handler，直接返回错误状态或抛出异常
             return False
 
-    def _process_core(self, *args, **kwargs) -> Any:
+    def process(self, *args, **kwargs) -> Any:
         action = kwargs.get('action', 'get')
         key = kwargs.get('key', 'system.name')
         value = kwargs.get('value')
@@ -26,5 +24,5 @@ class ConfigService(BaseProcessor):
             return {'status': 'success' if ok else 'error'}
         return {'status': 'error', 'message': 'unsupported action'}
 
-    def _cleanup_core(self):
+    def cleanup(self):
         self.cm = None

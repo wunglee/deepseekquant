@@ -68,7 +68,8 @@ except ImportError:
     def get_error_logger():
         return logging.getLogger('DeepSeekQuant.Error')
 
-from config_manager import ConfigManager, get_global_config_manager
+from infrastructure.interfaces import InfrastructureProvider
+get_global_config_manager = lambda: InfrastructureProvider.get('config')
 
 logger = get_logger('DeepSeekQuant.BaseProcessor')
 

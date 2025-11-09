@@ -15,7 +15,9 @@ except ImportError:
     get_logger = lambda name: logging.getLogger(name)
 
 try:
-    from config_manager import get_global_config_manager
+    from .interfaces import InfrastructureProvider
+    def get_global_config_manager():
+        return InfrastructureProvider.get('config')
 except ImportError:
     # 标准路径不可用时抛出异常
     raise
