@@ -11,7 +11,7 @@ import sys
 # sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from infrastructure.resource_monitor import ResourceMonitor, ResourceMonitorConfig
-from core.managers.resource_manager import ResourceManager
+from infrastructure.resource_manager import ResourceManager
 from test_common import DeepSeekQuantTestBase
 
 

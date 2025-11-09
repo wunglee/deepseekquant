@@ -10,7 +10,7 @@ import sys
 # 修复导入路径
 # sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from core.managers.task_manager import TaskManager, TaskManagerConfig
+from infrastructure.task_manager import TaskManager, TaskManagerConfig
 
 
 class TestTaskManager(unittest.TestCase):

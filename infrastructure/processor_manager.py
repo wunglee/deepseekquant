@@ -9,7 +9,7 @@ from .interfaces import IProcessorManager
 
 # 统一导入日志和配置系统
 try:
-    from infrastructure.logging_service import get_logger
+    from .logging_service import get_logger
 except ImportError:
     import logging
     get_logger = lambda name: logging.getLogger(name)
@@ -17,13 +17,8 @@ except ImportError:
 try:
     from core.config_manager import get_global_config_manager
 except ImportError:
-    try:
-        from config_manager import get_global_config_manager
-    except ImportError:
-        class _DummyConfigManager:
-            def get_config(self, *args, **kwargs):
-                return {}
-        get_global_config_manager = lambda: _DummyConfigManager()
+    # 标准路径不可用时抛出异常
+    raise
 
 
 class ProcessorManager(IProcessorManager):

@@ -44,7 +44,7 @@ try:
     from infrastructure.resource_monitor import ResourceMonitor, ResourceMonitorConfig, ResourceUsage
     from infrastructure.performance_tracker import PerformanceTracker, PerformanceConfig
     from error_handler import ErrorHandler, ErrorHandlerConfig, ErrorRecord
-    from core.managers.task_manager import TaskManager, TaskManagerConfig, TaskInfo
+    from infrastructure.task_manager import TaskManager, TaskManagerConfig, TaskInfo
 except ImportError:
     # 备用导入已移除，infrastructure 和根目录为标准路径
     raise
@@ -142,14 +142,14 @@ class ProcessorConfig:
         return cls(**filtered_data)
 
 try:
-    from core.managers.resource_manager import ResourceManager
+    from infrastructure.resource_manager import ResourceManager
 except ImportError:
-    from ..managers.resource_manager import ResourceManager
+    raise
 
 try:
-    from core.managers.processor_manager import ProcessorManager, get_global_processor_manager
+    from infrastructure.processor_manager import ProcessorManager, get_global_processor_manager
 except ImportError:
-    from ..managers.processor_manager import ProcessorManager, get_global_processor_manager
+    raise
 
 
 class BaseProcessor(ABC):

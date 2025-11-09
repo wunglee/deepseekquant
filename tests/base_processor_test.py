@@ -30,7 +30,7 @@ from infrastructure.circuit_breaker import CircuitBreaker, CircuitBreakerConfig,
 from infrastructure.resource_monitor import ResourceMonitor, ResourceMonitorConfig, ResourceUsage
 from infrastructure.performance_tracker import PerformanceTracker, PerformanceConfig
 from error_handler import ErrorHandler, ErrorHandlerConfig, ErrorRecord
-from core.managers.task_manager import TaskManager, TaskManagerConfig, TaskInfo
+from infrastructure.task_manager import TaskManager, TaskManagerConfig, TaskInfo
 
 class TestProcessor(BaseProcessor):
     """测试用处理器实现"""
