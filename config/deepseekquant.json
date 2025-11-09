@@ -1,0 +1,54 @@
+{
+  "system": {
+    "name": "DeepSeekQuant",
+    "version": "1.0.0",
+    "environment": "development",
+    "log_level": "INFO",
+    "max_memory_mb": 2048,
+    "max_threads": 20,
+    "auto_recovery": true,
+    "trading_mode": "paper_trading",
+    "snapshots_dir": "config/snapshots",
+    "max_change_history": 1000,
+    "performance_monitoring": true,
+    "alerting_enabled": true
+  },
+  "data_sources": {
+    "primary": "yahoo_finance",
+    "fallback_sources": [
+      "alpha_vantage",
+      "iex_cloud",
+      "polygon"
+    ],
+    "cache_enabled": true,
+    "cache_size_mb": 500,
+    "request_timeout": 30,
+    "retry_attempts": 3
+  },
+  "logging": {
+    "level": "INFO",
+    "file_path": "logs/deepseekquant.log",
+    "max_file_size_mb": 100,
+    "backup_count": 10,
+    "console_output": true,
+    "json_format": false
+  },
+  "trading": {
+    "initial_capital": 1000000.0,
+    "max_position_size": 0.1,
+    "max_leverage": 2.0,
+    "commission_rate": 0.001,
+    "slippage_rate": 0.0005,
+    "risk_free_rate": 0.02,
+    "min_trade_size": 1000,
+    "max_drawdown_limit": 0.2,
+    "stop_loss_enabled": true,
+    "take_profit_enabled": true
+  },
+  "risk_management": {
+    "max_daily_loss": 0.05,
+    "max_position_risk": 0.02,
+    "var_confidence_level": 0.95,
+    "risk_level": "moderate"
+  }
+}
