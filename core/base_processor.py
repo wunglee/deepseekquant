@@ -256,17 +256,39 @@ class BaseProcessor(ABC):
             self.task_manager = TaskManager(TaskManagerConfig(), self.processor_name)
 
     def _setup_logging(self):
-        """日志系统设置"""
+        """统一的日志系统设置 - 增强版本带上下文支持"""
         try:
+            # 主日志记录器
             self.logger = get_logger(f'DeepSeekQuant.{self.processor_name}')
+            
+            # 专用日志记录器
             self.audit_logger = get_audit_logger()
             self.performance_logger = get_performance_logger()
             self.error_logger = get_error_logger()
+            
+            # 日志上下文 - 统一的日志元数据
+            self._log_context = {
+                'processor_name': self.processor_name,
+                'processor_type': self.__class__.__name__,
+                'startup_time': self.startup_time
+            }
+            
+            self.logger.info(f"{self.processor_name} 日志系统初始化完成", extra=self._log_context)
+            
         except Exception as e:
             # 备选日志设置
             import logging
-            self.logger = self.audit_logger = self.performance_logger = self.error_logger = \
-                logging.getLogger(f'DeepSeekQuant.{self.processor_name}')
+            base_logger = logging.getLogger(f'DeepSeekQuant.{self.processor_name}')
+            self.logger = self.audit_logger = self.performance_logger = self.error_logger = base_logger
+            
+            # 备选日志上下文
+            self._log_context = {
+                'processor_name': self.processor_name,
+                'processor_type': self.__class__.__name__,
+                'startup_time': self.startup_time
+            }
+            
+            self.logger.warning(f"使用备选日志系统: {e}")
 
     def _register_processor(self):
         """注册处理器到全局注册表"""
@@ -313,12 +335,82 @@ class BaseProcessor(ABC):
             # 返回默认配置
             return ProcessorConfig(module_name=self.processor_name)
 
-    def _log_error(self, message: str):
-        """错误日志记录"""
+    def _log_error(self, message: str, extra_context: Optional[Dict[str, Any]] = None):
+        """统一的错误日志记录 - 带上下文支持"""
         try:
-            self.logger.error(message)
+            # 合并日志上下文
+            log_data = {**self._log_context}
+            if extra_context:
+                log_data.update(extra_context)
+            
+            self.logger.error(message, extra=log_data)
+            self.error_logger.error(message, extra=log_data)
         except:
             print(f"错误: {message}")
+    
+    def _log_info(self, message: str, extra_context: Optional[Dict[str, Any]] = None):
+        """统一的信息日志记录 - 带上下文支持"""
+        try:
+            log_data = {**self._log_context}
+            if extra_context:
+                log_data.update(extra_context)
+            self.logger.info(message, extra=log_data)
+        except:
+            print(f"信息: {message}")
+    
+    def _log_warning(self, message: str, extra_context: Optional[Dict[str, Any]] = None):
+        """统一的警告日志记录 - 带上下文支持"""
+        try:
+            log_data = {**self._log_context}
+            if extra_context:
+                log_data.update(extra_context)
+            self.logger.warning(message, extra=log_data)
+        except:
+            print(f"警告: {message}")
+    
+    def _log_debug(self, message: str, extra_context: Optional[Dict[str, Any]] = None):
+        """统一的调试日志记录 - 带上下文支持"""
+        try:
+            log_data = {**self._log_context}
+            if extra_context:
+                log_data.update(extra_context)
+            self.logger.debug(message, extra=log_data)
+        except:
+            pass  # 调试日志失败时不输出
+    
+    def _log_audit(self, action: str, details: Optional[Dict[str, Any]] = None):
+        """统一的审计日志记录"""
+        try:
+            audit_data = {
+                **self._log_context,
+                'action': action,
+                'timestamp': datetime.now().isoformat()
+            }
+            if details:
+                audit_data.update(details)
+            self.audit_logger.info(f"审计: {action}", extra=audit_data)
+        except:
+            pass
+    
+    def _log_performance(self, operation: str, duration: float, success: bool, 
+                        details: Optional[Dict[str, Any]] = None):
+        """统一的性能日志记录"""
+        try:
+            perf_data = {
+                **self._log_context,
+                'operation': operation,
+                'duration': duration,
+                'success': success,
+                'timestamp': datetime.now().isoformat()
+            }
+            if details:
+                perf_data.update(details)
+            self.performance_logger.info(
+                f"性能: {operation} - {duration:.3f}s - {'成功' if success else '失败'}",
+                extra=perf_data
+            )
+        except:
+            pass
 
     def initialize(self) -> bool:
         """
