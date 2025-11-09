@@ -53,3 +53,56 @@ class IProcessorManager(ABC):
 
     @abstractmethod
     def get_health_report(self) -> Dict[str, Any]: ...
+
+
+# 基础设施服务接口定义
+class ILoggingService(ABC):
+    @abstractmethod
+    def get_logger(self, name: str): ...
+
+class IConfigService(ABC):
+    @abstractmethod
+    def process(self, *args, **kwargs) -> Any: ...
+
+class ICacheService(ABC):
+    @abstractmethod
+    def process(self, *args, **kwargs) -> Any: ...
+
+class IEventBusService(ABC):
+    @abstractmethod
+    def publish(self, topic: str, event: Any) -> None: ...
+
+    @abstractmethod
+    def subscribe(self, topic: str, callback: Callable) -> None: ...
+
+
+# 工厂方法：统一创建基础设施服务（避免循环依赖）
+def create_logging_system() -> Any:
+    from .logging_service import LoggingSystem, LogConfig
+    return LoggingSystem(LogConfig())
+
+def create_config_service() -> Any:
+    from .config_service import ConfigService
+    return ConfigService()
+
+def create_cache_service() -> Any:
+    from .cache_service import CacheService
+    return CacheService()
+
+def create_event_bus_service() -> Any:
+    from .event_bus_service import EventBusService
+    return EventBusService()
+
+def create_task_manager(processor_name: str = 'DefaultProcessor') -> Any:
+    from .task_manager import TaskManager, TaskManagerConfig
+    return TaskManager(TaskManagerConfig(), processor_name)
+
+def create_resource_manager(processor_name: str = 'DefaultProcessor') -> Any:
+    from .resource_manager import ResourceManager, ResourceMonitor, ResourceMonitorConfig
+    monitor = ResourceMonitor(ResourceMonitorConfig(), processor_name)
+    return ResourceManager(processor_name, monitor)
+
+def create_processor_manager() -> Any:
+    from .processor_manager import ProcessorManager
+    return ProcessorManager()
+

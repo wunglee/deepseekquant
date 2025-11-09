@@ -1,5 +1,5 @@
 from typing import Any
-from core.processors.base_processor import BaseProcessor
+from core.base_processor import BaseProcessor
 
 class ExecProcessor(BaseProcessor):
     def _initialize_core(self) -> bool:

@@ -13,12 +13,9 @@ from .logging_service import (
     LogEntry,
     LoggingSystem
 )
-from .config_service import ConfigService
-from .cache_service import CacheService
-from .event_bus_service import EventBusService
 from .circuit_breaker import CircuitBreaker, CircuitBreakerConfig, CircuitBreakerState
 from .performance_tracker import PerformanceTracker, PerformanceConfig
-from .resource_monitor import ResourceMonitor, ResourceMonitorConfig, ResourceUsage
+from .resource_manager import ResourceMonitor, ResourceMonitorConfig, ResourceUsage
 from .task_manager import TaskManager, TaskManagerConfig, TaskInfo, ITaskManager
 from .resource_manager import ResourceManager, IResourceManager
 from .processor_manager import ProcessorManager, IProcessorManager, get_global_processor_manager
@@ -34,9 +31,9 @@ __all__ = [
     'LogEntry',
     'LoggingSystem',
     # 基础服务
-    'ConfigService',
-    'CacheService',
-    'EventBusService',
+    # 'ConfigService',
+    # 'CacheService',
+    # 'EventBusService',
     # 监控和控制
     'CircuitBreaker',
     'CircuitBreakerConfig',

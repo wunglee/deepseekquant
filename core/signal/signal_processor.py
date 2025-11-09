@@ -1,5 +1,5 @@
 from typing import Any, Dict
-from core.processors.base_processor import BaseProcessor
+from core.base_processor import BaseProcessor
 
 class SignalProcessor(BaseProcessor):
     def _initialize_core(self) -> bool:

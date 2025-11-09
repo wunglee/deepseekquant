@@ -1,5 +1,5 @@
 from typing import Any, Dict, Callable
-from core.processors.base_processor import BaseProcessor
+from core.base_processor import BaseProcessor
 
 class EventBusService(BaseProcessor):
     def __init__(self, *args, **kwargs):

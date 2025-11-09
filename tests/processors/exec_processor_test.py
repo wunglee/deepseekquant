@@ -1,5 +1,5 @@
 import unittest
-from core.processors.exec.exec_processor import ExecProcessor
+from core.exec.exec_processor import ExecProcessor
 
 class TestExecProcessor(unittest.TestCase):
     def test_basic_exec(self):

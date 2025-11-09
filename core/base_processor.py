@@ -41,7 +41,7 @@ except ImportError:
 # 导入核心组件 - 使用统一的导入方式
 try:
     from infrastructure.circuit_breaker import CircuitBreaker, CircuitBreakerConfig
-    from infrastructure.resource_monitor import ResourceMonitor, ResourceMonitorConfig, ResourceUsage
+    from infrastructure.resource_manager import ResourceMonitor, ResourceMonitorConfig, ResourceUsage
     from infrastructure.performance_tracker import PerformanceTracker, PerformanceConfig
     from error_handler import ErrorHandler, ErrorHandlerConfig, ErrorRecord
     from infrastructure.task_manager import TaskManager, TaskManagerConfig, TaskInfo
@@ -68,16 +68,7 @@ except ImportError:
     def get_error_logger():
         return logging.getLogger('DeepSeekQuant.Error')
 
-try:
-    from core.config_manager import ConfigManager, get_global_config_manager
-except ImportError:
-    try:
-        from ..config_manager import ConfigManager, get_global_config_manager
-    except ImportError:
-        class _FallbackConfigManager:
-            def __init__(self, *args, **kwargs): pass
-            def get_config(self, key, default=None): return default or {}
-        get_global_config_manager = lambda: _FallbackConfigManager()
+from core.config_manager import ConfigManager, get_global_config_manager
 
 logger = get_logger('DeepSeekQuant.BaseProcessor')
 

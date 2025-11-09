@@ -1,9 +1,6 @@
 from typing import Any, Optional
-from core.processors.base_processor import BaseProcessor
-try:
-    from core.config_manager import ConfigManager
-except ImportError:
-    from ..config_manager import ConfigManager
+from core.base_processor import BaseProcessor
+from core.config_manager import ConfigManager
 
 class ConfigService(BaseProcessor):
     def __init__(self, *args, **kwargs):

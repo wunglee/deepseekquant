@@ -1,5 +1,5 @@
 import unittest
-from core.processors.risk.risk_processor import RiskProcessor
+from core.risk.risk_processor import RiskProcessor
 
 class TestRiskProcessor(unittest.TestCase):
     def test_basic_risk(self):

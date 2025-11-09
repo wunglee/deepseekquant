@@ -10,8 +10,7 @@ import sys
 # 修复导入路径
 # sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from infrastructure.resource_monitor import ResourceMonitor, ResourceMonitorConfig
-from infrastructure.resource_manager import ResourceManager
+from infrastructure.resource_manager import ResourceManager, ResourceMonitor, ResourceMonitorConfig
 from test_common import DeepSeekQuantTestBase
 
 
@@ -54,6 +53,28 @@ class TestResourceManager(DeepSeekQuantTestBase):
         ok_fail = self.manager.allocate_resource("cpu", "cpu2", 10)
         self.assertFalse(ok_fail)
 
+
+# 追加 ResourceMonitor 的测试用例
+
+class TestResourceMonitor(DeepSeekQuantTestBase):
+    def setUp(self):
+        self.config = ResourceMonitorConfig()
+        self.monitor = ResourceMonitor(self.config, "TestProcessor")
+
+    def test_01_start_stop(self):
+        self.monitor.start()
+        self.assertTrue(self.monitor.running)
+        self.monitor.stop()
+        self.assertFalse(self.monitor.running)
+
+    def test_02_update_usage_without_psutil(self):
+        self.monitor.has_psutil = False
+        self.monitor.process = None
+        self.monitor._update_usage()
+        usage = self.monitor.get_usage()
+        self.assertEqual(usage['memory_mb'], 100.0)
+        self.assertEqual(usage['cpu_percent'], 25.0)
+        self.assertGreaterEqual(usage['thread_count'], 1)
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

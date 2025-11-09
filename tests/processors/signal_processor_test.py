@@ -1,5 +1,5 @@
 import unittest
-from core.processors.signal.signal_processor import SignalProcessor
+from core.signal.signal_processor import SignalProcessor
 
 class TestSignalProcessor(unittest.TestCase):
     def test_basic_signal(self):

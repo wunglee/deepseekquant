@@ -21,13 +21,13 @@ from typing import Any
 # sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 # 导入被测试的模块
-from core.processors.base_processor import (
+from core.base_processor import (
     BaseProcessor, ProcessorConfig, ProcessorState, HealthStatus
 )
 
 # 导入组件
 from infrastructure.circuit_breaker import CircuitBreaker, CircuitBreakerConfig, CircuitBreakerState
-from infrastructure.resource_monitor import ResourceMonitor, ResourceMonitorConfig, ResourceUsage
+from infrastructure.resource_manager import ResourceMonitor, ResourceMonitorConfig, ResourceUsage
 from infrastructure.performance_tracker import PerformanceTracker, PerformanceConfig
 from error_handler import ErrorHandler, ErrorHandlerConfig, ErrorRecord
 from infrastructure.task_manager import TaskManager, TaskManagerConfig, TaskInfo
