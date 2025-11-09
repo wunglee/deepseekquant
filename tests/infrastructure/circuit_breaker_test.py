@@ -13,7 +13,7 @@ from unittest.mock import patch
 # sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from infrastructure.circuit_breaker import CircuitBreaker, CircuitBreakerConfig
-from test_common import DeepSeekQuantTestBase
+from common_test_base import DeepSeekQuantTestBase
 
 
 class TestCircuitBreaker(DeepSeekQuantTestBase):

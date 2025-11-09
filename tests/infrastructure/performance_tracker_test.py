@@ -12,7 +12,7 @@ import sys
 # sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from infrastructure.performance_tracker import PerformanceTracker, PerformanceConfig
-from test_common import DeepSeekQuantTestBase
+from common_test_base import DeepSeekQuantTestBase
 
 
 class TestPerformanceTracker(DeepSeekQuantTestBase):
