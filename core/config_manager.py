@@ -759,14 +759,61 @@ class ConfigManager:
         except Exception as e:
             logger.error(f"观察者通知系统错误: {e}")
 
+    def _validate_config_value(self, key: str, value: Any) -> bool:
+        """
+        验证配置值的有效性
+        
+        Args:
+            key: 配置键
+            value: 配置值
+            
+        Returns:
+            bool: 是否有效
+        """
+        # 基础类型验证
+        if key in ['max_threads', 'processing_timeout', 'retry_attempts']:
+            if not isinstance(value, int) or value <= 0:
+                logger.warning(f"配置值无效 {key}: {value}, 应该为正整数")
+                return False
+        
+        # 布尔类型验证
+        if key in ['enabled', 'performance_monitoring', 'auto_recovery']:
+            if not isinstance(value, bool):
+                logger.warning(f"配置值无效 {key}: {value}, 应该为布尔值")
+                return False
+        
+        # 数值范围验证
+        if key == 'max_position_size':
+            if not isinstance(value, (int, float)) or not 0 <= value <= 1:
+                logger.warning(f"配置值无效 {key}: {value}, 应该在 0-1 之间")
+                return False
+        
+        if key == 'initial_capital':
+            if not isinstance(value, (int, float)) or value <= 0:
+                logger.warning(f"配置值无效 {key}: {value}, 应该大于 0")
+                return False
+        
+        # 枚举类型验证
+        if key == 'trading_mode':
+            if not validate_enum_value(TradingMode, value):
+                logger.warning(f"配置值无效 {key}: {value}, 不是有效的交易模式")
+                return False
+        
+        if key == 'risk_level':
+            if not validate_enum_value(RiskLevel, value):
+                logger.warning(f"配置值无效 {key}: {value}, 不是有效的风险等级")
+                return False
+        
+        return True
+
     def merge_config(self, other_config: Dict[str, Any], reason: str = "") -> bool:
-        """合并另一个配置到当前配置"""
+        """合并另一个配置到当前配置 - 增强版本带配置验证"""
         with self._lock:
             try:
                 old_config = copy.deepcopy(self.config)
 
-                # 改进的深度合并配置，支持列表合并
-                def deep_merge(base: Dict[str, Any], update: Dict[str, Any]) -> Dict[str, Any]:
+                # 改进的深度合并配置，支持列表合并和配置验证
+                def deep_merge_with_validation(base: Dict[str, Any], update: Dict[str, Any]) -> Dict[str, Any]:
                     for key, value in update.items():
                         if key in base:
                             # 处理列表合并：去重后追加
@@ -774,15 +821,22 @@ class ConfigManager:
                                 base[key] = base[key] + [x for x in value if x not in base[key]]
                             # 处理字典递归合并
                             elif isinstance(base[key], dict) and isinstance(value, dict):
-                                base[key] = deep_merge(base[key], value)
-                            # 其他类型直接覆盖
+                                base[key] = deep_merge_with_validation(base[key], value)
+                            # 其他类型：验证后覆盖
                             else:
-                                base[key] = value
+                                if self._validate_config_value(key, value):
+                                    base[key] = value
+                                else:
+                                    logger.warning(f"跳过无效配置值: {key} = {value}")
                         else:
-                            base[key] = value
+                            # 新键：验证后添加
+                            if self._validate_config_value(key, value):
+                                base[key] = value
+                            else:
+                                logger.warning(f"跳过无效配置值: {key} = {value}")
                     return base
 
-                self.config = deep_merge(self.config, other_config)
+                self.config = deep_merge_with_validation(self.config, other_config)
 
                 # 验证合并后的配置
                 if self.validate_on_load:

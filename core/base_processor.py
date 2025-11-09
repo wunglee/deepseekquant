@@ -14,22 +14,44 @@ from enum import Enum
 import traceback
 import copy
 
-# 导入公共模块
-from common import (
-    ProcessorState, PerformanceMetrics, TradingMode, RiskLevel,
-    SignalType, SignalSource, SignalStatus, DataSourceType,
-    DEFAULT_LOG_LEVEL, DEFAULT_COMMISSION_RATE, DEFAULT_SLIPPAGE_RATE,
-    DEFAULT_INITIAL_CAPITAL, DEFAULT_MAX_POSITION_SIZE,
-    ERROR_CONFIG_LOAD, ERROR_CONFIG_VALIDATION, SUCCESS_CONFIG_LOAD,
-    DeepSeekQuantEncoder, validate_enum_value, serialize_dict
-)
+# 导入公共模块 - 使用统一的导入方式
+try:
+    from common import (
+        ProcessorState, PerformanceMetrics, TradingMode, RiskLevel,
+        SignalType, SignalSource, SignalStatus, DataSourceType,
+        DEFAULT_LOG_LEVEL, DEFAULT_COMMISSION_RATE, DEFAULT_SLIPPAGE_RATE,
+        DEFAULT_INITIAL_CAPITAL, DEFAULT_MAX_POSITION_SIZE,
+        ERROR_CONFIG_LOAD, ERROR_CONFIG_VALIDATION, SUCCESS_CONFIG_LOAD,
+        DeepSeekQuantEncoder, validate_enum_value, serialize_dict
+    )
+except ImportError:
+    # 如果直接导入失败，尝试从父目录导入
+    import sys
+    import os
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from common import (
+        ProcessorState, PerformanceMetrics, TradingMode, RiskLevel,
+        SignalType, SignalSource, SignalStatus, DataSourceType,
+        DEFAULT_LOG_LEVEL, DEFAULT_COMMISSION_RATE, DEFAULT_SLIPPAGE_RATE,
+        DEFAULT_INITIAL_CAPITAL, DEFAULT_MAX_POSITION_SIZE,
+        ERROR_CONFIG_LOAD, ERROR_CONFIG_VALIDATION, SUCCESS_CONFIG_LOAD,
+        DeepSeekQuantEncoder, validate_enum_value, serialize_dict
+    )
 
-# 导入核心组件
-from circuit_breaker import CircuitBreaker, CircuitBreakerConfig
-from resource_monitor import ResourceMonitor, ResourceMonitorConfig, ResourceUsage
-from performance_tracker import PerformanceTracker, PerformanceConfig
-from error_handler import ErrorHandler, ErrorHandlerConfig, ErrorRecord
-from task_manager import TaskManager, TaskManagerConfig, TaskInfo
+# 导入核心组件 - 使用统一的导入方式
+try:
+    from core.circuit_breaker import CircuitBreaker, CircuitBreakerConfig
+    from core.resource_monitor import ResourceMonitor, ResourceMonitorConfig, ResourceUsage
+    from core.performance_tracker import PerformanceTracker, PerformanceConfig
+    from core.error_handler import ErrorHandler, ErrorHandlerConfig, ErrorRecord
+    from core.task_manager import TaskManager, TaskManagerConfig, TaskInfo
+except ImportError:
+    # 如果使用core.前缀失败，尝试直接导入
+    from circuit_breaker import CircuitBreaker, CircuitBreakerConfig
+    from resource_monitor import ResourceMonitor, ResourceMonitorConfig, ResourceUsage
+    from performance_tracker import PerformanceTracker, PerformanceConfig
+    from error_handler import ErrorHandler, ErrorHandlerConfig, ErrorRecord
+    from task_manager import TaskManager, TaskManagerConfig, TaskInfo
 
 # 导入日志和配置系统
 try:
@@ -44,12 +66,16 @@ except ImportError:
     get_audit_logger = get_performance_logger = get_error_logger = get_logger
 
 try:
-    from config_manager import ConfigManager, get_global_config_manager
+    from core.config_manager import ConfigManager, get_global_config_manager
 except ImportError:
-    class ConfigManager:
-        def __init__(self, *args, **kwargs): pass
-        def get_config(self, key, default=None): return default or {}
-    get_global_config_manager = lambda: ConfigManager()
+    try:
+        from config_manager import ConfigManager, get_global_config_manager
+    except ImportError:
+        # 备选实现
+        class ConfigManager:
+            def __init__(self, *args, **kwargs): pass
+            def get_config(self, key, default=None): return default or {}
+        get_global_config_manager = lambda: ConfigManager()
 
 logger = get_logger('DeepSeekQuant.BaseProcessor')
 
