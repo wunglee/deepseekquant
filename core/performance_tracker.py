@@ -5,7 +5,7 @@
 import time
 from datetime import datetime
 from dataclasses import dataclass, field
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 import threading
 
 from common import PerformanceMetrics
@@ -29,30 +29,31 @@ class PerformanceTracker:
         self.lock = threading.RLock()
 
     def record_success(self, processing_time: float):
-        """记录成功操作"""
-        if not self.config.enable_tracking:
-            return
-
-        with self.lock:
-            self.metrics.update(True, processing_time)
-            self._add_to_history(True, processing_time)
+        """记录成功操作（统一入口）"""
+        self.record_operation("process", True, processing_time)
 
     def record_failure(self, processing_time: float):
-        """记录失败操作"""
+        """记录失败操作（统一入口）"""
+        self.record_operation("process", False, processing_time)
+
+    def record_operation(self, operation_type: str, success: bool,
+                         processing_time: float, metadata: Optional[Dict[str, Any]] = None):
+        """统一的操作记录方法"""
         if not self.config.enable_tracking:
             return
-
         with self.lock:
-            self.metrics.update(False, processing_time)
-            self._add_to_history(False, processing_time)
+            self.metrics.update(success, processing_time)
+            self._add_to_history(operation_type, success, processing_time, metadata or {})
 
-    def _add_to_history(self, success: bool, processing_time: float):
-        """添加到历史记录"""
+    def _add_to_history(self, operation_type: str, success: bool, processing_time: float, metadata: Dict[str, Any]):
+        """添加到历史记录（增强版）"""
         record = {
             'timestamp': datetime.now().isoformat(),
+            'operation_type': operation_type,
             'success': success,
             'processing_time': processing_time,
-            'total_operations': self.metrics.total_operations
+            'total_operations': self.metrics.total_operations,
+            'metadata': metadata
         }
 
         self.history.append(record)
