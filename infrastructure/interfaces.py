@@ -44,7 +44,7 @@ class IResourceManager(ABC):
     def release_resource(self, resource_id: str) -> None: ...
 
 
-class IProcessorManager(ABC):
+class IOrchestrator(ABC):
     @abstractmethod
     def register_processor(self, processor: Any) -> bool: ...
 
@@ -102,7 +102,32 @@ def create_resource_manager(processor_name: str = 'DefaultProcessor') -> Any:
     monitor = ResourceMonitor(ResourceMonitorConfig(), processor_name)
     return ResourceManager(processor_name, monitor)
 
-def create_processor_manager() -> Any:
-    from .processor_manager import ProcessorManager
-    return ProcessorManager()
+
+def create_orchestrator() -> Any:
+    from .orchestrator import ProcessorOrchestrator
+    return ProcessorOrchestrator()
+
+# 轻量级 Provider 注册表
+class InfrastructureProvider:
+    _registry: Dict[str, Callable[[], Any]] = {}
+
+    @classmethod
+    def register(cls, name: str, factory: Callable[[], Any]) -> None:
+        cls._registry[name] = factory
+
+    @classmethod
+    def get(cls, name: str) -> Any:
+        factory = cls._registry.get(name)
+        if factory is None:
+            raise KeyError(f"Provider not found: {name}")
+        return factory()
+
+# 预注册常用组件（延迟实例化，避免循环）
+InfrastructureProvider.register('logging', create_logging_system)
+InfrastructureProvider.register('config', create_config_service)
+InfrastructureProvider.register('cache', create_cache_service)
+InfrastructureProvider.register('event_bus', create_event_bus_service)
+InfrastructureProvider.register('task_manager', lambda: create_task_manager())
+InfrastructureProvider.register('resource_manager', lambda: create_resource_manager())
+InfrastructureProvider.register('orchestrator', create_orchestrator)
 

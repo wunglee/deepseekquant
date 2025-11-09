@@ -18,7 +18,7 @@ from .performance_tracker import PerformanceTracker, PerformanceConfig
 from .resource_manager import ResourceMonitor, ResourceMonitorConfig, ResourceUsage
 from .task_manager import TaskManager, TaskManagerConfig, TaskInfo, ITaskManager
 from .resource_manager import ResourceManager, IResourceManager
-from .processor_manager import ProcessorManager, IProcessorManager, get_global_processor_manager
+from .orchestrator import ProcessorOrchestrator, IOrchestrator, get_global_orchestrator
 
 __all__ = [
     # 日志服务
@@ -50,7 +50,7 @@ __all__ = [
     'ITaskManager',
     'ResourceManager',
     'IResourceManager',
-    'ProcessorManager',
-    'IProcessorManager',
-    'get_global_processor_manager',
+    'ProcessorOrchestrator',
+    'IOrchestrator',
+    'get_global_orchestrator',
 ]

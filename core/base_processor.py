@@ -138,7 +138,7 @@ except ImportError:
     raise
 
 try:
-    from infrastructure.processor_manager import ProcessorManager, get_global_processor_manager
+    from infrastructure.orchestrator import ProcessorOrchestrator, get_global_orchestrator
 except ImportError:
     raise
 

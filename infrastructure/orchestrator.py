@@ -5,7 +5,7 @@ DeepSeekQuant 处理器管理器模块 - 独立文件
 from datetime import datetime
 import threading
 from typing import Dict, Any, Optional
-from .interfaces import IProcessorManager
+from .interfaces import IOrchestrator
 
 # 统一导入日志和配置系统
 try:
@@ -21,7 +21,7 @@ except ImportError:
     raise
 
 
-class ProcessorManager(IProcessorManager):
+class ProcessorOrchestrator(IOrchestrator):
     """处理器管理器"""
 
     def __init__(self, config_manager: Optional[Any] = None):
@@ -78,12 +78,12 @@ class ProcessorManager(IProcessorManager):
 
 
 # 全局处理器管理器
-_global_processor_manager: Optional[ProcessorManager] = None
+_global_orchestrator: Optional[ProcessorOrchestrator] = None
 
 
-def get_global_processor_manager() -> ProcessorManager:
+def get_global_orchestrator() -> ProcessorOrchestrator:
     """获取全局处理器管理器"""
-    global _global_processor_manager
-    if _global_processor_manager is None:
-        _global_processor_manager = ProcessorManager()
-    return _global_processor_manager
+    global _global_orchestrator
+    if _global_orchestrator is None:
+        _global_orchestrator = ProcessorOrchestrator()
+    return _global_orchestrator
