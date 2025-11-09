@@ -457,7 +457,12 @@ class BaseProcessor(ABC):
             except Exception as e:
                 self._set_state(ProcessorState.ERROR)
                 self.health_status = HealthStatus.UNHEALTHY
-                self.error_handler.record_error(e, "initialize")
+                # 增强错误记录 - 添加初始化上下文
+                self.error_handler.record_error(e, "initialize", extra_context={
+                    'processor_name': self.processor_name,
+                    'processor_type': self.__class__.__name__,
+                    'state_before': ProcessorState.INITIALIZING.value
+                }, severity="CRITICAL")
                 return False
 
     def _initialize_components(self):
@@ -498,7 +503,11 @@ class BaseProcessor(ABC):
             self._apply_config_changes(old_config, self.processor_config)
 
         except Exception as e:
-            self.error_handler.record_error(e, "config_change")
+            # 增强错误记录 - 添加配置变更上下文
+            self.error_handler.record_error(e, "config_change", extra_context={
+                'key': key,
+                'processor_name': self.processor_name
+            })
 
     def _apply_config_changes(self, old_config: ProcessorConfig, new_config: ProcessorConfig):
         """应用配置变更到各组件"""
@@ -535,14 +544,22 @@ class BaseProcessor(ABC):
         # 检查熔断器
         if not self.circuit_breaker.allow_request():
             error_msg = '处理器处于熔断状态'
-            self.error_handler.record_error(Exception(error_msg), "circuit_breaker")
+            self.error_handler.record_error(Exception(error_msg), "circuit_breaker", extra_context={
+                'task_id': task_id,
+                'circuit_breaker_state': self.circuit_breaker.state.state,
+                'processor_name': self.processor_name
+            }, severity="WARNING")
             return {'error': error_msg, 'circuit_breaker': 'open'}
 
         # 检查状态
         with self.state_lock:
             if self.state != ProcessorState.READY:
                 error_msg = f'处理器未就绪: {self.state.value}'
-                self.error_handler.record_error(Exception(error_msg), "state_check")
+                self.error_handler.record_error(Exception(error_msg), "state_check", extra_context={
+                    'task_id': task_id,
+                    'current_state': self.state.value,
+                    'processor_name': self.processor_name
+                }, severity="WARNING")
                 return {'error': error_msg, 'state': self.state.value}
             self._set_state(ProcessorState.PROCESSING)
 
@@ -560,7 +577,13 @@ class BaseProcessor(ABC):
                 error_msg = result.get('message', '处理返回错误状态')
                 self.circuit_breaker.record_failure()
                 self.performance_tracker.record_failure(processing_time)
-                self.error_handler.record_error(Exception(error_msg), "process_error_status")
+                # 增强错误记录
+                self.error_handler.record_error(Exception(error_msg), "process_error_status", extra_context={
+                    'task_id': task_id,
+                    'processing_time': processing_time,
+                    'result': result,
+                    'processor_name': self.processor_name
+                })
                 self.task_manager.record_task_failure(task_id, error_msg, processing_time)
             else:
                 # 更新成功状态
@@ -571,11 +594,19 @@ class BaseProcessor(ABC):
             return result
 
         except Exception as e:
-            # 错误处理 - 确保错误处理器被调用
+            # 错误处理 - 增强版本带完整上下文
             processing_time = time.time() - start_time
             self.circuit_breaker.record_failure()
             self.performance_tracker.record_failure(processing_time)
-            self.error_handler.record_error(e, "process")  # 这行确保错误被记录
+            # 记录错误带完整上下文
+            self.error_handler.record_error(e, "process", extra_context={
+                'task_id': task_id,
+                'processing_time': processing_time,
+                'args_count': len(args),
+                'kwargs_keys': list(kwargs.keys()),
+                'processor_name': self.processor_name,
+                'state': self.state.value
+            }, severity="ERROR")
             self.task_manager.record_task_failure(task_id, str(e), processing_time)
 
             return {'error': str(e), 'task_id': task_id}
@@ -707,7 +738,11 @@ class BaseProcessor(ABC):
 
         except Exception as e:
             self._set_state(ProcessorState.ERROR)
-            self.error_handler.record_error(e, "cleanup")
+            # 增强错误记录 - 添加清理上下文
+            self.error_handler.record_error(e, "cleanup", extra_context={
+                'processor_name': self.processor_name,
+                'state_before': ProcessorState.SHUTTING_DOWN.value
+            }, severity="ERROR")
 
     @abstractmethod
     def _cleanup_core(self):
