@@ -43,7 +43,7 @@ try:
     from infrastructure.circuit_breaker import CircuitBreaker, CircuitBreakerConfig
     from infrastructure.resource_manager import ResourceMonitor, ResourceMonitorConfig, ResourceUsage
     from infrastructure.performance_tracker import PerformanceTracker, PerformanceConfig
-    from error_handler import ErrorHandler, ErrorHandlerConfig, ErrorRecord
+    from infrastructure.error_handler import ErrorHandler, ErrorHandlerConfig, ErrorRecord
     from infrastructure.task_manager import TaskManager, TaskManagerConfig, TaskInfo
 except ImportError:
     # 备用导入已移除，infrastructure 和根目录为标准路径

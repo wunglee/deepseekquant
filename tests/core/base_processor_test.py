@@ -29,7 +29,7 @@ from core.base_processor import (
 from infrastructure.circuit_breaker import CircuitBreaker, CircuitBreakerConfig, CircuitBreakerState
 from infrastructure.resource_manager import ResourceMonitor, ResourceMonitorConfig, ResourceUsage
 from infrastructure.performance_tracker import PerformanceTracker, PerformanceConfig
-from error_handler import ErrorHandler, ErrorHandlerConfig, ErrorRecord
+from infrastructure.error_handler import ErrorHandler, ErrorHandlerConfig, ErrorRecord
 from infrastructure.task_manager import TaskManager, TaskManagerConfig, TaskInfo
 
 class TestProcessor(BaseProcessor):

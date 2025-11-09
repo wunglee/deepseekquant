@@ -14,7 +14,7 @@ from .logging_service import (
     LoggingSystem
 )
 from .circuit_breaker import CircuitBreaker, CircuitBreakerConfig, CircuitBreakerState
-from .performance_tracker import PerformanceTracker, PerformanceConfig
+from .error_handler import ErrorHandler, ErrorHandlerConfig, ErrorRecord
 from .resource_manager import ResourceMonitor, ResourceMonitorConfig, ResourceUsage
 from .task_manager import TaskManager, TaskManagerConfig, TaskInfo, ITaskManager
 from .resource_manager import ResourceManager, IResourceManager
@@ -38,6 +38,9 @@ __all__ = [
     'CircuitBreaker',
     'CircuitBreakerConfig',
     'CircuitBreakerState',
+    'ErrorHandler',
+    'ErrorHandlerConfig',
+    'ErrorRecord',
     'PerformanceTracker',
     'PerformanceConfig',
     'ResourceMonitor',
