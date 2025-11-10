@@ -52,17 +52,23 @@ class BacktestEngine:
         quantity = signal.get('quantity', 1)
         side = signal.get('side', 'buy')
         
-        cost = price * quantity * (1 + self.config.commission + self.config.slippage)
+        notional = price * quantity
+        commission_cost = notional * self.config.commission
+        slippage_cost = notional * self.config.slippage
+        total_costs = commission_cost + slippage_cost
         if side == 'buy':
-            self.current_capital -= cost
+            self.current_capital -= (notional + total_costs)
         else:
-            self.current_capital += cost * 0.98  # 简化：卖出稍低
+            self.current_capital += (notional - total_costs)
 
         self.trades.append({
             'timestamp': data_point.get('timestamp', ''),
             'side': side,
             'price': price,
             'quantity': quantity,
+            'commission': self.config.commission,
+            'slippage': self.config.slippage,
+            'costs': round(total_costs, 6),
             'capital': self.current_capital
         })
 

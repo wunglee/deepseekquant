@@ -54,6 +54,9 @@ class PortfolioProcessor(BaseProcessor):
         rebalance_instructions: List[Dict[str, Any]] = []
         turnover = 0.0
         total_capital = sum(p['quantity'] * p['price'] for p in positions)
+        commission_rate = float(kwargs.get('commission', 0.0))
+        slippage_rate = float(kwargs.get('slippage', 0.0))
+        estimated_costs = 0.0
         for p in positions:
             symbol = p['symbol']
             target_mv = weights[symbol] * total_capital
@@ -64,7 +67,9 @@ class PortfolioProcessor(BaseProcessor):
             min_trade_qty = float(kwargs.get('min_trade_qty', 0.0))
             if abs(qty_change) < min_trade_qty:
                 qty_change = 0.0
+                delta_mv = 0.0
             turnover += abs(delta_mv)
+            estimated_costs += abs(delta_mv) * (commission_rate + slippage_rate)
             rebalance_instructions.append({
                 'symbol': symbol,
                 'target_weight': weights[symbol],
@@ -73,7 +78,7 @@ class PortfolioProcessor(BaseProcessor):
         turnover_rate = round(turnover / total_capital, 6) if total_capital > 0 else 0.0
 
         self.logger.info(f"组合分配完成: method={method.value}, objective={objective.value}, turnover={turnover_rate}")
-        return {"status": "success", "weights": weights, "objective": objective.value, "rebalance": rebalance_instructions, "turnover_rate": turnover_rate}
+        return {"status": "success", "weights": weights, "objective": objective.value, "rebalance": rebalance_instructions, "turnover_rate": turnover_rate, "estimated_costs": round(estimated_costs, 6)}
 
     def _cleanup_core(self):
         pass

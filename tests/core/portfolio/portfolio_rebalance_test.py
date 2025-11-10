@@ -27,7 +27,8 @@ class TestPortfolioRebalance(unittest.TestCase):
         ]
         current = {'AAPL': 9.999, 'GOOG': 5.001}
         result = p.process(positions=positions, method=AllocationMethod.EQUAL_WEIGHT,
-                           current_positions=current, min_weight=0.4, max_weight=0.6, min_trade_qty=0.1)
+                           current_positions=current, min_weight=0.4, max_weight=0.6, min_trade_qty=0.1,
+                           commission=0.001, slippage=0.0005)
         self.assertEqual(result['status'], 'success')
         self.assertIn('weights', result)
         # 检查权重在边界内
@@ -36,4 +37,5 @@ class TestPortfolioRebalance(unittest.TestCase):
             self.assertLessEqual(w, 0.6)
         # 检查最小交易量规则生效（可能存在为0的quantity_change）
         self.assertIn('rebalance', result)
+        self.assertIn('estimated_costs', result)
         p.cleanup()

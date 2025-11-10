@@ -38,11 +38,13 @@ def run():
         {'symbol': 'AAPL', 'quantity': 10, 'price': 150},
         {'symbol': 'GOOG', 'quantity': 5, 'price': 2800}
     ]
-    port_result = p_port.process(positions=positions)
+    port_result = p_port.process(positions=positions, commission=0.001, slippage=0.0005)
     print(f"组合权重: {port_result.get('weights')}")
     if port_result.get('rebalance'):
         print(f"再平衡指令: {port_result.get('rebalance')}")
-        print(f"换手率: {port_result.get('turnover_rate')}\n")
+        print(f"换手率: {port_result.get('turnover_rate')}")
+        if 'estimated_costs' in port_result:
+            print(f"预计调仓成本: {port_result['estimated_costs']}\n")
 
     # 风险评估：使用目标权重与历史波动率阈值
     weights = port_result.get('weights', {})
