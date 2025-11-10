@@ -56,6 +56,31 @@ class SignalProcessor(BaseProcessor):
                 signal_type = SignalType.SELL
                 reason = "EMA fast < EMA slow"
         
+        # 组合信号评分（可选）
+        weight_rsi = float(params.get('weight_rsi', 0.5))
+        weight_ema = float(params.get('weight_ema', 0.5))
+        composite_buy_thr = float(params.get('composite_buy_thr', 0.5))
+        composite_sell_thr = float(params.get('composite_sell_thr', 0.5))
+        rsi_signal = 0.0
+        if rsi_val is not None:
+            if rsi_val < buy_thr:
+                rsi_signal = (buy_thr - rsi_val) / max(buy_thr, 1e-9)
+            elif rsi_val > sell_thr:
+                rsi_signal = - (rsi_val - sell_thr) / max(sell_thr, 1e-9)
+        ema_signal = 0.0
+        if ema_fast is not None and ema_slow is not None:
+            ema_signal = 1.0 if ema_fast > ema_slow else (-1.0 if ema_fast < ema_slow else 0.0)
+        composite_score = round(weight_rsi * rsi_signal + weight_ema * ema_signal, 6)
+        indicators['composite_score'] = composite_score
+        # 若启用组合阈值则根据score决定信号
+        if params.get('use_composite', False):
+            if composite_score >= composite_buy_thr:
+                signal_type = SignalType.BUY
+                reason = f"Composite score {composite_score:.3f} >= {composite_buy_thr:.3f}"
+            elif composite_score <= -composite_sell_thr:
+                signal_type = SignalType.SELL
+                reason = f"Composite score {composite_score:.3f} <= -{composite_sell_thr:.3f}"
+        
         metadata = SignalMetadata(generated_at=ts, parameters=indicators)
         signal = TradingSignal(
             id=f"{symbol}-{ts}",
