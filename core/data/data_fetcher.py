@@ -20,11 +20,11 @@ class DataValidator:
     def validate(self, data: MarketData) -> Dict[str, Any]:
         issues: List[str] = []
         if not data.symbol:
-            issues.append("missing symbol")
+            issues.append("缺少必需字段: symbol")
         if data.price is None:
-            issues.append("missing price")
-        if data.price < 0:
-            issues.append("negative price")
+            issues.append("缺少必需字段: price")
+        elif data.price < 0:
+            issues.append(f"价格为负: {data.price}")
         return {"is_valid": len(issues) == 0, "issues": issues}
 
 class DataFetcher:
@@ -51,8 +51,9 @@ class DataFetcher:
         md = MarketData(symbol=symbol, price=100.0, timestamp=datetime.now().isoformat())
         result = self.validator.validate(md)
         if not result["is_valid"]:
-            self.logger.warning(f"数据校验失败: {result['issues']}")
-            return {"status": "error", "issues": result['issues']}
+            msg = "; ".join(result['issues'])
+            self.logger.error(f"数据校验失败: {msg}")
+            return {"status": "error", "issues": result['issues'], "message": msg}
 
         # 写入缓存并发布事件
         try:
