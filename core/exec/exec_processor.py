@@ -42,9 +42,26 @@ class ExecProcessor(BaseProcessor):
         order.filled_quantity = order.quantity
         order.average_fill_price = order.price if order.price else 0.0
         
-        self.logger.info(f"订单执行完成: {order.order_id}, {order.symbol}, {order.quantity}")
+        # 计算手续费与滑点成本
+        commission_rate = float(kwargs.get('commission', 0.001))
+        slippage_rate = float(kwargs.get('slippage', 0.0005))
+        fill_price = order.average_fill_price
+        notional = fill_price * order.filled_quantity
+        costs = round(notional * (commission_rate + slippage_rate), 6)
+        execution_report = {
+            'order_id': order.order_id,
+            'symbol': order.symbol,
+            'filled_quantity': order.filled_quantity,
+            'fill_price': fill_price,
+            'commission_rate': commission_rate,
+            'slippage_rate': slippage_rate,
+            'costs': costs,
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        self.logger.info(f"订单执行完成: {order.order_id}, {order.symbol}, {order.quantity}, costs={costs}")
         try:
-            self.event_bus.publish('order.filled', {'order_id': order.order_id, 'symbol': order.symbol})
+            self.event_bus.publish('order.filled', {'order_id': order.order_id, 'symbol': order.symbol, 'filled_quantity': order.filled_quantity, 'fill_price': fill_price, 'costs': costs})
         except Exception:
             pass
         
@@ -52,7 +69,7 @@ class ExecProcessor(BaseProcessor):
         result_dict['status'] = order.status.value  # 转换枚举为字符串
         result_dict['side'] = order.side.value
         result_dict['order_type'] = order.order_type.value
-        return {'status': 'success', 'order': result_dict}
+        return {'status': 'success', 'order': result_dict, 'execution_report': execution_report}
 
     def _cleanup_core(self):
         pass

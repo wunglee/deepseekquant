@@ -24,5 +24,23 @@ class TestExecProcessor(unittest.TestCase):
         self.assertEqual(order['status'], OrderStatus.FILLED.value)
         p.cleanup()
 
+    def test_order_execution_with_costs(self):
+        p = ExecProcessor(processor_name='Exec')
+        p.initialize()
+        order_data = {
+            'symbol': 'MSFT',
+            'quantity': 5,
+            'side': TradeDirection.LONG,
+            'order_type': OrderType.MARKET,
+            'price': 200.0
+        }
+        result = p.process(order=order_data, commission=0.001, slippage=0.0005)
+        self.assertEqual(result['status'], 'success')
+        self.assertIn('execution_report', result)
+        er = result['execution_report']
+        self.assertIn('costs', er)
+        self.assertGreaterEqual(er['costs'], 0.0)
+        p.cleanup()
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

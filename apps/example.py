@@ -68,8 +68,10 @@ def run():
         'order_type': OrderType.MARKET,
         'price': 150.0
     }
-    exec_result = p_exec.process(order=order_data)
+    exec_result = p_exec.process(order=order_data, commission=0.001, slippage=0.0005)
     print(f"订单执行: {exec_result.get('status')}")
+    if exec_result.get('execution_report'):
+        print(f"执行报告: {exec_result['execution_report']}")
 
     orchestrator.cleanup_processors()
     print("\n=== 示例完成 ===")
