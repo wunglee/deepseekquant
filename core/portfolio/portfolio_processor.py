@@ -38,6 +38,17 @@ class PortfolioProcessor(BaseProcessor):
                 mv = p['quantity'] * p['price']
                 weights[p['symbol']] = round(mv / total_mv, 6)
 
+        # 约束：权重上下限与归一化
+        min_w = float(kwargs.get('min_weight', 0.0))
+        max_w = float(kwargs.get('max_weight', 1.0))
+        if min_w > 0.0 or max_w < 1.0:
+            for k in list(weights.keys()):
+                weights[k] = max(min_w, min(max_w, weights[k]))
+            s = sum(weights.values())
+            if s > 0:
+                for k in list(weights.keys()):
+                    weights[k] = round(weights[k] / s, 6)
+
         # 生成再平衡指令（最小实现）
         current_positions: Dict[str, float] = kwargs.get('current_positions', {})
         rebalance_instructions: List[Dict[str, Any]] = []
@@ -49,6 +60,10 @@ class PortfolioProcessor(BaseProcessor):
             current_mv = (current_positions.get(symbol, 0.0)) * p['price']
             delta_mv = target_mv - current_mv
             qty_change = delta_mv / p['price'] if p['price'] > 0 else 0.0
+            # 最小交易量阈值（绝对值）
+            min_trade_qty = float(kwargs.get('min_trade_qty', 0.0))
+            if abs(qty_change) < min_trade_qty:
+                qty_change = 0.0
             turnover += abs(delta_mv)
             rebalance_instructions.append({
                 'symbol': symbol,
