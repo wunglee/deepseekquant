@@ -22,11 +22,14 @@ class RiskProcessor(BaseProcessor):
         reason = "Within limits"
         warnings = []
         risk_score = 0.1
+        details: list[str] = []
         
         if position_value > max_position_value:
             approved = False
-            reason = f"Position value {position_value:.2f} exceeds limit {max_position_value:.2f}"
+            warn_msg = f"Position value {position_value:.2f} exceeds limit max_position_value={max_position_value:.2f}"
+            reason = warn_msg
             warnings.append('POSITION_LIMIT_EXCEEDED')
+            details.append(warn_msg)
             risk_score = max(risk_score, 0.8)
         
         # 波动率阈值检查
@@ -36,16 +39,20 @@ class RiskProcessor(BaseProcessor):
             vol = DataFetcher().compute_volatility(closes)
             if vol > vol_threshold:
                 approved = False
+                warn_msg = f"Volatility {vol:.4f} exceeds volatility_threshold={vol_threshold:.4f}"
                 warnings.append('VOLATILITY_EXCEEDED')
-                reason = f"Volatility {vol:.4f} exceeds threshold {vol_threshold:.4f}"
+                details.append(warn_msg)
+                reason = warn_msg
                 risk_score = max(risk_score, 0.7)
         
         # 集中度检查（示例：单一标的权重过高）
         target_weight = kwargs.get('target_weight')
         if target_weight is not None and target_weight > concentration_threshold:
             approved = False
+            warn_msg = f"Target weight {target_weight:.2f} exceeds concentration_threshold={concentration_threshold:.2f}"
             warnings.append('CONCENTRATION_EXCEEDED')
-            reason = f"Target weight {target_weight:.2f} exceeds threshold {concentration_threshold:.2f}"
+            details.append(warn_msg)
+            reason = warn_msg
             risk_score = max(risk_score, 0.6)
         
         # 组合层面的集中度与HHI检查
@@ -55,16 +62,20 @@ class RiskProcessor(BaseProcessor):
                 max_w = max(float(w) for w in weights.values())
                 if max_w > concentration_threshold:
                     approved = False
+                    warn_msg = f"Max weight {max_w:.2f} exceeds concentration_threshold={concentration_threshold:.2f}"
                     if 'CONCENTRATION_EXCEEDED' not in warnings:
                         warnings.append('CONCENTRATION_EXCEEDED')
-                    reason = f"Max weight {max_w:.2f} exceeds threshold {concentration_threshold:.2f}"
+                    details.append(warn_msg)
+                    reason = warn_msg
                     risk_score = max(risk_score, 0.65)
                 hhi = sum(float(w) ** 2 for w in weights.values())
                 hhi_thr = float(limits.get('hhi_threshold', 0.4))
                 if hhi > hhi_thr:
                     approved = False
+                    warn_msg = f"HHI {hhi:.2f} exceeds hhi_threshold={hhi_thr:.2f}"
                     warnings.append('PORTFOLIO_HHI_EXCEEDED')
-                    reason = f"HHI {hhi:.2f} exceeds threshold {hhi_thr:.2f}"
+                    details.append(warn_msg)
+                    reason = warn_msg
                     risk_score = max(risk_score, 0.7)
             except Exception:
                 warnings.append('WEIGHTS_PARSE_ERROR')
@@ -87,8 +98,10 @@ class RiskProcessor(BaseProcessor):
                 avg_corr = sum(pair_corr) / len(pair_corr) if pair_corr else 0.0
                 if avg_corr > corr_thr:
                     approved = False
+                    warn_msg = f"Avg correlation {avg_corr:.2f} exceeds correlation_threshold={corr_thr:.2f}"
                     warnings.append('PORTFOLIO_CORRELATION_HIGH')
-                    reason = f"Avg corr {avg_corr:.2f} exceeds threshold {corr_thr:.2f}"
+                    details.append(warn_msg)
+                    reason = warn_msg
                     risk_score = max(risk_score, 0.7)
             except Exception:
                 warnings.append('CORRELATION_CHECK_ERROR')
@@ -104,13 +117,21 @@ class RiskProcessor(BaseProcessor):
                     mdd = df.compute_max_drawdown(closes_f)
                     if mdd > mdd_thr:
                         approved = False
+                        warn_msg = f"Max drawdown {mdd:.2f} exceeds max_drawdown_threshold={mdd_thr:.2f} on {sym}"
                         warnings.append('MAX_DRAWDOWN_EXCEEDED')
-                        reason = f"Max DD {mdd:.2f} exceeds threshold {mdd_thr:.2f}"
+                        details.append(warn_msg)
+                        reason = warn_msg
                         risk_score = max(risk_score, 0.75)
                         break
             except Exception:
                 warnings.append('DRAWDOWN_CHECK_ERROR')
         
+        if details and approved is False:
+            # 记录详细原因
+            try:
+                self.logger.warning("风险评估未通过: " + "; ".join(details))
+            except Exception:
+                pass        
         assessment = RiskAssessment(
             approved=approved,
             reason=reason,
