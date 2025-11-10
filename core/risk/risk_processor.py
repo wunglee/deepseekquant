@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Dict
 from core.base_processor import BaseProcessor
 from common import RiskAssessment, RiskLevel
 
@@ -8,15 +8,32 @@ class RiskProcessor(BaseProcessor):
 
     def _process_core(self, *args, **kwargs) -> Any:
         metric = kwargs.get('metric', 'var')
-        # 最小可用风险评估（使用 common.py 中的结构）
+        signal = kwargs.get('signal', {})
+        limits: Dict[str, float] = kwargs.get('limits', {})
+        price = signal.get('price', 0.0)
+        quantity = signal.get('quantity', 0.0)
+        max_position_value = limits.get('max_position_value', float('inf'))
+        
+        position_value = price * quantity
+        approved = True
+        reason = "Within limits"
+        warnings = []
+        risk_score = 0.1
+        
+        if position_value > max_position_value:
+            approved = False
+            reason = f"Position value {position_value:.2f} exceeds limit {max_position_value:.2f}"
+            warnings.append('POSITION_LIMIT_EXCEEDED')
+            risk_score = 0.8
+        
         assessment = RiskAssessment(
-            approved=True,
-            reason="Within limits",
-            risk_level=RiskLevel.LOW,
-            warnings=[],
-            max_position_size=kwargs.get('max_position_size', 100000.0),
+            approved=approved,
+            reason=reason,
+            risk_level=RiskLevel.HIGH if not approved else RiskLevel.LOW,
+            warnings=warnings,
+            max_position_size=max_position_value,
             suggested_allocation=kwargs.get('suggested_allocation', 0.05),
-            risk_score=0.1
+            risk_score=risk_score
         )
         return {'status': 'success', 'metric': metric, 'assessment': assessment.to_dict()}
 
