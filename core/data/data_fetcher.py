@@ -60,7 +60,7 @@ class DataFetcher:
         except Exception:
             pass
         try:
-            self.event_bus.publish('market_data', md.__dict__)
+            self.event_bus.publish('market.data', md.__dict__)
         except Exception:
             pass
         return {"status": "success", "data": md.__dict__, "from_cache": False}

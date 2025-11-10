@@ -44,6 +44,20 @@ def run():
         print(f"再平衡指令: {port_result.get('rebalance')}")
         print(f"换手率: {port_result.get('turnover_rate')}\n")
 
+    # 风险评估：使用目标权重与历史波动率阈值
+    weights = port_result.get('weights', {})
+    fetch_hist = {sym: DataFetcher().get_history(sym, lookback=30) for sym in weights.keys()}
+    for sym, w in weights.items():
+        closes = [row['close'] for row in fetch_hist.get(sym, [])]
+        risk_limits = {'volatility_threshold': 0.05, 'concentration_threshold': 0.6}
+        risk_result = p_risk.process(signal={'price': 100.0, 'quantity': 10}, limits=risk_limits, prices=closes, target_weight=w)
+        print(f"风险评估[{sym}]: {risk_result.get('assessment', {}).get('warnings', [])}")
+
+    # 组合层面的整体风险（HHI/集中度）
+    overall_risk = p_risk.process(signal={'price': 0.0, 'quantity': 0.0}, limits={'hhi_threshold': 0.45, 'concentration_threshold': 0.6}, weights=weights)
+    print(f"组合整体风险: {overall_risk.get('assessment', {}).get('warnings', [])}")
+
+
     # 示例：订单执行
     order_data = {
         'symbol': 'AAPL',

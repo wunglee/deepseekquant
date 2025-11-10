@@ -20,5 +20,14 @@ class TestRiskVolConcentration(unittest.TestCase):
         self.assertIn('assessment', res)
         rp.cleanup()
 
+    def test_portfolio_hhi(self):
+        rp = RiskProcessor(processor_name='Risk')
+        rp.initialize()
+        weights = {'A': 0.7, 'B': 0.2, 'C': 0.1}
+        res = rp.process(signal={'price': 0.0, 'quantity': 0.0}, limits={'hhi_threshold': 0.45}, weights=weights)
+        self.assertEqual(res['status'], 'success')
+        self.assertIn('assessment', res)
+        rp.cleanup()
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

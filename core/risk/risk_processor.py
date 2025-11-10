@@ -48,6 +48,27 @@ class RiskProcessor(BaseProcessor):
             reason = f"Target weight {target_weight:.2f} exceeds threshold {concentration_threshold:.2f}"
             risk_score = max(risk_score, 0.6)
         
+        # 组合层面的集中度与HHI检查
+        weights = kwargs.get('weights', {})
+        if isinstance(weights, dict) and weights:
+            try:
+                max_w = max(float(w) for w in weights.values())
+                if max_w > concentration_threshold:
+                    approved = False
+                    if 'CONCENTRATION_EXCEEDED' not in warnings:
+                        warnings.append('CONCENTRATION_EXCEEDED')
+                    reason = f"Max weight {max_w:.2f} exceeds threshold {concentration_threshold:.2f}"
+                    risk_score = max(risk_score, 0.65)
+                hhi = sum(float(w) ** 2 for w in weights.values())
+                hhi_thr = float(limits.get('hhi_threshold', 0.4))
+                if hhi > hhi_thr:
+                    approved = False
+                    warnings.append('PORTFOLIO_HHI_EXCEEDED')
+                    reason = f"HHI {hhi:.2f} exceeds threshold {hhi_thr:.2f}"
+                    risk_score = max(risk_score, 0.7)
+            except Exception:
+                warnings.append('WEIGHTS_PARSE_ERROR')
+        
         assessment = RiskAssessment(
             approved=approved,
             reason=reason,

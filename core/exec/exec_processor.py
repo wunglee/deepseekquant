@@ -44,7 +44,7 @@ class ExecProcessor(BaseProcessor):
         
         self.logger.info(f"订单执行完成: {order.order_id}, {order.symbol}, {order.quantity}")
         try:
-            self.event_bus.publish('order_filled', {'order_id': order.order_id, 'symbol': order.symbol})
+            self.event_bus.publish('order.filled', {'order_id': order.order_id, 'symbol': order.symbol})
         except Exception:
             pass
         
