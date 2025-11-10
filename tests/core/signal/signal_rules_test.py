@@ -2,13 +2,16 @@ import unittest
 from core.signal.signal_processor import SignalProcessor
 
 class TestSignalRules(unittest.TestCase):
-    def test_rsi_rule(self):
+    def test_reason_details(self):
         sp = SignalProcessor(processor_name='Signal')
         sp.initialize()
-        prices = [100 + i for i in range(40)]
-        res = sp.process(symbol='AAA', price=prices[-1], prices=prices)
+        # 构造RSI触发
+        prices = [i for i in range(100, 200)]
+        params = {'rsi_buy': 70}  # 使用较高buy阈值使RSI低于阈值
+        res = sp.process(symbol='DDD', price=prices[-1], prices=prices, params=params)
         self.assertEqual(res['status'], 'success')
         self.assertIn('signal', res)
+        self.assertIn('reason', res['signal'])
         sp.cleanup()
 
     def test_ema_crossover(self):

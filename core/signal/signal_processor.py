@@ -35,6 +35,7 @@ class SignalProcessor(BaseProcessor):
         # 简易信号：基于 RSI 判断超买/超卖
         signal_type = SignalType.HOLD
         reason = "No clear signal"
+        details: list[str] = []
         rsi_val = indicators.get('rsi_14')
         ema_fast = indicators.get('ema_fast')
         ema_slow = indicators.get('ema_slow')
@@ -44,17 +45,21 @@ class SignalProcessor(BaseProcessor):
             if rsi_val < buy_thr:
                 signal_type = SignalType.BUY
                 reason = f"RSI oversold: {rsi_val:.2f} < {buy_thr:.2f}"
+                details.append(f"RSI={rsi_val:.2f} below rsi_buy={buy_thr:.2f}")
             elif rsi_val > sell_thr:
                 signal_type = SignalType.SELL
                 reason = f"RSI overbought: {rsi_val:.2f} > {sell_thr:.2f}"
+                details.append(f"RSI={rsi_val:.2f} above rsi_sell={sell_thr:.2f}")
         # 次级规则：双均线金叉/死叉（当RSI未触发时）
         if signal_type == SignalType.HOLD and (ema_fast is not None and ema_slow is not None):
             if ema_fast > ema_slow:
                 signal_type = SignalType.BUY
                 reason = "EMA fast > EMA slow"
+                details.append(f"EMA_fast={ema_fast:.4f} > EMA_slow={ema_slow:.4f}")
             elif ema_fast < ema_slow:
                 signal_type = SignalType.SELL
                 reason = "EMA fast < EMA slow"
+                details.append(f"EMA_fast={ema_fast:.4f} < EMA_slow={ema_slow:.4f}")
         
         # 组合信号评分（可选）
         weight_rsi = float(params.get('weight_rsi', 0.5))
@@ -77,9 +82,17 @@ class SignalProcessor(BaseProcessor):
             if composite_score >= composite_buy_thr:
                 signal_type = SignalType.BUY
                 reason = f"Composite score {composite_score:.3f} >= {composite_buy_thr:.3f}"
+                details.append(f"Composite={composite_score:.3f} >= composite_buy_thr={composite_buy_thr:.3f}")
             elif composite_score <= -composite_sell_thr:
                 signal_type = SignalType.SELL
                 reason = f"Composite score {composite_score:.3f} <= -{composite_sell_thr:.3f}"
+                details.append(f"Composite={composite_score:.3f} <= -composite_sell_thr={composite_sell_thr:.3f}")
+        
+        if details:
+            try:
+                self.logger.info("信号触发详情: " + "; ".join(details))
+            except Exception:
+                pass
         
         metadata = SignalMetadata(generated_at=ts, parameters=indicators)
         signal = TradingSignal(
