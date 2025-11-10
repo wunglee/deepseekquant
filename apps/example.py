@@ -54,7 +54,9 @@ def run():
         print(f"风险评估[{sym}]: {risk_result.get('assessment', {}).get('warnings', [])}")
 
     # 组合层面的整体风险（HHI/集中度）
-    overall_risk = p_risk.process(signal={'price': 0.0, 'quantity': 0.0}, limits={'hhi_threshold': 0.45, 'concentration_threshold': 0.6}, weights=weights)
+    overall_histories = {sym: [row['close'] for row in fetch_hist.get(sym, [])] for sym in weights.keys()}
+    overall_limits = {'hhi_threshold': 0.45, 'concentration_threshold': 0.6, 'correlation_threshold': 0.6, 'max_drawdown_threshold': 0.2}
+    overall_risk = p_risk.process(signal={'price': 0.0, 'quantity': 0.0}, limits=overall_limits, weights=weights, histories=overall_histories)
     print(f"组合整体风险: {overall_risk.get('assessment', {}).get('warnings', [])}")
 
 

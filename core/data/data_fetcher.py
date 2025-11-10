@@ -120,3 +120,43 @@ class DataFetcher:
         import math
         std = math.sqrt(var)
         return round(std * math.sqrt(252), 6)
+
+    def compute_pairwise_correlation(self, series_a: List[float], series_b: List[float]) -> float:
+        """基于收益率的皮尔逊相关系数（简化）"""
+        if not series_a or not series_b or len(series_a) != len(series_b):
+            return 0.0
+        returns_a = []
+        returns_b = []
+        for i in range(1, len(series_a)):
+            pa, pb = series_a[i-1], series_b[i-1]
+            ca, cb = series_a[i], series_b[i]
+            if pa <= 0 or pb <= 0:
+                continue
+            returns_a.append((ca - pa) / pa)
+            returns_b.append((cb - pb) / pb)
+        if not returns_a or not returns_b or len(returns_a) != len(returns_b):
+            return 0.0
+        avg_a = sum(returns_a) / len(returns_a)
+        avg_b = sum(returns_b) / len(returns_b)
+        cov = sum((ra - avg_a) * (rb - avg_b) for ra, rb in zip(returns_a, returns_b)) / len(returns_a)
+        var_a = sum((ra - avg_a) ** 2 for ra in returns_a) / len(returns_a)
+        var_b = sum((rb - avg_b) ** 2 for rb in returns_b) / len(returns_b)
+        import math
+        denom = math.sqrt(var_a) * math.sqrt(var_b)
+        if denom == 0:
+            return 0.0
+        return round(cov / denom, 6)
+
+    def compute_max_drawdown(self, closes: List[float]) -> float:
+        """计算最大回撤（正数，表示比例）"""
+        if not closes:
+            return 0.0
+        peak = closes[0]
+        max_dd = 0.0
+        for c in closes:
+            if c > peak:
+                peak = c
+            dd = (peak - c) / peak if peak > 0 else 0.0
+            if dd > max_dd:
+                max_dd = dd
+        return round(max_dd, 6)

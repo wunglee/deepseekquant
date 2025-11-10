@@ -69,6 +69,48 @@ class RiskProcessor(BaseProcessor):
             except Exception:
                 warnings.append('WEIGHTS_PARSE_ERROR')
         
+        # 相关性检查（基于历史收盘价的平均相关）
+        histories = kwargs.get('histories', {})
+        corr_thr = float(limits.get('correlation_threshold', float('inf')))
+        if isinstance(histories, dict) and histories and corr_thr < float('inf'):
+            try:
+                from core.data.data_fetcher import DataFetcher
+                df = DataFetcher()
+                syms = list(histories.keys())
+                pair_corr = []
+                for i in range(len(syms)):
+                    for j in range(i+1, len(syms)):
+                        a = [float(x) for x in histories[syms[i]]]
+                        b = [float(x) for x in histories[syms[j]]]
+                        corr = df.compute_pairwise_correlation(a, b)
+                        pair_corr.append(corr)
+                avg_corr = sum(pair_corr) / len(pair_corr) if pair_corr else 0.0
+                if avg_corr > corr_thr:
+                    approved = False
+                    warnings.append('PORTFOLIO_CORRELATION_HIGH')
+                    reason = f"Avg corr {avg_corr:.2f} exceeds threshold {corr_thr:.2f}"
+                    risk_score = max(risk_score, 0.7)
+            except Exception:
+                warnings.append('CORRELATION_CHECK_ERROR')
+        
+        # 最大回撤阈值检查（逐标的，若任一超过则警告）
+        mdd_thr = float(limits.get('max_drawdown_threshold', float('inf')))
+        if isinstance(histories, dict) and histories and mdd_thr < float('inf'):
+            try:
+                from core.data.data_fetcher import DataFetcher
+                df = DataFetcher()
+                for sym, closes in histories.items():
+                    closes_f = [float(x) for x in closes]
+                    mdd = df.compute_max_drawdown(closes_f)
+                    if mdd > mdd_thr:
+                        approved = False
+                        warnings.append('MAX_DRAWDOWN_EXCEEDED')
+                        reason = f"Max DD {mdd:.2f} exceeds threshold {mdd_thr:.2f}"
+                        risk_score = max(risk_score, 0.75)
+                        break
+            except Exception:
+                warnings.append('DRAWDOWN_CHECK_ERROR')
+        
         assessment = RiskAssessment(
             approved=approved,
             reason=reason,

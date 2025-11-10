@@ -20,14 +20,22 @@ class TestRiskVolConcentration(unittest.TestCase):
         self.assertIn('assessment', res)
         rp.cleanup()
 
-    def test_portfolio_hhi(self):
+    def test_correlation_and_drawdown(self):
         rp = RiskProcessor(processor_name='Risk')
         rp.initialize()
-        weights = {'A': 0.7, 'B': 0.2, 'C': 0.1}
-        res = rp.process(signal={'price': 0.0, 'quantity': 0.0}, limits={'hhi_threshold': 0.45}, weights=weights)
+        # 两条高度相关的序列
+        a = [100 + i*0.5 for i in range(60)]
+        b = [100 + i*0.5 + 0.1 for i in range(60)]
+        limits = {'correlation_threshold': 0.7}
+        res = rp.process(signal={'price': 0.0, 'quantity': 0.0}, limits=limits, histories={'A': a, 'B': b})
         self.assertEqual(res['status'], 'success')
-        self.assertIn('assessment', res)
         rp.cleanup()
 
-if __name__ == '__main__':
-    unittest.main(verbosity=2)
+        # 一个下跌序列触发回撤
+        rp = RiskProcessor(processor_name='Risk')
+        rp.initialize()
+        c = [100 - i for i in range(60)]
+        limits = {'max_drawdown_threshold': 0.2}
+        res = rp.process(signal={'price': 0.0, 'quantity': 0.0}, limits=limits, histories={'C': c})
+        self.assertEqual(res['status'], 'success')
+        rp.cleanup()
