@@ -1,6 +1,9 @@
 """
 执行算法模块测试
 """
+import sys
+sys.path.insert(0, '.')
+
 import pytest
 from datetime import datetime
 from core.exec.execution_algos import (
