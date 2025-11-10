@@ -40,6 +40,9 @@ def run():
     ]
     port_result = p_port.process(positions=positions)
     print(f"组合权重: {port_result.get('weights')}")
+    if port_result.get('rebalance'):
+        print(f"再平衡指令: {port_result.get('rebalance')}")
+        print(f"换手率: {port_result.get('turnover_rate')}\n")
 
     # 示例：订单执行
     order_data = {
@@ -52,7 +55,7 @@ def run():
     exec_result = p_exec.process(order=order_data)
     print(f"订单执行: {exec_result.get('status')}")
 
-    orchestrator.cleanup_all()
+    orchestrator.cleanup_processors()
     print("\n=== 示例完成 ===")
 
 

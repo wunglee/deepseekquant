@@ -22,11 +22,18 @@ class SignalProcessor(BaseProcessor):
             indicators['rsi_14'] = TechnicalIndicators.rsi(prices_history, 14)
             indicators['macd'] = TechnicalIndicators.macd(prices_history)
             indicators['bb'] = TechnicalIndicators.bollinger_bands(prices_history)
+            # 双均线
+            ema_fast = TechnicalIndicators.ema(prices_history, 12)
+            ema_slow = TechnicalIndicators.ema(prices_history, 26)
+            indicators['ema_fast_12'] = ema_fast
+            indicators['ema_slow_26'] = ema_slow
         
         # 简易信号：基于 RSI 判断超买/超卖
         signal_type = SignalType.HOLD
         reason = "No clear signal"
         rsi_val = indicators.get('rsi_14')
+        ema_fast = indicators.get('ema_fast_12')
+        ema_slow = indicators.get('ema_slow_26')
         if rsi_val is not None:
             if rsi_val < 30:
                 signal_type = SignalType.BUY
@@ -34,6 +41,14 @@ class SignalProcessor(BaseProcessor):
             elif rsi_val > 70:
                 signal_type = SignalType.SELL
                 reason = f"RSI overbought: {rsi_val:.2f}"
+        # 次级规则：双均线金叉/死叉
+        if signal_type == SignalType.HOLD and (ema_fast is not None and ema_slow is not None):
+            if ema_fast > ema_slow:
+                signal_type = SignalType.BUY
+                reason = "EMA12 > EMA26 crossover"
+            elif ema_fast < ema_slow:
+                signal_type = SignalType.SELL
+                reason = "EMA12 < EMA26 crossover"
         
         metadata = SignalMetadata(generated_at=ts, parameters=indicators)
         signal = TradingSignal(

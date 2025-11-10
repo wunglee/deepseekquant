@@ -64,3 +64,59 @@ class DataFetcher:
         except Exception:
             pass
         return {"status": "success", "data": md.__dict__, "from_cache": False}
+
+    def get_history(self, symbol: str, lookback: int = 30) -> List[Dict[str, Any]]:
+        """生成模拟历史OHLCV数据并缓存"""
+        history_key = f"mdhist:{symbol}:{lookback}"
+        cached = None
+        try:
+            cached = self.cache.process(op='get', key=history_key)
+        except Exception:
+            cached = None
+        if cached and cached.get('value'):
+            return cached['value']
+        
+        import random
+        base_price = 100.0
+        series: List[Dict[str, Any]] = []
+        for i in range(lookback):
+            ts = datetime.now().isoformat()
+            change = random.uniform(-1.0, 1.5)
+            open_p = base_price
+            close_p = max(0.01, base_price + change)
+            high_p = max(open_p, close_p) + random.uniform(0.0, 0.8)
+            low_p = min(open_p, close_p) - random.uniform(0.0, 0.8)
+            volume = random.uniform(1000, 10000)
+            series.append({
+                'timestamp': ts,
+                'open': round(open_p, 4),
+                'high': round(high_p, 4),
+                'low': round(low_p, 4),
+                'close': round(close_p, 4),
+                'volume': round(volume, 2)
+            })
+            base_price = close_p
+        try:
+            self.cache.process(op='set', key=history_key, value=series)
+        except Exception:
+            pass
+        return series
+
+    def compute_volatility(self, closes: List[float]) -> float:
+        """基于收盘价计算年化波动率（简单标准差）"""
+        if not closes or len(closes) < 2:
+            return 0.0
+        returns = []
+        for i in range(1, len(closes)):
+            prev = closes[i-1]
+            curr = closes[i]
+            if prev <= 0:
+                continue
+            returns.append((curr - prev) / prev)
+        if not returns:
+            return 0.0
+        avg = sum(returns) / len(returns)
+        var = sum((r - avg) ** 2 for r in returns) / len(returns)
+        import math
+        std = math.sqrt(var)
+        return round(std * math.sqrt(252), 6)
