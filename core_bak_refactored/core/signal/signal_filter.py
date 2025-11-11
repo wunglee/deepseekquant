@@ -18,3 +18,7 @@ class SignalFilter:
     def __init__(self, config: Dict):
         self.config = config
     
+    def filter_signals(self, signals: Dict[str, List[TradingSignal]]) -> Dict[str, List[TradingSignal]]:
+        """过滤和筛选信号"""
+        # 默认不过滤，返回所有信号
+        return signals

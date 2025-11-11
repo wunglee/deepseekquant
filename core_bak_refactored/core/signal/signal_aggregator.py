@@ -19,6 +19,11 @@ class SignalAggregator:
     def __init__(self, config: Dict):
         self.config = config
     
+    def aggregate(self, signals: Dict[str, List[TradingSignal]]) -> Dict[str, List[TradingSignal]]:
+        """聚合多个信号源"""
+        return signals
+    
+    def calculate_weighted_strength(self, signals: List[TradingSignal]) -> SignalStrength:
         """计算加权信号强度"""
         if not signals:
             return SignalStrength.WEAK
