@@ -124,30 +124,32 @@ class TradingSignal:
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'TradingSignal':
         """从字典创建信号"""
-        metadata_data = data.pop('metadata', {})
+        # 复制字典避免修改原始数据
+        data_copy = data.copy()
+        metadata_data = data_copy.pop('metadata', {})
         metadata = SignalMetadata(**metadata_data)
 
         return cls(
-            id=data['id'],
-            symbol=data['symbol'],
-            signal_type=SignalType(data['signal_type']),
-            price=data['price'],
-            timestamp=data['timestamp'],
+            id=data_copy['id'],
+            symbol=data_copy['symbol'],
+            signal_type=SignalType(data_copy['signal_type']),
+            price=data_copy['price'],
+            timestamp=data_copy['timestamp'],
             metadata=metadata,
-            quantity=data.get('quantity'),
-            stop_loss=data.get('stop_loss'),
-            take_profit=data.get('take_profit'),
-            timeframe=data.get('timeframe', '1d'),
-            status=SignalStatus(data.get('status', 'generated')),
-            reason=data.get('reason', ''),
-            weight=data.get('weight', 1.0),
-            correlation=data.get('correlation', {}),
-            risk_score=data.get('risk_score', 0.0),
-            expected_return=data.get('expected_return', 0.0),
-            expected_hold_period=data.get('expected_hold_period', 0),
-            volume_ratio=data.get('volume_ratio', 1.0),
-            volatility=data.get('volatility', 0.0),
-            liquidity_score=data.get('liquidity_score', 1.0)
+            quantity=data_copy.get('quantity'),
+            stop_loss=data_copy.get('stop_loss'),
+            take_profit=data_copy.get('take_profit'),
+            timeframe=data_copy.get('timeframe', '1d'),
+            status=SignalStatus(data_copy.get('status', 'generated')),
+            reason=data_copy.get('reason', ''),
+            weight=data_copy.get('weight', 1.0),
+            correlation=data_copy.get('correlation', {}),
+            risk_score=data_copy.get('risk_score', 0.0),
+            expected_return=data_copy.get('expected_return', 0.0),
+            expected_hold_period=data_copy.get('expected_hold_period', 0),
+            volume_ratio=data_copy.get('volume_ratio', 1.0),
+            volatility=data_copy.get('volatility', 0.0),
+            liquidity_score=data_copy.get('liquidity_score', 1.0)
         )
 
 
