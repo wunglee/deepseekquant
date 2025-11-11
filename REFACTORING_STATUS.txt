@@ -1,0 +1,41 @@
+# Core_bak 重构拆分进展报告
+生成时间: $(date)
+
+## 拆分统计
+
+### 已完成模块
+1. risk/ - 风险管理系统
+   - risk_enums.py (63行)
+   - risk_models.py (169行)
+   - var_calculator.py (236行)
+   - __init__.py (44行)
+   合计: 512行 (原2006行的25.5%)
+
+2. signal/ - 信号引擎系统
+   - signal_models.py (158行)
+   - __init__.py (30行)
+   合计: 188行 (原2272行的8.3%)
+
+3. portfolio/ - 组合管理系统
+   - portfolio_models.py (209行)
+   - __init__.py (39行)
+   合计: 248行 (原5505行的4.5%)
+
+4. execution/ - 执行引擎系统
+   - execution_models.py (218行)
+   - __init__.py (47行)
+   合计: 265行 (原3613行的7.3%)
+
+### 总体进展
+已拆分代码行数: 1,213行
+原始代码行数: 26,303行
+完成比例: 4.6%
+
+## 下一步工作
+1. 完成risk模块剩余部分 (5个子模块)
+2. 完成portfolio模块剩余部分 (8个子模块)
+3. 完成execution模块剩余部分 (7个子模块)
+4. 完成signal模块剩余部分 (3个子模块)
+5. 拆分data_fetcher.py (8652行)
+6. 拆分bayesian_optimizer.py (2146行)
+7. 拆分main.py (2113行)

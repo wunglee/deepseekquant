@@ -65,3 +65,4 @@ config/*.backup.*
 config/snapshots/
 /core/snapshots/
 /core/config_snapshots/
+consultation/
