@@ -151,6 +151,58 @@ class StressTesterTest(unittest.TestCase):
         result = self.tester._simulate_volatility_spike(params, self.portfolio_state, self.market_data)
         # 波动率增加导致风险增加
         self.assertLess(result, 0)
+    
+    def test_builtin_scenarios_loaded(self):
+        """
+        P1增强测试：内置场景库加载
+        验证5个内置场景（专家answer.md线108-141）
+        """
+        # 应该加载5个内置 + 1个自定义 = 6个
+        self.assertGreaterEqual(len(self.tester.scenarios), 5)
+        
+        # 验证全球市场场景
+        self.assertIn('2008_financial_crisis', self.tester.scenarios)
+        self.assertIn('covid_19_pandemic', self.tester.scenarios)
+        
+        # 验证A股特有场景
+        self.assertIn('2015_china_market_crash', self.tester.scenarios)
+        self.assertIn('circuit_breaker_2016', self.tester.scenarios)
+        self.assertIn('thousand_stocks_limit_down', self.tester.scenarios)
+    
+    def test_builtin_scenario_parameters(self):
+        """
+        P1增强测试：内置场景参数正确性
+        验证专家提供的关键参数
+        """
+        # 2008金融危机：decline=-0.40, volatility_spike=3.5
+        crisis_2008 = self.tester.scenarios['2008_financial_crisis']
+        self.assertEqual(crisis_2008.parameters['decline'], -0.40)
+        self.assertEqual(crisis_2008.parameters['volatility_spike'], 3.5)
+        self.assertEqual(crisis_2008.parameters['correlation_break'], 0.8)
+        
+        # 2015A股大跌：decline=-0.30, liquidity_dry_up=0.8
+        crash_2015 = self.tester.scenarios['2015_china_market_crash']
+        self.assertEqual(crash_2015.parameters['decline'], -0.30)
+        self.assertEqual(crash_2015.parameters['liquidity_dry_up'], 0.8)
+        self.assertEqual(crash_2015.parameters['limit_hit_frequency'], 0.3)
+    
+    def test_builtin_scenarios_runnable(self):
+        """
+        P1增强测试：内置场景可执行性
+        确保所有内置场景能正常运行
+        """
+        results = self.tester.run_stress_tests(self.portfolio_state, self.market_data)
+        
+        # 所有内置场景应该都有结果
+        self.assertIn('2008_financial_crisis', results)
+        self.assertIn('2015_china_market_crash', results)
+        self.assertIn('covid_19_pandemic', results)
+        self.assertIn('circuit_breaker_2016', results)
+        self.assertIn('thousand_stocks_limit_down', results)
+        
+        # 所有场景结果应为负值（损失）
+        for scenario_id, result in results.items():
+            self.assertLessEqual(result, 0, f"{scenario_id}应该产生损失")
 
 
 if __name__ == '__main__':
