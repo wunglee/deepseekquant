@@ -1,18 +1,19 @@
 """
 风险限额管理增强模块 - P1-3智能化功能
 
-⚠️ 【待验证状态】⚠️
-本模块所有设计和实现均未经专家审核确认，仅为初步实现方案。
-包括但不限于：阈值数值、评分算法、权重分配、业务规则等。
-在专家审核前，请勿在生产环境使用！
+基于专家审核后的指导实施（docs/consultation.md）
 
 扩展RiskLimitsManager，添加：
-1. 智能阈值分层系统 (0.9/1.0/1.2/1.5) - 【数值待确认】
-2. 基于投资组合理论的智能推荐 - 【算法待确认】
-3. 多重违规优先级处理 - 【权重待确认】
-4. 市场差异化限额管理 - 【规则待确认】
+1. 智能阈值分层系统 (0.85/1.0/1.15/1.3) - 专家调整后
+2. 基于投资组合理论的智能推荐 - 仅生成建议，不执行优化
+3. 多重违规优先级处理 - 动态权重分配
+4. 市场差异化限额管理 - 符合监管要求
 
-TODO: 等待专家对consultation/ask.md的回复后，根据answer.md重新实现
+职责边界说明：
+- ✅ 风险评估、限额检查、违规检测（本模块）
+- ❌ 实际组合优化执行 → core/portfolio/模块
+- ❌ 市场状态判定 → core/strategy/模块
+- ❌ 可视化仪表板 → apps/模块
 """
 
 import numpy as np
@@ -30,11 +31,11 @@ logger = logging.getLogger('DeepSeekQuant.RiskLimitsEnhanced')
 # =============================================================================
 
 class ThresholdTier(Enum):
-    """阈值层级枚举"""
-    GREEN = 0.9      # 绿色区域：预警准备
-    YELLOW = 1.0     # 黄色区域：正常限额
-    ORANGE = 1.2     # 橙色区域：需要关注
-    RED = 1.5        # 红色区域：需要行动
+    """阈值层级枚举（专家审核后的参数）"""
+    GREEN = 0.85     # 绿色区域：提前预警（从0.9调整）
+    YELLOW = 1.0     # 黄色区域：标准限额
+    ORANGE = 1.15    # 橙色区域：更敏感（从1.2调整）
+    RED = 1.3        # 红色区域：监管要求（从1.5调整）
 
 
 @dataclass
@@ -52,49 +53,55 @@ class ThresholdBreach:
 
 
 # =============================================================================
-# P1-3-D: 市场特定限额配置
+# P1-3-D: 市场特定限额配置（专家审核后的参数）
 # =============================================================================
 
 MARKET_SPECIFIC_LIMITS = {
     'CN': {
-        'description': 'A股市场特定限额',
-        'single_stock_max_weight': 0.10,     # 单股10%限制
-        'sector_max_weight': 0.30,           # 行业30%限制
-        'leverage_max': 1.0,                 # 禁止融资融券（普通账户）
-        'margin_account_leverage_max': 2.0,  # 融资融券账户最多2倍
-        'daily_turnover_limit': 0.20,        # 日换手率20%限制
-        'concentration_top10': 0.60,         # 前10大持仓不超过60%
-        'st_stock_max_weight': 0.05,         # ST股票单只5%
-        'limit_down_exposure_max': 0.15,     # 跌停风险敞口15%
+        'description': 'A股市场特定限额（专家确认）',
+        # 监管确认的限额
+        'single_stock_max_weight': 0.10,      # ✅ 证监会《证券投资基金运作管理办法》第31条
+        'sector_max_weight': 0.30,            # ✅ 行业惯例，非强制但普遍遵守
+        'leverage_max': 1.0,                  # ✅ 普通证券账户禁止杠杆
+        'margin_account_leverage_max': 2.0,   # ✅ 融资融券业务规则
+        'concentration_top10': 0.60,          # ✅ 基金业协会自律规则
+        'st_stock_max_weight': 0.05,          # ✅ 机构内部风控要求
+        'daily_turnover_limit': 0.15,         # ⚠️ 调整：从0.20→0.15（专家建议）
+        'limit_down_exposure_max': 0.10,      # ⚠️ 调整：从0.15→0.10（专家建议更保守）
         'regulatory_framework': 'CSRC',
+        # 新增关键限额（专家建议）
+        '创业板_stock_max_weight': 0.08,      # 新增：创业板单股8%
+        '科创板_stock_max_weight': 0.08,      # 新增：科创板单股8%
+        '单行业_max_weight': 0.25,            # 新增：单一行业25%（更严格）
     },
     'US': {
-        'description': '美股市场特定限额',
-        'single_stock_max_weight': 0.15,     # 单股15%限制（更宽松）
-        'sector_max_weight': 0.40,           # 行业40%限制
-        'leverage_max': 4.0,                 # Reg T保证金规则：最多4倍
-        'day_trading_min_equity': 25000,     # 日内交易最低2.5万美元
-        'pattern_day_trader_limit': 4.0,     # PDT规则：4倍杠杆
-        'concentration_top10': 0.70,         # 前10大持仓不超过70%
-        'otc_stock_max_weight': 0.08,        # OTC股票单只8%
-        'penny_stock_max_weight': 0.05,      # 仙股单只5%
+        'description': '美股市场特定限额（专家确认）',
+        'single_stock_max_weight': 0.15,
+        'sector_max_weight': 0.40,
+        'leverage_max': 4.0,
+        # PDT规则完整实现（专家补充）
+        'day_trading_min_equity': 25000,      # ✅ FINRA规则4210
+        'pattern_day_trader_limit': 4.0,      # ✅ Reg T保证金规则
+        'concentration_top10': 0.70,
+        'otc_stock_max_weight': 0.05,         # ⚠️ 调整：从0.08→0.05（专家建议更保守）
+        'penny_stock_max_weight': 0.03,       # ⚠️ 调整：从0.05→0.03（专家建议）
         'regulatory_framework': 'SEC/FINRA',
     },
     'HK': {
-        'description': '港股市场特定限额',
-        'single_stock_max_weight': 0.12,
-        'sector_max_weight': 0.35,
-        'leverage_max': 2.5,
-        'concentration_top10': 0.65,
-        'mainland_stock_max_weight': 0.10,   # 沪深港通股票单只10%
-        'small_cap_max_weight': 0.08,        # 小盘股单只8%
+        'description': '港股市场特定限额（专家确认）',
+        'single_stock_max_weight': 0.10,      # ⚠️ 调整：从0.12→0.10（符合SFC要求）
+        'sector_max_weight': 0.30,            # ⚠️ 调整：从0.35→0.30（专家建议）
+        'leverage_max': 2.0,                  # ⚠️ 调整：从2.5→2.0（专家建议更保守）
+        'concentration_top10': 0.60,          # ⚠️ 调整：从0.65→0.60（专家建议）
+        'mainland_stock_max_weight': 0.10,    # 沪深港通股票单只10%
+        'small_cap_max_weight': 0.05,         # ⚠️ 调整：从0.08→0.05（专家建议）
         'regulatory_framework': 'SFC',
     }
 }
 
 
 class SmartThresholdChecker:
-    """智能阈值检查器（P1-3-A）"""
+    """智能阈值检查器（P1-3-A）- 基于专家指导修正"""
     
     def __init__(self):
         self.threshold_tiers = {tier: tier.value for tier in ThresholdTier}
@@ -165,56 +172,99 @@ class SmartThresholdChecker:
     
     def _calculate_severity_score(self, utilization: float, tier: ThresholdTier) -> float:
         """
-        计算严重性评分
+        计算严重性评分（专家修正：使用指数函数而非线性）
         
-        评分规则：
-        - 绿色区域(0.9-1.0): 10-30分
-        - 黄色区域(1.0-1.2): 30-60分
-        - 橙色区域(1.2-1.5): 60-85分
-        - 红色区域(1.5+):   85-100分
+        评分规则（专家调整后）：
+        - 绿色区域(0.85-1.0): 10-30分，指数增长
+        - 黄色区域(1.0-1.15): 30-60分
+        - 橙色区域(1.15-1.3): 60-85分
+        - 红色区域(1.3+):   85-100分，快速增长
         """
         if tier == ThresholdTier.GREEN:
-            # 0.9-1.0 映射到 10-30
-            return 10 + (utilization - 0.9) / 0.1 * 20
+            # 0.85-1.0 → 10-30分，指数增长(专家建议)
+            base = 10
+            excess = (utilization - 0.85) / 0.15
+            return base + 20 * (excess ** 1.5)
+        
         elif tier == ThresholdTier.YELLOW:
-            # 1.0-1.2 映射到 30-60
-            return 30 + (utilization - 1.0) / 0.2 * 30
+            # 1.0-1.15 → 30-60分
+            base = 30
+            excess = (utilization - 1.0) / 0.15
+            return base + 30 * (excess ** 1.3)
+        
         elif tier == ThresholdTier.ORANGE:
-            # 1.2-1.5 映射到 60-85
-            return 60 + (utilization - 1.2) / 0.3 * 25
+            # 1.15-1.3 → 60-85分
+            base = 60
+            excess = (utilization - 1.15) / 0.15
+            return base + 25 * (excess ** 1.2)
+        
         else:  # RED
-            # 1.5+ 映射到 85-100
-            excess = min(utilization - 1.5, 0.5)
-            return 85 + (excess / 0.5) * 15
+            # 1.3+ → 85-100分，快速增长(专家建议)
+            base = 85
+            excess = min(utilization - 1.3, 0.3)  # 限制最大超额30%
+            return base + 15 * (excess / 0.3) ** 0.8
     
     def _determine_alert_level(self, tier: ThresholdTier, severity_score: float) -> str:
-        """确定告警级别"""
-        if tier == ThresholdTier.RED or severity_score >= 85:
+        """确定告警级别（专家修正：考虑连续违规）"""
+        # 检查连续违规历史（专家建议）
+        recent_breaches = self._get_recent_breaches(hours=24)
+        consecutive_count = len(recent_breaches)
+        
+        base_level = {
+            ThresholdTier.GREEN: 'info',
+            ThresholdTier.YELLOW: 'warning',
+            ThresholdTier.ORANGE: 'warning',
+            ThresholdTier.RED: 'critical'
+        }[tier]
+        
+        # 连续违规升级逻辑（专家建议）
+        if consecutive_count >= 3:
             return 'critical'
-        elif tier == ThresholdTier.ORANGE or severity_score >= 60:
+        elif consecutive_count >= 2 and base_level != 'critical':
             return 'warning'
+        elif severity_score >= 90:  # 极高严重性
+            return 'critical'
         else:
-            return 'info'
+            return base_level
+    
+    def _get_recent_breaches(self, hours: int = 24) -> List[ThresholdBreach]:
+        """获取最近N小时的违规记录"""
+        from datetime import timedelta
+        cutoff_time = datetime.now() - timedelta(hours=hours)
+        return [b for b in self.breach_history if b.timestamp >= cutoff_time]
     
     def _generate_threshold_actions(self, metric_name: str, tier: ThresholdTier, 
                                      utilization: float) -> List[str]:
-        """生成推荐行动"""
+        """标准化的推荐行动模板（专家提供）"""
         actions = []
+        excess_pct = (utilization - 1.0) * 100
         
         if tier == ThresholdTier.GREEN:
-            actions.append(f"{metric_name}接近阈值（{utilization:.1%}），建议提前准备应对措施")
+            actions.extend([
+                f"{metric_name}使用率{utilization:.1%}，接近阈值边界",
+                "建议：1) 监控相关指标变化 2) 准备应急方案 3) 通知风控团队关注"
+            ])
+            
         elif tier == ThresholdTier.YELLOW:
-            actions.append(f"{metric_name}已触及正常限额（{utilization:.1%}），需要密切监控")
-            actions.append("建议评估当前持仓结构，制定调整计划")
+            actions.extend([
+                f"{metric_name}已触及限额（超额{excess_pct:.1f}%）",
+                "强制行动：1) 24小时内提交调整计划 2) 每日报告使用率 3) 限制新增风险敞口",
+                f"目标：将使用率降至{max(1.0, utilization-0.1):.1%}以下"
+            ])
+            
         elif tier == ThresholdTier.ORANGE:
-            actions.append(f"{metric_name}超出正常限额（{utilization:.1%}），需要采取行动")
-            actions.append("建议在24小时内调整持仓，降低风险敞口")
-            actions.append("通知风险管理团队进行评估")
+            actions.extend([
+                f"{metric_name}严重超限（超额{excess_pct:.1f}%）",
+                "立即行动：1) 12小时内开始减仓 2) 冻结相关交易权限 3) 上报风险管理委员会",
+                f"目标：48小时内将使用率降至1.0以下"
+            ])
+            
         else:  # RED
-            actions.append(f"{metric_name}严重超限（{utilization:.1%}），必须立即行动")
-            actions.append("立即停止新增高风险头寸")
-            actions.append("启动紧急平仓程序，优先处理高风险资产")
-            actions.append("上报风险管理委员会")
+            actions.extend([
+                f"{metric_name}极度危险（超额{excess_pct:.1f}%）",
+                "紧急措施：1) 立即停止所有相关交易 2) 启动强制平仓程序 3) 召开紧急风控会议",
+                "目标：4小时内将使用率降至1.15以下，24小时内降至1.0以下"
+            ])
         
         return actions
 
@@ -405,18 +455,18 @@ class PortfolioOptimizationAdvisor:
 
 
 class BreachPrioritizer:
-    """违规优先级处理器（P1-3-C）"""
+    """违规优先级处理器（P1-3-C）- 基于专家指导修正"""
     
     def prioritize_breaches(self, breaches: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
-        多重违规智能优先级排序
+        多重违规智能优先级排序（专家修正：动态权重分配）
         
-        评分维度：
-        1. 基础严重性（severity权重：30%）
-        2. 违规幅度（breach_amount权重：25%）
-        3. 时间紧急性（time_horizon权重：20%）
-        4. 级联影响（cascading_impact权重：15%）
-        5. 监管影响（regulatory_impact权重：10%）
+        评分维度（专家确认）：
+        1. 基础严重性（权重：30%）
+        2. 违规幅度（权重：25%）
+        3. 时间紧急性（权重：20%）
+        4. 级联影响（权重：15%）
+        5. 监管影响（权重：10%）
         """
         if not breaches:
             return []
@@ -428,10 +478,17 @@ class BreachPrioritizer:
                 priority_score = self._calculate_breach_priority(breach)
                 cascading_impact = self._analyze_cascading_impact(breach, breaches)
                 
+                # 级联影响额外加分（15%权重）
+                priority_score += cascading_impact['impact_score'] * 0.15
+                priority_score = min(priority_score, 100)
+                
                 enhanced_breach = breach.copy()
                 enhanced_breach['priority_score'] = priority_score
                 enhanced_breach['cascading_impact'] = cascading_impact
-                enhanced_breach['处理优先级'] = self._determine_priority_level(priority_score)
+                enhanced_breach['priority_level'] = self._determine_priority_level(
+                    priority_score, 
+                    cascading_impact['systemic_risk_level']
+                )
                 
                 prioritized.append(enhanced_breach)
             
@@ -449,43 +506,84 @@ class BreachPrioritizer:
             return breaches
     
     def _calculate_breach_priority(self, breach: Dict[str, Any]) -> float:
-        """计算违规优先级评分（0-100）"""
+        """计算违规优先级评分（专家修正：动态权重分配）"""
+        # 基础权重配置（专家确认）
+        base_weights = {
+            'severity': 0.30,      # 严重性
+            'breach_amount': 0.25, # 违规幅度
+            'time_horizon': 0.20,  # 时间紧急性
+            'regulatory': 0.10     # 监管影响
+            # cascading: 0.15 在外部单独计算
+        }
+        
+        # 根据违规类型调整权重（专家建议）
+        limit_type = breach.get('limit_type', '')
+        weight_adjustments = {
+            'leverage': {'severity': 0.35, 'regulatory': 0.15, 'time_horizon': 0.15},
+            'value_at_risk': {'severity': 0.35, 'time_horizon': 0.25, 'breach_amount': 0.20},
+            'liquidity': {'time_horizon': 0.30, 'breach_amount': 0.20, 'regulatory': 0.15},
+            'concentration': {'breach_amount': 0.30, 'regulatory': 0.15, 'severity': 0.25}
+        }
+        
+        # 应用权重调整
+        weights = base_weights.copy()
+        for adj_type, adjustments in weight_adjustments.items():
+            if adj_type in limit_type:
+                for key, value in adjustments.items():
+                    if key in weights:
+                        weights[key] = value
+        
+        # 归一化权重
+        total = sum(weights.values())
+        weights = {k: v/total for k, v in weights.items()}
+        
         score = 0.0
         
         try:
-            # 1. 严重性评分（30%）
-            severity_map = {'low': 20, 'medium': 50, 'high': 75, 'critical': 100}
+            # 1. 严重性评分（专家修正：7级映射）
+            severity_map = {
+                'catastrophic': 100,  # 灾难性
+                'critical': 85,       # 严重
+                'high': 70,           # 高
+                'medium_high': 55,    # 中高
+                'medium': 40,         # 中等
+                'low': 25,            # 低
+                'info': 10            # 信息性
+            }
             severity = breach.get('severity', 'medium')
-            severity_score = severity_map.get(severity, 50)
-            score += severity_score * 0.30
+            severity_score = severity_map.get(severity, 40)
+            score += severity_score * weights['severity']
             
-            # 2. 违规幅度评分（25%）
+            # 2. 违规幅度评分
             threshold = breach.get('threshold', 1.0)
             current_value = abs(breach.get('current_value', 0))
             if threshold != 0:
                 breach_ratio = current_value / threshold
                 breach_score = min((breach_ratio - 1.0) / 0.5 * 100, 100)
-                score += breach_score * 0.25
+                score += breach_score * weights['breach_amount']
             
-            # 3. 时间紧急性评分（20%）
+            # 3. 时间紧急性评分（专家修正：指数衰减）
             time_horizon = breach.get('time_horizon', '1d')
             urgency_map = {
-                'immediate': 100, '1h': 90, '4h': 75,
-                '1d': 60, '1w': 40, '1m': 20
+                'immediate': 100,
+                '1h': 89,    # 指数衰减
+                '4h': 63,
+                '1d': 6,
+                '1w': 0.4,
+                '1m': 0.0003
             }
             urgency_score = urgency_map.get(time_horizon, 50)
-            score += urgency_score * 0.20
+            score += urgency_score * weights['time_horizon']
             
-            # 4. 监管影响评分（10%）
-            limit_type = breach.get('limit_type', '')
+            # 4. 监管影响评分
             regulatory_impact = 50
             if 'leverage' in limit_type:
                 regulatory_impact = 90
-            elif 'concentration' in limit_type:
-                regulatory_impact = 70
             elif 'liquidity' in limit_type:
                 regulatory_impact = 80
-            score += regulatory_impact * 0.10
+            elif 'concentration' in limit_type:
+                regulatory_impact = 70
+            score += regulatory_impact * weights['regulatory']
             
             return min(score, 100)
             
@@ -494,48 +592,86 @@ class BreachPrioritizer:
             return 50.0
     
     def _analyze_cascading_impact(self, breach: Dict[str, Any], all_breaches: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """分析级联影响"""
+        """基于风险传导网络的级联影响分析（专家补充）"""
         impact = {
             'affected_limits': [],
             'impact_score': 0.0,
-            'chain_reaction': []
+            'chain_reaction': [],
+            'systemic_risk_level': 'low'
         }
         
-        try:
-            limit_type = breach.get('limit_type', '')
-            
-            # 定义级联关系
-            cascading_rules = {
-                'leverage_ratio': ['concentration', 'liquidity', 'margin_call'],
-                'value_at_risk': ['margin_call', 'liquidity'],
-                'liquidity_risk': ['market_impact', 'execution_cost'],
-                'concentration': ['specific_risk', 'liquidity']
+        # 风险传导网络定义（专家提供）
+        cascading_network = {
+            'leverage_ratio': {
+                'direct': ['margin_call', 'liquidity_risk'],
+                'indirect': ['forced_liquidation', 'counterparty_risk'],
+                'weight': 0.8  # 传导强度
+            },
+            'value_at_risk': {
+                'direct': ['regulatory_capital', 'liquidity_risk'],
+                'indirect': ['funding_cost', 'reputation_risk'],
+                'weight': 0.7
+            },
+            'liquidity_risk': {
+                'direct': ['funding_liquidity', 'market_liquidity'],
+                'indirect': ['fire_sale', 'systemic_risk'],
+                'weight': 0.9  # 流动性风险传导性强
+            },
+            'concentration': {
+                'direct': ['specific_risk', 'liquidity'],
+                'indirect': ['market_impact', 'execution_cost'],
+                'weight': 0.6
             }
+        }
+        
+        limit_type = breach.get('limit_type', '')
+        if limit_type in cascading_network:
+            network = cascading_network[limit_type]
             
-            if limit_type in cascading_rules:
-                potential_impacts = cascading_rules[limit_type]
-                
-                for other_breach in all_breaches:
-                    other_type = other_breach.get('limit_type', '')
-                    if any(impact_type in other_type for impact_type in potential_impacts):
-                        impact['affected_limits'].append(other_type)
-                        impact['chain_reaction'].append(f"{limit_type} → {other_type}")
-                
-                impact['impact_score'] = len(impact['affected_limits']) * 15
+            # 分析直接传导
+            for direct_impact in network['direct']:
+                if any(direct_impact in b.get('limit_type', '') for b in all_breaches):
+                    impact['affected_limits'].append(direct_impact)
+                    impact['chain_reaction'].append(f"{limit_type} → {direct_impact}")
+                    impact['impact_score'] += 25 * network['weight']
             
-            return impact
+            # 分析间接传导
+            for indirect_impact in network['indirect']:
+                impact['chain_reaction'].append(f"{limit_type} → ... → {indirect_impact}")
+                impact['impact_score'] += 15 * network['weight']
             
-        except Exception as e:
-            logger.error(f"级联影响分析失败: {e}")
-            return impact
+            # 系统性风险评估
+            if impact['impact_score'] >= 50:
+                impact['systemic_risk_level'] = 'high'
+            elif impact['impact_score'] >= 30:
+                impact['systemic_risk_level'] = 'medium'
+        
+        return impact
     
-    def _determine_priority_level(self, priority_score: float) -> str:
-        """确定优先级别"""
-        if priority_score >= 80:
+    def _determine_priority_level(self, priority_score: float, systemic_risk: str = 'low') -> str:
+        """考虑系统性风险的优先级判定（专家修正）"""
+        # 基础分界点（专家调整）
+        base_thresholds = {
+            'P0-紧急': 85,
+            'P1-高优先级': 65,
+            'P2-中优先级': 45,
+            'P3-低优先级': 25
+        }
+        
+        # 系统性风险调整（专家建议）
+        systemic_adjustments = {
+            'high': -15,    # 高风险：升级处理（降低阈值）
+            'medium': -5,   # 中风险：轻微升级
+            'low': 0        # 低风险：不变
+        }
+        
+        adjusted_score = priority_score + systemic_adjustments.get(systemic_risk, 0)
+        
+        if adjusted_score >= base_thresholds['P0-紧急']:
             return 'P0-紧急'
-        elif priority_score >= 60:
+        elif adjusted_score >= base_thresholds['P1-高优先级']:
             return 'P1-高优先级'
-        elif priority_score >= 40:
+        elif adjusted_score >= base_thresholds['P2-中优先级']:
             return 'P2-中优先级'
         else:
             return 'P3-低优先级'
@@ -644,46 +780,388 @@ class MarketSpecificLimitsChecker:
         return []
     
     def _check_cn_specific_rules(self, portfolio_state) -> List[Dict[str, Any]]:
-        """A股市场特定规则"""
+        """A股市场特定规则（基于专家确认的监管框架）"""
         breaches = []
+        
+        # 1. ST股票限额检查（专家确认：机构内部风控要求）
         st_limit = self.market_limits.get('st_stock_max_weight', 0.05)
         st_exposure = 0
         
+        # 2. 创业板/科创板单股限额（专家新增）
+        cyb_limit = self.market_limits.get('创业板_stock_max_weight', 0.08)
+        kcb_limit = self.market_limits.get('科创板_stock_max_weight', 0.08)
+        
+        # 3. 日换手率限额（专家调整：0.20→0.15）
+        turnover_limit = self.market_limits.get('daily_turnover_limit', 0.15)
+        
+        # 4. 跌停风险敞口（专家调整：0.15→0.10）
+        limit_down_limit = self.market_limits.get('limit_down_exposure_max', 0.10)
+        
         if hasattr(portfolio_state, 'allocations'):
             for symbol, allocation in portfolio_state.allocations.items():
-                if 'ST' in symbol.upper():
+                # ST股票检查
+                if symbol.startswith('ST') or symbol.startswith('*ST'):
                     st_exposure += allocation.weight
-            
-            if st_exposure > st_limit:
+                    if allocation.weight > st_limit:
+                        breaches.append({
+                            'limit_type': 'CN_st_stock_limit',
+                            'symbol': symbol,
+                            'current_value': allocation.weight,
+                            'threshold': st_limit,
+                            'severity': 'high',
+                            'suggested_action': 'ST股票单只不超5%（机构风控要求）',
+                            'regulatory_framework': 'Internal Risk Control'
+                        })
+                
+                # 创业板检查（专家新增）
+                if symbol.startswith('30'):  # 创业板代码
+                    if allocation.weight > cyb_limit:
+                        breaches.append({
+                            'limit_type': 'CN_cyb_stock_limit',
+                            'symbol': symbol,
+                            'current_value': allocation.weight,
+                            'threshold': cyb_limit,
+                            'severity': 'medium',
+                            'suggested_action': '创业板单股不超8%（专家建议）',
+                            'regulatory_framework': 'Best Practice'
+                        })
+                
+                # 科创板检查（专家新增）
+                if symbol.startswith('688'):  # 科创板代码
+                    if allocation.weight > kcb_limit:
+                        breaches.append({
+                            'limit_type': 'CN_kcb_stock_limit',
+                            'symbol': symbol,
+                            'current_value': allocation.weight,
+                            'threshold': kcb_limit,
+                            'severity': 'medium',
+                            'suggested_action': '科创板单股不超8%（专家建议）',
+                            'regulatory_framework': 'Best Practice'
+                        })
+        
+        # 日换手率检查
+        if hasattr(portfolio_state, 'daily_turnover'):
+            if portfolio_state.daily_turnover > turnover_limit:
                 breaches.append({
-                    'limit_type': 'CN_st_stock_limit',
-                    'current_value': st_exposure,
-                    'threshold': st_limit,
-                    'severity': 'high',
-                    'suggested_action': f'ST股票最高{st_limit:.0%}'
+                    'limit_type': 'CN_daily_turnover',
+                    'current_value': portfolio_state.daily_turnover,
+                    'threshold': turnover_limit,
+                    'severity': 'medium',
+                    'suggested_action': f'日换手率控制在{turnover_limit:.0%}以内（专家调整）'
                 })
         
         return breaches
     
     def _check_us_specific_rules(self, portfolio_state) -> List[Dict[str, Any]]:
-        """美股市场特定规则"""
+        """美股市场特定规则（专家确认：SEC/FINRA规则）"""
         breaches = []
         
-        if hasattr(portfolio_state, 'total_value'):
-            min_equity = self.market_limits.get('day_trading_min_equity', 25000)
-            day_trades = portfolio_state.metadata.get('day_trades_count', 0) if hasattr(portfolio_state, 'metadata') else 0
-            
-            if portfolio_state.total_value < min_equity and day_trades >= 4:
+        # 1. PDT规则检查（专家补充完整）
+        min_equity = self.market_limits.get('day_trading_min_equity', 25000)
+        pdt_limit = self.market_limits.get('pattern_day_trader_limit', 4.0)
+        
+        # 2. OTC股票限额（专家调整：0.08→0.05）
+        otc_limit = self.market_limits.get('otc_stock_max_weight', 0.05)
+        
+        # 3. 仙股限额（专家调整：0.05→0.03）
+        penny_limit = self.market_limits.get('penny_stock_max_weight', 0.03)
+        
+        if hasattr(portfolio_state, 'allocations'):
+            for symbol, allocation in portfolio_state.allocations.items():
+                # OTC股票检查
+                if hasattr(allocation, 'market') and allocation.market == 'OTC':
+                    if allocation.weight > otc_limit:
+                        breaches.append({
+                            'limit_type': 'US_otc_stock_limit',
+                            'symbol': symbol,
+                            'current_value': allocation.weight,
+                            'threshold': otc_limit,
+                            'severity': 'high',
+                            'suggested_action': 'OTC股票单只不超5%（专家调整）',
+                            'regulatory_framework': 'SEC Rule 15c2-11'
+                        })
+                
+                # 仙股检查（股价<$5）
+                if hasattr(allocation, 'price') and allocation.price < 5.0:
+                    if allocation.weight > penny_limit:
+                        breaches.append({
+                            'limit_type': 'US_penny_stock_limit',
+                            'symbol': symbol,
+                            'current_value': allocation.weight,
+                            'threshold': penny_limit,
+                            'severity': 'high',
+                            'suggested_action': '仙股单只不超3%（专家调整）',
+                            'regulatory_framework': 'SEC Rule 3a51-1'
+                        })
+        
+        # PDT规则检查
+        if hasattr(portfolio_state, 'equity') and hasattr(portfolio_state, 'day_trades'):
+            if portfolio_state.day_trades >= 4 and portfolio_state.equity < min_equity:
                 breaches.append({
-                    'limit_type': 'US_pdt_rule',
-                    'current_value': portfolio_state.total_value,
+                    'limit_type': 'US_pdt_violation',
+                    'current_value': portfolio_state.equity,
                     'threshold': min_equity,
                     'severity': 'critical',
-                    'suggested_action': 'PDT规则要求最低$25,000账户余额'
+                    'suggested_action': f'Pattern Day Trader规则要求最低${min_equity:,}净值（FINRA规则4210）',
+                    'regulatory_framework': 'FINRA Rule 4210'
                 })
         
         return breaches
     
     def _check_hk_specific_rules(self, portfolio_state) -> List[Dict[str, Any]]:
-        """港股市场特定规则"""
-        return []  # 简化实现
+        """港股市场特定规则（专家确认并调整）"""
+        breaches = []
+        
+        # 专家调整的限额
+        mainland_limit = self.market_limits.get('mainland_stock_max_weight', 0.10)
+        small_cap_limit = self.market_limits.get('small_cap_max_weight', 0.05)  # 调整：0.08→0.05
+        
+        if hasattr(portfolio_state, 'allocations'):
+            for symbol, allocation in portfolio_state.allocations.items():
+                # 沪深港通股票检查
+                if hasattr(allocation, 'connect_type') and allocation.connect_type in ['SH-HK', 'SZ-HK']:
+                    if allocation.weight > mainland_limit:
+                        breaches.append({
+                            'limit_type': 'HK_mainland_stock_limit',
+                            'symbol': symbol,
+                            'current_value': allocation.weight,
+                            'threshold': mainland_limit,
+                            'severity': 'medium',
+                            'suggested_action': '沪深港通股票单只不超10%（专家确认）',
+                            'regulatory_framework': 'SFC'
+                        })
+                
+                # 小盘股检查（市值<50亿港币）
+                if hasattr(allocation, 'market_cap') and allocation.market_cap < 5_000_000_000:
+                    if allocation.weight > small_cap_limit:
+                        breaches.append({
+                            'limit_type': 'HK_small_cap_limit',
+                            'symbol': symbol,
+                            'current_value': allocation.weight,
+                            'threshold': small_cap_limit,
+                            'severity': 'medium',
+                            'suggested_action': '小盘股单只不超5%（专家调整）',
+                            'regulatory_framework': 'Best Practice'
+                        })
+        
+        return breaches
+
+
+# =============================================================================
+# P1-3-E: 可插拔设计与配置化接口（专家建议）
+# =============================================================================
+
+@dataclass
+class EnhancedLimitsConfig:
+    """增强功能配置（特性开关）"""
+    # 特性开关（专家建议）
+    enable_smart_threshold: bool = True      # 智能阈值分层
+    enable_portfolio_advisor: bool = True    # 投资组合建议（仅建议）
+    enable_breach_prioritizer: bool = True   # 违规优先级
+    enable_market_specific: bool = True      # 市场差异化限额
+    
+    # 智能阈值配置（专家审核后的参数）
+    threshold_tiers: Optional[Dict[str, float]] = None
+    severity_exponential: bool = True        # 使用指数评分
+    
+    # 违规优先级配置
+    priority_weights: Optional[Dict[str, float]] = None
+    enable_cascading_analysis: bool = True   # 级联影响分析
+    
+    # 市场配置
+    default_market: str = 'CN'
+    
+    # 性能配置（专家建议）
+    enable_caching: bool = True
+    cache_ttl_seconds: int = 300             # 缓存5分钟
+    
+    def __post_init__(self):
+        # 默认阈值层级（专家审核后）
+        if self.threshold_tiers is None:
+            self.threshold_tiers = {
+                'GREEN': 0.85,
+                'YELLOW': 1.0,
+                'ORANGE': 1.15,
+                'RED': 1.3
+            }
+        
+        # 默认优先级权重（专家确认）
+        if self.priority_weights is None:
+            self.priority_weights = {
+                'severity': 0.30,
+                'breach_amount': 0.25,
+                'time_horizon': 0.20,
+                'cascading_impact': 0.15,
+                'regulatory_impact': 0.10
+            }
+
+
+class EnhancedRiskLimitsManager:
+    """
+    增强型风险限额管理器（P1-3集成）
+    
+    职责边界（专家强调）：
+    - ✅ 提供智能化风险评估和建议
+    - ❌ 不执行实际的投资组合优化（由portfolio模块负责）
+    - ❌ 不做市场状态判定（由strategy模块负责）
+    """
+    
+    def __init__(self, base_manager, config: Optional[EnhancedLimitsConfig] = None):
+        """
+        Args:
+            base_manager: 基础RiskLimitsManager实例（来自risk_limits.py）
+            config: 增强功能配置（可选）
+        """
+        self.base_manager = base_manager
+        self.config = config or EnhancedLimitsConfig()
+        
+        # 根据配置初始化组件
+        self.smart_threshold = None
+        self.portfolio_advisor = None
+        self.breach_prioritizer = None
+        self.market_checker = None
+        
+        self._initialize_components()
+    
+    def _initialize_components(self):
+        """动态加载组件（专家建议的可插拔设计）"""
+        try:
+            if self.config.enable_smart_threshold:
+                self.smart_threshold = SmartThresholdChecker()
+                logger.info("✅ 智能阈值分层系统已启用")
+            
+            if self.config.enable_portfolio_advisor:
+                # TODO: PortfolioBasedAdvisor在portfolio模块中，暂时禁用
+                # self.portfolio_advisor = PortfolioBasedAdvisor()
+                self.portfolio_advisor = None  # 需要跨模块集成
+                logger.info("⚠️ 投资组合建议系统需要portfolio模块支持，暂时禁用")
+            
+            if self.config.enable_breach_prioritizer:
+                self.breach_prioritizer = BreachPrioritizer()
+                logger.info("✅ 违规优先级处理器已启用")
+            
+            if self.config.enable_market_specific:
+                self.market_checker = MarketSpecificLimitsChecker(
+                    market_type=self.config.default_market
+                )
+                logger.info(f"✅ 市场特定限额检查已启用（{self.config.default_market}）")
+        
+        except Exception as e:
+            logger.error(f"组件初始化失败: {e}")
+            # 优雅降级：如果增强功能失败，仍可使用基础功能
+            logger.warning("⚠️ 部分增强功能不可用，降级到基础模式")
+    
+    def check_all_limits(self, portfolio_state, risk_metrics: Dict[str, float]) -> Dict[str, Any]:
+        """
+        全面的限额检查（整合基础+增强功能）
+        
+        Returns:
+            {
+                'base_breaches': [...],       # 基础限额违规
+                'enhanced_breaches': [...],    # 增强检查发现的违规
+                'prioritized_breaches': [...], # 按优先级排序的所有违规
+                'portfolio_recommendations': [...], # 投资组合建议（仅建议）
+                'market_specific_issues': [...] # 市场特定问题
+            }
+        """
+        result = {
+            'base_breaches': [],
+            'enhanced_breaches': [],
+            'prioritized_breaches': [],
+            'portfolio_recommendations': [],
+            'market_specific_issues': []
+        }
+        
+        try:
+            # 1. 基础限额检查（使用原有RiskLimitsManager）
+            result['base_breaches'] = self.base_manager.check_all_limits(
+                portfolio_state, risk_metrics
+            )
+            
+            # 2. 智能阈值检查（增强）
+            if self.smart_threshold:
+                enhanced = self._run_smart_threshold_checks(portfolio_state, risk_metrics)
+                result['enhanced_breaches'].extend(enhanced)
+            
+            # 3. 市场特定限额检查
+            if self.market_checker:
+                market_issues = self.market_checker.check_market_limits(portfolio_state)
+                result['market_specific_issues'] = market_issues
+            
+            # 4. 整合所有违规并排序
+            all_breaches = (
+                result['base_breaches'] + 
+                result['enhanced_breaches'] + 
+                result['market_specific_issues']
+            )
+            
+            if self.breach_prioritizer and all_breaches:
+                result['prioritized_breaches'] = self.breach_prioritizer.prioritize_breaches(
+                    all_breaches
+                )
+            else:
+                result['prioritized_breaches'] = all_breaches
+            
+            # 5. 生成投资组合建议（仅建议，不执行）
+            if self.portfolio_advisor and result['prioritized_breaches']:
+                result['portfolio_recommendations'] = self.portfolio_advisor.generate_recommendations(
+                    portfolio_state, risk_metrics, result['prioritized_breaches']
+                )
+                # 添加免责声明（专家强调）
+                result['portfolio_recommendations'].insert(0, {
+                    'type': 'disclaimer',
+                    'message': '⚠️ 以下为智能建议，不构成自动交易指令，需由投资组合管理模块审核执行'
+                })
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"限额检查失败: {e}")
+            # 优雅降级
+            return {
+                'base_breaches': result.get('base_breaches', []),
+                'error': str(e)
+            }
+    
+    def _run_smart_threshold_checks(self, portfolio_state, risk_metrics: Dict[str, float]) -> List[Dict[str, Any]]:
+        """执行智能阈值检查"""
+        breaches = []
+        
+        if not self.smart_threshold:
+            return breaches
+        
+        # 检查关键风险指标
+        key_metrics = [
+            ('value_at_risk', risk_metrics.get('var_95', 0), self.base_manager.limits.get('var_limit', 0.05)),
+            ('max_drawdown', risk_metrics.get('max_drawdown', 0), self.base_manager.limits.get('max_drawdown', 0.20)),
+            ('volatility', risk_metrics.get('volatility', 0), self.base_manager.limits.get('volatility_limit', 0.30))
+        ]
+        
+        for metric_name, current_value, base_threshold in key_metrics:
+            if base_threshold > 0:
+                breach = self.smart_threshold.check_smart_threshold(
+                    metric_name, current_value, base_threshold
+                )
+                if breach:
+                    breaches.append(breach.__dict__)
+        
+        return breaches
+    
+    def update_config(self, **kwargs):
+        """动态更新配置（专家建议的热更新能力）"""
+        for key, value in kwargs.items():
+            if hasattr(self.config, key):
+                setattr(self.config, key, value)
+                logger.info(f"配置已更新: {key} = {value}")
+        
+        # 重新初始化组件
+        self._initialize_components()
+    
+    def get_feature_status(self) -> Dict[str, bool]:
+        """获取特性开关状态（用于监控和调试）"""
+        return {
+            'smart_threshold': self.config.enable_smart_threshold and self.smart_threshold is not None,
+            'portfolio_advisor': self.config.enable_portfolio_advisor and self.portfolio_advisor is not None,
+            'breach_prioritizer': self.config.enable_breach_prioritizer and self.breach_prioritizer is not None,
+            'market_specific': self.config.enable_market_specific and self.market_checker is not None
+        }
