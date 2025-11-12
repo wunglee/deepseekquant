@@ -2,7 +2,9 @@
 风险限额管理 - 业务层
 从 core_bak/risk_manager.py 拆分
 职责: 风险限额检查、违规处理
+
 P1-3增强: 智能阈值、组合优化、优先级排序、市场差异化(集成增强模块)
+⚠️ P1-3增强功能均处于【待验证状态】，详见risk_limits_enhanced.py
 """
 
 import numpy as np
