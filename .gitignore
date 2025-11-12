@@ -65,4 +65,7 @@ config/*.backup.*
 config/snapshots/
 /core/snapshots/
 /core/config_snapshots/
-consultation/
+
+# 文档临时文件（docs/目录纳入版本控制）
+docs/**/*-draft.md
+docs/**/*-temp.md
