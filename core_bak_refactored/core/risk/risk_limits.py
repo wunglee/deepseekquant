@@ -2,6 +2,7 @@
 风险限额管理 - 业务层
 从 core_bak/risk_manager.py 拆分
 职责: 风险限额检查、违规处理
+P1-3增强: 智能阈值、组合优化、优先级排序、市场差异化(集成增强模块)
 """
 
 import numpy as np
@@ -11,17 +12,44 @@ import logging
 from .risk_models import RiskLimit, PositionLimit, RiskControlAction, RiskLevel, RiskType, RiskMetric
 from .risk_metrics_service import RiskMetricsService
 
+# P1-3: 导入智能化增强模块
+try:
+    from .risk_limits_enhanced import (
+        SmartThresholdChecker, PortfolioOptimizationAdvisor,
+        BreachPrioritizer, MarketSpecificLimitsChecker
+    )
+    P1_3_ENHANCED_AVAILABLE = True
+except ImportError:
+    P1_3_ENHANCED_AVAILABLE = False
+    logging.warning("风险限额P1-3增强模块不可用")
+
 logger = logging.getLogger('DeepSeekQuant.RiskLimits')
 
 
 class RiskLimitsManager:
-    """风险限额管理器"""
+    """风险限额管理器(P1-3增强版)"""
     
     def __init__(self, config: Dict):
         self.config = config
         self.risk_metrics_service = RiskMetricsService(config)
         self.risk_limits: Dict[str, RiskLimit] = {}
         self.position_limits: Dict[str, PositionLimit] = {}
+        
+        # P1-3: 初始化智能化增强组件
+        if P1_3_ENHANCED_AVAILABLE:
+            self.smart_threshold_checker = SmartThresholdChecker()
+            self.portfolio_optimizer = PortfolioOptimizationAdvisor(config)
+            self.breach_prioritizer = BreachPrioritizer()
+            self.market_checker = MarketSpecificLimitsChecker(
+                market_type=config.get('market_type', 'CN')
+            )
+            logger.info("P1-3智能化增强功能已启用")
+        else:
+            self.smart_threshold_checker = None
+            self.portfolio_optimizer = None
+            self.breach_prioritizer = None
+            self.market_checker = None
+        
         self._initialize_limits()
     
     def _initialize_limits(self):
@@ -336,5 +364,58 @@ class RiskLimitsManager:
         except Exception as e:
             logger.error(f"限额使用率计算失败: {e}")
             return {}
+    
+    # =========================================================================
+    # P1-3增强方法（集成增强模块）
+    # =========================================================================
+    
+    def check_smart_thresholds(self, metric_name: str, current_value: float, 
+                               base_threshold: float) -> Optional[Any]:
+        """
+P1-3-A: 智能阈值分层检查
+        
+        使用0.9/1.0/1.2/1.5四级阈值体系，动态评估严重性并生成智能推荐。
+        """
+        if self.smart_threshold_checker:
+            return self.smart_threshold_checker.check_smart_threshold(
+                metric_name, current_value, base_threshold
+            )
+        return None
+    
+    def generate_portfolio_optimization_recommendations(self, portfolio_state, 
+                                                        risk_metrics: Dict[str, float]) -> List[Dict[str, Any]]:
+        """
+        P1-3-B: 基于投资组合理论的智能推荐
+        
+        应用Markowitz均值-方差优化、夏普比率最大化、
+        最小方差组合和有效前沿分析。
+        """
+        if self.portfolio_optimizer:
+            return self.portfolio_optimizer.generate_recommendations(
+                portfolio_state, risk_metrics
+            )
+        return []
+    
+    def prioritize_breaches(self, breaches: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        P1-3-C: 多重违规智能优先级排序
+        
+        综合考虑严重性、违规幅度、时间紧急性、级联影响、
+        监管影响5个维度进行加权评分。
+        """
+        if self.breach_prioritizer:
+            return self.breach_prioritizer.prioritize_breaches(breaches)
+        return breaches
+    
+    def apply_market_specific_limits(self, portfolio_state) -> List[Dict[str, Any]]:
+        """
+        P1-3-D: 市场差异化限额管理
+        
+        根据US/CN/HK市场特点，应用特定监管要求和限额规则。
+        包括单股限额、杠杆限额、集中度限额和特殊监管要求。
+        """
+        if self.market_checker:
+            return self.market_checker.check_market_limits(portfolio_state)
+        return []
 
 
