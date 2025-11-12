@@ -137,7 +137,9 @@ class RiskCalculator:
             aligned = np.column_stack([v[-min_len:] for v in returns_data.values()])
             mean_vec = aligned.mean(axis=0)
             cov_mat = np.cov(aligned.T)
-            np.random.seed(42)
+            # 从配置获取随机种子，支持可重现性
+            random_seed = self.config.get('monte_carlo_seed', 42)
+            np.random.seed(random_seed)
             sims = np.random.multivariate_normal(mean_vec, cov_mat, n_simulations)
             weights = np.array([alloc.weight for alloc in portfolio_state.allocations.values()])
             portfolio_sims = sims @ weights
@@ -201,5 +203,7 @@ class RiskCalculator:
             stacklevel=2
         )
         raise NotImplementedError("Use StressTester.simulate_correlation_breakdown")
+
+
 
 
