@@ -8,6 +8,15 @@ import pandas as pd
 from typing import Dict, List, Optional, Union, Any
 import logging
 from scipy import stats
+import time
+import functools
+try:
+    from prometheus_client import Counter, Histogram
+    _PROM_ENABLED = True
+except Exception:
+    _PROM_ENABLED = False
+    Counter = None
+    Histogram = None
 
 import sys
 import os
@@ -20,6 +29,40 @@ from core.risk.international_config import MarketConfigManager
 from core.risk.international_enhancements import InternationalEnhancements
 
 logger = logging.getLogger('DeepSeekQuant.RiskMetricsService')
+
+# 监控指标（Prometheus，若可用）
+risk_calc_duration = Histogram('risk_calc_duration_seconds', 'Risk calc duration', ['func']) if _PROM_ENABLED else None
+risk_calc_success = Counter('risk_calc_success_total', 'Risk calc success', ['func']) if _PROM_ENABLED else None
+risk_calc_error = Counter('risk_calc_error_total', 'Risk calc error', ['func']) if _PROM_ENABLED else None
+
+# 统一日志装饰器
+def risk_calculation_logger(func):
+    @functools.wraps(func)
+    def wrapper(self, *args, **kwargs):
+        start_time = time.time()
+        func_name = func.__name__
+        try:
+            result = func(self, *args, **kwargs)
+            elapsed = time.time() - start_time
+            logger.info(f"{func_name}: 完成, 耗时{elapsed:.3f}s")
+            try:
+                if _PROM_ENABLED:
+                    risk_calc_duration.labels(func=func_name).observe(elapsed)
+                    risk_calc_success.labels(func=func_name).inc()
+            except Exception:
+                pass
+            return result
+        except Exception as e:
+            elapsed = time.time() - start_time
+            logger.error(f"{func_name}: 异常 {e}")
+            try:
+                if _PROM_ENABLED:
+                    risk_calc_duration.labels(func=func_name).observe(elapsed)
+                    risk_calc_error.labels(func=func_name).inc()
+            except Exception:
+                pass
+            raise
+    return wrapper
 
 
 class RiskMetricsService(InternationalEnhancements):
@@ -274,6 +317,7 @@ class RiskMetricsService(InternationalEnhancements):
         
         return bool(limit_hit)
 
+    @risk_calculation_logger
     def calculate_volatility(self, 
                            returns: pd.Series, 
                            window: Optional[int] = None,
@@ -303,6 +347,7 @@ class RiskMetricsService(InternationalEnhancements):
             logger.error(f"波动率计算失败: {e}")
             return 0.0
 
+    @risk_calculation_logger
     def calculate_value_at_risk(self, 
                               returns: pd.Series, 
                               confidence_level: Optional[float] = None,
@@ -355,6 +400,7 @@ class RiskMetricsService(InternationalEnhancements):
             logger.error(f"VaR计算失败: {e}")
             return 0.1
 
+    @risk_calculation_logger
     def calculate_expected_shortfall(self, 
                                    returns: pd.Series, 
                                    confidence_level: Optional[float] = None) -> float:
@@ -387,6 +433,7 @@ class RiskMetricsService(InternationalEnhancements):
             logger.error(f"CVaR计算失败: {e}")
             return 0.15
     
+    @risk_calculation_logger
     def _calculate_parametric_cvar(self, returns: pd.Series, confidence_level: float) -> float:
         """
         参数法CVaR（正态分布假设）
@@ -411,6 +458,7 @@ class RiskMetricsService(InternationalEnhancements):
         
         return float(abs(cvar))
 
+    @risk_calculation_logger
     def calculate_max_drawdown(self, returns: pd.Series) -> float:
         """
         计算最大回撤【业务层】
@@ -434,6 +482,7 @@ class RiskMetricsService(InternationalEnhancements):
             logger.error(f"最大回撤计算失败: {e}")
             return 0.0
 
+    @risk_calculation_logger
     def calculate_sharpe_ratio(self, 
                              returns: pd.Series, 
                              risk_free_rate: Optional[float] = None) -> float:
@@ -463,6 +512,7 @@ class RiskMetricsService(InternationalEnhancements):
             logger.error(f"夏普比率计算失败: {e}")
             return 0.0
 
+    @risk_calculation_logger
     def calculate_sortino_ratio(self, 
                               returns: pd.Series, 
                               risk_free_rate: Optional[float] = None) -> float:
@@ -499,6 +549,7 @@ class RiskMetricsService(InternationalEnhancements):
             logger.error(f"索提诺比率计算失败: {e}")
             return 0.0
 
+    @risk_calculation_logger
     def calculate_beta(self, 
                      asset_returns: pd.Series, 
                      market_returns: pd.Series) -> float:
@@ -523,6 +574,7 @@ class RiskMetricsService(InternationalEnhancements):
             logger.error(f"贝塔计算失败: {e}")
             return 1.0
 
+    @risk_calculation_logger
     def calculate_alpha(self, 
                       asset_returns: pd.Series, 
                       market_returns: pd.Series,
@@ -557,6 +609,7 @@ class RiskMetricsService(InternationalEnhancements):
             logger.error(f"阿尔法计算失败: {e}")
             return 0.0
 
+    @risk_calculation_logger
     def calculate_calmar_ratio(self, returns: pd.Series) -> float:
         """
         计算卡尔玛比率【业务层】
@@ -583,6 +636,7 @@ class RiskMetricsService(InternationalEnhancements):
             logger.error(f"卡尔玛比率计算失败: {e}")
             return 0.0
 
+    @risk_calculation_logger
     def calculate_all_metrics(self, 
                             returns: pd.Series,
                             market_returns: Optional[pd.Series] = None) -> Dict[str, float]:

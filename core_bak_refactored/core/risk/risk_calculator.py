@@ -6,8 +6,10 @@
 
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Dict, List, Optional, Tuple, Any, TypedDict, Protocol
 import logging
+import time
+import warnings
 
 from .risk_metrics_service import RiskMetricsService
 from .risk_models import RiskMetric
@@ -19,6 +21,23 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../.
 from infrastructure.data_preprocessor import RiskDataPreprocessor
 
 logger = logging.getLogger('DeepSeekQuant.RiskCalculator')
+
+class MarketPriceData(TypedDict):
+    close: List[float]
+    high: List[float]
+    low: List[float]
+    volume: List[float]
+
+class MarketData(TypedDict):
+    prices: Dict[str, MarketPriceData]
+    risk_free_rate: Optional[float]
+    market_returns: Optional[List[float]]
+
+class PortfolioAllocation(TypedDict):
+    weight: float
+
+class PortfolioState(Protocol):
+    allocations: Dict[str, PortfolioAllocation]
 
 
 class RiskCalculator:
@@ -41,6 +60,13 @@ class RiskCalculator:
         self.preprocessor = RiskDataPreprocessor()
         logger.info("风险计算器初始化完成")
     
+    def _get_min_data_points(self) -> int:
+        """读取配置中的最小数据点阈值，默认63（约3个月交易日）"""
+        try:
+            return int(self.config.get('min_data_points', 63))
+        except Exception:
+            return 63
+    
     def calculate_volatility(self, returns: pd.Series, window: Optional[int] = None, annualize: bool = True) -> float:
         """委托给 RiskMetricsService"""
         return self.risk_metrics_service.calculate_volatility(returns, window, annualize)
@@ -60,7 +86,7 @@ class RiskCalculator:
         return self.risk_metrics_service.calculate_value_at_risk(returns, confidence_level, 'parametric')
 
 
-    def calculate_var_monte_carlo(self, portfolio_state, market_data: Dict[str, Any], confidence_level: float) -> float:
+    def calculate_var_monte_carlo(self, portfolio_state: 'PortfolioState', market_data: 'MarketData', confidence_level: float) -> float:
         """
         蒙特卡洛法VaR（简化实现）
         
@@ -68,6 +94,7 @@ class RiskCalculator:
         """
         logger.warning("蒙特卡洛 VaR 计算待优化，当前使用简化实现")
         try:
+            start_time = time.time()
             n_simulations = int(self.config.get('monte_carlo_sims', 1000))
             if n_simulations < 1000:
                 n_simulations = 1000
@@ -75,11 +102,13 @@ class RiskCalculator:
             returns_data = {}
             for symbol in symbols:
                 prices = market_data['prices'][symbol].get('close', [])
-                if len(prices) >= 20:
+                min_points = self._get_min_data_points()
+                if len(prices) >= min_points:
                     # 使用预处理器计算收益
                     returns_data[symbol] = self.preprocessor.extract_returns_from_prices(np.array(prices))
             if not returns_data:
-                return 0.0
+                logger.warning("calculate_var_monte_carlo: 价格数据不足，返回NaN")
+                return float('nan')
             min_len = min(len(v) for v in returns_data.values())
             aligned = np.column_stack([v[-min_len:] for v in returns_data.values()])
             mean_vec = aligned.mean(axis=0)
@@ -89,9 +118,12 @@ class RiskCalculator:
             weights = np.array([alloc.weight for alloc in portfolio_state.allocations.values()])
             portfolio_sims = sims @ weights
             var = np.percentile(portfolio_sims, (1 - confidence_level) * 100)
+            elapsed = time.time() - start_time
+            logger.info(f"calculate_var_monte_carlo: 完成, 耗时{elapsed:.3f}s")
             return float(var)
-        except Exception:
-            return 0.0
+        except Exception as e:
+            logger.error(f"calculate_var_monte_carlo: 计算异常: {e}")
+            return float('nan')
 
 
     def calculate_max_drawdown(self, returns: pd.Series) -> float:
@@ -110,14 +142,19 @@ class RiskCalculator:
             # 数据提取委托给预处理器
             returns = self.preprocessor.extract_returns_from_dict(data)
             market_returns = self.preprocessor.extract_market_returns_from_dict(data)
+            start_time = time.time()
             
             # 验证数据有效性
-            if not self.preprocessor.validate_returns_data(returns, min_length=20):
-                logger.warning("收益数据不足，无法计算风险指标")
+            min_points = self._get_min_data_points()
+            if not self.preprocessor.validate_returns_data(returns, min_length=min_points):
+                logger.warning(f"calculate_all_metrics: 收益数据不足，至少需要{min_points}个数据点")
                 return {}
             
             # 计算委托给服务层
-            return self.risk_metrics_service.calculate_all_metrics(returns, market_returns)
+            metrics = self.risk_metrics_service.calculate_all_metrics(returns, market_returns)
+            elapsed = time.time() - start_time
+            logger.info(f"calculate_all_metrics: 完成, 耗时{elapsed:.3f}s, 指标{len(metrics)}个")
+            return metrics
             
         except Exception as e:
             logger.error(f"风险指标计算失败: {e}")
@@ -125,6 +162,11 @@ class RiskCalculator:
     
     def simulate_correlation_breakdown(self, scenario, portfolio_state, market_data):
         """迁移到 StressTester，暂不在此实现"""
+        warnings.warn(
+            "simulate_correlation_breakdown 已废弃，请使用 StressTester.simulate_correlation_breakdown",
+            DeprecationWarning,
+            stacklevel=2
+        )
         raise NotImplementedError("Use StressTester.simulate_correlation_breakdown")
 
 
