@@ -165,6 +165,7 @@
 - [x] **🌍 增强版夏普比率**：市场特定风险溢价、异常调整
 - [x] **🌍 跨市场风险对比**：多市场风险分析
 - [x] 17个业务服务层测试 + 11个国际化测试
+- [x] **阶段3：国际化补充检查** - RiskCalculator集成MarketConfigManager，专家评审87/100，批准发布
 
 ### 待办事项（业务层改进储备）
 
@@ -177,6 +178,79 @@
 > 
 > **📄复审文档**：`/consultation/expert_review_stage2_business_service.md`  
 > **测试结果**：17/17 通过（业务服务层）+ 196/196 通过（全项目）
+
+> **🌍国际化补充检查（2024-11-12）**
+> - ✅ RiskCalculator集成MarketConfigManager
+> - ✅ 配置验证和自动补全机制
+> - ✅ 所有日志添加market_type信息
+> - ✅ 修复蒙特卡洛随机种子硬编码问题
+> 
+> **👨‍🔬专家评审结果**：✅ 批准发布（87/100，达到生产就绪标准）  
+> **测试结果**：10/10 通过
+
+---
+
+#### ⚠️ P1: 货币单位一致性检查（专家建议 - 下阶段补充）
+
+**问题说明**：  
+投资组合包含多币种资产时，VaR计算可能因货币单位不一致而产生错误。
+
+**修复方案**：
+```python
+def _validate_currency_consistency(self, portfolio_state, market_data):
+    """验证投资组合货币单位一致性"""
+    currencies = set()
+    for symbol, allocation in portfolio_state.allocations.items():
+        currency = market_data['prices'][symbol].get('currency', 'UNKNOWN')
+        currencies.add(currency)
+    
+    if len(currencies) > 1:
+        logger.warning(f"多币种投资组合检测: {currencies}")
+        return False
+    return True
+```
+
+**待办**：
+- [ ] 在RiskCalculator中添加货币一致性验证
+- [ ] 支持多币种警告和日志记录
+- [ ] 添加单元测试
+
+---
+
+#### 💡 P2: 实时市场数据集成（专家建议 - 未来版本）
+
+**目标**：  
+集成实时市场数据源（Bloomberg/Wind）获取实时无风险利率。
+
+**实现示例**：
+```python
+def _fetch_live_risk_free_rate(self, market_type: str) -> float:
+    """从Bloombeg/Wind获取实时无风险利率"""
+    # 实现实时数据接口
+    pass
+```
+
+**待办**：
+- [ ] 调研数据源API（Bloomberg/Wind）
+- [ ] 设计数据接口层
+- [ ] 实现实时数据缓存机制
+- [ ] 添加数据有效性验证
+
+---
+
+#### 💡 P3: 新兴市场扩展（专家建议 - 未来版本）
+
+**目标**：  
+扩展支持新兴市场（巴西、印度、俄罗斯、南非）。
+
+**待办**：
+- [ ] 收集新兴市场参数（交易日、无风险利率、特殊机制）
+- [ ] 在MarketConfigManager中添加新市场配置
+  ```python
+  emerging_markets = ['BR', 'IN', 'RU', 'ZA']  # 巴西、印度、俄罗斯、南非
+  ```
+- [ ] 添加新市场特定机制检测
+- [ ] 添加测试用例
 
 ---
 
@@ -337,6 +411,80 @@ def run_monte_carlo_simulation(self, portfolio, num_simulations=10000):
     Returns:
         {
             'var_95': -0.05,  # 95%置信度VaR
+            'cvar_95': -0.08,  # 95%置信度CVaR
+            'worst_case': -0.15,  # 最坏情况
+            'distribution': np.array([...])  # 损益分布
+        }
+    """
+    pass
+```
+
+**待办**：
+- [ ] 实现蒙特卡洛模拟引擎
+- [ ] 参数估计（波动率、相关性）
+- [ ] 结果可视化
+
+#### P2: 自定义情景编辑器
+**待办**：
+- [ ] 设计情景配置格式（YAML/JSON）
+- [ ] 实现情景加载器
+- [ ] GUI情景编辑器（可选）
+
+---
+
+## 🟢 risk_monitor.py - RiskMonitor
+
+**状态**：✅ 已完成  
+**测试覆盖**：7/7 通过
+
+### 已完成
+- [x] 实时风险监控
+- [x] 风险限额管理
+- [x] 告警机制
+- [x] 7个测试用例
+
+### 待办事项
+
+#### P2: 风险指标时间序列可视化
+```python
+class RiskMonitorDashboard:
+    """风险监控仪表板"""
+    
+    def plot_real_time_metrics(self):
+        """实时风险指标图表"""
+        # VaR、CVaR、波动率实时曲线
+        pass
+```
+
+**待办**：
+- [ ] 实现实时数据采集
+- [ ] 实现时间序列图表
+- [ ] 集成到监控面板
+
+---
+
+## 🗓️ 实施顺序建议
+
+### 短期（1-2周）
+1. 🟡 RiskMetricsService 专家复审
+2. 🟡 实现A股涨跌停场景处理
+3. 🟡 实现Sortino比率增强版
+
+### 中期（1个月）
+4. 🟢 历史极端事件回测
+5. 🟢 蒙特卡洛模拟
+
+### 长期（3个月）
+6. 🔵 风险归因可视化
+7. 🔵 风险监控仪表板
+
+---
+
+## 🗓️ 历史变更
+
+- **2024-11-09**: 创建风险模块独立TODO
+- **2024-11-09**: risk_metrics_service.py 待进入评审阶段
+- **2024-11-09**: 新增业务层改进储备清单
             'cvar_95': -0.08,  # 95%置信度CVaR
             'worst_case': -0.15,  # 最坏情况
             'distribution': np.array([...])  # 损益分布
