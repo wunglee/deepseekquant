@@ -2,17 +2,72 @@
 压力测试 - 业务层
 从 core_bak/risk_manager.py 拆分
 职责: 压力测试、情景分析
+P1增强: 完整场景参数使用、组合场景测试
 """
 
 import numpy as np
 import pandas as pd
 from typing import Dict, List, Optional, Any
 import logging
+import copy
 
 from .risk_models import StressTestScenario, RiskLevel
 from .risk_metrics_service import RiskMetricsService
 
 logger = logging.getLogger('DeepSeekQuant.StressTesting')
+
+# 场景相关性矩阵（基于历史事件分析）
+SCENARIO_CORRELATION_MATRIX = {
+    '2008_financial_crisis': {
+        '2008_financial_crisis': 1.0,
+        'covid_19_pandemic': 0.5,
+        '2015_china_market_crash': 0.6,
+        'circuit_breaker_2016': 0.7,
+        'thousand_stocks_limit_down': 0.7
+    },
+    'covid_19_pandemic': {
+        '2008_financial_crisis': 0.5,
+        'covid_19_pandemic': 1.0,
+        '2015_china_market_crash': 0.4,
+        'circuit_breaker_2016': 0.5,
+        'thousand_stocks_limit_down': 0.6
+    },
+    '2015_china_market_crash': {
+        '2008_financial_crisis': 0.6,
+        'covid_19_pandemic': 0.4,
+        '2015_china_market_crash': 1.0,
+        'circuit_breaker_2016': 0.8,
+        'thousand_stocks_limit_down': 0.9
+    },
+    'circuit_breaker_2016': {
+        '2008_financial_crisis': 0.7,
+        'covid_19_pandemic': 0.5,
+        '2015_china_market_crash': 0.8,
+        'circuit_breaker_2016': 1.0,
+        'thousand_stocks_limit_down': 0.8
+    },
+    'thousand_stocks_limit_down': {
+        '2008_financial_crisis': 0.7,
+        'covid_19_pandemic': 0.6,
+        '2015_china_market_crash': 0.9,
+        'circuit_breaker_2016': 0.8,
+        'thousand_stocks_limit_down': 1.0
+    }
+}
+
+# 资产类别相关性调整因子（危机时期）
+DEFAULT_CORRELATION_ADJUSTMENT_FACTORS = {
+    ('stock', 'stock'): 0.9,
+    ('stock', 'bond'): 0.6,
+    ('stock', 'commodity'): 0.7,
+    ('bond', 'bond'): 0.8,
+    ('bond', 'commodity'): 0.5,
+    ('commodity', 'commodity'): 0.8
+}
+
+# 默认值
+DEFAULT_DAILY_VOLUME = 1000000  # 100万股
+DEFAULT_LIMIT_DOWN_FREQ = 0.05  # 5%的历史跌停频率
 
 
 class StressTester:
@@ -207,16 +262,51 @@ class StressTester:
             return 0.0
     
     def _simulate_market_crash(self, scenario: StressTestScenario, portfolio_state, market_data: Dict[str, Any]) -> float:
-        """模拟市场崩盘"""
+        """
+        模拟市场崩盘（P1增强：完整使用所有参数）
+        根据专家answer.md指导实现
+        """
         try:
-            # 从场景参数获取冲击幅度
-            crash_magnitude = scenario.parameters.get('crash_magnitude', -0.30)  # 默认30%下跌
+            params = scenario.parameters
+            total_impact = 0
             
-            # 计算组合直接损失
+            # 1. 直接损失（decline参数）
+            decline = params.get('decline', -0.30)
             total_exposure = sum(alloc.weight for alloc in portfolio_state.allocations.values())
-            direct_loss = total_exposure * crash_magnitude
+            direct_loss = total_exposure * decline
+            total_impact += direct_loss
             
-            return float(direct_loss)
+            # 2. 波动率冲击（volatility_spike参数）
+            if 'volatility_spike' in params:
+                vol_multiplier = params['volatility_spike']
+                # 使用方法1：直接放大VaR（专家推荐）
+                base_var = abs(direct_loss * 0.1)  # 估计基础VaR为损失的10%
+                var_impact = base_var * (vol_multiplier - 1)
+                total_impact -= var_impact  # 额外损失
+                logger.debug(f"波动率冲击: vol_multiplier={vol_multiplier}, var_impact={var_impact:.4f}")
+            
+            # 3. 相关性崩溃（correlation_break参数）
+            if 'correlation_break' in params:
+                corr_level = params['correlation_break']
+                # 使用矩阵压缩方法（简化版）
+                # 相关性增加导致多元化失效，风险增加
+                diversification_loss_factor = corr_level * 0.15  # 相关性0.8时，多元化失效增加12%风险
+                diversification_loss = abs(direct_loss) * diversification_loss_factor
+                total_impact -= diversification_loss
+                logger.debug(f"相关性崩溃: corr_level={corr_level}, div_loss={diversification_loss:.4f}")
+            
+            # 4. 恢复期影响（recovery_period参数）
+            if 'recovery_period' in params:
+                recovery_months = params['recovery_period']
+                # 机会成本 = 初始损失 × ((1 + r_f)^t - 1)
+                risk_free_rate = self.config.get('risk_free_rate', 0.03)  # 默认3%无风险利率
+                t_years = recovery_months / 12
+                opportunity_cost = abs(direct_loss) * ((1 + risk_free_rate) ** t_years - 1)
+                total_impact -= opportunity_cost
+                logger.debug(f"恢复期影响: months={recovery_months}, opp_cost={opportunity_cost:.4f}")
+            
+            return float(total_impact)
+            
         except Exception as e:
             logger.error(f"市场崩盘场景模拟失败: {e}")
             return -0.30
@@ -275,6 +365,61 @@ class StressTester:
         except Exception as e:
             logger.error(f"相关性崩溃场景模拟失败: {e}")
             return -0.03
+    
+    def _simulate_market_downturn(self, scenario_params: Dict, portfolio_state, market_data: Dict[str, Any]) -> float:
+        """模拟市场下行"""
+        growth_shock = scenario_params.get('growth_shock', -0.02)
+        volatility_shock = scenario_params.get('volatility_shock', 0.5)
+        
+        # 组合直接损失
+        total_exposure = sum(alloc.weight for alloc in portfolio_state.allocations.values())
+        direct_loss = total_exposure * growth_shock
+        
+        # 波动率增加导致风险增加
+        volatility_impact = 0.02 * volatility_shock
+        
+        return float(direct_loss - volatility_impact)
+    
+    def _simulate_sector_rotation(self, scenario_params: Dict, portfolio_state, market_data: Dict[str, Any]) -> float:
+        """模拟板块轮动"""
+        # 简化：假设50%板块上涨，50%板块下跌
+        rotation_magnitude = scenario_params.get('rotation_magnitude', 0.10)
+        
+        # 如果组合集中在下跌板块，损失更大
+        # 这里使用集中度来估计
+        concentration = sum(w**2 for w in [alloc.weight for alloc in portfolio_state.allocations.values()])
+        
+        loss = -rotation_magnitude * concentration
+        return float(loss)
+    
+    def _simulate_volatility_spike(self, scenario_params: Dict, portfolio_state, market_data: Dict[str, Any]) -> float:
+        """模拟波动率飙升"""
+        volatility_multiplier = scenario_params.get('volatility_shock', 2.0)
+        
+        # 波动率飙升导致VaR增加
+        base_var = 0.02
+        stressed_var = base_var * volatility_multiplier
+        additional_risk = stressed_var - base_var
+        
+        return float(-additional_risk)
+    
+    def _simulate_generic_scenario(self, scenario_params: Dict, portfolio_state, market_data: Dict[str, Any]) -> float:
+        """模拟通用场景"""
+        # 通用损失估计
+        generic_shock = scenario_params.get('overall_impact', -0.05)
+        return float(generic_shock)
+    
+    def _calculate_value_at_risk(self, portfolio_state, market_data: Dict[str, Any]) -> float:
+        """计算组合VaR（简化版）"""
+        # 这里可以委托给 RiskMetricsService，暂时使用固定值
+        return 0.02
+    
+    def _calculate_expected_shortfall(self, portfolio_state, market_data: Dict[str, Any]) -> float:
+        """计算组合ES（简化版）"""
+        return 0.025
+
+
+
     
     def _simulate_market_downturn(self, scenario_params: Dict, portfolio_state, market_data: Dict[str, Any]) -> float:
         """模拟市场下行"""
