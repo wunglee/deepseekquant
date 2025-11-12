@@ -66,6 +66,8 @@ config/snapshots/
 /core/snapshots/
 /core/config_snapshots/
 
-# 文档临时文件（docs/目录纳入版本控制）
+# 文档工作文件（每次生成后立即追加到consultation.md，不纳入版本库）
+docs/ask.md
+docs/answer.md
 docs/**/*-draft.md
 docs/**/*-temp.md
