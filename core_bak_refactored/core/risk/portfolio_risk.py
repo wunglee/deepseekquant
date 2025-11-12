@@ -231,10 +231,29 @@ class PortfolioRiskAnalyzer:
             return {}
     
     def analyze(self, data: Dict[str, Any], risk_metrics: Dict[str, float]) -> Dict[str, Any]:
-        """综合分析组合风险"""
+        """
+        综合分析组合风险（P1增强：7维度分析）
+        
+        根据专家指导，返回完整的7维度风险分析：
+        1. total_risk - 组合总风险（波动率）
+        2. volatility - 组合波动率（年化）
+        3. var_95 - 95% VaR
+        4. cvar_95 - 95% CVaR
+        5. sharpe_ratio - 夏普比率
+        6. max_drawdown - 最大回撤
+        7. risk_contributions - 各资产风险贡献
+        """
+        # 初始化结果（专家推荐的7维度结构）
         result = {
+            'total_risk': 0.0,              # 组合总风险（使用波动率，具有可加性）
+            'volatility': 0.0,              # 组合波动率（年化）
+            'var_95': 0.0,                  # 95% VaR
+            'cvar_95': 0.0,                 # 95% CVaR
+            'sharpe_ratio': 0.0,            # 夏普比率
+            'max_drawdown': 0.0,            # 最大回撤
+            'risk_contributions': {},       # 各资产风险贡献
+            # 额外保留的原有字段
             'portfolio_returns': pd.Series(),
-            'risk_contributions': {},
             'concentration_risk': 0.0
         }
         
@@ -242,25 +261,77 @@ class PortfolioRiskAnalyzer:
             portfolio_state = data.get('portfolio_state')
             market_data = data.get('market_data')
             
-            if portfolio_state and market_data:
-                # 计算组合收益
-                result['portfolio_returns'] = self.calculate_portfolio_returns(portfolio_state, market_data)
+            if not portfolio_state:
+                logger.warning("组合状态为空")
+                return result
+            
+            # 1. 计算组合收益序列
+            portfolio_returns = pd.Series()
+            if market_data:
+                portfolio_returns = self.calculate_portfolio_returns(portfolio_state, market_data)
+                result['portfolio_returns'] = portfolio_returns
+            
+            # 2. 计算波动率（总风险）
+            if len(portfolio_returns) > 1:
+                daily_volatility = float(portfolio_returns.std())
+                annual_volatility = daily_volatility * np.sqrt(self.config.get('trading_days_per_year', 252))
+                result['volatility'] = annual_volatility
+                result['total_risk'] = annual_volatility  # 专家指导：总风险=波动率
+            
+            # 3. 计算VaR和CVaR（使用RiskMetricsService）
+            if len(portfolio_returns) > 1:
+                # 转换为Series类型（RiskMetricsService需要Series）
+                if not isinstance(portfolio_returns, pd.Series):
+                    portfolio_returns = pd.Series(portfolio_returns)
                 
-                # 计算风险贡献度（优先使用协方差矩阵，其次相关性矩阵）
-                cov_matrix = data.get('covariance_matrix')
-                if cov_matrix is not None:
-                    result['risk_contributions'] = self.calculate_risk_contributions_covariance(portfolio_state, cov_matrix)
-                else:
-                    corr_matrix = data.get('correlation_matrix')
-                    if corr_matrix is not None:
-                        result['risk_contributions'] = self.calculate_risk_contributions(portfolio_state, corr_matrix)
-
-            # 计算集中度风险（HHI），与市场数据无关
-            weights_list = [alloc.weight for alloc in portfolio_state.allocations.values()] if portfolio_state else []
+                var_95 = self.risk_metrics_service.calculate_value_at_risk(
+                    portfolio_returns, 
+                    confidence_level=0.95
+                )
+                cvar_95 = self.risk_metrics_service.calculate_expected_shortfall(
+                    portfolio_returns, 
+                    confidence_level=0.95
+                )
+                result['var_95'] = abs(var_95)  # VaR通常为负值，取绝对值表示损失
+                result['cvar_95'] = abs(cvar_95)
+            
+            # 4. 计算夏普比率（使用增强版，考虑市场风险溢价）
+            if len(portfolio_returns) > 1:
+                # 使用增强版夏普比率（国际化支持）
+                enhanced_result = self.risk_metrics_service.calculate_sharpe_ratio_enhanced(
+                    portfolio_returns,
+                    risk_free_rate=None,  # 使用动态无风险利率
+                    include_market_premium=True,  # 包含市场溢价
+                    adjust_for_anomalies=True,  # 调整市场异常
+                    prices=None
+                )
+                result['sharpe_ratio'] = enhanced_result['enhanced_sharpe']
+            
+            # 5. 计算最大回撤
+            if len(portfolio_returns) > 1:
+                max_dd = self.risk_metrics_service.calculate_max_drawdown(portfolio_returns)
+                result['max_drawdown'] = abs(max_dd)  # 取绝对值表示回撤幅度
+            
+            # 6. 计算风险贡献度（优先使用协方差矩阵）
+            cov_matrix = data.get('covariance_matrix')
+            if cov_matrix is not None:
+                result['risk_contributions'] = self.calculate_risk_contributions_covariance(
+                    portfolio_state, cov_matrix
+                )
+            else:
+                corr_matrix = data.get('correlation_matrix')
+                if corr_matrix is not None:
+                    result['risk_contributions'] = self.calculate_risk_contributions(
+                        portfolio_state, corr_matrix
+                    )
+            
+            # 7. 计算集中度风险（HHI）
+            weights_list = [alloc.weight for alloc in portfolio_state.allocations.values()]
             if weights_list:
                 hhi = sum(w ** 2 for w in weights_list)
                 result['concentration_risk'] = float(min(hhi, 1.0))
             
+            logger.debug(f"组合风险分析完成: 波动率={result['volatility']:.4f}, VaR={result['var_95']:.4f}, 夏普={result['sharpe_ratio']:.2f}")
             return result
         
         except Exception as e:

@@ -22,7 +22,7 @@ class DummyPortfolioState:
 
 
 class TestPortfolioRiskAnalyzer(unittest.TestCase):
-    """测试组合风险分析器 - 风险贡献度（协方差矩阵）"""
+    """测试组合风险分析器 - 风险贡献度（协方差矩阵） + P1增强：7维度分析"""
 
     def setUp(self):
         self.config = {'trading_days_per_year': 252}
@@ -191,3 +191,85 @@ class TestPortfolioRiskAnalyzer(unittest.TestCase):
         )
         
         self.assertEqual(result, {})
+    
+    def test_seven_dimension_analysis_complete(self):
+        """测试P1增强：7维度组合风险分析"""
+        # 构造两资产组合
+        allocations = {'A': DummyAlloc(0.6), 'B': DummyAlloc(0.4)}
+        portfolio_state = DummyPortfolioState(allocations)
+        
+        # 构造市场数据（模拟30天的价格）
+        np.random.seed(42)
+        prices_A = list(100 + np.cumsum(np.random.randn(30) * 2))
+        prices_B = list(100 + np.cumsum(np.random.randn(30) * 1.5))
+        
+        market_data = {
+            'prices': {
+                'A': {'close': prices_A},
+                'B': {'close': prices_B}
+            },
+            'timestamp': list(range(30))
+        }
+        
+        # 协方差矩阵
+        cov_matrix = pd.DataFrame(
+            [[0.0004, 0.0002],
+             [0.0002, 0.0001]],
+            index=['A', 'B'], columns=['A', 'B']
+        )
+        
+        data = {
+            'portfolio_state': portfolio_state,
+            'market_data': market_data,
+            'covariance_matrix': cov_matrix
+        }
+        
+        result = self.analyzer.analyze(data, risk_metrics={})
+        
+        # 验证7维度是否存在
+        self.assertIn('total_risk', result)
+        self.assertIn('volatility', result)
+        self.assertIn('var_95', result)
+        self.assertIn('cvar_95', result)
+        self.assertIn('sharpe_ratio', result)
+        self.assertIn('max_drawdown', result)
+        self.assertIn('risk_contributions', result)
+        
+        # 验证数值合理性
+        self.assertGreater(result['volatility'], 0, "波动率应为正")
+        self.assertEqual(result['total_risk'], result['volatility'], "总风险=波动率（专家指导）")
+        self.assertGreater(result['var_95'], 0, "VaR应为正（损失金额）")
+        self.assertGreater(result['cvar_95'], result['var_95'], "CVaR应大于VaR")
+        self.assertIsInstance(result['sharpe_ratio'], float, "夏普比率应为float")
+        self.assertGreaterEqual(result['max_drawdown'], 0, "最大回撤应非负")
+        
+        # 验证风险贡献
+        self.assertIn('A', result['risk_contributions'])
+        self.assertIn('B', result['risk_contributions'])
+        
+        # 验证传统字段仍然存在
+        self.assertIn('portfolio_returns', result)
+        self.assertIn('concentration_risk', result)
+    
+    def test_seven_dimension_analysis_with_empty_market_data(self):
+        """测试7维度分析：空市场数据"""
+        allocations = {'A': DummyAlloc(1.0)}
+        portfolio_state = DummyPortfolioState(allocations)
+        
+        data = {
+            'portfolio_state': portfolio_state,
+            'market_data': None,
+            'covariance_matrix': None
+        }
+        
+        result = self.analyzer.analyze(data, risk_metrics={})
+        
+        # 应该返回零值，但结构完整
+        self.assertEqual(result['total_risk'], 0.0)
+        self.assertEqual(result['volatility'], 0.0)
+        self.assertEqual(result['var_95'], 0.0)
+        self.assertEqual(result['cvar_95'], 0.0)
+        self.assertEqual(result['sharpe_ratio'], 0.0)
+        self.assertEqual(result['max_drawdown'], 0.0)
+        self.assertEqual(result['risk_contributions'], {})
+
