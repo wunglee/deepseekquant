@@ -1,408 +1,385 @@
-# 第4轮咨询：阶段1数据模型层第2轮复审
+# 第5轮咨询：阶段1数据模型层第3轮复审（质量收官）
 
 ## 咨询范围说明
 
-**评审范围**: 严格限定于数据模型层（risk_models.py）的设计合理性  
-**评审重点**: 数据结构完整性、类型安全性、向后兼容性、代码内文档  
-**评审排除**: 测试修复策略、跨模块影响、业务逻辑实现（由项目方自行处理）
+**评审阶段**: 阶段1 - 数据模型层（risk_models.py）  
+**复审轮次**: 第3轮（质量收官轮）  
+**评审重点**: 代码质量、一致性、健壮性、边界处理  
+**评审排除**: 能力扩展、新功能添加（避免无限迭代）
 
-## 第1轮实施成果总结
+## 前两轮修正总结
 
-### ✅ 已完成修正
-1. **P0修正**:
-   - RiskLevel简化为6级（移除BLACK_SWAN）
-   - timestamp改为datetime类型
-   - 枚举验证增强（异常处理+默认值）
+### 第1轮完成
+- P0/P1基础修正：枚举简化、类型优化、字段补充
+- 测试通过：18/18 ✅
 
-2. **P1修正**:
-   - RiskType补充：10→18个（+8个新类型）
-   - RiskMetric补充：13→24个（+11个新指标）
-   - 新增枚举：TimeHorizon, CalculationMethod, ImpactLevel
-   - 新增dataclass：LimitBreach, Recommendation
-   - RiskLimit/RiskAssessment/StressTestScenario字段增强
+### 第2轮完成  
+- P0: 向后兼容性增强（BLACK_SWAN处理、timestamp转换）
+- P1: 类型安全+文档完善（枚举化、语义文档、使用示例）
+- P2: 可选增强（display_name、timedelta）
+- 测试通过：18/18 ✅
 
-### 📊 当前测试状态
-- **risk_models_test.py**: 18/18 ✅ 100%通过
-- **数据模型层**: 所有核心功能验证通过
+## 本轮复审核心问题（聚焦质量）
 
-## 本轮复审核心问题
-
-### 问题1: 向后兼容性策略 ⚠️ 关键
+### 问题1: 异常处理完整性检查 🛡️
 
 **问题描述**:  
-第1轮修正引入了字段变更，需确认from_dict()的兼容性设计：
+检查所有from_dict()方法的异常处理是否完整、一致。
 
-1. **StressTestScenario字段变更**:
-   - `duration: str` → `duration_days: int`
-   - `impact_level: RiskLevel` → `impact_level: ImpactLevel`
+**需要评估的点**:
+1. **异常类型覆盖**:
+   ```python
+   # 当前代码示例
+   try:
+       parsed_data['risk_type'] = RiskType(rt)
+   except (ValueError, KeyError) as e:
+       logger.warning(...)
+       parsed_data['risk_type'] = RiskType.MARKET_RISK
+   ```
+   - 是否遗漏其他可能异常（TypeError, AttributeError等）？
+   - 默认值选择是否合理？
 
-2. **timestamp类型变更**:
-   - 所有`timestamp: str` → `timestamp: datetime`
+2. **日志级别一致性**:
+   - 当前使用logger.warning()
+   - 是否应根据严重程度区分warning/error/critical？
 
-3. **RiskLevel.BLACK_SWAN移除**:
-   - 建议移至RiskType作为事件类型
+3. **错误恢复策略**:
+   - 使用默认值 vs 抛出异常
+   - 是否应该有全局配置控制容错级别？
 
 **咨询要点**:
-1. from_dict()的兼容性设计是否充分？
-   - 当前实现：duration→duration_days转换（支持格式"Xd/Xw/Xm"和"18个月"）
-   - 是否需要更强的容错能力？
-
-2. timestamp的双向转换策略：
-   - to_dict()已转换为ISO字符串
-   - from_dict()已支持字符串→datetime
-   - 是否需要在__init__中也自动转换str→datetime（增强易用性）？
-
-3. BLACK_SWAN的处理建议：
-   - 是否应添加BLACK_SWAN_EVENT到RiskType枚举？
-   - 或者保留为特殊的RiskLevel但标记@deprecated？
-   - 还是完全移除，由使用方自行适配？
+- 异常处理是否足够防御性？
+- 日志记录是否有助于问题排查？
+- 是否需要添加错误码或错误类型分类？
 
 ---
 
-### 问题2: P2优先级修正评估 🔧
+### 问题2: 字段验证逻辑完整性 ✓
 
 **问题描述**:  
-第1轮仅完成P0+P1，P2优先级修正尚未实施，需评估必要性和影响：
+检查各dataclass的字段约束是否充分。
 
-1. **RiskType二级分类**（专家建议P2）:
-   ```python
-   class RiskCategory(Enum):
-       MARKET = "market"          # 市场类风险
-       CREDIT = "credit"          # 信用类风险
-       OPERATIONAL = "operational" # 操作类风险
-       STRATEGIC = "strategic"    # 战略类风险
-   
-   class RiskType(Enum):
-       # 添加category属性
-       MARKET_RISK = ("market_risk", RiskCategory.MARKET)
-   ```
-
-2. **StressTestScenario.parameters结构化**:
-   ```python
-   @dataclass
-   class ScenarioParameters:
-       type: str
-       decline: Optional[float] = None
-       volatility_spike: Optional[float] = None
-       # ... 其他场景参数
-   ```
-
-3. **性能优化和缓存机制**:
-   - from_score()结果缓存
-   - 枚举值预编译字典
-
-**咨询要点**:
-1. RiskCategory是否真的必要？
-   - 当前18个RiskType是否已经足够细分？
-   - 是否有实际业务场景需要按类别过滤？
-
-2. ScenarioParameters结构化的代价：
-   - 当前Dict[str, Any]足够灵活
-   - 结构化会增加维护成本和破坏性
-   - 是否值得在P2阶段引入？
-
-3. 性能优化的必要性：
-   - from_score()调用频率是否高到需要缓存？
-   - 数据模型层是否是性能瓶颈？
-
-**建议决策标准**:
-- 如果对业务逻辑无实质帮助 → 推迟到后续迭代
-- 如果引入破坏性变更 → 推迟到大版本升级
-- 如果性能提升<10% → 不必要
-
----
-
-### 问题3: Recommendation.type枚举化 📝
-
-**问题描述**:  
-当前Recommendation.type是字符串，缺乏类型约束：
-
+**当前实现分析**:
 ```python
+# StressTestScenario有验证
+def __post_init__(self):
+    if not 0 <= self.probability <= 1:
+        raise ValueError(...)
+    if self.probability < 0.0001:
+        logger.warning(...)
+
+# 其他类缺少验证？
 @dataclass
-class Recommendation:
-    type: str  # "reduce", "hedge", "monitor", "liquidate"
-    priority: int
-    description: str
-    action_items: List[str]
+class RiskLimit:
+    threshold: float  # 无范围验证
+    confidence_level: float = 0.95  # 无0-1验证
+    priority: int = 1  # 无正数验证
 ```
 
 **咨询要点**:
-1. 是否应定义RecommendationType枚举？
-   - 类型约束的必要性
-   - 对现有代码的影响（risk_limits_enhanced.py使用字符串创建）
+1. **需要添加验证的字段**:
+   - RiskLimit.confidence_level（应在0-1）
+   - RiskLimit.threshold（是否有合理范围？）
+   - Recommendation.priority（1-10约束？）
+   - RiskAssessment.risk_score（0-100约束？）
 
-2. 与RiskControlAction的关系：
-   - RiskControlAction: 系统自动控制动作（8种：ALLOW/WARN/REDUCE等）
-   - RecommendationType: 人工建议类型（当前字符串）
-   - 两者是否应该有关联？是否应该合并？
+2. **验证时机**:
+   - __post_init__中验证 vs 属性setter验证
+   - 哪种方式更符合dataclass最佳实践？
+
+3. **验证失败处理**:
+   - 抛出ValueError vs 自动修正到边界值
+   - 是否应该有宽松模式和严格模式？
 
 ---
 
-### 问题4: LimitBreach和Recommendation的完整性 🔍
+### 问题3: 枚举值的穷尽性保证 📋
 
 **问题描述**:  
-新增的两个dataclass字段可能不够完整：
+检查枚举使用时是否有遗漏分支的风险。
 
-**LimitBreach当前设计**:
+**当前代码示例**:
+```python
+# RiskLevel.from_score()
+if score < 20: return cls.VERY_LOW
+elif score < 40: return cls.LOW
+# ... 
+else: return cls.EXTREME  # 最后的else覆盖所有
+
+# 但如果有switch-case风格使用呢？
+def get_action_for_level(level: RiskLevel):
+    if level == RiskLevel.VERY_LOW:
+        return "monitor"
+    elif level == RiskLevel.LOW:
+        return "review"
+    # ... 如果遗漏了某个等级？
+```
+
+**咨询要点**:
+1. 是否应该在枚举类中添加辅助方法避免遗漏？
+2. Python类型检查工具能否帮助发现遗漏？
+3. 是否需要在枚举类中添加示例代码展示正确用法？
+
+---
+
+### 问题4: 类型提示的严格性 🎯
+
+**问题描述**:  
+检查类型提示是否足够精确和严格。
+
+**当前类型提示分析**:
+```python
+# 较松散的类型
+parameters: Dict[str, Any]  # Any太宽泛
+action_items: List[str]  # 空列表也合法吗？
+stress_test_results: Dict[str, float]  # 键的格式有约束吗？
+
+# 可能更好的类型
+from typing import TypedDict, Annotated
+class ScenarioParameters(TypedDict, total=False):
+    market_drop: float
+    volatility_spike: float
+    ...
+
+action_items: Annotated[List[str], "non-empty list"]
+```
+
+**咨询要点**:
+1. Dict[str, Any]是否应该更具体化？
+2. 是否应该使用TypedDict定义字典结构？
+3. 是否应该使用NewType或Annotated增强语义？
+4. 数据模型层的类型严格度应该多高？
+
+---
+
+### 问题5: 序列化/反序列化对称性 🔄
+
+**问题描述**:  
+验证to_dict()和from_dict()的对称性和一致性。
+
+**需要检查的场景**:
+```python
+# 场景1：datetime字段
+ra = RiskAssessment(timestamp=datetime.now(), ...)
+data = ra.to_dict()  # timestamp → ISO字符串
+restored = RiskAssessment.from_dict(data)  # ISO字符串 → datetime
+assert ra.timestamp == restored.timestamp  # 应该相等
+
+# 场景2：嵌套对象
+rec = Recommendation(type=RecommendationType.REDUCE, ...)
+data = rec.to_dict()  # 枚举 → 字符串
+restored = Recommendation.from_dict(data)  # 需要支持吗？
+
+# 场景3：默认值字段
+lb = LimitBreach(..., breach_duration=0)  # 默认值
+data = lb.to_dict()  # 是否包含默认值？
+```
+
+**咨询要点**:
+1. 所有dataclass是否都有from_dict()方法？
+2. 嵌套对象（LimitBreach, Recommendation）的序列化是否处理？
+3. 默认值字段在to_dict()中是否应该省略？
+4. 是否需要添加往返测试（roundtrip test）？
+
+---
+
+### 问题6: 命名一致性和可读性 📝
+
+**问题描述**:  
+检查命名规范是否一致，避免歧义。
+
+**需要检查的命名**:
+```python
+# 时间相关字段命名
+timestamp: datetime  # 评估时间点
+created_at: datetime  # 创建时间
+valid_from/valid_to: datetime  # 有效期
+duration_days: int  # 持续天数
+grace_period: int  # 宽限期（秒）
+recovery_days: int  # 恢复天数
+
+# 问题：时间单位不一致（天 vs 秒）
+# 是否应该统一后缀？_days, _seconds, _dt (datetime)?
+```
+
+**咨询要点**:
+1. 时间字段命名是否应该包含单位后缀？
+2. boolean字段是否都使用is_前缀？
+3. 复数形式是否一致（breaches vs breach_list）？
+4. 缩写使用是否一致（var vs value_at_risk）？
+
+---
+
+### 问题7: 不变性和数据完整性 🔒
+
+**问题描述**:  
+dataclass是否应该添加frozen=True保证不变性？
+
+**当前设计**:
 ```python
 @dataclass
-class LimitBreach:
-    limit_id: str
-    risk_type: RiskType
-    metric: RiskMetric
-    current_value: float
-    threshold: float
-    breach_amount: float
+class RiskAssessment:  # 默认可变
     timestamp: datetime
-    severity: RiskLevel = RiskLevel.MODERATE
+    ...
+
+# 可能的问题
+assessment = risk_service.assess(portfolio)
+assessment.risk_score = 999  # 外部可以随意修改！
 ```
 
-**可能缺失的字段**:
-- `breach_duration: int` - 违规持续时间（秒）
-- `breach_count: int` - 近期违规次数（用于级联判断）
-- `recovery_target: float` - 恢复目标值
-- `resolution_deadline: Optional[datetime]` - 处理截止时间
-- `responsible_party: str` - 责任方（人/系统）
-
-**Recommendation当前设计**:
-```python
-@dataclass
-class Recommendation:
-    type: str
-    priority: int  # 1-10
-    description: str
-    action_items: List[str]
-    estimated_impact: float = 0.0
-```
-
-**可能缺失的字段**:
-- `created_at: datetime` - 创建时间
-- `expires_at: Optional[datetime]` - 过期时间
-- `status: str` - 状态（pending/in_progress/completed/rejected）
-- `execution_cost: float` - 执行成本（交易费用等）
-- `confidence_level: float` - 建议置信度
-- `source: str` - 来源（rule_based/ml_model/manual）
-
 **咨询要点**:
-1. 这些字段是否应该在数据模型层定义？
-   - 数据模型层职责：核心业务实体
-   - 业务服务层职责：业务流程管理
-   - 如何划分边界？
+1. 哪些dataclass应该是不可变的（frozen=True）？
+   - RiskAssessment（评估结果应该不可变）
+   - LimitBreach（违规记录应该不可变）
+   - Recommendation（建议应该可变吗？）
 
-2. 字段添加的优先级判断：
-   - P0：核心必需，缺失会导致业务逻辑错误
-   - P1：重要但非紧急，影响功能完整性
-   - P2：锦上添花，未来可扩展
-
-3. 是否应该拆分为多层结构：
+2. 如果需要修改，是否应该提供方法而非直接字段修改？
    ```python
-   # 核心数据
-   @dataclass
-   class LimitBreach:
-       ...  # 当前字段
-   
-   # 业务扩展（在业务层定义）
-   @dataclass
-   class LimitBreachTracking:
-       breach: LimitBreach
-       breach_duration: int
-       breach_count: int
-       resolution_deadline: datetime
-   ```
-
----
-
-### 问题5: 枚举值命名一致性审查 📐
-
-**问题描述**:  
-review当前所有枚举的value命名规范，确保一致性：
-
-**当前命名风格混合**:
-1. snake_case（多数）: `"market_risk"`, `"value_at_risk"`
-2. 数字+单位（TimeHorizon）: `"1d"`, `"1w"`, `"1m"`, `"1y"`
-3. 描述性（ImpactLevel）: `"negligible"`, `"catastrophic"`
-
-**咨询要点**:
-1. TimeHorizon的值是否应该改为描述性？
-   ```python
-   # 当前
-   DAILY = "1d"
-   WEEKLY = "1w"
-   
-   # 建议改为？
-   DAILY = "daily"
-   WEEKLY = "weekly"
-   ```
-   - 优点：与其他枚举一致，更易读
-   - 缺点：破坏与配置文件的兼容性
-
-2. 是否需要添加display_name属性？
-   ```python
-   class TimeHorizon(Enum):
-       DAILY = "1d"
-       
-       @property
-       def display_name(self) -> str:
-           return {"1d": "每日", "1w": "每周", ...}[self.value]
-   ```
-
-3. 枚举值是否应该可配置化？
-   - 例如TimeHorizon支持自定义时间范围（"3d", "2w"）
-   - 还是应该保持固定的标准值？
-
----
-
-### 问题6: 数据模型文档化 📚
-
-**问题描述**:  
-risk_models.py虽有注释，但缺少完整的使用文档：
-
-**当前文档状态**:
-- ✅ 枚举有docstring
-- ✅ 修订历史记录在文件头
-- ❌ 缺少使用示例
-- ❌ 缺少字段语义说明（正负号约定等）
-- ❌ 缺少依赖关系图
-
-**咨询要点**:
-1. 是否需要添加详细的字段语义文档？
-   ```python
-   @dataclass
+   @dataclass(frozen=True)
    class RiskAssessment:
-       """风险评估结果
-       
-       字段语义约定：
-       - value_at_risk: 在险价值，正数表示潜在损失金额
-       - max_drawdown: 最大回撤，负数表示跌幅（-0.15表示15%）
-       - beta: Beta系数，>1表示比市场波动大
-       - sharpe_ratio: 夏普比率，>1表示良好，>2表示优秀
-       """
+       def with_updated_score(self, new_score: float) -> 'RiskAssessment':
+           return dataclasses.replace(self, risk_score=new_score)
    ```
 
-2. 是否需要示例代码块？
-   ```python
-   # 使用示例
-   assessment = RiskAssessment(
-       timestamp=datetime.now(),
-       portfolio_id="portfolio_001",
-       overall_risk_level=RiskLevel.from_score(65.0),  # HIGH
-       ...
-   )
-   
-   # 序列化
-   data = assessment.to_dict()
-   
-   # 反序列化
-   restored = RiskAssessment.from_dict(data)
-   ```
+3. 性能影响：frozen=True对性能的影响是否可接受？
 
-3. 文档格式选择：
-   - docstring内嵌（保持代码内文档）
-   - 独立README.md（违反用户规范，不建议）
-   - 注释块示例（折中方案）
+---
 
-**建议**:
-专注于代码内文档（docstring + 注释），避免创建外部文档文件。
+### 问题8: 日志和调试友好性 🔍
+
+**问题描述**:  
+确保数据模型易于调试和问题排查。
+
+**当前状态**:
+```python
+# dataclass默认有__repr__，但是否足够？
+>>> ra = RiskAssessment(...)
+>>> print(ra)
+RiskAssessment(timestamp=datetime(...), portfolio_id='xxx', ...)
+# 太长，不易读
+
+# 是否需要自定义__repr__或__str__？
+def __repr__(self):
+    return f"RiskAssessment(portfolio={self.portfolio_id}, score={self.risk_score}, level={self.overall_risk_level})"
+```
+
+**咨询要点**:
+1. 是否需要自定义__repr__/__str__提高可读性？
+2. 敏感字段（如threshold值）是否应该在日志中脱敏？
+3. 是否应该添加__hash__支持集合操作（如果frozen=True）？
+4. 是否需要添加summary()方法用于快速查看关键信息？
+
+---
+
+### 问题9: 导入和依赖的清晰性 📦
+
+**问题描述**:  
+检查模块导入是否清晰、最小化。
+
+**当前导入**:
+```python
+from dataclasses import dataclass, asdict, field
+from datetime import datetime, timedelta
+from enum import Enum
+from typing import Dict, List, Optional, Any
+import logging
+```
+
+**咨询要点**:
+1. 是否有未使用的导入？
+2. 是否应该使用TYPE_CHECKING避免循环导入风险？
+3. logging.getLogger放在模块级是否合适？
+4. 是否需要显式定义__all__控制导出？
+
+---
+
+### 问题10: 文档字符串的完整性 📚
+
+**问题描述**:  
+确保所有公共接口都有充分的文档。
+
+**需要检查的内容**:
+1. **所有枚举**是否有docstring解释用途？
+2. **所有dataclass**是否有字段说明？
+3. **所有方法**（from_dict, to_dict等）是否有Args/Returns文档？
+4. **特殊方法**（__post_init__等）是否说明了副作用？
+
+**质量标准**:
+- 描述清晰（what）
+- 用途明确（why）
+- 示例代码（how）
+- 边界条件说明
 
 ---
 
 ## 期望的专家反馈
 
-### 高优先级（决定本轮修正方向）
-1. **向后兼容性策略**（问题1）- 必答
-   - from_dict()兼容性是否充分？
-   - BLACK_SWAN如何处理？
-   - timestamp转换策略是否合理？
+### 核心原则
+- **质量优先于功能**：只关注现有代码的质量提升
+- **防御性编程**：增强健壮性而非增加能力
+- **一致性保证**：统一风格和约定
+- **可维护性**：便于未来理解和修改
 
-2. **LimitBreach/Recommendation完整性**（问题4）- 必答
-   - 哪些字段是P0必需的？
-   - 数据模型层的边界在哪里？
+### 优先级建议
+请专家按以下优先级评估：
 
-### 中优先级（影响后续实施）
-3. **P2修正评估**（问题2）- 建议
-   - RiskCategory是否必要？
-   - ScenarioParameters是否值得？
+**P0（必须修复的质量问题）**:
+- 明显的bug或逻辑错误
+- 严重的类型不安全
+- 缺失的关键验证
 
-4. **Recommendation.type枚举化**（问题3）- 建议
-   - 是否应该枚举化？
+**P1（建议修复的质量问题）**:
+- 不一致的命名或风格
+- 不完整的异常处理
+- 缺失的重要文档
 
-### 低优先级（质量提升）
-5. **枚举命名一致性**（问题5）- 可选
-6. **文档化建议**（问题6）- 可选
+**P2（可选的质量改进）**:
+- 代码优化建议
+- 更好的实践方式
+- 增强的调试支持
 
----
-
-## 附录：源代码清单
-
-### 1. 当前risk_models.py核心结构
-```python
-# 文件：core_bak_refactored/core/risk/risk_models.py（595行）
-
-# 枚举定义（7个）
-class RiskLevel(Enum): ...       # 6个等级
-class RiskType(Enum): ...        # 18个类型
-class RiskMetric(Enum): ...      # 24个指标
-class RiskControlAction(Enum): ... # 8个动作
-class TimeHorizon(Enum): ...     # 4个范围
-class CalculationMethod(Enum): ... # 3个方法
-class ImpactLevel(Enum): ...     # 5个级别
-
-# 数据类定义（7个）
-@dataclass class LimitBreach: ...      # 新增
-@dataclass class Recommendation: ...   # 新增
-@dataclass class RiskLimit: ...        # 增强（+7字段）
-@dataclass class PositionLimit: ...    # 未修改
-@dataclass class RiskAssessment: ...   # 增强（+6字段）
-@dataclass class RiskEvent: ...        # timestamp修正
-@dataclass class StressTestScenario: ... # 重构（duration_days, ImpactLevel）
-```
-
-### 2. 核心数据结构
-```python
-# LimitBreach - 限额违反详情
-@dataclass
-class LimitBreach:
-    limit_id: str
-    risk_type: RiskType
-    metric: RiskMetric
-    current_value: float
-    threshold: float
-    breach_amount: float
-    timestamp: datetime
-    severity: RiskLevel = RiskLevel.MODERATE
-
-# Recommendation - 风险建议
-@dataclass
-class Recommendation:
-    type: str  # "reduce", "hedge", "monitor", "liquidate"
-    priority: int  # 1-10
-    description: str
-    action_items: List[str]
-    estimated_impact: float = 0.0
-```
-
-### 3. 兼容性处理示例
-```python
-# StressTestScenario.from_dict() - 支持duration旧格式
-if 'duration' in parsed_data and 'duration_days' not in parsed_data:
-    duration_str = parsed_data.pop('duration')
-    # 支持 "18个月", "3d", "1w" 等格式
-    parsed_data['duration_days'] = parse_duration(duration_str)
-
-# RiskAssessment.from_dict() - 支持timestamp字符串
-if 'timestamp' in parsed_data and isinstance(parsed_data['timestamp'], str):
-    parsed_data['timestamp'] = datetime.fromisoformat(parsed_data['timestamp'])
-```
+### 评审约束
+- ❌ 不要建议新增业务功能
+- ❌ 不要建议大规模重构
+- ❌ 不要建议引入新的依赖库
+- ✅ 聚焦现有代码的质量缺陷
+- ✅ 提供具体的修复建议
+- ✅ 说明修复的必要性和收益
 
 ---
 
-**评审要求**:
-1. 优先回答问题1、2、4（兼容性+P2评估+完整性）
-2. 提供具体的代码修改建议（如果需要）
-3. 明确P0/P1/P2优先级划分
-4. 指出数据模型层的设计边界和最佳实践
+## 附录：当前代码关键部分
 
-**预期输出**:
-- 问题分析和建议方案
-- 需要修正的具体字段/方法
-- 第2轮实施的检查清单
+### 1. 枚举类清单
+```python
+RiskLevel(6个等级) - 有from_score(), from_legacy_value()
+RiskType(19个类型) - 包含BLACK_SWAN_EVENT
+RiskMetric(24个指标)
+RiskControlAction(8个动作)
+RecommendationType(6个类型)
+TimeHorizon(4个范围) - 有display_name, timedelta属性
+CalculationMethod(3个方法)
+ImpactLevel(5个级别)
+```
+
+### 2. 数据类清单
+```python
+LimitBreach - 有breach_duration字段
+Recommendation - type枚举化，有created_at/status
+RiskLimit - 完整使用示例文档
+PositionLimit - 未在第1/2轮修改
+RiskAssessment - 详细字段语义文档，有__post_init__
+RiskEvent - 有__post_init__
+StressTestScenario - 有__post_init__和验证逻辑
+```
+
+### 3. 当前已知的质量问题（待专家确认）
+- [ ] Recommendation/LimitBreach缺少from_dict()方法
+- [ ] 部分字段缺少范围验证（confidence_level, priority等）
+- [ ] 日志级别使用不一致
+- [ ] 某些类可能应该frozen=True
+- [ ] 时间字段命名单位不统一
+
+---
+
+**收官目标**: 确保risk_models.py成为高质量、可维护、防御性强的数据模型基石。

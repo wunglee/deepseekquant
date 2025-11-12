@@ -223,14 +223,14 @@ class ImpactLevel(Enum):
 
 @dataclass
 class LimitBreach:
-    """限额违反详情（专家建议：结构化替代Dict）
+    """限额违反详情(专家建议：结构化替代Dict)
     
     记录风险限额被违反的核心信息，用于风险监控和预警。
     
     字段说明：
     - breach_amount: 超出阈值的绝对值，正数表示超出量
     - severity: 违规严重程度，基于超出比例评估
-    - breach_duration: P1新增，违规持续时间（秒），用于级联判断
+    - breach_duration_seconds: P1新增，违规持续时间(秒)，用于级联判断(P1命名优化：添加单位后缀)
     """
     limit_id: str
     risk_type: RiskType
@@ -241,50 +241,165 @@ class LimitBreach:
     timestamp: datetime
     severity: RiskLevel = RiskLevel.MODERATE
     
-    # P1补充：违规持续时间
-    breach_duration: int = 0  # 违规持续时间（秒）
+    # P1补充+命名优化：违规持续时间(秒)
+    breach_duration_seconds: int = 0  # 违规持续时间(秒，P1命名优化)
     
     def to_dict(self) -> Dict[str, Any]:
         result = asdict(self)
         result['timestamp'] = self.timestamp.isoformat()
         return result
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'LimitBreach':
+        """从字典创建LimitBreach对象(P0新增：序列化对称性)
+        
+        Args:
+            data: 包含LimitBreach字段的字典
+            
+        Returns:
+            LimitBreach实例
+        """
+        parsed_data = data.copy()
+        
+        # 解析timestamp
+        if 'timestamp' in parsed_data and isinstance(parsed_data['timestamp'], str):
+            try:
+                parsed_data['timestamp'] = datetime.fromisoformat(parsed_data['timestamp'])
+            except ValueError:
+                logger.warning(f"Invalid timestamp: {parsed_data['timestamp']}, using now()")
+                parsed_data['timestamp'] = datetime.now()
+        
+        # 解析risk_type
+        if 'risk_type' in parsed_data:
+            rt = parsed_data['risk_type']
+            try:
+                if isinstance(rt, dict) and 'value' in rt:
+                    parsed_data['risk_type'] = RiskType(rt['value'])
+                elif isinstance(rt, str):
+                    parsed_data['risk_type'] = RiskType(rt)
+                elif not isinstance(rt, RiskType):
+                    raise TypeError(f"Unsupported risk_type type: {type(rt)}")
+            except (ValueError, KeyError, TypeError) as e:
+                logger.warning(f"Invalid risk_type: {rt}, error: {e}, using MARKET_RISK")
+                parsed_data['risk_type'] = RiskType.MARKET_RISK
+        
+        # 解析metric
+        if 'metric' in parsed_data:
+            m = parsed_data['metric']
+            try:
+                if isinstance(m, dict) and 'value' in m:
+                    parsed_data['metric'] = RiskMetric(m['value'])
+                elif isinstance(m, str):
+                    parsed_data['metric'] = RiskMetric(m)
+                elif not isinstance(m, RiskMetric):
+                    raise TypeError(f"Unsupported metric type: {type(m)}")
+            except (ValueError, KeyError, TypeError) as e:
+                logger.warning(f"Invalid metric: {m}, error: {e}, using VALUE_AT_RISK")
+                parsed_data['metric'] = RiskMetric.VALUE_AT_RISK
+        
+        # 解析severity
+        if 'severity' in parsed_data:
+            s = parsed_data['severity']
+            try:
+                if isinstance(s, dict) and 'value' in s:
+                    parsed_data['severity'] = RiskLevel(s['value'])
+                elif isinstance(s, str):
+                    parsed_data['severity'] = RiskLevel(s)
+                elif not isinstance(s, RiskLevel):
+                    raise TypeError(f"Unsupported severity type: {type(s)}")
+            except (ValueError, KeyError, TypeError) as e:
+                logger.warning(f"Invalid severity: {s}, error: {e}, using MODERATE")
+                parsed_data['severity'] = RiskLevel.MODERATE
+        
+        # 兼容旧字段名(breach_duration -> breach_duration_seconds)
+        if 'breach_duration' in parsed_data and 'breach_duration_seconds' not in parsed_data:
+            parsed_data['breach_duration_seconds'] = parsed_data.pop('breach_duration')
+        
+        return cls(**parsed_data)
 
 
 @dataclass
 class Recommendation:
-    """风险建议（专家建议：结构化替代Dict）
+    """风险建议(专家建议：结构化替代Dict)
     
     给人工决策者的风险处置建议，区别于系统自动控制动作。
     
     使用示例：
     >>> rec = Recommendation(
     >>>     type=RecommendationType.REDUCE,
-    >>>     priority=1,  # 1-10，数值越小优先级越高
+    >>>     priority=1,  # 1-10，数值越小优先级越高(最高=1, 最低=10)
     >>>     description="市场风险过高，建议减少权益仓位",
     >>>     action_items=["sell AAPL 100 shares", "reduce leverage"]
     >>> )
     
     字段说明：
     - type: P1修正，改为枚举类型，增强类型安全
-    - priority: 1-10的整数，1最高，10最低
+    - priority: 1-10的整数，1最高，10最低(最高优先级=1, 最低优先级=10)
     - estimated_impact: 预期影响，正数表示风险降低，负数表示收益损失
     - created_at: P1新增，建议创建时间
     - status: P1新增，建议状态跟踪
     """
     type: RecommendationType  # P1修正：改为枚举类型
-    priority: int  # 1-10，数值越小优先级越高
+    priority: int  # 1-10，数值越小优先级越高(最高=1, 最低=10)
     description: str
     action_items: List[str]
-    estimated_impact: float = 0.0  # 预期影响（正数表示风险降低）
+    estimated_impact: float = 0.0  # 预期影响(正数表示风险降低)
     
     # P1补充：建议管理字段
     created_at: datetime = field(default_factory=datetime.now)
     status: str = "pending"  # pending/approved/rejected/completed
     
+    def __post_init__(self):
+        """P0新增：字段验证"""
+        # 验证priority范围(1-10)
+        if not 1 <= self.priority <= 10:
+            raise ValueError(f"priority must be in [1,10], got {self.priority}")
+    
     def to_dict(self) -> Dict[str, Any]:
+        """转换为字典格式，用于序列化。
+        
+        Returns:
+            包含所有字段的字典，枚举值转换为字符串。
+        """
         result = asdict(self)
         result['created_at'] = self.created_at.isoformat()
         return result
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'Recommendation':
+        """从字典创建Recommendation对象(P0新增：序列化对称性)
+        
+        Args:
+            data: 包含Recommendation字段的字典
+            
+        Returns:
+            Recommendation实例
+        """
+        parsed_data = data.copy()
+        
+        # 解析created_at
+        if 'created_at' in parsed_data and isinstance(parsed_data['created_at'], str):
+            try:
+                parsed_data['created_at'] = datetime.fromisoformat(parsed_data['created_at'])
+            except ValueError:
+                logger.warning(f"Invalid created_at: {parsed_data['created_at']}, using now()")
+                parsed_data['created_at'] = datetime.now()
+        
+        # 解析type
+        if 'type' in parsed_data:
+            t = parsed_data['type']
+            try:
+                if isinstance(t, dict) and 'value' in t:
+                    parsed_data['type'] = RecommendationType(t['value'])
+                elif isinstance(t, str):
+                    parsed_data['type'] = RecommendationType(t)
+                elif not isinstance(t, RecommendationType):
+                    raise TypeError(f"Unsupported type: {type(t)}")
+            except (ValueError, KeyError, TypeError) as e:
+                logger.warning(f"Invalid recommendation type: {t}, error: {e}, using MONITOR")
+                parsed_data['type'] = RecommendationType.MONITOR
+        
+        return cls(**parsed_data)
 
 
 @dataclass
@@ -343,6 +458,19 @@ class RiskLimit:
     
     # 专家补充：监管标记
     regulatory_required: bool = False
+
+    def __post_init__(self):
+        """P0新增：字段验证逻辑
+        
+        验证关键字段的取值范围，防止无效数据。
+        """
+        # 验证confidence_level必须在0-1范围
+        if not 0 <= self.confidence_level <= 1:
+            raise ValueError(f"confidence_level must be in [0,1], got {self.confidence_level}")
+        
+        # 验证priority必须为正数
+        if self.priority <= 0:
+            raise ValueError(f"priority must be positive, got {self.priority}")
 
     def to_dict(self) -> Dict[str, Any]:
         result = asdict(self)
