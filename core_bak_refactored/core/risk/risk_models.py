@@ -4,13 +4,23 @@
 职责: 定义风险管理相关的枚举和数据结构
 
 修订历史：
-- 2024-11-12: 基于专家第3轮咨询修正（阶段1-数据模型层评审）
+- 2024-11-12: 基于专家第3轮咨询修正（阶段1-数据模型层评审第1轮）
   * P0: RiskLevel简化为6级，移除BLACK_SWAN
   * P0: timestamp改为datetime类型
   * P1: 补充RiskType（5个新类型）和RiskMetric（核心指标）
   * P1: 新增TimeHorizon和CalculationMethod枚举
   * P1: 为嵌套结构定义专门dataclass
   * P1: 补充关键字段和评估维度
+- 2024-11-12: 基于专家第4轮咨询修正（阶段1-数据模型层评审第2轮）
+  * P0: 添加RiskLevel.from_legacy_value()兼容BLACK_SWAN
+  * P0: 添加RiskType.BLACK_SWAN_EVENT事件类型
+  * P0: RiskAssessment/RiskEvent添加__post_init__支持timestamp字符串转换
+  * P1: 新增RecommendationType枚举
+  * P1: LimitBreach补充breach_duration字段
+  * P1: Recommendation补充created_at/status字段，type改为枚举
+  * P1: RiskAssessment添加详细字段语义文档
+  * P1: RiskLimit添加使用示例文档
+  * P2: TimeHorizon添加display_name和timedelta属性
 """
 
 from dataclasses import dataclass, asdict, field
@@ -32,7 +42,7 @@ class RiskLevel(Enum):
     - VERY_HIGH: 80-95分，极高风险，紧急处理
     - EXTREME: 95-100分，极端风险，立即行动
     
-    注：BLACK_SWAN作为事件类型已移至RiskType，不再作为风险等级
+    注：BLACK_SWAN作为事件类型已移至RiskType.BLACK_SWAN_EVENT
     """
     VERY_LOW = "very_low"  # 0-20分
     LOW = "low"  # 20-40分
@@ -50,6 +60,21 @@ class RiskLevel(Enum):
         elif score < 80: return cls.HIGH
         elif score < 95: return cls.VERY_HIGH
         else: return cls.EXTREME
+    
+    @classmethod
+    def from_legacy_value(cls, legacy_value: str) -> 'RiskLevel':
+        """兼容旧BLACK_SWAN值（P0增强：向后兼容）
+        
+        Args:
+            legacy_value: 旧的风险等级值，可能包含black_swan
+            
+        Returns:
+            对应的RiskLevel，black_swan映射到EXTREME
+        """
+        if legacy_value == "black_swan":
+            logger.warning("Legacy BLACK_SWAN risk level detected, mapping to EXTREME")
+            return cls.EXTREME
+        return cls(legacy_value)
 
 
 class RiskType(Enum):
@@ -77,6 +102,9 @@ class RiskType(Enum):
     DATA_QUALITY_RISK = "data_quality_risk"  # 数据质量风险（延迟/错误）
     EXECUTION_RISK = "execution_risk"  # 执行风险（交易执行失败）
     TECHNOLOGY_RISK = "technology_risk"  # 技术风险（系统故障）
+    
+    # P0补充：黑天鹅事件类型（从RiskLevel迁移）
+    BLACK_SWAN_EVENT = "black_swan_event"  # 黑天鹅事件（极端罕见的高影响事件）
 
 
 class RiskMetric(Enum):
@@ -119,7 +147,7 @@ class RiskMetric(Enum):
 
 
 class RiskControlAction(Enum):
-    """风险控制动作枚举"""
+    """风险控制动作枚举（系统自动执行）"""
     ALLOW = "allow"  # 允许交易
     WARN = "warn"  # 警告但允许
     REDUCE = "reduce"  # 减少头寸
@@ -130,12 +158,51 @@ class RiskControlAction(Enum):
     CIRCUIT_BREAKER = "circuit_breaker"  # 熔断机制
 
 
+class RecommendationType(Enum):
+    """风险建议类型枚举（P1新增：人工决策建议）
+    
+    与RiskControlAction的区别：
+    - RiskControlAction: 系统自动执行的强制控制动作
+    - RecommendationType: 给人工决策者的建议类型，更宏观和策略性
+    """
+    REDUCE = "reduce"  # 减少头寸
+    HEDGE = "hedge"  # 对冲风险
+    MONITOR = "monitor"  # 加强监控
+    LIQUIDATE = "liquidate"  # 平仓
+    DIVERSIFY = "diversify"  # 分散投资
+    REBALANCE = "rebalance"  # 再平衡
+
+
 class TimeHorizon(Enum):
-    """时间范围枚举（专家建议：字符串改为枚举）"""
+    """时间范围枚举（专家建议：字符串改为枚举+添加显示名称）
+    
+    使用"数字+单位"格式符合金融行业标准，便于解析和计算。
+    """
     DAILY = "1d"
     WEEKLY = "1w"
     MONTHLY = "1m"
     YEARLY = "1y"
+    
+    @property
+    def display_name(self) -> str:
+        """P2增强：显示名称（中文）"""
+        names = {
+            "1d": "每日",
+            "1w": "每周",
+            "1m": "每月",
+            "1y": "每年"
+        }
+        return names.get(self.value, self.value)
+    
+    @property
+    def timedelta(self) -> timedelta:
+        """P2增强：转换为时间增量，便于计算"""
+        return {
+            "1d": timedelta(days=1),
+            "1w": timedelta(weeks=1),
+            "1m": timedelta(days=30),  # 近似
+            "1y": timedelta(days=365)
+        }[self.value]
 
 
 class CalculationMethod(Enum):
@@ -156,7 +223,15 @@ class ImpactLevel(Enum):
 
 @dataclass
 class LimitBreach:
-    """限额违反详情（专家建议：结构化替代Dict）"""
+    """限额违反详情（专家建议：结构化替代Dict）
+    
+    记录风险限额被违反的核心信息，用于风险监控和预警。
+    
+    字段说明：
+    - breach_amount: 超出阈值的绝对值，正数表示超出量
+    - severity: 违规严重程度，基于超出比例评估
+    - breach_duration: P1新增，违规持续时间（秒），用于级联判断
+    """
     limit_id: str
     risk_type: RiskType
     metric: RiskMetric
@@ -166,6 +241,9 @@ class LimitBreach:
     timestamp: datetime
     severity: RiskLevel = RiskLevel.MODERATE
     
+    # P1补充：违规持续时间
+    breach_duration: int = 0  # 违规持续时间（秒）
+    
     def to_dict(self) -> Dict[str, Any]:
         result = asdict(self)
         result['timestamp'] = self.timestamp.isoformat()
@@ -174,20 +252,71 @@ class LimitBreach:
 
 @dataclass
 class Recommendation:
-    """风险建议（专家建议：结构化替代Dict）"""
-    type: str  # "reduce", "hedge", "monitor", "liquidate"
+    """风险建议（专家建议：结构化替代Dict）
+    
+    给人工决策者的风险处置建议，区别于系统自动控制动作。
+    
+    使用示例：
+    >>> rec = Recommendation(
+    >>>     type=RecommendationType.REDUCE,
+    >>>     priority=1,  # 1-10，数值越小优先级越高
+    >>>     description="市场风险过高，建议减少权益仓位",
+    >>>     action_items=["sell AAPL 100 shares", "reduce leverage"]
+    >>> )
+    
+    字段说明：
+    - type: P1修正，改为枚举类型，增强类型安全
+    - priority: 1-10的整数，1最高，10最低
+    - estimated_impact: 预期影响，正数表示风险降低，负数表示收益损失
+    - created_at: P1新增，建议创建时间
+    - status: P1新增，建议状态跟踪
+    """
+    type: RecommendationType  # P1修正：改为枚举类型
     priority: int  # 1-10，数值越小优先级越高
     description: str
     action_items: List[str]
     estimated_impact: float = 0.0  # 预期影响（正数表示风险降低）
     
+    # P1补充：建议管理字段
+    created_at: datetime = field(default_factory=datetime.now)
+    status: str = "pending"  # pending/approved/rejected/completed
+    
     def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
+        result = asdict(self)
+        result['created_at'] = self.created_at.isoformat()
+        return result
 
 
 @dataclass
 class RiskLimit:
-    """风险限额配置（专家修正：枚举化+补充字段）"""
+    """风险限额配置（专家修正：枚举化+补充字段+使用示例）
+    
+    使用示例（P1文档增强）：
+    >>> # 创建市场风险VaR限额
+    >>> limit = RiskLimit(
+    >>>     risk_type=RiskType.MARKET_RISK,
+    >>>     metric=RiskMetric.VALUE_AT_RISK,
+    >>>     threshold=0.05,  # 5% VaR限制
+    >>>     time_horizon=TimeHorizon.DAILY,
+    >>>     confidence_level=0.95,
+    >>>     calculation_method=CalculationMethod.HISTORICAL,
+    >>>     action=RiskControlAction.REJECT,
+    >>>     scope="portfolio",
+    >>>     priority=1  # 最高优先级
+    >>> )
+    >>>
+    >>> # 序列化存储
+    >>> data = limit.to_dict()
+    >>>
+    >>> # 反序列化恢复
+    >>> restored = RiskLimit.from_dict(data)
+    
+    字段说明：
+    - grace_period: 宽限期（秒），专家建议统一使用秒为单位
+    - scope: 适用范围 (portfolio/strategy/asset_class/individual)
+    - priority: 优先级，数值越小优先级越高
+    - valid_from/valid_to: P1新增，限额有效期控制
+    """
     risk_type: RiskType
     metric: RiskMetric
     threshold: float
@@ -329,7 +458,23 @@ class PositionLimit:
 
 @dataclass
 class RiskAssessment:
-    """风险评估结果（专家修正：类型优化+补充维度）"""
+    """风险评估结果（专家修正：类型优化+补充维度+语义文档）
+    
+    字段语义约定（P1文档增强）：
+    - value_at_risk: 正数表示潜在损失金额（0.05表示5%损失）
+    - expected_shortfall: 正数表示极端损失期望值
+    - max_drawdown: 负数表示跌幅（-0.15表示15%回撤）
+    - beta: 系统风险暴露，>1波动大于市场
+    - alpha: 超额收益能力，正数表示跑赢基准
+    - sharpe_ratio: 风险调整收益，>1良好，>2优秀
+    - sortino_ratio: 下行风险调整收益，仅考虑负面波动
+    - volatility: 年化波动率，通常0-1为合理范围
+    
+    数值范围说明：
+    - 风险评分: 0-100分，分数越高风险越大
+    - 比率指标: 无上限，但通常0-3为合理范围
+    - 百分比值: 0-1表示比例，>1表示倍数
+    """
     timestamp: datetime  # 专家建议：改为datetime对象
     portfolio_id: str
     overall_risk_level: RiskLevel
@@ -365,6 +510,15 @@ class RiskAssessment:
     recommendations: List[Recommendation] = field(default_factory=list)
     
     confidence_level: float = 0.95  # 评估置信度
+    
+    def __post_init__(self):
+        """P0增强：timestamp初始化时支持字符串转换"""
+        if isinstance(self.timestamp, str):
+            try:
+                self.timestamp = datetime.fromisoformat(self.timestamp)
+            except ValueError:
+                logger.warning(f"Invalid timestamp format: {self.timestamp}, using now()")
+                self.timestamp = datetime.now()
 
     def to_dict(self) -> Dict[str, Any]:
         result = asdict(self)
@@ -441,6 +595,22 @@ class RiskEvent:
     resolution_time: Optional[datetime] = None  # 专家建议：改为datetime
     root_cause: Optional[str] = None  # 根本原因
     prevention_measures: List[str] = field(default_factory=list)  # 预防措施
+    
+    def __post_init__(self):
+        """P0增强：timestamp和resolution_time初始化时支持字符串转换"""
+        if isinstance(self.timestamp, str):
+            try:
+                self.timestamp = datetime.fromisoformat(self.timestamp)
+            except ValueError:
+                logger.warning(f"Invalid timestamp format: {self.timestamp}, using now()")
+                self.timestamp = datetime.now()
+        
+        if isinstance(self.resolution_time, str):
+            try:
+                self.resolution_time = datetime.fromisoformat(self.resolution_time)
+            except ValueError:
+                logger.warning(f"Invalid resolution_time format: {self.resolution_time}, setting to None")
+                self.resolution_time = None
 
     def to_dict(self) -> Dict[str, Any]:
         result = asdict(self)
