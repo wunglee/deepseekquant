@@ -203,6 +203,131 @@ class StressTesterTest(unittest.TestCase):
         # 所有场景结果应为负值（损失）
         for scenario_id, result in results.items():
             self.assertLessEqual(result, 0, f"{scenario_id}应该产生损失")
+    
+    # =========================================================================
+    # P1-2增强测试：完整场景参数使用 & 组合场景测试
+    # =========================================================================
+    
+    def test_market_crash_with_all_parameters(self):
+        """
+        P1-2增强测试：市场崩盘场景完整使用所有参数
+        验证decline/volatility_spike/correlation_break/recovery_period参数生效
+        """
+        # 运裌2008金融危机场景（包含所有参数）
+        results = self.tester.run_stress_tests(self.portfolio_state, self.market_data)
+        
+        # 2008危机应该比COVID损失更大（decline: -0.40 vs -0.20）
+        self.assertLess(results['2008_financial_crisis'], results['covid_19_pandemic'],
+                        "2008危机损失应大于COVID")
+        
+        # 波动率冲击应该增加损失（volatility_spike=3.5）
+        self.assertLess(results['2008_financial_crisis'], -0.35,
+                        "波动率冲击应该增加损失至超35%以上")
+    
+    def test_liquidity_crisis_with_china_specific_parameters(self):
+        """
+        P1-2增强测试：流动性危机A股特有参数处理
+        验证liquidity_dry_up/limit_hit_frequency/margin_call_cascade参数生效
+        """
+        # 运衁2015A股大跌场景（包含liquidity_dry_up和limit_hit_frequency）
+        scenario_2015 = self.tester.scenarios['2015_china_market_crash']
+        result_2015 = self.tester._simulate_market_crash(scenario_2015, self.portfolio_state, self.market_data)
+        
+        # 运行千股跌停场景（包含margin_call_cascade）
+        scenario_limit_down = self.tester.scenarios['thousand_stocks_limit_down']
+        result_limit_down = self.tester._simulate_liquidity_crisis(
+            scenario_limit_down, self.portfolio_state, self.market_data
+        )
+        
+        # 流动性危机应产生显著损失
+        self.assertLess(result_limit_down, -0.1, "流动性危机应产生至少10%损失")
+    
+    def test_combined_stress_tests_sequential(self):
+        """
+        P1-2增强测试：顺序冲击测试（危机传导）
+        验证多个场景顺序发生时的传导效应
+        """
+        # 配置顺序场景
+        self.config['stress_testing'] = {
+            'enable_sequential_test': True,
+            'sequential_scenarios': [['2008_financial_crisis', '2015_china_market_crash']],
+            'propagation_factor': 0.3
+        }
+        self.tester = StressTester(self.config)
+        
+        # 运行组合测试
+        results = self.tester.run_combined_stress_tests(self.portfolio_state, self.market_data)
+        
+        # 应该返回顺序测试结果
+        self.assertIn('sequential', results)
+        self.assertTrue(len(results['sequential']) > 0, "应该有顺序测试结果")
+        
+        # 顺序损失应该大于单个场景（因为有传导效应）
+        sequential_loss = list(results['sequential'].values())[0]
+        self.assertLess(sequential_loss, -0.5, "顺序冲击损失应超过50%")
+    
+    def test_combined_stress_tests_concurrent(self):
+        """
+        P1-2增强测试：并发冲击测试（系统性风险）
+        验证多个场景同时发生时的相关性影响
+        """
+        # 配置并发场景
+        self.config['stress_testing'] = {
+            'enable_concurrent_test': True,
+            'concurrent_scenarios': [['2008_financial_crisis', '2015_china_market_crash']],
+            'systemic_premium': 0.2
+        }
+        self.tester = StressTester(self.config)
+        
+        # 运行组合测试
+        results = self.tester.run_combined_stress_tests(self.portfolio_state, self.market_data)
+        
+        # 应该返回并发测试结果
+        self.assertIn('concurrent', results)
+        self.assertTrue(len(results['concurrent']) > 0, "应该有并发测试结果")
+        
+        # 并发损失应该显著（考虑相关性和系统性溢价）
+        concurrent_loss = list(results['concurrent'].values())[0]
+        self.assertLess(concurrent_loss, -0.4, "并发冲击损失应显著")
+    
+    def test_combined_stress_tests_feedback_loop(self):
+        """
+        P1-2增强测试：反馈循环测试（风险叠加）
+        验证损失导致的反馈效应（恐慌性抛售）
+        """
+        # 配置反馈循环
+        self.config['stress_testing'] = {
+            'enable_feedback_loop_test': True,
+            'feedback_loop_scenarios': ['2008_financial_crisis'],
+            'feedback_factor': 0.25,
+            'max_feedback_iterations': 5
+        }
+        self.tester = StressTester(self.config)
+        
+        # 运行组合测试
+        results = self.tester.run_combined_stress_tests(self.portfolio_state, self.market_data)
+        
+        # 应该返回反馈循环结果
+        self.assertIn('feedback_loop', results)
+        self.assertIn('2008_financial_crisis', results['feedback_loop'])
+        
+        # 反馈循环损失应该大于单次冲击（因为有反馈效应）
+        feedback_loss = results['feedback_loop']['2008_financial_crisis']
+        single_loss = self.tester.run_stress_tests(self.portfolio_state, self.market_data)['2008_financial_crisis']
+        self.assertLess(feedback_loss, single_loss * 0.95, "反馈循环应该放大损失")
+    
+    def test_auxiliary_methods(self):
+        """
+        P1-2增强测试：辅助方法功能
+        验证_get_daily_volume和_get_leveraged_position方法
+        """
+        # 测试日成交量获取
+        volume = self.tester._get_daily_volume('600000.SH', self.market_data)
+        self.assertGreater(volume, 0, "日成交量应该大于0")
+        
+        # 测试杠杆仓位获取
+        leveraged = self.tester._get_leveraged_position(self.portfolio_state)
+        self.assertGreaterEqual(leveraged, 0, "杠杆仓位应该非负")
 
 
 if __name__ == '__main__':
