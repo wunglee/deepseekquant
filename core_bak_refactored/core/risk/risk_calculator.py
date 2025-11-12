@@ -13,6 +13,7 @@ import warnings
 
 from .risk_metrics_service import RiskMetricsService
 from .risk_models import RiskMetric
+from .international_config import MarketConfigManager
 
 # 导入数据预处理器
 import sys
@@ -55,10 +56,31 @@ class RiskCalculator:
     """
     
     def __init__(self, config: Dict):
+        # 国际化：市场配置管理器
+        self.config_manager = MarketConfigManager()
+        
+        # 验证配置完整性
+        config_errors = self.config_manager.validate_market_config(config)
+        if config_errors:
+            logger.warning(f"配置验证发现问题: {config_errors}")
+        
+        # 识别市场类型
+        self.market_type = config.get('market_type', 'CN')
+        
+        # 确保配置完整性（自动补全缺失配置）
+        if 'market_configs' not in config or self.market_type not in config.get('market_configs', {}):
+            logger.warning(f"缺少{self.market_type}市场配置，使用默认配置")
+            default_config = self.config_manager.generate_config_template(self.market_type)
+            config['market_configs'] = default_config['market_configs']
+        
         self.config = config
         self.risk_metrics_service = RiskMetricsService(config)
         self.preprocessor = RiskDataPreprocessor()
-        logger.info("风险计算器初始化完成")
+        
+        logger.info(
+            f"风险计算器初始化完成 - 市场: {self.market_type}, "
+            f"配置验证: {'有警告' if config_errors else '通过'}"
+        )
     
     def _get_min_data_points(self) -> int:
         """读取配置中的最小数据点阈值，默认63（约3个月交易日）"""
@@ -107,7 +129,9 @@ class RiskCalculator:
                     # 使用预处理器计算收益
                     returns_data[symbol] = self.preprocessor.extract_returns_from_prices(np.array(prices))
             if not returns_data:
-                logger.warning("calculate_var_monte_carlo: 价格数据不足，返回NaN")
+                logger.warning(
+                    f"calculate_var_monte_carlo: 价格数据不足, 市场{self.market_type}, 返回NaN"
+                )
                 return float('nan')
             min_len = min(len(v) for v in returns_data.values())
             aligned = np.column_stack([v[-min_len:] for v in returns_data.values()])
@@ -119,10 +143,13 @@ class RiskCalculator:
             portfolio_sims = sims @ weights
             var = np.percentile(portfolio_sims, (1 - confidence_level) * 100)
             elapsed = time.time() - start_time
-            logger.info(f"calculate_var_monte_carlo: 完成, 耗时{elapsed:.3f}s")
+            logger.info(
+                f"calculate_var_monte_carlo: 完成, 市场{self.market_type}, "
+                f"耗时{elapsed:.3f}s, 模拟{n_simulations}次"
+            )
             return float(var)
         except Exception as e:
-            logger.error(f"calculate_var_monte_carlo: 计算异常: {e}")
+            logger.error(f"calculate_var_monte_carlo: 计算异常, 市场{self.market_type}: {e}")
             return float('nan')
 
 
@@ -147,17 +174,23 @@ class RiskCalculator:
             # 验证数据有效性
             min_points = self._get_min_data_points()
             if not self.preprocessor.validate_returns_data(returns, min_length=min_points):
-                logger.warning(f"calculate_all_metrics: 收益数据不足，至少需要{min_points}个数据点")
+                logger.warning(
+                f"calculate_all_metrics: 收益数据不足, 市场{self.market_type}, "
+                f"至少需要{min_points}个数据点"
+            )
                 return {}
             
             # 计算委托给服务层
             metrics = self.risk_metrics_service.calculate_all_metrics(returns, market_returns)
             elapsed = time.time() - start_time
-            logger.info(f"calculate_all_metrics: 完成, 耗时{elapsed:.3f}s, 指标{len(metrics)}个")
+            logger.info(
+                f"calculate_all_metrics: 完成, 市场{self.market_type}, "
+                f"耗时{elapsed:.3f}s, 指标{len(metrics)}个"
+            )
             return metrics
             
         except Exception as e:
-            logger.error(f"风险指标计算失败: {e}")
+            logger.error(f"风险指标计算失败, 市场{self.market_type}: {e}")
             return {}
     
     def simulate_correlation_breakdown(self, scenario, portfolio_state, market_data):
