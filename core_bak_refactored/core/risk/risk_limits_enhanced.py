@@ -514,20 +514,20 @@ class BreachPrioritizer:
         """计算违规优先级评分（专家修正：动态权重分配）"""
         # 基础权重配置（专家确认）
         base_weights = {
-            'severity': 0.30,      # 严重性
-            'breach_amount': 0.25, # 违规幅度
-            'time_horizon': 0.20,  # 时间紧急性
-            'regulatory': 0.10     # 监管影响
-            # cascading: 0.15 在外部单独计算
+            'severity': 0.30,           # 严重性
+            'breach_amount': 0.25,      # 违规幅度
+            'time_horizon': 0.20,       # 时间紧急性
+            'cascading_impact': 0.15,   # 级联影响
+            'regulatory_impact': 0.10   # 监管影响
         }
         
         # 根据违规类型调整权重（专家建议）
         limit_type = breach.get('limit_type', '')
         weight_adjustments = {
-            'leverage': {'severity': 0.35, 'regulatory': 0.15, 'time_horizon': 0.15},
+            'leverage': {'severity': 0.35, 'regulatory_impact': 0.15, 'time_horizon': 0.15},
             'value_at_risk': {'severity': 0.35, 'time_horizon': 0.25, 'breach_amount': 0.20},
-            'liquidity': {'time_horizon': 0.30, 'breach_amount': 0.20, 'regulatory': 0.15},
-            'concentration': {'breach_amount': 0.30, 'regulatory': 0.15, 'severity': 0.25}
+            'liquidity': {'time_horizon': 0.30, 'breach_amount': 0.20, 'regulatory_impact': 0.15},
+            'concentration': {'breach_amount': 0.30, 'regulatory_impact': 0.15, 'severity': 0.25}
         }
         
         # 应用权重调整
