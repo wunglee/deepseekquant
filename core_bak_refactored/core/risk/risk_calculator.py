@@ -28,6 +28,7 @@ class MarketPriceData(TypedDict):
     high: List[float]
     low: List[float]
     volume: List[float]
+    currency: Optional[str]  # TODO：补充了currency字段，待确认，来源：docs/answer.md
 
 class MarketData(TypedDict):
     prices: Dict[str, MarketPriceData]
@@ -77,9 +78,19 @@ class RiskCalculator:
         self.risk_metrics_service = RiskMetricsService(config)
         self.preprocessor = RiskDataPreprocessor()
         
+        # TODO：补充了货币一致性检查初始化，待确认，来源：docs/answer.md
+        # 基准货币与严格检查开关
+        market_info = self.config_manager.get_market_info(self.market_type)
+        self.base_currency = market_info.get('currency', 'CNY')
+        market_configs = self.config.get('market_configs', {})
+        current_market_cfg = market_configs.get(self.market_type, {})
+        if 'base_currency' in current_market_cfg:
+            self.base_currency = current_market_cfg['base_currency']
+        self.strict_currency_check = bool(self.config.get('strict_currency_check', False))
+
         logger.info(
             f"风险计算器初始化完成 - 市场: {self.market_type}, "
-            f"配置验证: {'有警告' if config_errors else '通过'}"
+            f"配置验证: {'有警告' if config_errors else '通过'}, 基准货币: {self.base_currency}"
         )
     
     def _get_min_data_points(self) -> int:
@@ -141,7 +152,7 @@ class RiskCalculator:
             random_seed = self.config.get('monte_carlo_seed', 42)
             np.random.seed(random_seed)
             sims = np.random.multivariate_normal(mean_vec, cov_mat, n_simulations)
-            weights = np.array([alloc.weight for alloc in portfolio_state.allocations.values()])
+            weights = np.array([alloc.get('weight', 0.0) for alloc in portfolio_state.allocations.values()])
             portfolio_sims = sims @ weights
             var = np.percentile(portfolio_sims, (1 - confidence_level) * 100)
             elapsed = time.time() - start_time
@@ -159,6 +170,52 @@ class RiskCalculator:
         """委托给 RiskMetricsService"""
         return self.risk_metrics_service.calculate_max_drawdown(returns)
     
+    # TODO：补充了货币一致性检查方法，待确认，来源：docs/answer.md
+    def _runtime_currency_check(self, data: Dict[str, Any]) -> List[str]:
+        """运行时货币一致性检查（仅日志，不阻断）"""
+        warnings_list: List[str] = []
+        market_data = data.get('market_data', {})
+        prices = market_data.get('prices', {}) or {}
+
+        detected_currencies = set()
+        missing_currency_symbols: List[str] = []
+
+        for symbol, price_data in prices.items():
+            currency = price_data.get('currency')
+            if currency:
+                detected_currencies.add(currency)
+            else:
+                missing_currency_symbols.append(symbol)
+
+        if missing_currency_symbols:
+            warnings_list.append(f"{len(missing_currency_symbols)}个标的缺少货币信息")
+
+        if len(detected_currencies) > 1:
+            warnings_list.append(f"多币种检测: {detected_currencies}")
+
+        if detected_currencies and getattr(self, 'base_currency', None) and self.base_currency not in detected_currencies:
+            warnings_list.append(f"基准货币{self.base_currency}不在检测货币中")
+
+        portfolio = data.get('portfolio', {})
+        portfolio_currency = portfolio.get('base_currency')
+        if portfolio_currency and getattr(self, 'base_currency', None) and portfolio_currency != self.base_currency:
+            warnings_list.append(f"组合货币{portfolio_currency}≠基准货币{self.base_currency}")
+
+        return warnings_list
+
+    def _handle_currency_warnings(self, warnings: List[str]) -> None:
+        """分级处理货币警告（严格模式可抛错）"""
+        if not warnings:
+            return
+        critical_errors = [w for w in warnings if ('缺少' in w) or ('不在' in w)]
+        for w in warnings:
+            if w in critical_errors:
+                logger.error(f"货币严重问题: {w}")
+            else:
+                logger.warning(f"货币警告: {w}")
+        if critical_errors and getattr(self, 'strict_currency_check', False):
+            raise ValueError(f"货币单位检查失败: {critical_errors}")
+
     def calculate_all_metrics(self, data: Dict[str, Any]) -> Dict[str, float]:
         """
         计算所有风险指标
@@ -168,6 +225,10 @@ class RiskCalculator:
         - 委托 RiskMetricsService 计算指标
         """
         try:
+            # TODO：补充了货币一致性运行时检查，待确认，来源：docs/answer.md
+            currency_warnings = self._runtime_currency_check(data)
+            self._handle_currency_warnings(currency_warnings)
+
             # 数据提取委托给预处理器
             returns = self.preprocessor.extract_returns_from_dict(data)
             market_returns = self.preprocessor.extract_market_returns_from_dict(data)
