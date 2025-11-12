@@ -1,13 +1,30 @@
 # 项目变更日志
 
+> 索引所有重要提交，便于快速定位和回溯
+
+## 文档说明
+
+本项目采用**Git版本化文档管理**：
+- **consultation.md**: 每次提交包含完整的多轮对话记录
+- **ask.md / answer.md**: 工作文件，不纳入版本库
+- **PLAN.md**: 项目计划（单文件，Git管理版本演进）
+- **PROGRESS.md**: 进展报告（单文件，Git管理版本演进）
+- **ARCHITECTURE.md**: 架构文档（单文件，Git管理版本演进）
+- **CHANGELOG.md**: 本文件，持续追加索引
+
 ## 索引规则
 
 每次 ask → answer → 实施 为一个完整周期，统一索引追踪。
 
-**格式说明**：
-- 通过Git提交号(commit hash)追踪文档版本
-- 查看历史版本：`git show <commit>:docs/ask.md`
-- 恢复到某版本：`git checkout <commit> -- docs/ask.md`
+**查看历史版本**：
+```bash
+# 查看某个提交时的文档状态
+git show <commit>:docs/consultation.md
+git show <commit>:docs/PROGRESS.md
+
+# 对比两个版本
+git diff <commit1> <commit2> -- docs/PLAN.md
+```
 
 ---
 
