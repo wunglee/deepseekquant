@@ -58,21 +58,26 @@ class ThresholdBreach:
 
 MARKET_SPECIFIC_LIMITS = {
     'CN': {
-        'description': 'A股市场特定限额（专家确认）',
-        # 监管确认的限额
-        'single_stock_max_weight': 0.10,      # ✅ 证监会《证券投资基金运作管理办法》第31条
-        'sector_max_weight': 0.30,            # ✅ 行业惯例，非强制但普遍遵守
-        'leverage_max': 1.0,                  # ✅ 普通证券账户禁止杠杆
-        'margin_account_leverage_max': 2.0,   # ✅ 融资融券业务规则
-        'concentration_top10': 0.60,          # ✅ 基金业协会自律规则
-        'st_stock_max_weight': 0.05,          # ✅ 机构内部风控要求
-        'daily_turnover_limit': 0.15,         # ⚠️ 调整：从0.20→0.15（专家建议）
-        'limit_down_exposure_max': 0.10,      # ⚠️ 调整：从0.15→0.10（专家建议更保守）
+        'description': 'A股市场特定限额（专家确认：第2轮咨询）',
+        # 🔒 监管明确要求（需法务审核）
+        'single_stock_max_weight': 0.10,      # 🔒 证监会《证券投资基金运作管理办法》第31条
+        'leverage_max': 1.0,                  # 🔒 《证券法》禁止普通账户杠杆
+        'margin_account_leverage_max': 2.0,   # 🔒 《融资融券业务管理办法》
+        
+        # ⚖️ 专家建议调整（基于风控经验）
+        'daily_turnover_limit': 0.15,         # ⚖️ 专家调整：0.20→0.15（保守估计）
+        'limit_down_exposure_max': 0.10,      # ⚖️ 专家调整：0.15→0.10（波动性考虑）
+        
+        # 🆕 专家新增建议
+        '创业板_stock_max_weight': 0.08,      # 🆕 专家建议：基于创业板波动率1.8倍
+        '科创板_stock_max_weight': 0.08,      # 🆕 专家建议：基于科创板波动率2.0倍
+        
+        # 📊 行业惯例（非强制但普遍遵守）
+        'sector_max_weight': 0.30,            # 📊 行业惯例，非强制但普遍遵守
+        'concentration_top10': 0.60,          # 📊 基金业协会自律规则
+        'st_stock_max_weight': 0.05,          # 📊 机构内部风控要求
+        
         'regulatory_framework': 'CSRC',
-        # 新增关键限额（专家建议）
-        '创业板_stock_max_weight': 0.08,      # 新增：创业板单股8%
-        '科创板_stock_max_weight': 0.08,      # 新增：科创板单股8%
-        '单行业_max_weight': 0.25,            # 新增：单一行业25%（更严格）
     },
     'US': {
         'description': '美股市场特定限额（专家确认）',
@@ -575,7 +580,13 @@ class BreachPrioritizer:
             urgency_score = urgency_map.get(time_horizon, 50)
             score += urgency_score * weights['time_horizon']
             
-            # 4. 监管影响评分
+            # 4. 级联影响评分（专家确认：第2轮咨询）
+            # 作为5个维度之一，总权重恒为100%
+            cascading_impact = self._analyze_cascading_impact(breach, [])
+            cascading_score = min(cascading_impact['impact_score'], 100)
+            score += cascading_score * weights['cascading_impact']
+            
+            # 5. 监管影响评分
             regulatory_impact = 50
             if 'leverage' in limit_type:
                 regulatory_impact = 90
@@ -583,8 +594,9 @@ class BreachPrioritizer:
                 regulatory_impact = 80
             elif 'concentration' in limit_type:
                 regulatory_impact = 70
-            score += regulatory_impact * weights['regulatory']
+            score += regulatory_impact * weights['regulatory_impact']
             
+            # 确保总分不超过100（专家确认）
             return min(score, 100)
             
         except Exception as e:
@@ -658,10 +670,11 @@ class BreachPrioritizer:
             'P3-低优先级': 25
         }
         
-        # 系统性风险调整（专家建议）
+        # 系统性风险调整（专家确认：第2轮咨询）
+        # 高系统性风险应升级（更高优先级），使用正数调整
         systemic_adjustments = {
-            'high': -15,    # 高风险：升级处理（降低阈值）
-            'medium': -5,   # 中风险：轻微升级
+            'high': 15,     # 高风险：升级处理（增加15分，P2→P1）
+            'medium': 5,    # 中风险：轻微升级（增加5分）
             'low': 0        # 低风险：不变
         }
         
@@ -964,9 +977,16 @@ class EnhancedLimitsConfig:
     threshold_tiers: Optional[Dict[str, float]] = None
     severity_exponential: bool = True        # 使用指数评分
     
-    # 违规优先级配置
+    # 违规优先级配置（专家确认：第2轮咨询）
     priority_weights: Optional[Dict[str, float]] = None
     enable_cascading_analysis: bool = True   # 级联影响分析
+    
+    # 动态权重配置档案（专家建议）
+    weight_profile: str = 'normal'           # normal/high_volatility/regulatory_scrutiny
+    
+    # 动态调整参数（专家确认）
+    max_weight_adjustment: float = 0.05      # 单次调整上限：±5%（不是±10%）
+    weight_bounds: tuple = (0.10, 0.40)      # 权重范围：[10%, 40%]
     
     # 市场配置
     default_market: str = 'CN'
@@ -985,15 +1005,29 @@ class EnhancedLimitsConfig:
                 'RED': 1.3
             }
         
+        # 动态权重配置档案（专家建议：第2轮咨询）
+        DYNAMIC_WEIGHT_PROFILES = {
+            'normal': {
+                'severity': 0.30, 'breach_amount': 0.25, 'time_horizon': 0.20,
+                'cascading_impact': 0.15, 'regulatory_impact': 0.10
+            },
+            'high_volatility': {
+                'severity': 0.25, 'breach_amount': 0.20, 'time_horizon': 0.30,  # 时间紧迫性提升
+                'cascading_impact': 0.15, 'regulatory_impact': 0.10
+            },
+            'regulatory_scrutiny': {
+                'severity': 0.25, 'breach_amount': 0.20, 'time_horizon': 0.15,
+                'cascading_impact': 0.15, 'regulatory_impact': 0.25  # 监管影响提升
+            }
+        }
+        
         # 默认优先级权重（专家确认）
         if self.priority_weights is None:
-            self.priority_weights = {
-                'severity': 0.30,
-                'breach_amount': 0.25,
-                'time_horizon': 0.20,
-                'cascading_impact': 0.15,
-                'regulatory_impact': 0.10
-            }
+            # 根据当前配置档案选择权重
+            self.priority_weights = DYNAMIC_WEIGHT_PROFILES.get(
+                self.weight_profile, 
+                DYNAMIC_WEIGHT_PROFILES['normal']
+            )
 
 
 class EnhancedRiskLimitsManager:

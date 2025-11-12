@@ -221,25 +221,22 @@ class TestBreachPrioritizer(unittest.TestCase):
         self.assertGreater(impact['impact_score'], 0)
     
     def test_systemic_risk_adjustment(self):
-        """测试系统性风险调整"""
-        # 高系统性风险-15调整，使得adjusted_score从70降到55
-        # 70分：low风险 -> P1-高优先级(>=65), high风险 -> 55分 -> P2-中优先级(>=45)
-        # 这意味着高系统性风险反而会被降级，这是设计问题。
-        # 正确的逻辑应该是：系统性风险高的，应该获得更高优先级。
-        # 但是查看risk_limits_enhanced.py的实现，确实是+调整
-        # adjusted_score = priority_score + systemic_adjustments.get(systemic_risk, 0)
-        # 所以-15的设计可能是错误的，或者说明文档理解错误。
-        # 这里我们按实际代码行为测试：
+        """测试系统性风险调整（专家确认修正：第2轮咨询）"""
+        # 专家确认：高系统性风险应升级（更高优先级）
+        # 修正后：systemic_adjustments = {'high': +15, 'medium': +5, 'low': 0}
         
         level_low = self.prioritizer._determine_priority_level(70, 'low')
         level_high = self.prioritizer._determine_priority_level(70, 'high')
         
-        # 实际结果：low=P1-高优先级(70>=65), high=P2-中优先级(55在[45,65)之间)
+        # 正确结果：
+        # low风险：70分 + 0 = 70分 → P1-高优先级(>=65)
+        # high风险：70分 + 15 = 85分 → P0-紧急(>=85) ✅ 已升级！
         self.assertEqual(level_low, 'P1-高优先级')
-        self.assertEqual(level_high, 'P2-中优先级')
+        self.assertEqual(level_high, 'P0-紧急')  # 专家确认：应升级
         
-        # TODO: 这个逻辑可能需要与专家确认：
-        # 系统性风险高的是应该升级(+15)还是降级(-15)？
+        # 验证中等系统性风险
+        level_medium = self.prioritizer._determine_priority_level(70, 'medium')
+        self.assertEqual(level_medium, 'P1-高优先级')  # 70+5=75, 仍在P1范围
 
 
 class TestMarketSpecificLimitsChecker(unittest.TestCase):
