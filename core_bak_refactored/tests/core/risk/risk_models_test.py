@@ -165,9 +165,9 @@ class TestRiskAssessment(unittest.TestCase):
     """测试风险评估结果"""
     
     def test_risk_assessment_creation(self):
-        """测试风险评估创建"""
+        """测试风险评估创建（专家修正：timestamp使用datetime对象）"""
         assessment = RiskAssessment(
-            timestamp=datetime.now().isoformat(),
+            timestamp=datetime.now(),  # 专家修正：直接使用datetime对象
             portfolio_id='portfolio_001',
             overall_risk_level=RiskLevel.MODERATE,
             risk_score=50.0,
@@ -217,12 +217,12 @@ class TestRiskEvent(unittest.TestCase):
     """测试风险事件记录"""
     
     def test_risk_event_creation(self):
-        """测试风险事件创建"""
+        """测试风险事件创建（专家修正：timestamp使用datetime对象）"""
         event = RiskEvent(
             event_id='event_001',
             event_type=RiskType.MARKET_RISK,
             severity=RiskLevel.HIGH,
-            timestamp=datetime.now().isoformat(),
+            timestamp=datetime.now(),  # 专家修正：直接使用datetime对象
             description='Market volatility spike',
             triggered_by='market_data',
             impact_assessment={'portfolio_loss': 0.08},
@@ -257,40 +257,44 @@ class TestStressTestScenario(unittest.TestCase):
     """测试压力测试场景"""
     
     def test_stress_test_scenario_creation(self):
-        """测试压力测试场景创建"""
+        """测试压力测试场景创建（专家修正：使用ImpactLevel和duration_days）"""
+        from core.risk.risk_models import ImpactLevel
         scenario = StressTestScenario(
             scenario_id='scenario_001',
             name='Market Crash',
             description='Severe market downturn',
             parameters={'market_drop': -0.30},
             probability=0.05,
-            impact_level=RiskLevel.EXTREME,
-            duration='1w',
+            impact_level=ImpactLevel.CATASTROPHIC,  # 专家修正：使用ImpactLevel
+            duration_days=7,  # 专家修正：1w = 7天
             triggers=['global_crisis'],
             mitigation_strategies=['diversification']
         )
         
         self.assertEqual(scenario.scenario_id, 'scenario_001')
         self.assertEqual(scenario.name, 'Market Crash')
-        self.assertEqual(scenario.impact_level, RiskLevel.EXTREME)
+        self.assertEqual(scenario.impact_level, ImpactLevel.CATASTROPHIC)
+        self.assertEqual(scenario.duration_days, 7)
         self.assertEqual(scenario.probability, 0.05)
     
     def test_stress_test_scenario_from_dict(self):
-        """测试从字典创建压力测试场景"""
+        """测试从字典创建压力测试场景（专家修正：支持旧字段兼容）"""
+        from core.risk.risk_models import ImpactLevel
         data = {
             'scenario_id': 'scenario_002',
             'name': 'Interest Rate Shock',
             'description': 'Sudden rate hike',
             'parameters': {'rate_increase': 0.02},
             'probability': 0.10,
-            'impact_level': 'high',
-            'duration': '3d',
+            'impact_level': 'severe',  # 专家修正：使用ImpactLevel
+            'duration': '3d',  # 兼容旧字段，会自动转换为duration_days=3
             'triggers': ['central_bank_decision'],
             'mitigation_strategies': ['hedge_with_bonds']
         }
         
         scenario = StressTestScenario.from_dict(data)
-        self.assertEqual(scenario.impact_level, RiskLevel.HIGH)
+        self.assertEqual(scenario.impact_level, ImpactLevel.SEVERE)
+        self.assertEqual(scenario.duration_days, 3)  # 验证转换
         self.assertEqual(scenario.name, 'Interest Rate Shock')
 
 

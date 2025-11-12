@@ -2,25 +2,59 @@
 风险数据模型
 从 core_bak/risk_manager.py 拆分
 职责: 定义风险管理相关的枚举和数据结构
+
+修订历史：
+- 2024-11-12: 基于专家第3轮咨询修正（阶段1-数据模型层评审）
+  * P0: RiskLevel简化为6级，移除BLACK_SWAN
+  * P0: timestamp改为datetime类型
+  * P1: 补充RiskType（5个新类型）和RiskMetric（核心指标）
+  * P1: 新增TimeHorizon和CalculationMethod枚举
+  * P1: 为嵌套结构定义专门dataclass
+  * P1: 补充关键字段和评估维度
 """
 
 from dataclasses import dataclass, asdict, field
+from datetime import datetime, timedelta
 from enum import Enum
 from typing import Dict, List, Optional, Any
+import logging
+
+logger = logging.getLogger('DeepSeekQuant.RiskModels')
 
 class RiskLevel(Enum):
-    """风险等级枚举"""
-    VERY_LOW = "very_low"  # 极低风险
-    LOW = "low"  # 低风险
-    MODERATE = "moderate"  # 中等风险
-    HIGH = "high"  # 高风险
-    VERY_HIGH = "very_high"  # 极高风险
-    EXTREME = "extreme"  # 极端风险
-    BLACK_SWAN = "black_swan"  # 黑天鹅风险
+    """风险等级枚举（专家修正：6级分类）
+    
+    等级定义与数值映射：
+    - VERY_LOW: 0-20分，极低风险，无需特别关注
+    - LOW: 20-40分，低风险，常规监控
+    - MODERATE: 40-60分，中等风险，需要关注
+    - HIGH: 60-80分，高风险，需要采取措施
+    - VERY_HIGH: 80-95分，极高风险，紧急处理
+    - EXTREME: 95-100分，极端风险，立即行动
+    
+    注：BLACK_SWAN作为事件类型已移至RiskType，不再作为风险等级
+    """
+    VERY_LOW = "very_low"  # 0-20分
+    LOW = "low"  # 20-40分
+    MODERATE = "moderate"  # 40-60分
+    HIGH = "high"  # 60-80分
+    VERY_HIGH = "very_high"  # 80-95分
+    EXTREME = "extreme"  # 95-100分
+    
+    @classmethod
+    def from_score(cls, score: float) -> 'RiskLevel':
+        """从风险评分转换为风险等级"""
+        if score < 20: return cls.VERY_LOW
+        elif score < 40: return cls.LOW
+        elif score < 60: return cls.MODERATE
+        elif score < 80: return cls.HIGH
+        elif score < 95: return cls.VERY_HIGH
+        else: return cls.EXTREME
 
 
 class RiskType(Enum):
-    """风险类型枚举"""
+    """风险类型枚举（专家补充：新增5个关键类型）"""
+    # 原有风险类型
     MARKET_RISK = "market_risk"  # 市场风险
     CREDIT_RISK = "credit_risk"  # 信用风险
     LIQUIDITY_RISK = "liquidity_risk"  # 流动性风险
@@ -31,10 +65,23 @@ class RiskType(Enum):
     COUNTERPARTY_RISK = "counterparty_risk"  # 对手方风险
     REGULATORY_RISK = "regulatory_risk"  # 监管风险
     MODEL_RISK = "model_risk"  # 模型风险
+    
+    # 专家补充：通用金融风险
+    CURRENCY_RISK = "currency_risk"  # 汇率风险（跨境投资必需）
+    INTEREST_RATE_RISK = "interest_rate_risk"  # 利率风险（债券投资核心）
+    INFLATION_RISK = "inflation_risk"  # 通胀风险（长期投资）
+    POLITICAL_RISK = "political_risk"  # 政治风险（新兴市场）
+    
+    # 专家补充：量化交易特有风险
+    ALGORITHMIC_RISK = "algorithmic_risk"  # 算法风险（策略逻辑错误）
+    DATA_QUALITY_RISK = "data_quality_risk"  # 数据质量风险（延迟/错误）
+    EXECUTION_RISK = "execution_risk"  # 执行风险（交易执行失败）
+    TECHNOLOGY_RISK = "technology_risk"  # 技术风险（系统故障）
 
 
 class RiskMetric(Enum):
-    """风险指标枚举"""
+    """风险指标枚举（专家补充：核心指标完整化）"""
+    # 原有指标
     VOLATILITY = "volatility"  # 波动率
     VALUE_AT_RISK = "value_at_risk"  # 在险价值
     EXPECTED_SHORTFALL = "expected_shortfall"  # 预期短缺
@@ -48,7 +95,27 @@ class RiskMetric(Enum):
     RISK_CONTRIBUTION = "risk_contribution"  # 风险贡献度
     MARGINAL_RISK = "marginal_risk"  # 边际风险
     TAIL_RISK = "tail_risk"  # 尾部风险
-    MAX_POSITION_SIZE = "max_position_size"  # 最大头寸规模
+    
+    # 专家补充：风险调整收益指标
+    SHARPE_RATIO = "sharpe_ratio"  # 夏普比率
+    SORTINO_RATIO = "sortino_ratio"  # 索提诺比率
+    INFORMATION_RATIO = "information_ratio"  # 信息比率
+    CALMAR_RATIO = "calmar_ratio"  # 卡玛比率
+    
+    # 专家补充：回撤指标细化
+    MAX_DRAWDOWN = "max_drawdown"  # 最大回撤
+    DRAWDOWN_DURATION = "drawdown_duration"  # 回撤持续时间
+    
+    # 专家补充：流动性指标
+    BID_ASK_SPREAD = "bid_ask_spread"  # 买卖价差
+    MARKET_IMPACT = "market_impact"  # 市场冲击
+    LIQUIDATION_TIME = "liquidation_time"  # 清算时间
+    VOLUME_RATIO = "volume_ratio"  # 成交量比率
+    
+    # 专家补充：跟踪误差
+    TRACKING_ERROR = "tracking_error"  # 跟踪误差
+    
+    # 注：MAX_POSITION_SIZE已移除，应在RiskLimit配置中定义
 
 
 class RiskControlAction(Enum):
@@ -63,68 +130,176 @@ class RiskControlAction(Enum):
     CIRCUIT_BREAKER = "circuit_breaker"  # 熔断机制
 
 
+class TimeHorizon(Enum):
+    """时间范围枚举（专家建议：字符串改为枚举）"""
+    DAILY = "1d"
+    WEEKLY = "1w"
+    MONTHLY = "1m"
+    YEARLY = "1y"
+
+
+class CalculationMethod(Enum):
+    """风险计算方法枚举（专家建议：字符串改为枚举）"""
+    HISTORICAL = "historical"  # 历史模拟法
+    PARAMETRIC = "parametric"  # 参数法
+    MONTE_CARLO = "monte_carlo"  # 蒙特卡洛模拟
+
+
+class ImpactLevel(Enum):
+    """场景影响程度枚举（专家建议：独立于RiskLevel）"""
+    NEGLIGIBLE = "negligible"  # 可忽略
+    MINOR = "minor"  # 轻微
+    MODERATE = "moderate"  # 中等
+    SEVERE = "severe"  # 严重
+    CATASTROPHIC = "catastrophic"  # 灾难性
+
+
+@dataclass
+class LimitBreach:
+    """限额违反详情（专家建议：结构化替代Dict）"""
+    limit_id: str
+    risk_type: RiskType
+    metric: RiskMetric
+    current_value: float
+    threshold: float
+    breach_amount: float
+    timestamp: datetime
+    severity: RiskLevel = RiskLevel.MODERATE
+    
+    def to_dict(self) -> Dict[str, Any]:
+        result = asdict(self)
+        result['timestamp'] = self.timestamp.isoformat()
+        return result
+
+
+@dataclass
+class Recommendation:
+    """风险建议（专家建议：结构化替代Dict）"""
+    type: str  # "reduce", "hedge", "monitor", "liquidate"
+    priority: int  # 1-10，数值越小优先级越高
+    description: str
+    action_items: List[str]
+    estimated_impact: float = 0.0  # 预期影响（正数表示风险降低）
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+
 @dataclass
 class RiskLimit:
-    """风险限额配置"""
+    """风险限额配置（专家修正：枚举化+补充字段）"""
     risk_type: RiskType
     metric: RiskMetric
     threshold: float
-    time_horizon: str = "1d"  # 时间范围: 1d, 1w, 1m, 1y
+    time_horizon: TimeHorizon = TimeHorizon.DAILY  # 专家建议：枚举化
     confidence_level: float = 0.95  # 置信水平
-    calculation_method: str = "historical"  # 计算方法: historical, parametric, monte_carlo
+    calculation_method: CalculationMethod = CalculationMethod.HISTORICAL  # 专家建议：枚举化
     action: RiskControlAction = RiskControlAction.WARN
-    grace_period: int = 0  # 宽限期（分钟）
+    grace_period: int = 0  # 宽限期（秒）- 专家建议：统一单位
     escalation_level: int = 1  # 升级级别
     is_hard_limit: bool = False  # 是否为硬性限额
     notification_channels: List[str] = field(default_factory=lambda: ["email", "dashboard"])
     review_required: bool = False  # 是否需要人工审核
+    
+    # 专家补充：有效期控制
+    valid_from: Optional[datetime] = None
+    valid_to: Optional[datetime] = None
+    is_active: bool = True
+    
+    # 专家补充：适用范围
+    scope: str = "portfolio"  # "portfolio", "strategy", "asset_class", "individual"
+    
+    # 专家补充：优先级机制
+    priority: int = 1  # 数值越小优先级越高
+    
+    # 专家补充：监管标记
+    regulatory_required: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
+        result = asdict(self)
+        if self.valid_from:
+            result['valid_from'] = self.valid_from.isoformat()
+        if self.valid_to:
+            result['valid_to'] = self.valid_to.isoformat()
+        return result
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'RiskLimit':
-        """
-        从字典创建 RiskLimit，支持枚举字符串/字典容错解析
-        
-        Args:
-            data: 配置字典，支持以下格式：
-                - 枚举对象：RiskType.MARKET_RISK
-                - 字符串：'market_risk'
-                - 字典：{'value': 'market_risk'}
-        """
-        # 复制数据避免修改原始字典
+        """从字典创建 RiskLimit，支持枚举字符串/字典容错解析（专家建议：增强异常处理）"""
         parsed_data = data.copy()
         
-        # 解析 risk_type
+        # 解析 risk_type（专家建议：增加异常处理）
         if 'risk_type' in parsed_data:
             rt = parsed_data['risk_type']
-            if isinstance(rt, dict) and 'value' in rt:
-                parsed_data['risk_type'] = RiskType(rt['value'])
-            elif isinstance(rt, str):
-                parsed_data['risk_type'] = RiskType(rt)
-            elif not isinstance(rt, RiskType):
-                parsed_data['risk_type'] = RiskType.MARKET_RISK  # 默认值
+            try:
+                if isinstance(rt, dict) and 'value' in rt:
+                    parsed_data['risk_type'] = RiskType(rt['value'])
+                elif isinstance(rt, str):
+                    parsed_data['risk_type'] = RiskType(rt)
+                elif isinstance(rt, RiskType):
+                    parsed_data['risk_type'] = rt
+                else:
+                    raise ValueError(f"Unsupported risk_type format: {rt}")
+            except (ValueError, KeyError) as e:
+                logger.warning(f"Invalid risk_type value: {rt}, using default MARKET_RISK")
+                parsed_data['risk_type'] = RiskType.MARKET_RISK
         
         # 解析 metric
         if 'metric' in parsed_data:
             m = parsed_data['metric']
-            if isinstance(m, dict) and 'value' in m:
-                parsed_data['metric'] = RiskMetric(m['value'])
-            elif isinstance(m, str):
-                parsed_data['metric'] = RiskMetric(m)
-            elif not isinstance(m, RiskMetric):
-                parsed_data['metric'] = RiskMetric.VALUE_AT_RISK  # 默认值
+            try:
+                if isinstance(m, dict) and 'value' in m:
+                    parsed_data['metric'] = RiskMetric(m['value'])
+                elif isinstance(m, str):
+                    parsed_data['metric'] = RiskMetric(m)
+                elif isinstance(m, RiskMetric):
+                    parsed_data['metric'] = m
+                else:
+                    raise ValueError(f"Unsupported metric format: {m}")
+            except (ValueError, KeyError) as e:
+                logger.warning(f"Invalid metric value: {m}, using default VALUE_AT_RISK")
+                parsed_data['metric'] = RiskMetric.VALUE_AT_RISK
         
         # 解析 action
         if 'action' in parsed_data:
             a = parsed_data['action']
-            if isinstance(a, dict) and 'value' in a:
-                parsed_data['action'] = RiskControlAction(a['value'])
-            elif isinstance(a, str):
-                parsed_data['action'] = RiskControlAction(a)
-            elif not isinstance(a, RiskControlAction):
-                parsed_data['action'] = RiskControlAction.WARN  # 默认值
+            try:
+                if isinstance(a, dict) and 'value' in a:
+                    parsed_data['action'] = RiskControlAction(a['value'])
+                elif isinstance(a, str):
+                    parsed_data['action'] = RiskControlAction(a)
+                elif isinstance(a, RiskControlAction):
+                    parsed_data['action'] = a
+                else:
+                    raise ValueError(f"Unsupported action format: {a}")
+            except (ValueError, KeyError) as e:
+                logger.warning(f"Invalid action value: {a}, using default WARN")
+                parsed_data['action'] = RiskControlAction.WARN
+        
+        # 解析 time_horizon（新增）
+        if 'time_horizon' in parsed_data and isinstance(parsed_data['time_horizon'], str):
+            try:
+                parsed_data['time_horizon'] = TimeHorizon(parsed_data['time_horizon'])
+            except ValueError:
+                logger.warning(f"Invalid time_horizon: {parsed_data['time_horizon']}, using DAILY")
+                parsed_data['time_horizon'] = TimeHorizon.DAILY
+        
+        # 解析 calculation_method（新增）
+        if 'calculation_method' in parsed_data and isinstance(parsed_data['calculation_method'], str):
+            try:
+                parsed_data['calculation_method'] = CalculationMethod(parsed_data['calculation_method'])
+            except ValueError:
+                logger.warning(f"Invalid calculation_method: {parsed_data['calculation_method']}, using HISTORICAL")
+                parsed_data['calculation_method'] = CalculationMethod.HISTORICAL
+        
+        # 解析 datetime 字段
+        for field_name in ['valid_from', 'valid_to']:
+            if field_name in parsed_data and isinstance(parsed_data[field_name], str):
+                try:
+                    parsed_data[field_name] = datetime.fromisoformat(parsed_data[field_name])
+                except ValueError:
+                    logger.warning(f"Invalid {field_name}: {parsed_data[field_name]}, setting to None")
+                    parsed_data[field_name] = None
         
         return cls(**parsed_data)
 
@@ -154,39 +329,99 @@ class PositionLimit:
 
 @dataclass
 class RiskAssessment:
-    """风险评估结果"""
-    timestamp: str
+    """风险评估结果（专家修正：类型优化+补充维度）"""
+    timestamp: datetime  # 专家建议：改为datetime对象
     portfolio_id: str
     overall_risk_level: RiskLevel
     risk_score: float  # 0-100风险评分
-    value_at_risk: float  # 在险价值
-    expected_shortfall: float  # 预期短缺
-    max_drawdown: float  # 最大回撤
-    liquidity_risk: float  # 流动性风险
-    concentration_risk: float  # 集中度风险
-    leverage_risk: float  # 杠杆风险
-    stress_test_results: Dict[str, float]  # 压力测试结果
-    scenario_analysis: Dict[str, float]  # 情景分析结果
-    risk_contributions: Dict[str, float]  # 风险贡献度
-    limit_breaches: List[Dict[str, Any]]  # 限额违反情况
-    recommendations: List[Dict[str, Any]]  # 风险建议
+    
+    # VaR/CVaR（注：正数表示损失金额，负数表示收益）
+    value_at_risk: float
+    expected_shortfall: float
+    max_drawdown: float
+    
+    # 分项风险
+    liquidity_risk: float
+    concentration_risk: float
+    leverage_risk: float
+    
+    # 测试结果
+    stress_test_results: Dict[str, float]
+    scenario_analysis: Dict[str, float]
+    risk_contributions: Dict[str, float]
+    
+    # 专家补充：系统性风险指标（带默认值字段必须在后面）
+    beta: float = 0.0  # 系统风险暴露
+    alpha: float = 0.0  # 超额收益能力
+    tracking_error: float = 0.0  # 跟踪误差
+    
+    # 专家补充：收益风险指标
+    sharpe_ratio: float = 0.0
+    sortino_ratio: float = 0.0
+    volatility: float = 0.0  # 年化波动率
+    
+    # 专家建议：结构化违规和建议
+    limit_breaches: List[LimitBreach] = field(default_factory=list)
+    recommendations: List[Recommendation] = field(default_factory=list)
+    
     confidence_level: float = 0.95  # 评估置信度
 
     def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
+        result = asdict(self)
+        result['timestamp'] = self.timestamp.isoformat()
+        result['limit_breaches'] = [b.to_dict() if isinstance(b, LimitBreach) else b for b in self.limit_breaches]
+        result['recommendations'] = [r.to_dict() if isinstance(r, Recommendation) else r for r in self.recommendations]
+        return result
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'RiskAssessment':
         """从字典创建 RiskAssessment，支持枚举容错解析"""
         parsed_data = data.copy()
         
+        # 解析 timestamp（专家建议）
+        if 'timestamp' in parsed_data and isinstance(parsed_data['timestamp'], str):
+            try:
+                parsed_data['timestamp'] = datetime.fromisoformat(parsed_data['timestamp'])
+            except ValueError:
+                logger.warning(f"Invalid timestamp: {parsed_data['timestamp']}, using now()")
+                parsed_data['timestamp'] = datetime.now()
+        elif 'timestamp' not in parsed_data:
+            parsed_data['timestamp'] = datetime.now()
+        
         # 解析 overall_risk_level
         if 'overall_risk_level' in parsed_data:
             orl = parsed_data['overall_risk_level']
-            if isinstance(orl, dict) and 'value' in orl:
-                parsed_data['overall_risk_level'] = RiskLevel(orl['value'])
-            elif isinstance(orl, str):
-                parsed_data['overall_risk_level'] = RiskLevel(orl)
+            try:
+                if isinstance(orl, dict) and 'value' in orl:
+                    parsed_data['overall_risk_level'] = RiskLevel(orl['value'])
+                elif isinstance(orl, str):
+                    parsed_data['overall_risk_level'] = RiskLevel(orl)
+                elif isinstance(orl, RiskLevel):
+                    parsed_data['overall_risk_level'] = orl
+            except (ValueError, KeyError) as e:
+                logger.warning(f"Invalid risk_level: {orl}, using MODERATE")
+                parsed_data['overall_risk_level'] = RiskLevel.MODERATE
+        
+        # 解析 limit_breaches（专家建议：支持结构化）
+        if 'limit_breaches' in parsed_data:
+            breaches = []
+            for b in parsed_data['limit_breaches']:
+                if isinstance(b, dict):
+                    # 尝试转换为LimitBreach，失败则保持dict
+                    breaches.append(b)
+                else:
+                    breaches.append(b)
+            parsed_data['limit_breaches'] = breaches
+        
+        # 解析 recommendations（专家建议：支持结构化）
+        if 'recommendations' in parsed_data:
+            recs = []
+            for r in parsed_data['recommendations']:
+                if isinstance(r, dict):
+                    recs.append(r)
+                else:
+                    recs.append(r)
+            parsed_data['recommendations'] = recs
         
         return cls(**parsed_data)
 
@@ -197,65 +432,102 @@ class RiskEvent:
     event_id: str
     event_type: RiskType
     severity: RiskLevel
-    timestamp: str
+    timestamp: datetime  # 专家建议：改为datetime
     description: str
     triggered_by: str  # 触发因素
     impact_assessment: Dict[str, Any]  # 影响评估
     action_taken: RiskControlAction  # 采取的措施
     resolved: bool = False  # 是否已解决
-    resolution_time: Optional[str] = None  # 解决时间
+    resolution_time: Optional[datetime] = None  # 专家建议：改为datetime
     root_cause: Optional[str] = None  # 根本原因
     prevention_measures: List[str] = field(default_factory=list)  # 预防措施
 
     def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
+        result = asdict(self)
+        result['timestamp'] = self.timestamp.isoformat()
+        if self.resolution_time:
+            result['resolution_time'] = self.resolution_time.isoformat()
+        return result
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'RiskEvent':
         """从字典创建 RiskEvent，支持枚举容错解析"""
         parsed_data = data.copy()
         
+        # 解析 timestamp
+        if 'timestamp' in parsed_data and isinstance(parsed_data['timestamp'], str):
+            try:
+                parsed_data['timestamp'] = datetime.fromisoformat(parsed_data['timestamp'])
+            except ValueError:
+                parsed_data['timestamp'] = datetime.now()
+        
+        # 解析 resolution_time
+        if 'resolution_time' in parsed_data and isinstance(parsed_data['resolution_time'], str):
+            try:
+                parsed_data['resolution_time'] = datetime.fromisoformat(parsed_data['resolution_time'])
+            except ValueError:
+                parsed_data['resolution_time'] = None
+        
         # 解析 event_type
         if 'event_type' in parsed_data:
             et = parsed_data['event_type']
-            if isinstance(et, dict) and 'value' in et:
-                parsed_data['event_type'] = RiskType(et['value'])
-            elif isinstance(et, str):
-                parsed_data['event_type'] = RiskType(et)
+            try:
+                if isinstance(et, dict) and 'value' in et:
+                    parsed_data['event_type'] = RiskType(et['value'])
+                elif isinstance(et, str):
+                    parsed_data['event_type'] = RiskType(et)
+            except (ValueError, KeyError):
+                logger.warning(f"Invalid event_type: {et}, using MARKET_RISK")
+                parsed_data['event_type'] = RiskType.MARKET_RISK
         
         # 解析 severity
         if 'severity' in parsed_data:
             s = parsed_data['severity']
-            if isinstance(s, dict) and 'value' in s:
-                parsed_data['severity'] = RiskLevel(s['value'])
-            elif isinstance(s, str):
-                parsed_data['severity'] = RiskLevel(s)
+            try:
+                if isinstance(s, dict) and 'value' in s:
+                    parsed_data['severity'] = RiskLevel(s['value'])
+                elif isinstance(s, str):
+                    parsed_data['severity'] = RiskLevel(s)
+            except (ValueError, KeyError):
+                logger.warning(f"Invalid severity: {s}, using MODERATE")
+                parsed_data['severity'] = RiskLevel.MODERATE
         
         # 解析 action_taken
         if 'action_taken' in parsed_data:
             at = parsed_data['action_taken']
-            if isinstance(at, dict) and 'value' in at:
-                parsed_data['action_taken'] = RiskControlAction(at['value'])
-            elif isinstance(at, str):
-                parsed_data['action_taken'] = RiskControlAction(at)
+            try:
+                if isinstance(at, dict) and 'value' in at:
+                    parsed_data['action_taken'] = RiskControlAction(at['value'])
+                elif isinstance(at, str):
+                    parsed_data['action_taken'] = RiskControlAction(at)
+            except (ValueError, KeyError):
+                logger.warning(f"Invalid action_taken: {at}, using WARN")
+                parsed_data['action_taken'] = RiskControlAction.WARN
         
         return cls(**parsed_data)
 
 
 @dataclass
 class StressTestScenario:
-    """压力测试场景"""
+    """压力测试场景（专家修正：独立ImpactLevel+时间标准化）"""
     scenario_id: str
     name: str
     description: str
-    parameters: Dict[str, Any]  # 场景参数
-    probability: float  # 发生概率
-    impact_level: RiskLevel  # 影响程度
-    duration: str  # 持续时间
+    parameters: Dict[str, Any]  # 场景参数（专家建议：可结构化为ScenarioParameters）
+    probability: float  # 发生概率（0-1）
+    impact_level: ImpactLevel  # 专家建议：使用独立的ImpactLevel枚举
+    duration_days: int  # 专家建议：持续时间（天数）
     triggers: List[str]  # 触发条件
     mitigation_strategies: List[str]  # 缓解策略
     historical_precedent: Optional[str] = None  # 历史先例
-    recovery_time: Optional[str] = None  # 恢复时间
+    recovery_days: Optional[int] = None  # 专家建议：恢复时间（天数）
+    
+    def __post_init__(self):
+        """专家建议：添加验证逻辑"""
+        if not 0 <= self.probability <= 1:
+            raise ValueError(f"Probability must be between 0 and 1, got {self.probability}")
+        if self.probability < 0.0001:
+            logger.warning(f"Scenario {self.scenario_id} has extremely low probability: {self.probability}")
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -265,13 +537,58 @@ class StressTestScenario:
         """从字典创建 StressTestScenario，支持枚举容错解析"""
         parsed_data = data.copy()
         
-        # 解析 impact_level
+        # 解析 impact_level（专家建议：使用ImpactLevel）
         if 'impact_level' in parsed_data:
             il = parsed_data['impact_level']
-            if isinstance(il, dict) and 'value' in il:
-                parsed_data['impact_level'] = RiskLevel(il['value'])
-            elif isinstance(il, str):
-                parsed_data['impact_level'] = RiskLevel(il)
+            try:
+                if isinstance(il, dict) and 'value' in il:
+                    parsed_data['impact_level'] = ImpactLevel(il['value'])
+                elif isinstance(il, str):
+                    # 兼容旧数据：如果是RiskLevel的值，映射到ImpactLevel
+                    if il in ['extreme', 'very_high']:
+                        parsed_data['impact_level'] = ImpactLevel.CATASTROPHIC
+                    elif il in ['high']:
+                        parsed_data['impact_level'] = ImpactLevel.SEVERE
+                    elif il in ['moderate']:
+                        parsed_data['impact_level'] = ImpactLevel.MODERATE
+                    elif il in ['low']:
+                        parsed_data['impact_level'] = ImpactLevel.MINOR
+                    else:
+                        parsed_data['impact_level'] = ImpactLevel(il)
+            except (ValueError, KeyError):
+                logger.warning(f"Invalid impact_level: {il}, using MODERATE")
+                parsed_data['impact_level'] = ImpactLevel.MODERATE
+        
+        # 兼容旧字段名（专家建议：duration字符串转为duration_days整数）
+        if 'duration' in parsed_data and 'duration_days' not in parsed_data:
+            duration_str = parsed_data.pop('duration')
+            # 简单解析：提取数字（"18个月" -> 18*30, "6个月" -> 6*30, "1天" -> 1）
+            import re
+            match = re.search(r'(\d+)', duration_str)
+            if match:
+                num = int(match.group(1))
+                if '月' in duration_str or 'month' in duration_str.lower():
+                    parsed_data['duration_days'] = num * 30
+                elif '年' in duration_str or 'year' in duration_str.lower():
+                    parsed_data['duration_days'] = num * 365
+                else:  # 天
+                    parsed_data['duration_days'] = num
+            else:
+                parsed_data['duration_days'] = 1
+        
+        # 兼容旧字段名（recovery_time -> recovery_days）
+        if 'recovery_time' in parsed_data and 'recovery_days' not in parsed_data:
+            recovery_str = parsed_data.pop('recovery_time')
+            if recovery_str:
+                import re
+                match = re.search(r'(\d+)', recovery_str)
+                if match:
+                    num = int(match.group(1))
+                    if '月' in recovery_str or 'month' in recovery_str.lower():
+                        parsed_data['recovery_days'] = num * 30
+                    elif '年' in recovery_str or 'year' in recovery_str.lower():
+                        parsed_data['recovery_days'] = num * 365
+                    else:
+                        parsed_data['recovery_days'] = num
         
         return cls(**parsed_data)
-
