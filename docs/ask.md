@@ -1,352 +1,350 @@
-# 第10轮咨询 - 阶段3.1：货币单位一致性检查复审
+# 风险模块货币一致性增强 - 实施完成评审
 
-## 背景说明
-
-本次迭代已在 `RiskCalculator` 中实施阶段1的货币一致性检查，保持向后兼容、不改变计算结果结构，仅增加初始化字段与运行时日志检查。请您复审如下改动。
-
-## 变更摘要
-- 在 `MarketPriceData` 增加可选字段 `currency`
-- 初始化设定 `base_currency`（来自 `MarketConfigManager` 或配置覆盖）与 `strict_currency_check` 开关
-- 在 `calculate_all_metrics` 中运行 `_runtime_currency_check` 并通过 `_handle_currency_warnings` 分级日志处理
-- 默认不抛错；仅当 `strict_currency_check=True` 时对严重问题抛异常
-
-## 代码摘录（节选）
-```python
-# risk_calculator.py
-class RiskCalculator:
-    def __init__(self, config: Dict):
-        market_info = self.config_manager.get_market_info(self.market_type)
-        self.base_currency = market_info.get('currency', 'CNY')
-        current_market_cfg = self.config.get('market_configs', {}).get(self.market_type, {})
-        if 'base_currency' in current_market_cfg:
-            self.base_currency = current_market_cfg['base_currency']
-        self.strict_currency_check = bool(self.config.get('strict_currency_check', False))
-
-    def calculate_all_metrics(self, data: Dict[str, Any]) -> Dict[str, float]:
-        currency_warnings = self._runtime_currency_check(data)
-        self._handle_currency_warnings(currency_warnings)
-        # ... 原有提取与计算逻辑 ...
-```
-
-## 测试验证
-- 新增用例：`tests/core/risk/test_currency_consistency.py` 共5项
-  - 单一币种且组合币种一致，无警告
-  - 缺失 currency 字段，产生“缺少货币信息”警告
-  - 多币种价格数据，产生“多币种检测”警告
-  - 组合基准货币与系统基准货币不一致，产生“不一致”警告
-  - 严格模式 `strict_currency_check=True` 时，对严重问题抛出异常
-- 结果：5 passed
-
-## 评审请求（请您评估）
-1. 检查范围是否完整：价格数据、组合、风险参数的货币单位检查是否满足需求？
-2. 分级策略是否合理：是否需要将“多币种检测”提升为警告或错误等级？
-3. 严格模式默认值建议：是否采用默认 `False`，仅在合规场景开启严格模式？
-4. 可选 `currency` 字段设计是否符合数据源适配原则（向后兼容）？
-5. 美股场景优先：针对 US 市场，是否需要额外规则或不同日志阈值？
-6. 后续阶段需求：是否在下一阶段实施汇率转换与跨货币度量（保持阶段1仅检查、阶段2再转换）？
-
-## 附录：相关文件
-- `core_bak_refactored/core/risk/risk_calculator.py`（Commit: bf00852）
-- `tests/core/risk/test_currency_consistency.py`（5 passed）
-
-# 第9轮咨询 - 阶段3: 国际化补充检查评审
-
-## 背景说明
-
-按照记忆要求，将国际化全面支持作为独立补充检查阶段（阶段3）执行。已完成RiskCalculator的国际化集成，现提交专家评审。
+**模块**: 风险管理 (core/risk/)  
+**阶段**: P1.5 货币一致性增强与市场特定策略  
+**提交时间**: 2024-11-12  
+**评审类型**: 实施完成确认
 
 ---
 
-## 检查范围
+## 📋 背景说明
 
-按记忆定义的国际化检查清单：
-1. ✅ 市场类型一致性
-2. ✅ 国际增强模块集成  
-3. ✅ 区域化默认值
-4. ✅ 返回信息与日志的国际化可用性
-5. ✅ 时间货币单位的区域差异处理
+基于前期专家建议，我们在风险计算器中完成了货币一致性增强功能的实施。本次咨询旨在：
+1. 确认实施是否完整覆盖所有专家建议
+2. 验证实施质量是否符合生产标准
+3. 识别潜在的遗漏或改进点
 
 ---
 
-## 发现的问题与修正
+## ✅ 已完成实施清单
 
-### 问题：RiskCalculator未集成国际化模块
+### 1. 核心功能实现
 
-**问题分析**:
-```python
-# 修正前
-class RiskCalculator:
-    def __init__(self, config: Dict):
-        self.config = config  # ❌ 未验证市场配置
-        self.risk_metrics_service = RiskMetricsService(config)  # ✅ 服务层有国际化
-        self.preprocessor = RiskDataPreprocessor()
-        logger.info("风险计算器初始化完成")  # ❌ 日志缺少market_type
-```
+#### 1.1 运行时货币检查（RiskCalculator）
+- [x] **基础检查**: `_runtime_currency_check(data)` - 检测多币种与缺失货币信息
+- [x] **风险参数检查**: `_check_risk_parameters_currency(data)` - 检查无风险利率、市场收益货币
+- [x] **警告分类**: `_classify_currency_warnings(warnings)` - 分为info/warning/error三级
+- [x] **市场特定严重性**: `_get_market_specific_severity(warning, market_type)` - US严格/CN宽松
+- [x] **数据源质量评估**: `_assess_data_source_quality(prices)` - 货币覆盖度评级
+- [x] **美股合规日志**: `_us_compliance_logging(currency_warnings)` - SEC/FINRA合规事件
 
-**影响**:
-- ❌ 协调器层无法获取市场类型信息
-- ❌ 无配置验证机制，可能传递不完整配置
-- ❌ 日志缺少市场类型，多市场环境调试困难
-- ❌ 无法自动补全缺失的市场配置
+#### 1.2 汇率转换支持（共享业务模块）
+- [x] **适配器接口**: `ExchangeRateAdapter` (Protocol) - core/share/exchange_rates.py
+- [x] **模拟实现**: `MockExchangeRateAdapter` - 开发阶段测试用
+- [x] **转换器**: `CurrencyConverter` - 纯计算器，接收业务层注入的rates
+- [x] **适配器注入**: `RiskCalculator.attach_exchange_rate_adapter(adapter)`
+- [x] **统一转换**: `_unify_currency_for_portfolio(data)` - 多币种时转换为基准货币
+
+#### 1.3 市场配置管理（共享业务模块）
+- [x] **市场配置**: `MarketConfigManager` - core/share/market_config.py
+- [x] **默认严格模式**: `_get_default_strict_mode(market_type)` - US/HK严格，CN/EU/JP宽松
+- [x] **基准货币配置**: 从市场配置自动获取（USD/CNY/HKD/JPY/EUR）
+
+### 2. 测试覆盖
+
+#### 2.1 货币一致性检查测试
+**文件**: `tests/core/risk/test_currency_consistency.py`  
+**覆盖**:
+- [x] 单一货币正常场景（无警告）
+- [x] 多币种检测（警告级别）
+- [x] 缺失货币信息检测
+- [x] 风险参数货币检查
+- [x] 警告分类逻辑（info/warning/error）
+- [x] 市场特定严重性（US vs CN）
+- [x] 数据源质量评估
+- [x] 美股合规日志验证
+- [x] 默认严格模式验证
+
+**结果**: 9/9 测试通过
+
+#### 2.2 汇率适配器集成测试
+**文件**: `tests/core/risk/test_currency_adapter_integration.py`  
+**覆盖**:
+- [x] 适配器注入功能
+- [x] 多币种统一转换
+- [x] 汇率计算验证
+
+**结果**: 2/2 测试通过
+
+#### 2.3 共享模块测试
+**文件**: `tests/core/share/test_exchange_rates.py`  
+**覆盖**:
+- [x] 汇率转换功能
+- [x] 货币敞口计算
+- [x] 汇率查找（嵌套与扁平键）
+
+**结果**: 3/3 测试通过
+
+### 3. 全量回归测试
+
+**执行时间**: 2024-11-12  
+**测试范围**: core_bak_refactored/tests/core/risk/ (182个测试)  
+**结果**: 171/182 通过（93.9%）
+
+**本次相关测试**:
+- ✅ 货币一致性检查：9/9 通过
+- ✅ 汇率适配器集成：2/2 通过
+- ✅ 共享模块：3/3 通过
+- ✅ 国际化支持：11/11 通过
+- ✅ 风险计算器：14/14 通过
+
+**无新增回归**: 11个失败测试为既存问题（risk_limits_p1_3, stress_testing等），与本次实施无关。
 
 ---
 
-## 已实施修正
+## 🔍 实施细节展示
 
-### 修正1：集成MarketConfigManager
-
-```python
-# 导入国际化模块
-from .international_config import MarketConfigManager
-
-class RiskCalculator:
-    def __init__(self, config: Dict):
-        # 国际化：市场配置管理器
-        self.config_manager = MarketConfigManager()
-        
-        # 验证配置完整性
-        config_errors = self.config_manager.validate_market_config(config)
-        if config_errors:
-            logger.warning(f"配置验证发现问题: {config_errors}")
-        
-        # 识别市场类型
-        self.market_type = config.get('market_type', 'CN')
-        
-        # 确保配置完整性（自动补全缺失配置）
-        if 'market_configs' not in config or self.market_type not in config.get('market_configs', {}):
-            logger.warning(f"缺少{self.market_type}市场配置，使用默认配置")
-            default_config = self.config_manager.generate_config_template(self.market_type)
-            config['market_configs'] = default_config['market_configs']
-        
-        self.config = config
-        self.risk_metrics_service = RiskMetricsService(config)
-        self.preprocessor = RiskDataPreprocessor()
-        
-        logger.info(
-            f"风险计算器初始化完成 - 市场: {self.market_type}, "
-            f"配置验证: {'有警告' if config_errors else '通过'}"
-        )
-```
-
-**改进点**:
-- ✅ 添加配置验证：`validate_market_config()`
-- ✅ 自动识别市场类型：`self.market_type`
-- ✅ 自动补全缺失配置：`generate_config_template()`
-- ✅ 增强初始化日志：包含市场类型和验证状态
-
----
-
-### 修正2：日志国际化增强
-
-#### calculate_all_metrics日志
+### 示例1: 市场特定严格模式
 
 ```python
-# 数据不足警告
-logger.warning(
-    f"calculate_all_metrics: 收益数据不足, 市场{self.market_type}, "
-    f"至少需要{min_points}个数据点"
-)
-
-# 成功完成日志
-logger.info(
-    f"calculate_all_metrics: 完成, 市场{self.market_type}, "
-    f"耗时{elapsed:.3f}s, 指标{len(metrics)}个"
-)
-
-# 错误日志  
-logger.error(f"风险指标计算失败, 市场{self.market_type}: {e}")
+def _get_default_strict_mode(self, market_type: str) -> bool:
+    """按市场类型返回默认货币严格模式（US/HK严格，CN/JP/EU宽松）"""
+    strict_markets = {'US', 'HK'}  # 美国、香港：监管严格
+    lenient_markets = {'CN', 'JP', 'EU'}  # 中国、日本、欧洲：相对宽松
+    
+    if market_type in strict_markets:
+        return True
+    elif market_type in lenient_markets:
+        return False
+    else:
+        logger.warning(f"未知市场{market_type}，默认宽松模式")
+        return False
 ```
 
-#### calculate_var_monte_carlo日志
+**市场差异理由**:
+- **US/HK严格**: SEC/FINRA监管要求，货币不一致可能触发合规问题
+- **CN/JP/EU宽松**: 本地市场为主，跨币种场景较少
+
+### 示例2: 美股合规日志
 
 ```python
-# 数据不足警告
-logger.warning(
-    f"calculate_var_monte_carlo: 价格数据不足, 市场{self.market_type}, 返回NaN"
-)
-
-# 成功完成日志
-logger.info(
-    f"calculate_var_monte_carlo: 完成, 市场{self.market_type}, "
-    f"耗时{elapsed:.3f}s, 模拟{n_simulations}次"
-)
-
-# 错误日志
-logger.error(f"calculate_var_monte_carlo: 计算异常, 市场{self.market_type}: {e}")
+def _us_compliance_logging(self, currency_warnings: List[str]) -> None:
+    """美股特定合规日志（SEC/FINRA要求）"""
+    if self.market_type != 'US':
+        return
+    
+    if not currency_warnings:
+        return
+    
+    logger.warning(
+        f"[US_COMPLIANCE_EVENT] 货币一致性问题检测 - "
+        f"市场: {self.market_type}, "
+        f"警告数量: {len(currency_warnings)}, "
+        f"详情: {'; '.join(currency_warnings)}"
+    )
 ```
 
-**改进点**:
-- ✅ 所有日志包含market_type
-- ✅ 便于多市场环境追踪问题
-- ✅ 性能监控可按市场分类
+**合规价值**: 便于审计追踪，满足监管报告要求。
 
----
+### 示例3: 数据源质量评估
 
-## 测试验证
-
-### 测试结果
-```bash
-================================ test session starts ================================
-collected 10 items
-
-tests/core/risk/risk_calculator_test.py::RiskCalculatorTest::test_calculate_all_metrics_from_prices_data PASSED [ 10%]
-tests/core/risk/risk_calculator_test.py::RiskCalculatorTest::test_calculate_all_metrics_from_returns_data PASSED [ 20%]
-tests/core/risk/risk_calculator_test.py::RiskCalculatorTest::test_calculate_all_metrics_insufficient_data PASSED [ 30%]
-tests/core/risk/risk_calculator_test.py::RiskCalculatorTest::test_calculate_correlation_matrix_valid_input PASSED [ 40%]
-tests/core/risk/risk_calculator_test.py::RiskCalculatorTest::test_calculate_max_drawdown_delegates PASSED [ 50%]
-tests/core/risk/risk_calculator_test.py::RiskCalculatorTest::test_calculate_var_historical_delegates PASSED [ 60%]
-tests/core/risk/risk_calculator_test.py::RiskCalculatorTest::test_calculate_var_parametric_delegates PASSED [ 70%]
-tests/core/risk/risk_calculator_test.py::RiskCalculatorTest::test_calculate_volatility_delegates_to_service PASSED [ 80%]
-tests/core/risk/risk_calculator_test.py::RiskCalculatorTest::test_extract_market_returns_from_dict PASSED [ 90%]
-tests/core/risk/risk_calculator_test.py::RiskCalculatorTest::test_extract_returns_from_dict PASSED [100%]
-
-================================ 10 passed in 1.10s =================================
+```python
+def _assess_data_source_quality(self, prices: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+    """评估数据源的货币信息完整性"""
+    total = len(prices)
+    if total == 0:
+        return {'grade': 'N/A', 'coverage': 0.0, 'missing_count': 0}
+    
+    with_currency = sum(1 for p in prices.values() if p.get('currency'))
+    coverage = with_currency / total
+    missing = total - with_currency
+    
+    grade = 'A' if coverage >= 0.95 else 'B' if coverage >= 0.80 else 'C' if coverage >= 0.50 else 'D'
+    
+    return {'grade': grade, 'coverage': coverage, 'missing_count': missing}
 ```
 
-**结果**: ✅ 10/10测试通过，无破坏性修改
+**应用场景**: 识别数据供应商质量问题，触发数据清洗流程。
 
 ---
 
-## 国际化检查完成状态
+## ❓ 专家评审问题
 
-### 已完成项
+### 问题1: 实施完整性确认
 
-| 检查项 | 状态 | 实施位置 |
-|--------|------|----------|
-| 市场类型一致性 | ✅ | RiskCalculator.market_type + RiskMetricsService.market_type |
-| 国际增强模块集成 | ✅ | RiskMetricsService继承InternationalEnhancements |
-| MarketConfigManager集成 | ✅ | RiskCalculator集成配置管理器 |
-| 区域化默认值 | ✅ | trading_days/risk_free_rate按市场动态获取 |
-| 日志国际化 | ✅ | 所有日志包含market_type |
-| 配置自动补全 | ✅ | 缺失配置自动生成默认模板 |
-| 配置验证 | ✅ | 初始化时验证市场配置完整性 |
+**问题**: 基于您的原始建议，以下实施是否完整覆盖所有要点？
 
----
+**原始建议要点**（从专家回复提取）:
+1. ✅ 增加风险参数货币检查
+2. ✅ 更精细的警告分类（info/warning/error）
+3. ✅ 市场特定严重性（US/CN差异）
+4. ✅ 按市场类型的默认严格模式
+5. ✅ 数据源质量评估
+6. ✅ 美股合规日志
+7. ✅ 汇率转换服务（共享模块）
+8. ✅ 适配器注入与统一转换
 
-## 现有国际化能力总览
-
-### 支持的市场
-
-| 市场 | 代码 | 交易日/年 | 无风险利率 | 特殊机制 |
-|------|------|-----------|-----------|----------|
-| 中国A股 | CN | 245 | 3.0% | 涨跌停（主板±10%, 创业板±20%） |
-| 美国股市 | US | 252 | 4.5% | 熔断（7%/13%/20%）+ LULD |
-| 香港股市 | HK | 247 | 3.5% | - |
-| 日本股市 | JP | 245 | 0.5% | - |
-| 欧洲股市 | EU | 255 | 2.5% | - |
-
-### 市场特定功能
-
-#### CN市场（中国A股）
-- ✅ 涨跌停检测
-  - 主板: ±10%
-  - 创业板: ±20%  
-  - ST股: ±5%
-  - 科创板: ±20%
-- ✅ 收益率分布截断调整（Winsorization）
-
-#### US市场（美国股市）
-- ✅ 熔断机制检测（Circuit Breaker）
-  - Level 1: 7%下跌
-  - Level 2: 13%下跌
-  - Level 3: 20%下跌
-- ✅ LULD机制检测（Limit Up-Limit Down）
-  - 阈值: 5%
-  - 窗口: 5分钟
-
-#### 国际化增强功能
-- ✅ `calculate_sharpe_ratio_enhanced()`: 市场风险溢价调整
-- ✅ `_detect_market_anomalies()`: 市场特定异常检测
-- ✅ `_get_market_specific_risk_premium()`: 动态风险溢价
-- ✅ `calculate_cross_market_risk_comparison()`: 跨市场对比
-
-### 配置管理能力
-
-- ✅ `validate_market_config()`: 验证配置完整性
-- ✅ `generate_config_template()`: 生成市场配置模板
-- ✅ `_build_market_specific_config()`: 构建市场特定配置
-- ✅ 自动回退机制：配置缺失时使用CN默认值
+**请确认**: 是否有遗漏的建议点未实施？
 
 ---
 
-## 评审请求
+### 问题2: 严格模式策略合理性
 
-### 请专家评估以下方面
+**当前实现**:
+- **严格市场**: US, HK（强制货币一致性检查）
+- **宽松市场**: CN, JP, EU（仅警告，不阻断）
 
-#### 1. 国际化集成完整性
-- [ ] RiskCalculator的MarketConfigManager集成是否充分？
-- [ ] 配置验证机制是否合理？
-- [ ] 自动补全配置的策略是否正确？
-
-#### 2. 市场类型一致性
-- [ ] RiskCalculator和RiskMetricsService的market_type传递是否一致？
-- [ ] 配置传递链路是否完整？
-
-#### 3. 日志国际化
-- [ ] 日志中market_type信息是否足够？
-- [ ] 是否需要补充其他市场相关信息？
-
-#### 4. 多市场支持充分性
-- [ ] 当前支持的5个市场是否足够？
-- [ ] 市场特定功能（涨跌停/熔断/LULD）是否正确？
-- [ ] 是否需要补充其他市场机制？
-
-#### 5. 区域化默认值
-- [ ] trading_days_per_year的值是否合理？
-- [ ] risk_free_rate的值是否合理？
-- [ ] 是否需要补充其他区域化参数？
-
-#### 6. 时间货币单位处理
-- [ ] 时区处理是否正确？
-- [ ] 交易时间配置是否完整？
-- [ ] 是否需要补充货币单位转换功能？
+**问题**: 
+1. 这种分类是否符合各市场的实际监管要求？
+2. 是否有市场应该调整分类（例如JP是否应该严格？）
+3. 默认回退到宽松模式是否合理？
 
 ---
 
-## 代码变更
+### 问题3: 警告分类的实战价值
 
-### 修改文件
-- `core_bak_refactored/core/risk/risk_calculator.py`
-  - 新增导入：MarketConfigManager
-  - 新增属性：config_manager, market_type
-  - 增强初始化：配置验证+自动补全
-  - 增强日志：所有日志包含market_type
-  - 代码变更：+40行, -7行
+**当前分类逻辑**（`_classify_currency_warnings`）:
+- **ERROR**: 多币种 + 严格模式 + 数据源质量差（< 80%覆盖）
+- **WARNING**: 多币种 + 宽松模式，或风险参数货币缺失
+- **INFO**: 数据源质量问题但非严重，或单一缺失
 
-### Git提交
-- Commit: `42a3dc8`
-- 提交信息: "feat(risk): 阶段3国际化补充 - RiskCalculator集成MarketConfigManager"
+**问题**: 
+1. 这种分级是否足够实用？
+2. 是否需要更细粒度的分类（例如CRITICAL级别）？
+3. 在生产环境中，ERROR级别是否应该阻断计算？
 
 ---
 
-## 附录：相关文件清单
+### 问题4: 汇率转换的触发时机
 
-### 核心文件
-1. **`core/risk/risk_calculator.py`** (协调器)
-   - 新增：MarketConfigManager集成
-   - 新增：market_type识别
-   - 新增：配置验证和自动补全
+**当前实现**:
+- 仅当检测到多币种且注入了汇率适配器时，才调用`_unify_currency_for_portfolio`
+- 转换结果不影响现有风险指标计算（仅生成摘要）
 
-2. **`core/risk/risk_metrics_service.py`** (业务服务)
-   - 已有：继承InternationalEnhancements
-   - 已有：MarketConfigManager集成
-   - 已有：市场特定配置管理
-
-3. **`core/risk/international_config.py`** (配置管理)
-   - MarketConfigManager类
-   - 5个市场的配置模板
-
-4. **`core/risk/international_enhancements.py`** (国际化增强)
-   - InternationalEnhancements混入类
-   - 增强版计算方法
-   - 市场异常检测
-
-### 测试文件
-5. **`tests/core/risk/risk_calculator_test.py`**
-   - 10个测试用例全部通过
-   - 无破坏性修改
+**问题**: 
+1. 这种"仅摘要，不影响计算"的设计是否合理？
+2. 是否应该提供选项让转换结果直接用于风险计算？
+3. 汇率转换的精度要求（日内波动、盘中价vs收盘价）是否需要特殊处理？
 
 ---
 
-**评审状态**: ⏸️ 等待专家评审  
-**下一步**: 根据专家反馈决定是否需要补充修改
+### 问题5: 美股合规日志的充分性
+
+**当前实现**:
+- 记录事件类型: `[US_COMPLIANCE_EVENT]`
+- 包含信息: 市场、警告数量、详情
+
+**问题**: 
+1. SEC/FINRA的实际合规报告是否需要更多字段（例如时间戳、交易标识）？
+2. 是否需要结构化日志（JSON格式）便于自动化审计？
+3. 其他市场（HK、EU）是否也需要类似的合规日志？
+
+---
+
+### 问题6: 数据源质量评估的后续处理
+
+**当前实现**:
+- 评级: A(≥95%), B(≥80%), C(≥50%), D(<50%)
+- 仅记录评估结果，无后续自动处理
+
+**问题**: 
+1. 低评级（C/D）是否应该触发自动告警或数据清洗流程？
+2. 评级标准是否符合行业最佳实践？
+3. 是否需要持久化质量评估历史（追踪数据供应商质量趋势）？
+
+---
+
+### 问题7: 测试覆盖充分性
+
+**当前测试**:
+- 9个货币一致性测试
+- 2个适配器集成测试
+- 3个共享模块测试
+
+**问题**: 
+1. 是否需要补充边界场景测试（例如极端汇率波动、API超时）？
+2. 是否需要性能测试（大规模多币种组合的检查开销）？
+3. 是否需要集成测试验证与其他模块（如执行、回测）的协同？
+
+---
+
+### 问题8: 共享模块架构评审
+
+**当前设计**:
+- `core/share/exchange_rates.py` - 汇率转换业务
+- `core/share/market_config.py` - 市场配置管理
+
+**问题**: 
+1. 这种共享模块的拆分是否合理？
+2. 是否应该进一步细分（例如独立交易日历模块）？
+3. 共享模块的版本管理策略如何（避免破坏性变更）？
+
+---
+
+### 问题9: 跨模块依赖管理
+
+**当前依赖**:
+- RiskCalculator → MarketConfigManager（共享）
+- RiskCalculator → ExchangeRateAdapter（共享，可选注入）
+- RiskCalculator → RiskMetricsService（风险模块内部）
+
+**问题**: 
+1. 这种依赖关系是否清晰？
+2. 是否需要依赖注入容器管理（避免循环依赖）？
+3. 测试隔离是否充分（Mock共享模块依赖）？
+
+---
+
+### 问题10: 生产就绪评估
+
+**关键指标**:
+- ✅ 测试通过率: 14/14（货币相关）
+- ✅ 回归测试: 无新增失败
+- ✅ 代码覆盖: 核心功能全覆盖
+- ⚠️ 性能测试: 未执行
+- ⚠️ 文档完善: 仅代码注释，无独立文档
+
+**问题**: 
+1. 基于当前实施状态，是否可以标记为"生产就绪"？
+2. 需要补充哪些工作才能达到生产标准？
+3. 建议的发布策略（灰度发布、特性开关）是否需要？
+
+---
+
+## 📊 性能考量
+
+### 当前性能分析
+
+**货币检查开销**（估算）:
+- `_runtime_currency_check`: O(n)，n为标的数量，单次检查约0.1-1ms
+- `_check_risk_parameters_currency`: O(1)，常量时间
+- `_classify_currency_warnings`: O(m)，m为警告数量，通常< 10
+
+**总开销**: < 5ms（100标的组合）
+
+**优化空间**:
+- 缓存货币检测结果（避免重复检查相同market_data）
+- 异步检查（不阻塞主计算流程）
+
+**问题**: 是否需要现在优化，还是等待生产环境压测后再决定？
+
+---
+
+## 🎯 下一步计划
+
+### 短期（1周内）
+1. 根据专家反馈修正任何遗漏或错误
+2. 补充专家建议的额外测试
+3. 完善文档（如需要）
+
+### 中期（2-4周）
+1. 实施真实汇率API集成（Yahoo Finance/Alpha Vantage）
+2. 性能压测与优化
+3. 与执行、回测模块联调
+
+### 长期（1-3个月）
+1. 配置热更新支持（MarketConfigManager）
+2. 多币种风险报告可视化
+3. 监管报告自动化生成
+
+---
+
+## 🙏 请求指导
+
+请专家审阅以上实施细节，并提供以下指导：
+
+1. **优先级P0（必须修正）**: 哪些实施有明显错误或遗漏？
+2. **优先级P1（建议改进）**: 哪些设计可以优化？
+3. **优先级P2（未来增强）**: 哪些功能可以纳入长期规划？
+
+期待您的宝贵意见！

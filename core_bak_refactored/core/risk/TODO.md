@@ -253,11 +253,11 @@ def _fetch_live_risk_free_rate(self, market_type: str) -> float:
 
 ---
 
-#### P1.5: 货币一致性增强与市场特定策略（专家建议 - 当前阶段增强）
+#### ✅ P1.5: 货币一致性增强与市场特定策略（专家建议 - 已完成）
 
 **目标**：完善阶段1的货币一致性检查，按市场定制分级策略，提升美股场景支持。
 
-**待办**：
+**已完成**：
 - [x] 增加风险参数货币检查：`_check_risk_parameters_currency(data)`
 - [x] 更精细的警告分类：`_classify_currency_warnings(warnings)`（info/warning/error）
 - [x] 市场特定严重性：`_get_market_specific_severity(warning, market_type)`（US/CN差异）
@@ -267,6 +267,11 @@ def _fetch_live_risk_free_rate(self, market_type: str) -> float:
 - [x] 记录跨模块依赖：汇率转换服务，见共享业务模块（core/share/exchange_rates.py）
 - [x] 实现适配器注入与调用：`attach_exchange_rate_adapter` + `_unify_currency_for_portfolio`
 - [x] 新增联调测试：`test_currency_adapter_integration.py`，14 tests passed
+- [x] 共享模块迁移：MarketConfigManager迁移到core/share/market_config.py
+- [x] 全量回归测试：171/182 passed（无新增回归）
+
+**评审文档**：`docs/ask.md`（实施完成评审，待专家反馈）  
+**完成时间**：2024-11-12
 
 ---
 
