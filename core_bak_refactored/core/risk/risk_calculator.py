@@ -86,7 +86,8 @@ class RiskCalculator:
         current_market_cfg = market_configs.get(self.market_type, {})
         if 'base_currency' in current_market_cfg:
             self.base_currency = current_market_cfg['base_currency']
-        self.strict_currency_check = bool(self.config.get('strict_currency_check', False))
+        default_strict = self._get_default_strict_mode(self.market_type)
+        self.strict_currency_check = bool(self.config.get('strict_currency_check', default_strict))
 
         logger.info(
             f"风险计算器初始化完成 - 市场: {self.market_type}, "
@@ -207,14 +208,99 @@ class RiskCalculator:
         """分级处理货币警告（严格模式可抛错）"""
         if not warnings:
             return
-        critical_errors = [w for w in warnings if ('缺少' in w) or ('不在' in w)]
+        # 分类警告（根据市场类型调整严重性）
+        classified = self._classify_currency_warnings(warnings)
+        for msg in classified.get('info', []):
+            logger.info(f"货币信息: {msg}")
+        for msg in classified.get('warning', []):
+            logger.warning(f"货币警告: {msg}")
+        for msg in classified.get('error', []):
+            logger.error(f"货币错误: {msg}")
+        # 严格模式下如存在错误则抛出异常
+        if classified.get('error') and getattr(self, 'strict_currency_check', False):
+            raise ValueError(f"货币单位检查失败: {classified.get('error')}")
+
+    def _check_risk_parameters_currency(self, data: Dict[str, Any]) -> List[str]:
+        """检查风险参数（无风险利率/市场收益）的货币一致性"""
+        warnings_list: List[str] = []
+        market_data = data.get('market_data', {})
+        risk_free_info = market_data.get('risk_free_rate_info', {})
+        if risk_free_info.get('currency') and risk_free_info['currency'] != self.base_currency:
+            warnings_list.append(
+                f"无风险利率货币{risk_free_info['currency']}≠基准货币{self.base_currency}"
+            )
+        market_returns_info = market_data.get('market_returns_info', {})
+        if market_returns_info.get('currency') and market_returns_info['currency'] != self.base_currency:
+            warnings_list.append(
+                f"市场收益货币{market_returns_info['currency']}≠基准货币{self.base_currency}"
+            )
+        return warnings_list
+
+    def _classify_currency_warnings(self, warnings: List[str]) -> Dict[str, List[str]]:
+        """更精细的警告分类，按市场类型调整严重性"""
+        info: List[str] = []
+        warn: List[str] = []
+        err: List[str] = []
         for w in warnings:
-            if w in critical_errors:
-                logger.error(f"货币严重问题: {w}")
+            if '多币种' in w:
+                # 美股多币种常见，降级为信息
+                if self.market_type == 'US':
+                    info.append(w)
+                else:
+                    warn.append(w)
+            elif ('缺少' in w):
+                warn.append(w)
+            elif ('不在' in w) or ('≠' in w):
+                # 组合不一致在美股更严格，提升为错误
+                if self.market_type == 'US':
+                    err.append(w)
+                else:
+                    warn.append(w)
             else:
-                logger.warning(f"货币警告: {w}")
-        if critical_errors and getattr(self, 'strict_currency_check', False):
-            raise ValueError(f"货币单位检查失败: {critical_errors}")
+                warn.append(w)
+        return {'info': info, 'warning': warn, 'error': err}
+
+    def _get_default_strict_mode(self, market_type: str) -> bool:
+        """根据市场类型获取默认严格模式"""
+        market_strict_defaults = {
+            'US': True,
+            'HK': True,
+            'CN': False,
+            'EU': False,
+            'JP': False,
+        }
+        return market_strict_defaults.get(market_type, False)
+
+    def _assess_data_source_quality(self, prices: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+        """评估数据源货币信息完整性"""
+        total_symbols = len(prices)
+        symbols_with_currency = sum(1 for p in prices.values() if p.get('currency'))
+        currency_coverage = symbols_with_currency / total_symbols if total_symbols > 0 else 0.0
+        rating = 'HIGH' if currency_coverage > 0.8 else ('MEDIUM' if currency_coverage > 0.5 else 'LOW')
+        return {
+            'total_symbols': total_symbols,
+            'currency_coverage': currency_coverage,
+            'quality_rating': rating,
+        }
+
+    def _us_compliance_logging(self, currency_warnings: List[str]) -> None:
+        """美股合规性日志记录（仅US市场）"""
+        if self.market_type != 'US' or not currency_warnings:
+            return
+        compliance_events = []
+        for warning in currency_warnings:
+            if ('多币种' in warning) or ('≠' in warning):
+                compliance_events.append({
+                    'event_type': 'CURRENCY_INCONSISTENCY',
+                    'message': warning,
+                    'timestamp': pd.Timestamp.now(),
+                    'severity': 'MEDIUM' if '多币种' in warning else 'HIGH'
+                })
+        if compliance_events:
+            logger.info(
+                f"美股货币合规事件记录: {len(compliance_events)}个事件",
+                extra={'compliance_events': compliance_events}
+            )
 
     def calculate_all_metrics(self, data: Dict[str, Any]) -> Dict[str, float]:
         """
@@ -227,7 +313,10 @@ class RiskCalculator:
         try:
             # TODO：补充了货币一致性运行时检查，待确认，来源：docs/answer.md
             currency_warnings = self._runtime_currency_check(data)
+            currency_warnings += self._check_risk_parameters_currency(data)
             self._handle_currency_warnings(currency_warnings)
+            # 美股合规日志
+            self._us_compliance_logging(currency_warnings)
 
             # 数据提取委托给预处理器
             returns = self.preprocessor.extract_returns_from_dict(data)
