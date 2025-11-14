@@ -14,6 +14,7 @@ import warnings
 from .risk_metrics_service import RiskMetricsService
 from .risk_models import RiskMetric
 from .international_config import MarketConfigManager
+from ..share.exchange_rates import CurrencyConverter, ExchangeRateAdapter
 
 # 导入数据预处理器
 import sys
@@ -77,7 +78,10 @@ class RiskCalculator:
         self.config = config
         self.risk_metrics_service = RiskMetricsService(config)
         self.preprocessor = RiskDataPreprocessor()
-        
+        # 可选：外部实时汇率适配器（由业务层注入）
+        self.exchange_rate_adapter: Optional[ExchangeRateAdapter] = None
+        self._currency_converter = CurrencyConverter()
+
         # TODO：补充了货币一致性检查初始化，待确认，来源：docs/answer.md
         # 基准货币与严格检查开关
         market_info = self.config_manager.get_market_info(self.market_type)
@@ -283,6 +287,41 @@ class RiskCalculator:
             'quality_rating': rating,
         }
 
+    def attach_exchange_rate_adapter(self, adapter: 'ExchangeRateAdapter') -> None:
+        """注入外部实时汇率适配器（不改变现有指标计算）"""
+        self.exchange_rate_adapter = adapter
+        logger.info(f"已注入外部汇率适配器: {adapter.__class__.__name__}")
+
+    def _unify_currency_for_portfolio(self, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """在存在多币种或不一致时，统一转换到基准货币（仅生成摘要，不影响计算）"""
+        if not self.exchange_rate_adapter:
+            return None
+        market_data = data.get('market_data', {})
+        prices = market_data.get('prices', {}) or {}
+        # 仅当检测到多币种或组合≠基准货币时才尝试转换
+        warnings_list = self._runtime_currency_check(data)
+        if not warnings_list:
+            return None
+        try:
+            rates = self.exchange_rate_adapter.get_rates(self.market_type)
+            # 构造最小组合估值结构（从prices推断）
+            portfolio = {'allocations': {}}
+            for symbol, price_data in prices.items():
+                # 使用最后一个close近似估值（仅摘要用途）
+                closes = price_data.get('close') or []
+                last_value = float(closes[-1]) if closes else 0.0
+                src_cur = price_data.get('currency', self.base_currency)
+                portfolio['allocations'][symbol] = {'currency': src_cur, 'value': last_value}
+            summary = self._currency_converter.convert_portfolio_currency(
+                portfolio, target_currency=self.base_currency, rates=rates
+            )
+            logger.info(
+                f"统一货币摘要: 目标{self.base_currency}, 合计{summary['total_converted_value']:.4f}")
+            return summary
+        except Exception as e:
+            logger.warning(f"统一货币失败（不影响计算）: {e}")
+            return None
+
     def _us_compliance_logging(self, currency_warnings: List[str]) -> None:
         """美股合规性日志记录（仅US市场）"""
         if self.market_type != 'US' or not currency_warnings:
@@ -317,6 +356,8 @@ class RiskCalculator:
             self._handle_currency_warnings(currency_warnings)
             # 美股合规日志
             self._us_compliance_logging(currency_warnings)
+            # 在存在多币种/不一致时，尝试统一货币（仅摘要，不影响指标计算）
+            self._unify_currency_for_portfolio(data)
 
             # 数据提取委托给预处理器
             returns = self.preprocessor.extract_returns_from_dict(data)
