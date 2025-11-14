@@ -253,6 +253,22 @@ def _fetch_live_risk_free_rate(self, market_type: str) -> float:
 
 ---
 
+#### P1.5: 货币一致性增强与市场特定策略（专家建议 - 当前阶段增强）
+
+**目标**：完善阶段1的货币一致性检查，按市场定制分级策略，提升美股场景支持。
+
+**待办**：
+- [ ] 增加风险参数货币检查：`_check_risk_parameters_currency(data)`
+- [ ] 更精细的警告分类：`_classify_currency_warnings(warnings)`（info/warning/error）
+- [ ] 市场特定严重性：`_get_market_specific_severity(warning, market_type)`（US/CN差异）
+- [ ] 按市场类型的默认严格模式：`_get_default_strict_mode(market_type)` 并用于初始化
+- [ ] 数据源质量评估：`_assess_data_source_quality(prices)`（currency覆盖度评级）
+- [ ] 美股合规日志：`_us_compliance_logging(currency_warnings)`（SEC/FINRA合规事件）
+- [ ] 记录跨模块依赖：汇率转换服务，见基础设施层TODO
+- [ ] TODO：未来集成 `CurrencyConverter` 时移除本模块的临时模拟
+
+---
+
 #### P1: Sortino比率baseline参数业务映射
 **问题**：基础设施层的baseline参数需要业务层映射  
 **解决方案**：

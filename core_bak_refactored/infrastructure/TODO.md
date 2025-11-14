@@ -115,6 +115,22 @@
 
 ---
 
+## 💱 汇率转换服务（阶段2 - 基础设施）
+
+**来源**：专家建议 - 第10轮咨询（跨模块能力）
+
+**目标**：提供统一的汇率转换与货币敞口计算能力，供风险模块调用。
+
+**待办**：
+- [ ] 设计 `CurrencyConverter` 类（接口定义与职责）
+- [ ] 集成汇率数据源（exchange_rate_sources）与回退汇率（fallback_exchange_rates）
+- [ ] 实现转换API：`convert_portfolio_currency(portfolio, target_currency)`
+- [ ] 实现敞口计算：`calculate_currency_exposure(portfolio)`
+- [ ] 缓存与有效性校验（实时/延时数据）
+- [ ] 单元与集成测试（与风险模块联调）
+
+---
+
 ## 🗓️ 历史变更
 
 - **2024-11-09**: 创建基础设施层独立TODO
