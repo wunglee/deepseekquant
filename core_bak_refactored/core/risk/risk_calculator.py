@@ -13,7 +13,7 @@ import warnings
 
 from .risk_metrics_service import RiskMetricsService
 from .risk_models import RiskMetric
-from .international_config import MarketConfigManager
+from ..share.market_config import MarketConfigManager
 from ..share.exchange_rates import CurrencyConverter, ExchangeRateAdapter
 
 # 导入数据预处理器

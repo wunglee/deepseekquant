@@ -208,7 +208,7 @@ class InternationalEnhancements:
         }
         
         # 导入必要的类（避免循环导入）
-        from core.risk.risk_metrics_service import RiskMetricsService
+        from .risk_metrics_service import RiskMetricsService
         
         for market_name, returns in returns_map.items():
             # 为每个市场创建临时的风险服务实例
