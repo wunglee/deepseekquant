@@ -266,7 +266,7 @@ def _fetch_live_risk_free_rate(self, market_type: str) -> float:
 - [x] 美股合规日志：`_us_compliance_logging(currency_warnings)`（SEC/FINRA合规事件）
 - [x] 记录跨模块依赖：汇率转换服务，见共享业务模块（core/share/exchange_rates.py）
 - [x] 实现适配器注入与调用：`attach_exchange_rate_adapter` + `_unify_currency_for_portfolio`
-- [x] 新增联调测试：`test_currency_adapter_integration.py`，14 tests passed
+- [x] 新增联调测试：`currency_adapter_integration_test.py`，14 tests passed
 - [x] 共享模块迁移：MarketConfigManager迁移到core/share/market_config.py
 - [x] 全量回归测试：171/182 passed（无新增回归）
 

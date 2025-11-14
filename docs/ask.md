@@ -15,9 +15,9 @@
 3. **core_bak_refactored/core/share/market_config.py** - 市场配置管理共享模块
 
 ### 测试文件
-4. **tests/core/risk/test_currency_consistency.py** - 货币一致性检查测试（9个测试）
-5. **tests/core/risk/test_currency_adapter_integration.py** - 汇率适配器集成测试（2个测试）
-6. **tests/core/share/test_exchange_rates.py** - 共享模块测试（3个测试）
+4. **tests/core/risk/currency_consistency_test.py** - 货币一致性检查测试（9个测试）
+5. **tests/core/risk/currency_adapter_integration_test.py** - 汇率适配器集成测试（2个测试）
+6. **tests/core/share/exchange_rates_test.py** - 共享模块测试（3个测试）
 
 ### 配置文档
 7. **core_bak_refactored/core/risk/TODO.md** - 任务跟踪（P1.5完成标记）
@@ -61,7 +61,7 @@
 ### 2. 测试覆盖
 
 #### 2.1 货币一致性检查测试
-**文件**: `tests/core/risk/test_currency_consistency.py`  
+**文件**: `tests/core/risk/currency_consistency_test.py`  
 **覆盖**:
 - [x] 单一货币正常场景（无警告）
 - [x] 多币种检测（警告级别）
@@ -76,7 +76,7 @@
 **结果**: 9/9 测试通过
 
 #### 2.2 汇率适配器集成测试
-**文件**: `tests/core/risk/test_currency_adapter_integration.py`  
+**文件**: `tests/core/risk/currency_adapter_integration_test.py`  
 **覆盖**:
 - [x] 适配器注入功能
 - [x] 多币种统一转换
@@ -85,7 +85,7 @@
 **结果**: 2/2 测试通过
 
 #### 2.3 共享模块测试
-**文件**: `tests/core/share/test_exchange_rates.py`  
+**文件**: `tests/core/share/exchange_rates_test.py`  
 **覆盖**:
 - [x] 汇率转换功能
 - [x] 货币敞口计算
