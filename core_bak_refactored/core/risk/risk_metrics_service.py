@@ -31,9 +31,33 @@ from .international_enhancements import InternationalEnhancements
 logger = logging.getLogger('DeepSeekQuant.RiskMetricsService')
 
 # 监控指标（Prometheus，若可用）
-risk_calc_duration = Histogram('risk_calc_duration_seconds', 'Risk calc duration', ['func']) if _PROM_ENABLED else None
-risk_calc_success = Counter('risk_calc_success_total', 'Risk calc success', ['func']) if _PROM_ENABLED else None
-risk_calc_error = Counter('risk_calc_error_total', 'Risk calc error', ['func']) if _PROM_ENABLED else None
+try:
+    if _PROM_ENABLED:
+        from prometheus_client import REGISTRY
+        # 避免重复注册，先尝试获取已有指标
+        try:
+            risk_calc_duration = REGISTRY._names_to_collectors.get('risk_calc_duration_seconds')
+            risk_calc_success = REGISTRY._names_to_collectors.get('risk_calc_success_total')
+            risk_calc_error = REGISTRY._names_to_collectors.get('risk_calc_error_total')
+        except Exception:
+            risk_calc_duration = None
+            risk_calc_success = None
+            risk_calc_error = None
+        # 如果不存在则创建
+        if risk_calc_duration is None:
+            risk_calc_duration = Histogram('risk_calc_duration_seconds', 'Risk calc duration', ['func'])
+        if risk_calc_success is None:
+            risk_calc_success = Counter('risk_calc_success_total', 'Risk calc success', ['func'])
+        if risk_calc_error is None:
+            risk_calc_error = Counter('risk_calc_error_total', 'Risk calc error', ['func'])
+    else:
+        risk_calc_duration = None
+        risk_calc_success = None
+        risk_calc_error = None
+except Exception:
+    risk_calc_duration = None
+    risk_calc_success = None
+    risk_calc_error = None
 
 # 统一日志装饰器
 def risk_calculation_logger(func):
