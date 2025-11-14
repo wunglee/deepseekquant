@@ -25,8 +25,8 @@ import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
 from infrastructure.risk_metrics import StatisticalCalculator
-from core.risk.international_config import MarketConfigManager
-from core.risk.international_enhancements import InternationalEnhancements
+from .international_config import MarketConfigManager
+from .international_enhancements import InternationalEnhancements
 
 logger = logging.getLogger('DeepSeekQuant.RiskMetricsService')
 
