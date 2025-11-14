@@ -7,6 +7,24 @@
 
 ---
 
+## 📁 相关文件清单
+
+### 核心实现文件
+1. **core_bak_refactored/core/risk/risk_calculator.py** - 风险计算器（货币检查主逻辑）
+2. **core_bak_refactored/core/share/exchange_rates.py** - 汇率转换共享模块
+3. **core_bak_refactored/core/share/market_config.py** - 市场配置管理共享模块
+
+### 测试文件
+4. **tests/core/risk/test_currency_consistency.py** - 货币一致性检查测试（9个测试）
+5. **tests/core/risk/test_currency_adapter_integration.py** - 汇率适配器集成测试（2个测试）
+6. **tests/core/share/test_exchange_rates.py** - 共享模块测试（3个测试）
+
+### 配置文档
+7. **core_bak_refactored/core/risk/TODO.md** - 任务跟踪（P1.5完成标记）
+8. **docs/WORKFLOW.md** - 流程规范（Share与Infrastructure即时实现规则）
+
+---
+
 ## 📋 背景说明
 
 基于前期专家建议，我们在风险计算器中完成了货币一致性增强功能的实施。本次咨询旨在：
