@@ -258,14 +258,15 @@ def _fetch_live_risk_free_rate(self, market_type: str) -> float:
 **目标**：完善阶段1的货币一致性检查，按市场定制分级策略，提升美股场景支持。
 
 **待办**：
-- [ ] 增加风险参数货币检查：`_check_risk_parameters_currency(data)`
-- [ ] 更精细的警告分类：`_classify_currency_warnings(warnings)`（info/warning/error）
-- [ ] 市场特定严重性：`_get_market_specific_severity(warning, market_type)`（US/CN差异）
-- [ ] 按市场类型的默认严格模式：`_get_default_strict_mode(market_type)` 并用于初始化
-- [ ] 数据源质量评估：`_assess_data_source_quality(prices)`（currency覆盖度评级）
-- [ ] 美股合规日志：`_us_compliance_logging(currency_warnings)`（SEC/FINRA合规事件）
-- [ ] 记录跨模块依赖：汇率转换服务，见共享业务模块（core/share/exchange_rates.py）
-- [ ] TODO：未来集成 `CurrencyConverter` 时移除本模块的临时模拟
+- [x] 增加风险参数货币检查：`_check_risk_parameters_currency(data)`
+- [x] 更精细的警告分类：`_classify_currency_warnings(warnings)`（info/warning/error）
+- [x] 市场特定严重性：`_get_market_specific_severity(warning, market_type)`（US/CN差异）
+- [x] 按市场类型的默认严格模式：`_get_default_strict_mode(market_type)` 并用于初始化
+- [x] 数据源质量评估：`_assess_data_source_quality(prices)`（currency覆盖度评级）
+- [x] 美股合规日志：`_us_compliance_logging(currency_warnings)`（SEC/FINRA合规事件）
+- [x] 记录跨模块依赖：汇率转换服务，见共享业务模块（core/share/exchange_rates.py）
+- [x] 实现适配器注入与调用：`attach_exchange_rate_adapter` + `_unify_currency_for_portfolio`
+- [x] 新增联调测试：`test_currency_adapter_integration.py`，14 tests passed
 
 ---
 
