@@ -5,7 +5,7 @@ import pytest
 # 允许导入重构后的核心风险模块
 sys.path.insert(0, os.path.abspath('.'))
 
-from core_bak_refactored.core.risk.currency_converter import CurrencyConverter, MockExchangeRateAdapter
+from core_bak_refactored.core.shared_exchange_rates import CurrencyConverter, MockExchangeRateAdapter
 
 
 def test_convert_portfolio_currency_to_usd():
