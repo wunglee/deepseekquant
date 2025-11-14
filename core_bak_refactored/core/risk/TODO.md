@@ -264,7 +264,7 @@ def _fetch_live_risk_free_rate(self, market_type: str) -> float:
 - [ ] 按市场类型的默认严格模式：`_get_default_strict_mode(market_type)` 并用于初始化
 - [ ] 数据源质量评估：`_assess_data_source_quality(prices)`（currency覆盖度评级）
 - [ ] 美股合规日志：`_us_compliance_logging(currency_warnings)`（SEC/FINRA合规事件）
-- [ ] 记录跨模块依赖：汇率转换服务，见共享业务模块（core/shared_exchange_rates.py）
+- [ ] 记录跨模块依赖：汇率转换服务，见共享业务模块（core/share/exchange_rates.py）
 - [ ] TODO：未来集成 `CurrencyConverter` 时移除本模块的临时模拟
 
 ---
