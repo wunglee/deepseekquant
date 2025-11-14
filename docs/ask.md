@@ -1,385 +1,352 @@
-# 第5轮咨询：阶段1数据模型层第3轮复审（质量收官）
+# 第10轮咨询 - 阶段3.1：货币单位一致性检查复审
 
-## 咨询范围说明
+## 背景说明
 
-**评审阶段**: 阶段1 - 数据模型层（risk_models.py）  
-**复审轮次**: 第3轮（质量收官轮）  
-**评审重点**: 代码质量、一致性、健壮性、边界处理  
-**评审排除**: 能力扩展、新功能添加（避免无限迭代）
+本次迭代已在 `RiskCalculator` 中实施阶段1的货币一致性检查，保持向后兼容、不改变计算结果结构，仅增加初始化字段与运行时日志检查。请您复审如下改动。
 
-## 前两轮修正总结
+## 变更摘要
+- 在 `MarketPriceData` 增加可选字段 `currency`
+- 初始化设定 `base_currency`（来自 `MarketConfigManager` 或配置覆盖）与 `strict_currency_check` 开关
+- 在 `calculate_all_metrics` 中运行 `_runtime_currency_check` 并通过 `_handle_currency_warnings` 分级日志处理
+- 默认不抛错；仅当 `strict_currency_check=True` 时对严重问题抛异常
 
-### 第1轮完成
-- P0/P1基础修正：枚举简化、类型优化、字段补充
-- 测试通过：18/18 ✅
-
-### 第2轮完成  
-- P0: 向后兼容性增强（BLACK_SWAN处理、timestamp转换）
-- P1: 类型安全+文档完善（枚举化、语义文档、使用示例）
-- P2: 可选增强（display_name、timedelta）
-- 测试通过：18/18 ✅
-
-## 本轮复审核心问题（聚焦质量）
-
-### 问题1: 异常处理完整性检查 🛡️
-
-**问题描述**:  
-检查所有from_dict()方法的异常处理是否完整、一致。
-
-**需要评估的点**:
-1. **异常类型覆盖**:
-   ```python
-   # 当前代码示例
-   try:
-       parsed_data['risk_type'] = RiskType(rt)
-   except (ValueError, KeyError) as e:
-       logger.warning(...)
-       parsed_data['risk_type'] = RiskType.MARKET_RISK
-   ```
-   - 是否遗漏其他可能异常（TypeError, AttributeError等）？
-   - 默认值选择是否合理？
-
-2. **日志级别一致性**:
-   - 当前使用logger.warning()
-   - 是否应根据严重程度区分warning/error/critical？
-
-3. **错误恢复策略**:
-   - 使用默认值 vs 抛出异常
-   - 是否应该有全局配置控制容错级别？
-
-**咨询要点**:
-- 异常处理是否足够防御性？
-- 日志记录是否有助于问题排查？
-- 是否需要添加错误码或错误类型分类？
-
----
-
-### 问题2: 字段验证逻辑完整性 ✓
-
-**问题描述**:  
-检查各dataclass的字段约束是否充分。
-
-**当前实现分析**:
+## 代码摘录（节选）
 ```python
-# StressTestScenario有验证
-def __post_init__(self):
-    if not 0 <= self.probability <= 1:
-        raise ValueError(...)
-    if self.probability < 0.0001:
-        logger.warning(...)
+# risk_calculator.py
+class RiskCalculator:
+    def __init__(self, config: Dict):
+        market_info = self.config_manager.get_market_info(self.market_type)
+        self.base_currency = market_info.get('currency', 'CNY')
+        current_market_cfg = self.config.get('market_configs', {}).get(self.market_type, {})
+        if 'base_currency' in current_market_cfg:
+            self.base_currency = current_market_cfg['base_currency']
+        self.strict_currency_check = bool(self.config.get('strict_currency_check', False))
 
-# 其他类缺少验证？
-@dataclass
-class RiskLimit:
-    threshold: float  # 无范围验证
-    confidence_level: float = 0.95  # 无0-1验证
-    priority: int = 1  # 无正数验证
+    def calculate_all_metrics(self, data: Dict[str, Any]) -> Dict[str, float]:
+        currency_warnings = self._runtime_currency_check(data)
+        self._handle_currency_warnings(currency_warnings)
+        # ... 原有提取与计算逻辑 ...
 ```
 
-**咨询要点**:
-1. **需要添加验证的字段**:
-   - RiskLimit.confidence_level（应在0-1）
-   - RiskLimit.threshold（是否有合理范围？）
-   - Recommendation.priority（1-10约束？）
-   - RiskAssessment.risk_score（0-100约束？）
+## 测试验证
+- 新增用例：`tests/core/risk/test_currency_consistency.py` 共5项
+  - 单一币种且组合币种一致，无警告
+  - 缺失 currency 字段，产生“缺少货币信息”警告
+  - 多币种价格数据，产生“多币种检测”警告
+  - 组合基准货币与系统基准货币不一致，产生“不一致”警告
+  - 严格模式 `strict_currency_check=True` 时，对严重问题抛出异常
+- 结果：5 passed
 
-2. **验证时机**:
-   - __post_init__中验证 vs 属性setter验证
-   - 哪种方式更符合dataclass最佳实践？
+## 评审请求（请您评估）
+1. 检查范围是否完整：价格数据、组合、风险参数的货币单位检查是否满足需求？
+2. 分级策略是否合理：是否需要将“多币种检测”提升为警告或错误等级？
+3. 严格模式默认值建议：是否采用默认 `False`，仅在合规场景开启严格模式？
+4. 可选 `currency` 字段设计是否符合数据源适配原则（向后兼容）？
+5. 美股场景优先：针对 US 市场，是否需要额外规则或不同日志阈值？
+6. 后续阶段需求：是否在下一阶段实施汇率转换与跨货币度量（保持阶段1仅检查、阶段2再转换）？
 
-3. **验证失败处理**:
-   - 抛出ValueError vs 自动修正到边界值
-   - 是否应该有宽松模式和严格模式？
+## 附录：相关文件
+- `core_bak_refactored/core/risk/risk_calculator.py`（Commit: bf00852）
+- `tests/core/risk/test_currency_consistency.py`（5 passed）
+
+# 第9轮咨询 - 阶段3: 国际化补充检查评审
+
+## 背景说明
+
+按照记忆要求，将国际化全面支持作为独立补充检查阶段（阶段3）执行。已完成RiskCalculator的国际化集成，现提交专家评审。
 
 ---
 
-### 问题3: 枚举值的穷尽性保证 📋
+## 检查范围
 
-**问题描述**:  
-检查枚举使用时是否有遗漏分支的风险。
+按记忆定义的国际化检查清单：
+1. ✅ 市场类型一致性
+2. ✅ 国际增强模块集成  
+3. ✅ 区域化默认值
+4. ✅ 返回信息与日志的国际化可用性
+5. ✅ 时间货币单位的区域差异处理
 
-**当前代码示例**:
+---
+
+## 发现的问题与修正
+
+### 问题：RiskCalculator未集成国际化模块
+
+**问题分析**:
 ```python
-# RiskLevel.from_score()
-if score < 20: return cls.VERY_LOW
-elif score < 40: return cls.LOW
-# ... 
-else: return cls.EXTREME  # 最后的else覆盖所有
-
-# 但如果有switch-case风格使用呢？
-def get_action_for_level(level: RiskLevel):
-    if level == RiskLevel.VERY_LOW:
-        return "monitor"
-    elif level == RiskLevel.LOW:
-        return "review"
-    # ... 如果遗漏了某个等级？
+# 修正前
+class RiskCalculator:
+    def __init__(self, config: Dict):
+        self.config = config  # ❌ 未验证市场配置
+        self.risk_metrics_service = RiskMetricsService(config)  # ✅ 服务层有国际化
+        self.preprocessor = RiskDataPreprocessor()
+        logger.info("风险计算器初始化完成")  # ❌ 日志缺少market_type
 ```
 
-**咨询要点**:
-1. 是否应该在枚举类中添加辅助方法避免遗漏？
-2. Python类型检查工具能否帮助发现遗漏？
-3. 是否需要在枚举类中添加示例代码展示正确用法？
+**影响**:
+- ❌ 协调器层无法获取市场类型信息
+- ❌ 无配置验证机制，可能传递不完整配置
+- ❌ 日志缺少市场类型，多市场环境调试困难
+- ❌ 无法自动补全缺失的市场配置
 
 ---
 
-### 问题4: 类型提示的严格性 🎯
+## 已实施修正
 
-**问题描述**:  
-检查类型提示是否足够精确和严格。
+### 修正1：集成MarketConfigManager
 
-**当前类型提示分析**:
 ```python
-# 较松散的类型
-parameters: Dict[str, Any]  # Any太宽泛
-action_items: List[str]  # 空列表也合法吗？
-stress_test_results: Dict[str, float]  # 键的格式有约束吗？
+# 导入国际化模块
+from .international_config import MarketConfigManager
 
-# 可能更好的类型
-from typing import TypedDict, Annotated
-class ScenarioParameters(TypedDict, total=False):
-    market_drop: float
-    volatility_spike: float
-    ...
-
-action_items: Annotated[List[str], "non-empty list"]
+class RiskCalculator:
+    def __init__(self, config: Dict):
+        # 国际化：市场配置管理器
+        self.config_manager = MarketConfigManager()
+        
+        # 验证配置完整性
+        config_errors = self.config_manager.validate_market_config(config)
+        if config_errors:
+            logger.warning(f"配置验证发现问题: {config_errors}")
+        
+        # 识别市场类型
+        self.market_type = config.get('market_type', 'CN')
+        
+        # 确保配置完整性（自动补全缺失配置）
+        if 'market_configs' not in config or self.market_type not in config.get('market_configs', {}):
+            logger.warning(f"缺少{self.market_type}市场配置，使用默认配置")
+            default_config = self.config_manager.generate_config_template(self.market_type)
+            config['market_configs'] = default_config['market_configs']
+        
+        self.config = config
+        self.risk_metrics_service = RiskMetricsService(config)
+        self.preprocessor = RiskDataPreprocessor()
+        
+        logger.info(
+            f"风险计算器初始化完成 - 市场: {self.market_type}, "
+            f"配置验证: {'有警告' if config_errors else '通过'}"
+        )
 ```
 
-**咨询要点**:
-1. Dict[str, Any]是否应该更具体化？
-2. 是否应该使用TypedDict定义字典结构？
-3. 是否应该使用NewType或Annotated增强语义？
-4. 数据模型层的类型严格度应该多高？
+**改进点**:
+- ✅ 添加配置验证：`validate_market_config()`
+- ✅ 自动识别市场类型：`self.market_type`
+- ✅ 自动补全缺失配置：`generate_config_template()`
+- ✅ 增强初始化日志：包含市场类型和验证状态
 
 ---
 
-### 问题5: 序列化/反序列化对称性 🔄
+### 修正2：日志国际化增强
 
-**问题描述**:  
-验证to_dict()和from_dict()的对称性和一致性。
+#### calculate_all_metrics日志
 
-**需要检查的场景**:
 ```python
-# 场景1：datetime字段
-ra = RiskAssessment(timestamp=datetime.now(), ...)
-data = ra.to_dict()  # timestamp → ISO字符串
-restored = RiskAssessment.from_dict(data)  # ISO字符串 → datetime
-assert ra.timestamp == restored.timestamp  # 应该相等
+# 数据不足警告
+logger.warning(
+    f"calculate_all_metrics: 收益数据不足, 市场{self.market_type}, "
+    f"至少需要{min_points}个数据点"
+)
 
-# 场景2：嵌套对象
-rec = Recommendation(type=RecommendationType.REDUCE, ...)
-data = rec.to_dict()  # 枚举 → 字符串
-restored = Recommendation.from_dict(data)  # 需要支持吗？
+# 成功完成日志
+logger.info(
+    f"calculate_all_metrics: 完成, 市场{self.market_type}, "
+    f"耗时{elapsed:.3f}s, 指标{len(metrics)}个"
+)
 
-# 场景3：默认值字段
-lb = LimitBreach(..., breach_duration=0)  # 默认值
-data = lb.to_dict()  # 是否包含默认值？
+# 错误日志  
+logger.error(f"风险指标计算失败, 市场{self.market_type}: {e}")
 ```
 
-**咨询要点**:
-1. 所有dataclass是否都有from_dict()方法？
-2. 嵌套对象（LimitBreach, Recommendation）的序列化是否处理？
-3. 默认值字段在to_dict()中是否应该省略？
-4. 是否需要添加往返测试（roundtrip test）？
+#### calculate_var_monte_carlo日志
 
----
-
-### 问题6: 命名一致性和可读性 📝
-
-**问题描述**:  
-检查命名规范是否一致，避免歧义。
-
-**需要检查的命名**:
 ```python
-# 时间相关字段命名
-timestamp: datetime  # 评估时间点
-created_at: datetime  # 创建时间
-valid_from/valid_to: datetime  # 有效期
-duration_days: int  # 持续天数
-grace_period: int  # 宽限期（秒）
-recovery_days: int  # 恢复天数
+# 数据不足警告
+logger.warning(
+    f"calculate_var_monte_carlo: 价格数据不足, 市场{self.market_type}, 返回NaN"
+)
 
-# 问题：时间单位不一致（天 vs 秒）
-# 是否应该统一后缀？_days, _seconds, _dt (datetime)?
+# 成功完成日志
+logger.info(
+    f"calculate_var_monte_carlo: 完成, 市场{self.market_type}, "
+    f"耗时{elapsed:.3f}s, 模拟{n_simulations}次"
+)
+
+# 错误日志
+logger.error(f"calculate_var_monte_carlo: 计算异常, 市场{self.market_type}: {e}")
 ```
 
-**咨询要点**:
-1. 时间字段命名是否应该包含单位后缀？
-2. boolean字段是否都使用is_前缀？
-3. 复数形式是否一致（breaches vs breach_list）？
-4. 缩写使用是否一致（var vs value_at_risk）？
+**改进点**:
+- ✅ 所有日志包含market_type
+- ✅ 便于多市场环境追踪问题
+- ✅ 性能监控可按市场分类
 
 ---
 
-### 问题7: 不变性和数据完整性 🔒
+## 测试验证
 
-**问题描述**:  
-dataclass是否应该添加frozen=True保证不变性？
+### 测试结果
+```bash
+================================ test session starts ================================
+collected 10 items
 
-**当前设计**:
-```python
-@dataclass
-class RiskAssessment:  # 默认可变
-    timestamp: datetime
-    ...
+tests/core/risk/risk_calculator_test.py::RiskCalculatorTest::test_calculate_all_metrics_from_prices_data PASSED [ 10%]
+tests/core/risk/risk_calculator_test.py::RiskCalculatorTest::test_calculate_all_metrics_from_returns_data PASSED [ 20%]
+tests/core/risk/risk_calculator_test.py::RiskCalculatorTest::test_calculate_all_metrics_insufficient_data PASSED [ 30%]
+tests/core/risk/risk_calculator_test.py::RiskCalculatorTest::test_calculate_correlation_matrix_valid_input PASSED [ 40%]
+tests/core/risk/risk_calculator_test.py::RiskCalculatorTest::test_calculate_max_drawdown_delegates PASSED [ 50%]
+tests/core/risk/risk_calculator_test.py::RiskCalculatorTest::test_calculate_var_historical_delegates PASSED [ 60%]
+tests/core/risk/risk_calculator_test.py::RiskCalculatorTest::test_calculate_var_parametric_delegates PASSED [ 70%]
+tests/core/risk/risk_calculator_test.py::RiskCalculatorTest::test_calculate_volatility_delegates_to_service PASSED [ 80%]
+tests/core/risk/risk_calculator_test.py::RiskCalculatorTest::test_extract_market_returns_from_dict PASSED [ 90%]
+tests/core/risk/risk_calculator_test.py::RiskCalculatorTest::test_extract_returns_from_dict PASSED [100%]
 
-# 可能的问题
-assessment = risk_service.assess(portfolio)
-assessment.risk_score = 999  # 外部可以随意修改！
+================================ 10 passed in 1.10s =================================
 ```
 
-**咨询要点**:
-1. 哪些dataclass应该是不可变的（frozen=True）？
-   - RiskAssessment（评估结果应该不可变）
-   - LimitBreach（违规记录应该不可变）
-   - Recommendation（建议应该可变吗？）
-
-2. 如果需要修改，是否应该提供方法而非直接字段修改？
-   ```python
-   @dataclass(frozen=True)
-   class RiskAssessment:
-       def with_updated_score(self, new_score: float) -> 'RiskAssessment':
-           return dataclasses.replace(self, risk_score=new_score)
-   ```
-
-3. 性能影响：frozen=True对性能的影响是否可接受？
+**结果**: ✅ 10/10测试通过，无破坏性修改
 
 ---
 
-### 问题8: 日志和调试友好性 🔍
+## 国际化检查完成状态
 
-**问题描述**:  
-确保数据模型易于调试和问题排查。
+### 已完成项
 
-**当前状态**:
-```python
-# dataclass默认有__repr__，但是否足够？
->>> ra = RiskAssessment(...)
->>> print(ra)
-RiskAssessment(timestamp=datetime(...), portfolio_id='xxx', ...)
-# 太长，不易读
-
-# 是否需要自定义__repr__或__str__？
-def __repr__(self):
-    return f"RiskAssessment(portfolio={self.portfolio_id}, score={self.risk_score}, level={self.overall_risk_level})"
-```
-
-**咨询要点**:
-1. 是否需要自定义__repr__/__str__提高可读性？
-2. 敏感字段（如threshold值）是否应该在日志中脱敏？
-3. 是否应该添加__hash__支持集合操作（如果frozen=True）？
-4. 是否需要添加summary()方法用于快速查看关键信息？
+| 检查项 | 状态 | 实施位置 |
+|--------|------|----------|
+| 市场类型一致性 | ✅ | RiskCalculator.market_type + RiskMetricsService.market_type |
+| 国际增强模块集成 | ✅ | RiskMetricsService继承InternationalEnhancements |
+| MarketConfigManager集成 | ✅ | RiskCalculator集成配置管理器 |
+| 区域化默认值 | ✅ | trading_days/risk_free_rate按市场动态获取 |
+| 日志国际化 | ✅ | 所有日志包含market_type |
+| 配置自动补全 | ✅ | 缺失配置自动生成默认模板 |
+| 配置验证 | ✅ | 初始化时验证市场配置完整性 |
 
 ---
 
-### 问题9: 导入和依赖的清晰性 📦
+## 现有国际化能力总览
 
-**问题描述**:  
-检查模块导入是否清晰、最小化。
+### 支持的市场
 
-**当前导入**:
-```python
-from dataclasses import dataclass, asdict, field
-from datetime import datetime, timedelta
-from enum import Enum
-from typing import Dict, List, Optional, Any
-import logging
-```
+| 市场 | 代码 | 交易日/年 | 无风险利率 | 特殊机制 |
+|------|------|-----------|-----------|----------|
+| 中国A股 | CN | 245 | 3.0% | 涨跌停（主板±10%, 创业板±20%） |
+| 美国股市 | US | 252 | 4.5% | 熔断（7%/13%/20%）+ LULD |
+| 香港股市 | HK | 247 | 3.5% | - |
+| 日本股市 | JP | 245 | 0.5% | - |
+| 欧洲股市 | EU | 255 | 2.5% | - |
 
-**咨询要点**:
-1. 是否有未使用的导入？
-2. 是否应该使用TYPE_CHECKING避免循环导入风险？
-3. logging.getLogger放在模块级是否合适？
-4. 是否需要显式定义__all__控制导出？
+### 市场特定功能
 
----
+#### CN市场（中国A股）
+- ✅ 涨跌停检测
+  - 主板: ±10%
+  - 创业板: ±20%  
+  - ST股: ±5%
+  - 科创板: ±20%
+- ✅ 收益率分布截断调整（Winsorization）
 
-### 问题10: 文档字符串的完整性 📚
+#### US市场（美国股市）
+- ✅ 熔断机制检测（Circuit Breaker）
+  - Level 1: 7%下跌
+  - Level 2: 13%下跌
+  - Level 3: 20%下跌
+- ✅ LULD机制检测（Limit Up-Limit Down）
+  - 阈值: 5%
+  - 窗口: 5分钟
 
-**问题描述**:  
-确保所有公共接口都有充分的文档。
+#### 国际化增强功能
+- ✅ `calculate_sharpe_ratio_enhanced()`: 市场风险溢价调整
+- ✅ `_detect_market_anomalies()`: 市场特定异常检测
+- ✅ `_get_market_specific_risk_premium()`: 动态风险溢价
+- ✅ `calculate_cross_market_risk_comparison()`: 跨市场对比
 
-**需要检查的内容**:
-1. **所有枚举**是否有docstring解释用途？
-2. **所有dataclass**是否有字段说明？
-3. **所有方法**（from_dict, to_dict等）是否有Args/Returns文档？
-4. **特殊方法**（__post_init__等）是否说明了副作用？
+### 配置管理能力
 
-**质量标准**:
-- 描述清晰（what）
-- 用途明确（why）
-- 示例代码（how）
-- 边界条件说明
-
----
-
-## 期望的专家反馈
-
-### 核心原则
-- **质量优先于功能**：只关注现有代码的质量提升
-- **防御性编程**：增强健壮性而非增加能力
-- **一致性保证**：统一风格和约定
-- **可维护性**：便于未来理解和修改
-
-### 优先级建议
-请专家按以下优先级评估：
-
-**P0（必须修复的质量问题）**:
-- 明显的bug或逻辑错误
-- 严重的类型不安全
-- 缺失的关键验证
-
-**P1（建议修复的质量问题）**:
-- 不一致的命名或风格
-- 不完整的异常处理
-- 缺失的重要文档
-
-**P2（可选的质量改进）**:
-- 代码优化建议
-- 更好的实践方式
-- 增强的调试支持
-
-### 评审约束
-- ❌ 不要建议新增业务功能
-- ❌ 不要建议大规模重构
-- ❌ 不要建议引入新的依赖库
-- ✅ 聚焦现有代码的质量缺陷
-- ✅ 提供具体的修复建议
-- ✅ 说明修复的必要性和收益
+- ✅ `validate_market_config()`: 验证配置完整性
+- ✅ `generate_config_template()`: 生成市场配置模板
+- ✅ `_build_market_specific_config()`: 构建市场特定配置
+- ✅ 自动回退机制：配置缺失时使用CN默认值
 
 ---
 
-## 附录：当前代码关键部分
+## 评审请求
 
-### 1. 枚举类清单
-```python
-RiskLevel(6个等级) - 有from_score(), from_legacy_value()
-RiskType(19个类型) - 包含BLACK_SWAN_EVENT
-RiskMetric(24个指标)
-RiskControlAction(8个动作)
-RecommendationType(6个类型)
-TimeHorizon(4个范围) - 有display_name, timedelta属性
-CalculationMethod(3个方法)
-ImpactLevel(5个级别)
-```
+### 请专家评估以下方面
 
-### 2. 数据类清单
-```python
-LimitBreach - 有breach_duration字段
-Recommendation - type枚举化，有created_at/status
-RiskLimit - 完整使用示例文档
-PositionLimit - 未在第1/2轮修改
-RiskAssessment - 详细字段语义文档，有__post_init__
-RiskEvent - 有__post_init__
-StressTestScenario - 有__post_init__和验证逻辑
-```
+#### 1. 国际化集成完整性
+- [ ] RiskCalculator的MarketConfigManager集成是否充分？
+- [ ] 配置验证机制是否合理？
+- [ ] 自动补全配置的策略是否正确？
 
-### 3. 当前已知的质量问题（待专家确认）
-- [ ] Recommendation/LimitBreach缺少from_dict()方法
-- [ ] 部分字段缺少范围验证（confidence_level, priority等）
-- [ ] 日志级别使用不一致
-- [ ] 某些类可能应该frozen=True
-- [ ] 时间字段命名单位不统一
+#### 2. 市场类型一致性
+- [ ] RiskCalculator和RiskMetricsService的market_type传递是否一致？
+- [ ] 配置传递链路是否完整？
+
+#### 3. 日志国际化
+- [ ] 日志中market_type信息是否足够？
+- [ ] 是否需要补充其他市场相关信息？
+
+#### 4. 多市场支持充分性
+- [ ] 当前支持的5个市场是否足够？
+- [ ] 市场特定功能（涨跌停/熔断/LULD）是否正确？
+- [ ] 是否需要补充其他市场机制？
+
+#### 5. 区域化默认值
+- [ ] trading_days_per_year的值是否合理？
+- [ ] risk_free_rate的值是否合理？
+- [ ] 是否需要补充其他区域化参数？
+
+#### 6. 时间货币单位处理
+- [ ] 时区处理是否正确？
+- [ ] 交易时间配置是否完整？
+- [ ] 是否需要补充货币单位转换功能？
 
 ---
 
-**收官目标**: 确保risk_models.py成为高质量、可维护、防御性强的数据模型基石。
+## 代码变更
+
+### 修改文件
+- `core_bak_refactored/core/risk/risk_calculator.py`
+  - 新增导入：MarketConfigManager
+  - 新增属性：config_manager, market_type
+  - 增强初始化：配置验证+自动补全
+  - 增强日志：所有日志包含market_type
+  - 代码变更：+40行, -7行
+
+### Git提交
+- Commit: `42a3dc8`
+- 提交信息: "feat(risk): 阶段3国际化补充 - RiskCalculator集成MarketConfigManager"
+
+---
+
+## 附录：相关文件清单
+
+### 核心文件
+1. **`core/risk/risk_calculator.py`** (协调器)
+   - 新增：MarketConfigManager集成
+   - 新增：market_type识别
+   - 新增：配置验证和自动补全
+
+2. **`core/risk/risk_metrics_service.py`** (业务服务)
+   - 已有：继承InternationalEnhancements
+   - 已有：MarketConfigManager集成
+   - 已有：市场特定配置管理
+
+3. **`core/risk/international_config.py`** (配置管理)
+   - MarketConfigManager类
+   - 5个市场的配置模板
+
+4. **`core/risk/international_enhancements.py`** (国际化增强)
+   - InternationalEnhancements混入类
+   - 增强版计算方法
+   - 市场异常检测
+
+### 测试文件
+5. **`tests/core/risk/risk_calculator_test.py`**
+   - 10个测试用例全部通过
+   - 无破坏性修改
+
+---
+
+**评审状态**: ⏸️ 等待专家评审  
+**下一步**: 根据专家反馈决定是否需要补充修改
