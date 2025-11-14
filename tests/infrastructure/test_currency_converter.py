@@ -29,7 +29,7 @@ def test_convert_portfolio_currency_to_usd():
             '0700.HK': {'currency': 'HKD', 'value': 7800.0},  # 约等于1000 USD
         }
     }
-    result = converter.convert_portfolio_currency(portfolio, target_currency='USD')
+    result = converter.convert_portfolio_currency(portfolio, target_currency='USD', rates={'HKD': {'USD': 0.128205}})
     assert result['target_currency'] == 'USD'
     # 1000 USD + 7800 HKD * 0.128205 ≈ 1000 + 1000 = 2000 USD
     assert abs(result['total_converted_value'] - 2000.0) < 1e-3
@@ -53,13 +53,13 @@ def test_calculate_currency_exposure():
 def test_rate_fallback_and_identity():
     converter = make_converter()
     # 未声明的汇率，返回1.0（MVP策略）
-    assert converter._get_rate('JPY', 'USD') == 1.0
+    assert converter._get_rate('JPY', 'USD', {}) == 1.0
     # 同币种转换为1.0
-    assert converter._get_rate('USD', 'USD') == 1.0
+    assert converter._get_rate('USD', 'USD', {}) == 1.0
 
 
 def test_flat_key_fallback():
     converter = make_converter()
     # 使用扁平键回退汇率
-    rate = converter._get_rate('USD', 'EUR')
+    rate = converter._get_rate('USD', 'EUR', {'USD->EUR': 0.92})
     assert abs(rate - 0.92) < 1e-9

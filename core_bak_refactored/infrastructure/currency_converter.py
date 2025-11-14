@@ -5,8 +5,8 @@ CurrencyConverter - 汇率转换服务（基础设施层）
 - 提供统一的汇率转换能力（最小可用版本，MVP）
 - 计算投资组合的货币敞口
 
-约束：
-- 不依赖外部网络数据源；通过配置提供汇率或回退汇率
+约束（更新）：
+- 不负责获取汇率来源；通过业务层的“统一适配器接口”注入实时汇率
 - 接口契约稳定，便于风险模块调用与未来扩展
 """
 from typing import Dict, Any
@@ -16,34 +16,27 @@ class CurrencyConverter:
     """汇率转换服务（MVP）"""
 
     def __init__(self, config: Dict[str, Any] | None = None) -> None:
-        config = config or {}
-        # 期望嵌套字典：{"USD": {"CNY": 7.1, "HKD": 7.8}, ...}
-        self.rate_sources: Dict[str, Dict[str, float]] = config.get("exchange_rate_sources", {})
-        # 回退支持嵌套或扁平键：{"USD": {"CNY": 7.1}} 或 {"USD->CNY": 7.1}
-        self.fallback_rates: Dict[str, Any] = config.get("fallback_exchange_rates", {})
+        # 当前MVP无需内部汇率状态；保留配置占位以便未来扩展
+        self._config: Dict[str, Any] = (config or {}).copy()
 
-    def _get_rate(self, src: str, tgt: str) -> float:
+    def _get_rate(self, src: str, tgt: str, rates: Dict[str, Any]) -> float:
         if src == tgt:
             return 1.0
-        # 优先使用主数据源
-        if isinstance(self.rate_sources, dict):
-            src_map = self.rate_sources.get(src)
-            if isinstance(src_map, dict) and tgt in src_map:
-                return float(src_map[tgt])
-        # 回退数据源：嵌套或扁平键
-        if isinstance(self.fallback_rates, dict):
-            src_map = self.fallback_rates.get(src)
+        # 支持嵌套或扁平键的实时汇率字典（由业务层适配器提供）
+        if isinstance(rates, dict):
+            src_map = rates.get(src)
             if isinstance(src_map, dict) and tgt in src_map:
                 return float(src_map[tgt])
             flat_key = f"{src}->{tgt}"
-            if flat_key in self.fallback_rates:
-                return float(self.fallback_rates[flat_key])
+            if flat_key in rates:
+                return float(rates[flat_key])
         # 未命中则返回1.0（MVP策略：不中断调用）
         return 1.0
 
-    def convert_portfolio_currency(self, portfolio: Dict[str, Any], target_currency: str) -> Dict[str, Any]:
+    def convert_portfolio_currency(self, portfolio: Dict[str, Any], target_currency: str, rates: Dict[str, Any]) -> Dict[str, Any]:
         """将组合估值统一转换为目标货币。
         期望组合结构：{"allocations": {symbol: {"currency": str, "value": float}}}
+        rates：实时汇率（由业务层适配器注入），支持嵌套或扁平键
         返回：{"target_currency": str, "total_converted_value": float, "details": {symbol: {...}}}
         """
         allocations = portfolio.get("allocations", {})
@@ -52,7 +45,7 @@ class CurrencyConverter:
         for symbol, info in allocations.items():
             value = float(info.get("value", 0.0))
             src_currency = info.get("currency", target_currency)
-            rate = self._get_rate(src_currency, target_currency)
+            rate = self._get_rate(src_currency, target_currency, rates)
             converted_value = value * rate
             details[symbol] = {
                 "converted_value": converted_value,
