@@ -34,7 +34,7 @@
 - 默认不抛错；仅当 `strict_currency_check=True` 时对严重问题抛异常
 
 ## 代码摘录（节选）
-```python
+``python
 # risk_calculator.py
 class RiskCalculator:
     def __init__(self, config: Dict):
@@ -117,7 +117,7 @@ def _check_risk_parameters_currency(self, data: Dict) -> List[str]:
 ```
 
 **2. 配置参数货币验证**
-```python
+``python
 # 在MarketConfigManager中增加货币验证
 def validate_currency_consistency(self, config: Dict) -> List[str]:
     errors = []
@@ -182,7 +182,7 @@ def _get_market_specific_severity(self, warning: str, market_type: str) -> str:
 ## 3. 严格模式默认值建议
 
 ### ✅ 当前设计合理性
-```python
+``python
 self.strict_currency_check = bool(self.config.get('strict_currency_check', False))
 ```
 
@@ -192,7 +192,7 @@ self.strict_currency_check = bool(self.config.get('strict_currency_check', False
 3. **场景适配**：不同使用场景需求不同
 
 ### 🔧 建议的增强配置
-```python
+``python
 # 按市场类型设置不同的默认严格模式
 def _get_default_strict_mode(self, market_type: str) -> bool:
     """根据市场类型获取默认严格模式"""
@@ -260,7 +260,7 @@ def _infer_missing_currencies(self, prices: Dict, market_type: str) -> Dict:
 ### 🔧 美股特定增强建议
 
 **1. 美股多币种处理规则**
-```python
+``python
 def _us_market_currency_rules(self, detected_currencies: set) -> Dict[str, Any]:
     """美股市场货币特殊规则"""
     rules = {
@@ -283,7 +283,7 @@ def _us_market_currency_rules(self, detected_currencies: set) -> Dict[str, Any]:
 ```
 
 **2. 美股监管日志增强**
-```python
+``python
 def _us_compliance_logging(self, currency_warnings: List[str]) -> None:
     """美股合规性日志记录"""
     if self.market_type != 'US':
