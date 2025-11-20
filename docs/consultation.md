@@ -135,7 +135,7 @@ def validate_currency_consistency(self, config: Dict) -> List[str]:
 ## 2. 分级策略合理性评估
 
 ### 当前分级策略
-```python
+``python
 # 警告级别（不影响计算）：
 - 缺少货币信息
 - 多币种检测
@@ -241,7 +241,7 @@ def _assess_data_source_quality(self, prices: Dict) -> Dict[str, Any]:
 ```
 
 **2. 货币推断机制**
-```python
+``python
 def _infer_missing_currencies(self, prices: Dict, market_type: str) -> Dict:
     """基于市场类型推断缺失的货币"""
     default_currency = self.market_registry.get(market_type, {}).get('currency', 'UNKNOWN')
@@ -457,7 +457,7 @@ adj = min(1.0, max(0.0, base_corr + min(0.3, float(market_vol) * 0.1)))
 **评估**: 实现简洁有效，包含异常处理，调整幅度合理。
 
 ### 修正3: 新增SG市场 - ✅ **配置完整**
-```python
+``python
 'SG': {
     'name': '新加坡股市', 'currency': 'SGD', 'timezone': 'Asia/Singapore',
     'trading_hours': '09:00-12:00,13:00-17:00', 'settlement_days': 2,
@@ -467,7 +467,7 @@ adj = min(1.0, max(0.0, base_corr + min(0.3, float(market_vol) * 0.1)))
 **评估**: 新加坡市场配置完整，包含交易时间、监管机构等关键信息。
 
 ### 修正4: 美股合规日志增强 - ✅ **专业级实现**
-```python
+``python
 compliance_events.append({
     'event_id': str(uuid.uuid4()),  # 唯一标识
     'event_type': 'CURRENCY_INCONSISTENCY',
