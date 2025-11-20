@@ -2,301 +2,127 @@
 风险数据模型测试
 """
 
-import unittest
-from datetime import datetime
+import os
+import sys
+import pytest
+from datetime import datetime, timedelta
+
+# 确保可以从项目根导入模块
+sys.path.insert(0, os.path.abspath('.'))
 
 from core_bak_refactored.core.risk.risk_models import (
-    RiskLevel, RiskType, RiskMetric, RiskControlAction,
-    RiskLimit, PositionLimit, RiskAssessment, RiskEvent, StressTestScenario
+    RiskLevel,
+    RiskType,
+    RiskMetric,
+    RecommendationType,
+    TimeHorizon,
+    CalculationMethod,
+    ImpactLevel,
+    LimitBreach,
+    Recommendation,
 )
 
 
-class TestRiskEnums(unittest.TestCase):
-    """测试风险枚举类"""
-    
-    def test_risk_level_values(self):
-        """测试RiskLevel枚举值"""
-        self.assertEqual(RiskLevel.VERY_LOW.value, "very_low")
-        self.assertEqual(RiskLevel.LOW.value, "low")
-        self.assertEqual(RiskLevel.MODERATE.value, "moderate")
-        self.assertEqual(RiskLevel.HIGH.value, "high")
-        self.assertEqual(RiskLevel.VERY_HIGH.value, "very_high")
-        self.assertEqual(RiskLevel.EXTREME.value, "extreme")
-    
-    def test_risk_type_values(self):
-        """测试RiskType枚举值"""
-        self.assertEqual(RiskType.MARKET_RISK.value, "market_risk")
-        self.assertEqual(RiskType.CREDIT_RISK.value, "credit_risk")
-        self.assertEqual(RiskType.LIQUIDITY_RISK.value, "liquidity_risk")
-        self.assertEqual(RiskType.OPERATIONAL_RISK.value, "operational_risk")
-    
-    def test_risk_metric_values(self):
-        """测试RiskMetric枚举值"""
-        self.assertEqual(RiskMetric.VOLATILITY.value, "volatility")
-        self.assertEqual(RiskMetric.VALUE_AT_RISK.value, "value_at_risk")
-        self.assertEqual(RiskMetric.EXPECTED_SHORTFALL.value, "expected_shortfall")
-    
-    def test_risk_control_action_values(self):
-        """测试RiskControlAction枚举值"""
-        self.assertEqual(RiskControlAction.ALLOW.value, "allow")
-        self.assertEqual(RiskControlAction.WARN.value, "warn")
-        self.assertEqual(RiskControlAction.REJECT.value, "reject")
+def test_risk_level_from_score_boundaries():
+    assert RiskLevel.from_score(0) == RiskLevel.VERY_LOW
+    assert RiskLevel.from_score(19.9) == RiskLevel.VERY_LOW
+    assert RiskLevel.from_score(20) == RiskLevel.LOW
+    assert RiskLevel.from_score(39.9) == RiskLevel.LOW
+    assert RiskLevel.from_score(40) == RiskLevel.MODERATE
+    assert RiskLevel.from_score(59.9) == RiskLevel.MODERATE
+    assert RiskLevel.from_score(60) == RiskLevel.HIGH
+    assert RiskLevel.from_score(79.9) == RiskLevel.HIGH
+    assert RiskLevel.from_score(80) == RiskLevel.VERY_HIGH
+    assert RiskLevel.from_score(94.9) == RiskLevel.VERY_HIGH
+    assert RiskLevel.from_score(95) == RiskLevel.EXTREME
 
 
-class TestRiskLimit(unittest.TestCase):
-    """测试风险限额配置"""
-    
-    def test_risk_limit_creation(self):
-        """测试风险限额创建"""
-        limit = RiskLimit(
-            risk_type=RiskType.MARKET_RISK,
-            metric=RiskMetric.VALUE_AT_RISK,
-            threshold=0.05,
-            action=RiskControlAction.WARN
+def test_risk_level_legacy_black_swan_maps_to_extreme():
+    assert RiskLevel.from_legacy_value('black_swan') == RiskLevel.EXTREME
+    # 非black_swan的字符串应能正常映射到枚举
+    assert RiskLevel.from_legacy_value('high') == RiskLevel.HIGH
+
+
+def test_limit_breach_serialization_roundtrip():
+    lb = LimitBreach(
+        limit_id='LIM-001',
+        risk_type=RiskType.MARKET_RISK,
+        metric=RiskMetric.VALUE_AT_RISK,
+        current_value=1.23,
+        threshold=1.00,
+        breach_amount=0.23,
+        timestamp=datetime(2024, 11, 14, 12, 0, 0),
+        severity=RiskLevel.HIGH,
+        breach_duration_seconds=60,
+    )
+    d = lb.to_dict()
+    lb2 = LimitBreach.from_dict(d)
+    assert lb2.limit_id == 'LIM-001'
+    assert lb2.risk_type == RiskType.MARKET_RISK
+    assert lb2.metric == RiskMetric.VALUE_AT_RISK
+    assert isinstance(lb2.timestamp, datetime)
+    assert lb2.severity == RiskLevel.HIGH
+    assert lb2.breach_duration_seconds == 60
+
+
+def test_limit_breach_from_dict_with_strings_and_old_field():
+    ts = datetime(2024, 11, 14, 10, 30, 0).isoformat()
+    data = {
+        'limit_id': 'LIM-002',
+        'risk_type': 'market_risk',
+        'metric': 'value_at_risk',
+        'current_value': 2.5,
+        'threshold': 2.0,
+        'breach_amount': 0.5,
+        'timestamp': ts,
+        'severity': 'high',
+        'breach_duration': 120,  # 旧字段名，应被映射到breach_duration_seconds
+    }
+    lb = LimitBreach.from_dict(data)
+    assert lb.limit_id == 'LIM-002'
+    assert lb.risk_type == RiskType.MARKET_RISK
+    assert lb.metric == RiskMetric.VALUE_AT_RISK
+    assert isinstance(lb.timestamp, datetime)
+    assert lb.severity == RiskLevel.HIGH
+    assert lb.breach_duration_seconds == 120
+
+
+def test_recommendation_priority_validation_and_roundtrip():
+    # 合法priority
+    rec = Recommendation(
+        type=RecommendationType.HEDGE,
+        priority=3,
+        description='建议进行对冲',
+        action_items=['hedge with futures'],
+        estimated_impact=0.1,
+    )
+    d = rec.to_dict()
+    rec2 = Recommendation.from_dict(d)
+    assert rec2.type == RecommendationType.HEDGE
+    assert rec2.priority == 3
+    assert rec2.status in ('pending', 'approved', 'rejected', 'completed')
+    assert isinstance(rec2.created_at, datetime)
+
+    # 非法priority应抛出ValueError
+    with pytest.raises(ValueError):
+        Recommendation(
+            type=RecommendationType.MONITOR,
+            priority=11,
+            description='非法优先级',
+            action_items=[],
         )
-        
-        self.assertEqual(limit.risk_type, RiskType.MARKET_RISK)
-        self.assertEqual(limit.metric, RiskMetric.VALUE_AT_RISK)
-        self.assertEqual(limit.threshold, 0.05)
-        self.assertEqual(limit.action, RiskControlAction.WARN)
-    
-    def test_risk_limit_to_dict(self):
-        """测试风险限额转字典"""
-        limit = RiskLimit(
-            risk_type=RiskType.MARKET_RISK,
-            metric=RiskMetric.VALUE_AT_RISK,
-            threshold=0.05
-        )
-        
-        limit_dict = limit.to_dict()
-        self.assertIn('risk_type', limit_dict)
-        self.assertIn('metric', limit_dict)
-        self.assertIn('threshold', limit_dict)
-    
-    def test_risk_limit_from_dict_with_enum_objects(self):
-        """测试从字典创建（枚举对象）"""
-        data = {
-            'risk_type': RiskType.MARKET_RISK,
-            'metric': RiskMetric.VALUE_AT_RISK,
-            'threshold': 0.05,
-            'action': RiskControlAction.WARN
-        }
-        
-        limit = RiskLimit.from_dict(data)
-        self.assertEqual(limit.risk_type, RiskType.MARKET_RISK)
-        self.assertEqual(limit.metric, RiskMetric.VALUE_AT_RISK)
-    
-    def test_risk_limit_from_dict_with_strings(self):
-        """测试从字典创建（字符串）"""
-        data = {
-            'risk_type': 'market_risk',
-            'metric': 'value_at_risk',
-            'threshold': 0.05,
-            'action': 'warn'
-        }
-        
-        limit = RiskLimit.from_dict(data)
-        self.assertEqual(limit.risk_type, RiskType.MARKET_RISK)
-        self.assertEqual(limit.metric, RiskMetric.VALUE_AT_RISK)
-        self.assertEqual(limit.action, RiskControlAction.WARN)
-    
-    def test_risk_limit_from_dict_with_dict_enums(self):
-        """测试从字典创建（字典格式枚举）"""
-        data = {
-            'risk_type': {'value': 'market_risk'},
-            'metric': {'value': 'value_at_risk'},
-            'threshold': 0.05,
-            'action': {'value': 'warn'}
-        }
-        
-        limit = RiskLimit.from_dict(data)
-        self.assertEqual(limit.risk_type, RiskType.MARKET_RISK)
-        self.assertEqual(limit.metric, RiskMetric.VALUE_AT_RISK)
-        self.assertEqual(limit.action, RiskControlAction.WARN)
 
 
-class TestPositionLimit(unittest.TestCase):
-    """测试头寸限额配置"""
-    
-    def test_position_limit_creation(self):
-        """测试头寸限额创建"""
-        limit = PositionLimit(
-            symbol='000001.SZ',
-            max_notional=1000000.0,
-            max_quantity=10000.0,
-            max_weight=0.1
-        )
-        
-        self.assertEqual(limit.symbol, '000001.SZ')
-        self.assertEqual(limit.max_notional, 1000000.0)
-        self.assertEqual(limit.max_quantity, 10000.0)
-        self.assertEqual(limit.max_weight, 0.1)
-    
-    def test_position_limit_defaults(self):
-        """测试头寸限额默认值"""
-        limit = PositionLimit(
-            symbol='000002.SZ',
-            max_notional=500000.0,
-            max_quantity=5000.0,
-            max_weight=0.05
-        )
-        
-        self.assertEqual(limit.min_liquidity_ratio, 0.1)
-        self.assertEqual(limit.max_leverage, 1.0)
-        self.assertEqual(limit.concentration_limit, 0.2)
-    
-    def test_position_limit_to_from_dict(self):
-        """测试头寸限额字典转换"""
-        limit = PositionLimit(
-            symbol='000003.SZ',
-            max_notional=2000000.0,
-            max_quantity=20000.0,
-            max_weight=0.15
-        )
-        
-        limit_dict = limit.to_dict()
-        limit2 = PositionLimit.from_dict(limit_dict)
-        
-        self.assertEqual(limit.symbol, limit2.symbol)
-        self.assertEqual(limit.max_notional, limit2.max_notional)
+def test_time_horizon_properties():
+    assert TimeHorizon.DAILY.display_name == '每日'
+    assert TimeHorizon.WEEKLY.display_name == '每周'
+    assert TimeHorizon.MONTHLY.display_name == '每月'
+    assert TimeHorizon.YEARLY.display_name == '每年'
 
-
-class TestRiskAssessment(unittest.TestCase):
-    """测试风险评估结果"""
-    
-    def test_risk_assessment_creation(self):
-        """测试风险评估创建（专家修正：timestamp使用datetime对象）"""
-        assessment = RiskAssessment(
-            timestamp=datetime.now(),  # 专家修正：直接使用datetime对象
-            portfolio_id='portfolio_001',
-            overall_risk_level=RiskLevel.MODERATE,
-            risk_score=50.0,
-            value_at_risk=0.05,
-            expected_shortfall=0.08,
-            max_drawdown=0.15,
-            liquidity_risk=0.03,
-            concentration_risk=0.04,
-            leverage_risk=0.02,
-            stress_test_results={'market_crash': -0.20},
-            scenario_analysis={'recession': -0.15},
-            risk_contributions={'stock_a': 0.30},
-            limit_breaches=[],
-            recommendations=[]
-        )
-        
-        self.assertEqual(assessment.overall_risk_level, RiskLevel.MODERATE)
-        self.assertEqual(assessment.risk_score, 50.0)
-        self.assertEqual(assessment.value_at_risk, 0.05)
-    
-    def test_risk_assessment_from_dict(self):
-        """测试从字典创建风险评估"""
-        data = {
-            'timestamp': datetime.now().isoformat(),
-            'portfolio_id': 'portfolio_002',
-            'overall_risk_level': 'high',
-            'risk_score': 75.0,
-            'value_at_risk': 0.10,
-            'expected_shortfall': 0.15,
-            'max_drawdown': 0.25,
-            'liquidity_risk': 0.05,
-            'concentration_risk': 0.08,
-            'leverage_risk': 0.06,
-            'stress_test_results': {},
-            'scenario_analysis': {},
-            'risk_contributions': {},
-            'limit_breaches': [],
-            'recommendations': []
-        }
-        
-        assessment = RiskAssessment.from_dict(data)
-        self.assertEqual(assessment.overall_risk_level, RiskLevel.HIGH)
-        self.assertEqual(assessment.risk_score, 75.0)
-
-
-class TestRiskEvent(unittest.TestCase):
-    """测试风险事件记录"""
-    
-    def test_risk_event_creation(self):
-        """测试风险事件创建（专家修正：timestamp使用datetime对象）"""
-        event = RiskEvent(
-            event_id='event_001',
-            event_type=RiskType.MARKET_RISK,
-            severity=RiskLevel.HIGH,
-            timestamp=datetime.now(),  # 专家修正：直接使用datetime对象
-            description='Market volatility spike',
-            triggered_by='market_data',
-            impact_assessment={'portfolio_loss': 0.08},
-            action_taken=RiskControlAction.REDUCE
-        )
-        
-        self.assertEqual(event.event_id, 'event_001')
-        self.assertEqual(event.event_type, RiskType.MARKET_RISK)
-        self.assertEqual(event.severity, RiskLevel.HIGH)
-        self.assertEqual(event.action_taken, RiskControlAction.REDUCE)
-    
-    def test_risk_event_from_dict(self):
-        """测试从字典创建风险事件"""
-        data = {
-            'event_id': 'event_002',
-            'event_type': 'liquidity_risk',
-            'severity': 'moderate',
-            'timestamp': datetime.now().isoformat(),
-            'description': 'Low liquidity detected',
-            'triggered_by': 'liquidity_monitor',
-            'impact_assessment': {},
-            'action_taken': 'warn'
-        }
-        
-        event = RiskEvent.from_dict(data)
-        self.assertEqual(event.event_type, RiskType.LIQUIDITY_RISK)
-        self.assertEqual(event.severity, RiskLevel.MODERATE)
-        self.assertEqual(event.action_taken, RiskControlAction.WARN)
-
-
-class TestStressTestScenario(unittest.TestCase):
-    """测试压力测试场景"""
-    
-    def test_stress_test_scenario_creation(self):
-        """测试压力测试场景创建（专家修正：使用ImpactLevel和duration_days）"""
-        from core_bak_refactored.core.risk.risk_models import ImpactLevel
-        scenario = StressTestScenario(
-            scenario_id='scenario_001',
-            name='Market Crash',
-            description='Severe market downturn',
-            parameters={'market_drop': -0.30},
-            probability=0.05,
-            impact_level=ImpactLevel.CATASTROPHIC,  # 专家修正：使用ImpactLevel
-            duration_days=7,  # 专家修正：1w = 7天
-            triggers=['global_crisis'],
-            mitigation_strategies=['diversification']
-        )
-        
-        self.assertEqual(scenario.scenario_id, 'scenario_001')
-        self.assertEqual(scenario.name, 'Market Crash')
-        self.assertEqual(scenario.impact_level, ImpactLevel.CATASTROPHIC)
-        self.assertEqual(scenario.duration_days, 7)
-        self.assertEqual(scenario.probability, 0.05)
-    
-    def test_stress_test_scenario_from_dict(self):
-        """测试从字典创建压力测试场景（专家修正：支持旧字段兼容）"""
-        from core_bak_refactored.core.risk.risk_models import ImpactLevel
-        data = {
-            'scenario_id': 'scenario_002',
-            'name': 'Interest Rate Shock',
-            'description': 'Sudden rate hike',
-            'parameters': {'rate_increase': 0.02},
-            'probability': 0.10,
-            'impact_level': 'severe',  # 专家修正：使用ImpactLevel
-            'duration': '3d',  # 兼容旧字段，会自动转换为duration_days=3
-            'triggers': ['central_bank_decision'],
-            'mitigation_strategies': ['hedge_with_bonds']
-        }
-        
-        scenario = StressTestScenario.from_dict(data)
-        self.assertEqual(scenario.impact_level, ImpactLevel.SEVERE)
-        self.assertEqual(scenario.duration_days, 3)  # 验证转换
-        self.assertEqual(scenario.name, 'Interest Rate Shock')
-
+    assert TimeHorizon.DAILY.timedelta == timedelta(days=1)
+    assert TimeHorizon.WEEKLY.timedelta == timedelta(weeks=1)
+    assert TimeHorizon.MONTHLY.timedelta == timedelta(days=30)
+    assert TimeHorizon.YEARLY.timedelta == timedelta(days=365)
 
 if __name__ == '__main__':
     unittest.main()

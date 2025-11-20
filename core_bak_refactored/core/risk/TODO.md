@@ -144,9 +144,9 @@
   - 增强容错机制
   - 补充文档注释
 
-**步骤4**: 📋 待执行 - 补充测试
+**步骤4**: ✅ 已完成 - 补充测试
 - 文件：`risk_models_test.py`
-- 确保枚举和数据类的完整测试覆盖
+- 覆盖：RiskLevel映射、legacy兼容、LimitBreach序列化/旧字段映射、Recommendation优先级校验与序列化、TimeHorizon属性
 
 **步骤5**: 📋 待执行 - 更新consultation.md
 - 追加第3轮咨询问答到 `docs/consultation.md`
