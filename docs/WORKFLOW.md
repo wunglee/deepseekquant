@@ -249,6 +249,7 @@ git commit -m "docs: 记录阶段X专家改进建议到TODO"
 
 **必须全部满足**:
 - [ ] 所有测试通过
+- [ ] PLAN.md 与 core_bak_refactored/TODO_INDEX.md 及各模块 TODO.md 一致性检查（计划⇄模块同步）
 - [ ] TODO已更新（包含本阶段完成项）
 - [ ] TODO已记录专家建议（如有评审）
 - [ ] ask.md已生成并确认

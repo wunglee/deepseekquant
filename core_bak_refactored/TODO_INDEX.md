@@ -80,12 +80,12 @@
 ## 📊 当前工作重点
 
 ### 正在进行
-- 🟡 **风险模块业务服务层评审** - `core/risk/risk_metrics_service.py`
+- 🟡 **Risk 域 Phase 1 剩余拆分与评审** — `risk_models.py`、`risk_calculator.py`、`portfolio_risk.py`、`position_risk.py`
 
 ### 下一步计划
-1. 完成风险服务层专家复审
-2. 实施A股涨跌停场景处理（P1）
-3. 创建信号生成器 `signal_generator.py`（高优先级）
+1. 准备 Risk 域 Phase 2 融合（接口/协议对齐、命名统一、契约检查）
+2. 启动 Signal/Exec/Portfolio/Data 域的 Phase 1 拆分规划与骨架搭建
+3. 更新模块状态矩阵并对齐 docs/PLAN.md
 
 ---
 
@@ -103,15 +103,15 @@
 |------|------|------|--------|---------|
 | 基础设施层 | `risk_metrics.py` | ✅ 生产就绪 | - | 21/21 |
 | 基础设施层 | `timeseries_calculator.py` | ✅ 已完成 | - | 24/24 |
-| 信号引擎 | `indicator_service.py` | ✅ 已完成 | - | 63/63 |
+| 信号引擎 | `indicator_service.py` | ✅ 已完成 | - | 待融合 |
 | 信号引擎 | `signal_generator.py` | 🔴 未开始 | 高 | 0/0 |
-| 风险管理 | `risk_metrics_service.py` | 🟡 待评审 | 高 | 49/49 |
+| 风险管理 | `risk_metrics_service.py` | ✅ 生产就绪 | - | 49/49 |
 | 风险管理 | `portfolio_risk.py` | ✅ 已完成 | - | 8/8 |
 | 风险管理 | `stress_testing.py` | ✅ 已完成 | - | 9/9 |
 | 风险管理 | `risk_monitor.py` | ✅ 已完成 | - | 7/7 |
 | 策略模块 | `base_strategy.py` | 🔴 未开始 | 中 | 0/0 |
 
-**总测试覆盖**：192/192 通过 ✅
+**总测试覆盖**：受 Phase 2 路径融合影响，跨路径用例暂不统计
 
 ---
 
