@@ -156,10 +156,11 @@ class MarketConfigManager:
                     'st': 0.05,
                     'kcb': 0.20
                 },
-                # 专家建议：A股风险参数优化
+                # 专家建议：A股风险参数优化 (第14轮微调)
                 'var_method_priority': 'historical_simulation',  # A股更适合历史模拟
                 'covariance_lookback': 126,  # 半年度滚动（约6个月交易日）
-                'jump_adjustment_coef': 0.03,  # A股跳跃更频繁，系数提高至0.03
+                'jump_adjustment_coef': 0.035,  # 专家微调: 0.03→0.035 (A股跳跃更显著)
+                'max_jump_adjustment': 0.18,  # 专家微调: 0.15→0.18
                 'evt_threshold': 0.85,  # 较低阈值适应频繁跳跃
                 'limit_adjustment_enabled': True,  # 启用涨跌停调整
                 'min_required_returns': 30  # 最小样本量要求
@@ -170,10 +171,11 @@ class MarketConfigManager:
                 'circuit_breaker_levels': [0.07, 0.13, 0.20],
                 'luld_threshold': 0.05,
                 'luld_window': 5,
-                # 专家建议：美股风险参数优化
+                # 专家建议：美股风险参数优化 (第14轮微调)
                 'var_method_priority': 't_distribution',  # 美股适合参数法
-                'covariance_lookback': 504,  # 两年滚动（约2年交易日）
+                'covariance_lookback': 756,  # 专家微调: 504→756 (3年，美股长记忆性)
                 'jump_adjustment_coef': 0.02,  # 跳跃相对较少
+                'max_jump_adjustment': 0.12,  # 美股相对稳定
                 'evt_threshold': 0.90,  # 标准阈值
                 'limit_adjustment_enabled': False,
                 'min_required_returns': 50
@@ -181,11 +183,12 @@ class MarketConfigManager:
         elif market_type == 'HK':
             config.update({
                 'has_limit_up_down': False,
-                # 专家建议：港股风险参数优化
+                # 专家建议：港股风险参数优化 (第14轮微调)
                 'var_method_priority': 'evt',  # 港股极端风险更多
-                'covariance_lookback': 252,  # 一年滚动
-                'jump_adjustment_coef': 0.025,  # 介于A股和美股之间
-                'evt_threshold': 0.88,
+                'covariance_lookback': 378,  # 专家微调: 252→378 (1.5年，受多重因素影响)
+                'jump_adjustment_coef': 0.030,  # 专家微调: 0.025→0.030 (介于A股和美股之间)
+                'max_jump_adjustment': 0.15,  # 港股特殊调整
+                'evt_threshold': 0.86,  # 专家微调: 0.88→0.86 (尾部风险显著)
                 'limit_adjustment_enabled': True,  # 港股部分板块有限制
                 'min_required_returns': 50
             })

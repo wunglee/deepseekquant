@@ -47,6 +47,15 @@ class PortfolioRiskAnalyzer:
             if np.sum(limit_days) == 0:
                 return returns
             
+            # 专家建议: 检测连续涨跌停情况 (第14轮新增)
+            consecutive_limit_days = self._detect_consecutive_limit_hits(limit_days)
+            if consecutive_limit_days > 0:
+                logger.warning(
+                    f"检测到{consecutive_limit_days}天连续涨跌停，"
+                    f"总计{np.sum(limit_days)}/{ len(returns)}天涨跌停，"
+                    f"风险可能被低估 (专家建议: 连续涨跌停误差15-25%)"
+                )
+            
             # 使用前后均值填充（简化方法）
             adjusted_returns = returns.copy()
             returns_series = pd.Series(adjusted_returns)
@@ -70,7 +79,7 @@ class PortfolioRiskAnalyzer:
     def _align_returns_with_forward_fill(self, returns_data: Dict[str, np.ndarray], 
                                          min_required_length: int = 30) -> Optional[pd.DataFrame]:
         """
-        使用前向填充对齐收益率序列（专家建议）
+        使用前向填充对齐收益率序列（专家建议 + 第14轮增强）
         
         Args:
             returns_data: 符号 -> 收益率数组的字典
@@ -80,6 +89,9 @@ class PortfolioRiskAnalyzer:
             对齐后的DataFrame，失败返回None
         """
         try:
+            # 1. 识别新上市资产 (专家建议: 上市时间<180天)
+            new_listing_symbols = self._identify_new_listings(returns_data, max_days=180)
+            
             # 转换为DataFrame，使用最新数据填充早期缺失
             max_len = max(len(r) for r in returns_data.values())
             
@@ -115,12 +127,60 @@ class PortfolioRiskAnalyzer:
                     logger.error(f"插值后仍不足{min_required_length}，对齐失败")
                     return None
             
-            logger.debug(f"数据对齐完成: {len(returns_data)}个资产, {len(aligned)}个数据点")
+            # 2. 对新上市资产降权处理 (专家建议: 减半权重)
+            if new_listing_symbols:
+                for symbol in new_listing_symbols:
+                    if symbol in aligned.columns:
+                        aligned[symbol] = aligned[symbol] * 0.5
+                        logger.info(f"新上市资产{symbol}降权50%，数据长度={len(returns_data[symbol])}")
+            
+            logger.debug(f"数据对齐完成: {len(returns_data)}个资产, {len(aligned)}个数据点, {len(new_listing_symbols)}个新上市")
             return aligned
         
         except Exception as e:
             logger.error(f"数据对齐失败: {e}")
             return None
+    
+    def _detect_consecutive_limit_hits(self, limit_days: np.ndarray) -> int:
+        """
+        检测连续涨跌停天数（专家建议 - 第14轮新增）
+        
+        Args:
+            limit_days: 涨跌停日标记数组
+        
+        Returns:
+            最大连续涨跌停天数
+        """
+        max_consecutive = 0
+        current_consecutive = 0
+        
+        for is_limit in limit_days:
+            if is_limit:
+                current_consecutive += 1
+                max_consecutive = max(max_consecutive, current_consecutive)
+            else:
+                current_consecutive = 0
+        
+        return max_consecutive
+    
+    def _identify_new_listings(self, returns_data: Dict[str, np.ndarray], max_days: int = 180) -> List[str]:
+        """
+        识别新上市资产（专家建议 - 第14轮新增）
+        
+        Args:
+            returns_data: 收益率数据
+            max_days: 最大天数阈值 (默认180天)
+        
+        Returns:
+            新上市资产符号列表
+        """
+        new_listings = []
+        for symbol, returns in returns_data.items():
+            # 使用数据长度近似上市时间
+            if len(returns) < max_days:
+                new_listings.append(symbol)
+                logger.debug(f"识别为新上市资产: {symbol}, 数据长度={len(returns)}天")
+        return new_listings
     
     def calculate_portfolio_returns(self, portfolio_state, market_data: Dict[str, Any]) -> pd.Series:
         """计算组合收益序列"""
@@ -464,6 +524,15 @@ class PortfolioRiskAnalyzer:
             if weights_list:
                 hhi = sum(w ** 2 for w in weights_list)
                 result['concentration_risk'] = float(min(hhi, 1.0))
+            
+            logger.debug(f"组合风险分析完成: 波动率={result['volatility']:.4f}, VaR={result['var_95']:.4f}, 夏普={result['sharpe_ratio']:.2f}")
+            return result
+        
+        except Exception as e:
+            logger.error(f"组合风险分析失败: {e}")
+            return result
+
+
             
             logger.debug(f"组合风险分析完成: 波动率={result['volatility']:.4f}, VaR={result['var_95']:.4f}, 夏普={result['sharpe_ratio']:.2f}")
             return result

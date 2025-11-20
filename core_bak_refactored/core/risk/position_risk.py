@@ -210,7 +210,7 @@ class PositionRiskAnalyzer:
     
     def _estimate_jump_risk(self, symbol: str, returns: pd.Series) -> float:
         """
-        跳跃风险估计（专家建议优化）
+        跳跃风险估计（专家建议优化 - 第14轮微调）
         
         基于市场类型的跳跃风险校准系数
         """
@@ -220,19 +220,20 @@ class PositionRiskAnalyzer:
             
             kurt = float(returns.kurtosis())
             
-            # 专家建议：根据市场类型校准系数
+            # 专家建议：根据市场类型校准系数 (第14轮微调)
             market_type = self.config.get('market_type', 'CN')
-            calibration_params = {
-                'CN': {'base_coef': 0.03, 'max_adjustment': 0.15},  # A股跳跃更频繁
-                'US': {'base_coef': 0.02, 'max_adjustment': 0.12},
-                'HK': {'base_coef': 0.025, 'max_adjustment': 0.13}
-            }
             
-            params = calibration_params.get(market_type, calibration_params['US'])
-            adjustment = (kurt - 3.0) * params['base_coef']
+            # 从市场配置获取参数，如果没有则使用默认值
+            market_configs = self.config.get('market_configs', {})
+            current_market_config = market_configs.get(market_type, {})
             
-            result = max(0.0, min(adjustment, params['max_adjustment']))
-            logger.debug(f"{symbol} 跳跃修正: kurt={kurt:.2f}, adj={result:.4f}")
+            base_coef = current_market_config.get('jump_adjustment_coef', 0.03)
+            max_adjustment = current_market_config.get('max_jump_adjustment', 0.15)
+            
+            adjustment = (kurt - 3.0) * base_coef
+            
+            result = max(0.0, min(adjustment, max_adjustment))
+            logger.debug(f"{symbol} 跳跃修正: kurt={kurt:.2f}, coef={base_coef}, adj={result:.4f}")
             return result
         except Exception:
             return 0.0
