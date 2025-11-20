@@ -27,6 +27,101 @@ class PortfolioRiskAnalyzer:
         self.config = config
         self.risk_metrics_service = RiskMetricsService(config)
     
+    def _adjust_for_limit_hits(self, returns: np.ndarray, limit_threshold: float = 0.10) -> np.ndarray:
+        """
+        调整涨跌停导致的收益率截断（专家建议）
+        
+        Args:
+            returns: 收益率数组
+            limit_threshold: 涨跌停阈值（默认10%）
+        
+        Returns:
+            调整后的收益率
+        """
+        try:
+            import pandas as pd
+            # 检测涨跌停日（95%阈值）
+            detection_threshold = limit_threshold * 0.95
+            limit_days = np.abs(returns) >= detection_threshold
+            
+            if np.sum(limit_days) == 0:
+                return returns
+            
+            # 使用前后均值填充（简化方法）
+            adjusted_returns = returns.copy()
+            returns_series = pd.Series(adjusted_returns)
+            
+            # 将涨跌停日标记为NaN
+            returns_series[limit_days] = np.nan
+            
+            # 前向填充
+            returns_series = returns_series.fillna(method='ffill')
+            # 后向填充（处理开头的NaN）
+            returns_series = returns_series.fillna(method='bfill')
+            # 如果还有NaN，填充0
+            returns_series = returns_series.fillna(0)
+            
+            logger.debug(f"涨跌停调整: {np.sum(limit_days)}/{ len(returns)}天被调整")
+            return returns_series.values
+        except Exception as e:
+            logger.warning(f"涨跌停调整失败: {e}, 返回原始数据")
+            return returns
+    
+    def _align_returns_with_forward_fill(self, returns_data: Dict[str, np.ndarray], 
+                                         min_required_length: int = 30) -> Optional[pd.DataFrame]:
+        """
+        使用前向填充对齐收益率序列（专家建议）
+        
+        Args:
+            returns_data: 符号 -> 收益率数组的字典
+            min_required_length: 最小数据长度要求
+        
+        Returns:
+            对齐后的DataFrame，失败返回None
+        """
+        try:
+            # 转换为DataFrame，使用最新数据填充早期缺失
+            max_len = max(len(r) for r in returns_data.values())
+            
+            # 对齐所有序列到最大长度
+            aligned_data = {}
+            for symbol, returns in returns_data.items():
+                if len(returns) < max_len:
+                    # 用NaN填充前面
+                    padded = np.full(max_len, np.nan)
+                    padded[-len(returns):] = returns
+                    aligned_data[symbol] = padded
+                else:
+                    aligned_data[symbol] = returns
+            
+            df = pd.DataFrame(aligned_data)
+            
+            # 前向填充（用最新可用数据填充历史缺失）
+            aligned = df.ffill()
+            
+            # 如果还有缺失值（开头的NaN），使用后向填充
+            aligned = aligned.bfill()
+            
+            # 删除仍然有NaN的行
+            aligned = aligned.dropna()
+            
+            # 检查最小数据长度要求
+            if len(aligned) < min_required_length:
+                logger.warning(f"对齐后数据长度不足{min_required_length}，当前{len(aligned)}，尝试插值")
+                # 使用线性插值补充缺失值
+                aligned = df.interpolate(method='linear').dropna()
+                
+                if len(aligned) < min_required_length:
+                    logger.error(f"插值后仍不足{min_required_length}，对齐失败")
+                    return None
+            
+            logger.debug(f"数据对齐完成: {len(returns_data)}个资产, {len(aligned)}个数据点")
+            return aligned
+        
+        except Exception as e:
+            logger.error(f"数据对齐失败: {e}")
+            return None
+    
     def calculate_portfolio_returns(self, portfolio_state, market_data: Dict[str, Any]) -> pd.Series:
         """计算组合收益序列"""
         try:
@@ -343,20 +438,24 @@ class PortfolioRiskAnalyzer:
                                 closes = market_data['prices'][symbol].get('close', [])
                                 if len(closes) >= 2:
                                     log_returns = StatisticalCalculator.calculate_log_returns(np.array(closes))
+                                    # 专家建议：A股市场需要涨跌停调整
+                                    if self.config.get('market_type') == 'CN':
+                                        log_returns = self._adjust_for_limit_hits(log_returns)
                                     returns_data[symbol] = log_returns
                         
                         if len(returns_data) > 0:
-                            # 对齐所有资产收益序列
-                            min_len = min(len(r) for r in returns_data.values())
-                            aligned_returns = {s: r[-min_len:] for s, r in returns_data.items()}
-                            returns_df = pd.DataFrame(aligned_returns)
+                            # 专家建议：改进数据对齐策略，使用前向填充+插值
+                            returns_df = self._align_returns_with_forward_fill(returns_data)
                             
-                            # 生成收缩协方差矩阵
-                            auto_cov = self.risk_metrics_service.compute_shrunk_covariance(returns_df)
-                            result['risk_contributions'] = self.calculate_risk_contributions_covariance(
-                                portfolio_state, auto_cov
-                            )
-                            result['_auto_generated_covariance'] = True  # 标记为自动生成
+                            if returns_df is not None and len(returns_df) > 0:
+                                # 生成收缩协方差矩阵
+                                auto_cov = self.risk_metrics_service.compute_shrunk_covariance(returns_df)
+                                result['risk_contributions'] = self.calculate_risk_contributions_covariance(
+                                    portfolio_state, auto_cov
+                                )
+                                result['_auto_generated_covariance'] = True  # 标记为自动生成
+                            else:
+                                logger.warning("数据对齐后长度不足，无法生成稳健矩阵")
                         else:
                             logger.warning("无足够收益数据生成稳健矩阵，风险贡献为空")
             

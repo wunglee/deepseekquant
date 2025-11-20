@@ -170,14 +170,26 @@ class RiskMetricsService(InternationalEnhancements):
         )
     
     def compute_shrunk_covariance(self, returns_df: pd.DataFrame) -> pd.DataFrame:
-        """计算收缩协方差矩阵（Ledoit–Wolf，若不可用则回退为样本协方差）。"""
+        """计算收缩协方差矩阵（Ledoit–Wolf，若不可用则回退为样本协方差）。
+        
+        专家建议：支持滚动窗口配置
+        """
         try:
+            # 专家建议：应用滚动窗口
+            lookback = self.current_market_config.get('covariance_lookback')
+            if lookback and len(returns_df) > lookback:
+                logger.debug(f"应用滚动窗口: {lookback}天")
+                returns_df = returns_df.iloc[-lookback:]
+            
             from sklearn.covariance import LedoitWolf  # 可选依赖
             lw = LedoitWolf()
             lw.fit(returns_df.values)
             cov = lw.covariance_
             return pd.DataFrame(cov, index=returns_df.columns, columns=returns_df.columns)
         except Exception:
+            # 回退到样本协方差
+            if lookback and len(returns_df) > lookback:
+                returns_df = returns_df.iloc[-lookback:]
             cov = np.cov(returns_df.values, rowvar=False)
             return pd.DataFrame(cov, index=returns_df.columns, columns=returns_df.columns)
     

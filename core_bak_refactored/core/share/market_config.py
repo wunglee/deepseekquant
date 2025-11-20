@@ -135,7 +135,7 @@ class MarketConfigManager:
         return base_template
     
     def _build_market_specific_config(self, market_type: str, market_info: Dict) -> Dict[str, Any]:
-        """构建市场特定配置（业务层）"""
+        """构建市场特定配置（业务层 + 专家建议优化）"""
         config = {
             'trading_days': market_info.get('default_trading_days', 252),
             'risk_free_rate': self._get_default_risk_free_rate(market_type),
@@ -155,18 +155,50 @@ class MarketConfigManager:
                     'gem': 0.20,
                     'st': 0.05,
                     'kcb': 0.20
-                }
+                },
+                # 专家建议：A股风险参数优化
+                'var_method_priority': 'historical_simulation',  # A股更适合历史模拟
+                'covariance_lookback': 126,  # 半年度滚动（约6个月交易日）
+                'jump_adjustment_coef': 0.03,  # A股跳跃更频繁，系数提高至0.03
+                'evt_threshold': 0.85,  # 较低阈值适应频繁跳跃
+                'limit_adjustment_enabled': True,  # 启用涨跌停调整
+                'min_required_returns': 30  # 最小样本量要求
             })
         elif market_type == 'US':
             config.update({
                 'has_limit_up_down': False,
                 'circuit_breaker_levels': [0.07, 0.13, 0.20],
                 'luld_threshold': 0.05,
-                'luld_window': 5
+                'luld_window': 5,
+                # 专家建议：美股风险参数优化
+                'var_method_priority': 't_distribution',  # 美股适合参数法
+                'covariance_lookback': 504,  # 两年滚动（约2年交易日）
+                'jump_adjustment_coef': 0.02,  # 跳跃相对较少
+                'evt_threshold': 0.90,  # 标准阈值
+                'limit_adjustment_enabled': False,
+                'min_required_returns': 50
+            })
+        elif market_type == 'HK':
+            config.update({
+                'has_limit_up_down': False,
+                # 专家建议：港股风险参数优化
+                'var_method_priority': 'evt',  # 港股极端风险更多
+                'covariance_lookback': 252,  # 一年滚动
+                'jump_adjustment_coef': 0.025,  # 介于A股和美股之间
+                'evt_threshold': 0.88,
+                'limit_adjustment_enabled': True,  # 港股部分板块有限制
+                'min_required_returns': 50
             })
         else:
             config.update({
-                'has_limit_up_down': False
+                'has_limit_up_down': False,
+                # 其他市场默认参数
+                'var_method_priority': 'normal',
+                'covariance_lookback': 252,
+                'jump_adjustment_coef': 0.02,
+                'evt_threshold': 0.90,
+                'limit_adjustment_enabled': False,
+                'min_required_returns': 50
             })
         
         return config

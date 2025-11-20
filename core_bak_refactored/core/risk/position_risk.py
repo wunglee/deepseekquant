@@ -97,11 +97,21 @@ class PositionRiskAnalyzer:
     
     def calculate_advanced_position_var(self, symbol: str, returns: pd.Series, 
                                         method: str = 'evt', confidence_level: float = 0.99) -> Dict[str, float]:
-        """高级单仓VaR：支持normal/t_distribution/evt/historical_simulation，并可叠加跳跃修正。"""
+        """
+        高级单仓VaR：支持normal/t_distribution/evt/historical_simulation，并可叠加跳跃修正。
+        
+        专家建议：添加样本量充分性检查
+        """
         results: Dict[str, float] = {}
         if returns is None or len(returns) < 50:
             fallback_returns = returns if returns is not None and len(returns) > 0 else pd.Series([])
             return {'var_simple': self.calculate_single_position_var(symbol, fallback_returns, 0.95)}
+        
+        # 专家建议：样本量充分性验证
+        if not self._validate_sample_adequacy(method, len(returns)):
+            logger.warning(f"{symbol} 样本量不足，使用回退方法")
+            return {'var_simple': self.calculate_single_position_var(symbol, returns, 0.95)}
+        
         try:
             if method == 'normal':
                 mu, sigma = float(returns.mean()), float(returns.std())
@@ -121,8 +131,10 @@ class PositionRiskAnalyzer:
                 results['var_stress'] = self._calculate_stress_var(returns, confidence_level)
             else:
                 results['var_simple'] = self.calculate_single_position_var(symbol, returns, 0.95)
-        except Exception:
+        except Exception as e:
+            logger.error(f"{symbol} 高级VaR计算失败: {e}")
             results['var_simple'] = self.calculate_single_position_var(symbol, returns, 0.95)
+        
         # 跳跃风险修正（若可用高频数据）
         jump_adj = self._estimate_jump_risk(symbol, returns)
         for k in list(results.keys()):
@@ -131,20 +143,58 @@ class PositionRiskAnalyzer:
         return results
     
     def _calculate_evt_var(self, returns: pd.Series, confidence_level: float) -> float:
-        """极值理论VaR（POT方法，数据不足时回退历史分位）"""
+        """极值理讻aVaR（POT方法，数据不足时回退历史分位）
+            
+        专家建议：动态阈值选择，确保足够超额样本
+        """
         try:
             from scipy.stats import genpareto
-            threshold = returns.quantile(0.90)
+                
+            # 专家建议：动态计算EVT阈值
+            threshold = self._calculate_dynamic_evt_threshold(returns, min_exceedances=15)
+                
             exceedances = returns[returns > threshold] - threshold
             if len(exceedances) < 10:
+                logger.debug(f"EVT超额样本不足({len(exceedances)}), 回退到历史分位法")
                 return abs(np.percentile(returns.values, (1 - confidence_level) * 100))
+                
             shape, loc, scale = genpareto.fit(exceedances.values)
             n = len(returns)
             nu = len(exceedances)
             var_evt = threshold + (scale / max(shape, 1e-8)) * (((n / nu) * (1 - confidence_level)) ** (-shape) - 1)
+                
+            logger.debug(f"EVT VaR: 阈值={threshold:.4f}, 超额样本={len(exceedances)}, shape={shape:.4f}")
             return float(abs(var_evt))
-        except Exception:
+        except Exception as e:
+            logger.warning(f"EVT VaR计算失败: {e}, 回退到历史分位")
             return float(abs(np.percentile(returns.values, (1 - confidence_level) * 100)))
+        
+    def _calculate_dynamic_evt_threshold(self, returns: pd.Series, min_exceedances: int = 15) -> float:
+        """
+        动态计算EVT阈值，确保足够超额样本（专家建议）
+            
+        Args:
+            returns: 收益率序列
+            min_exceedances: 最少超额样本数
+            
+        Returns:
+            动态计算的阈值
+        """
+        n = len(returns)
+        # 从市场配置获取默认阈值，如果没有使用0.90
+        default_threshold = self.config.get('evt_threshold', 0.90)
+            
+        # 尝试不同阈值，确保足够超额样本
+        for threshold_pct in [0.85, 0.80, 0.75, 0.70]:
+            threshold = returns.quantile(threshold_pct)
+            exceedances = returns[returns > threshold]
+            if len(exceedances) >= min_exceedances:
+                logger.debug(f"动态EVT阈值: {threshold_pct} (超额={len(exceedances)})")
+                return threshold
+            
+        # 如果所有阈值都不满足，返回默认
+        logger.warning(f"无法找到足够超额样本的阈值，使用默认{default_threshold}")
+        return returns.quantile(default_threshold)
     
     def _calculate_stress_var(self, returns: pd.Series, confidence_level: float) -> float:
         """压力期VaR近似：取历史最差窗口的分位作为保守估计。"""
@@ -159,15 +209,60 @@ class PositionRiskAnalyzer:
             return float(abs(np.percentile(returns.values, (1 - confidence_level) * 100)))
     
     def _estimate_jump_risk(self, symbol: str, returns: pd.Series) -> float:
-        """跳跃风险估计占位：数据不足时返回小幅调整因子。"""
+        """
+        跳跃风险估计（专家建议优化）
+        
+        基于市场类型的跳跃风险校准系数
+        """
         try:
-            # 简化估计：峰度高→更大跳跃修正
-            if returns is not None and len(returns) > 0:
-                kurt = float(returns.kurtosis())
-                return max(0.0, min(0.10, (kurt - 3.0) * 0.01))  # 最高10%
-            return 0.0
+            if returns is None or len(returns) == 0:
+                return 0.0
+            
+            kurt = float(returns.kurtosis())
+            
+            # 专家建议：根据市场类型校准系数
+            market_type = self.config.get('market_type', 'CN')
+            calibration_params = {
+                'CN': {'base_coef': 0.03, 'max_adjustment': 0.15},  # A股跳跃更频繁
+                'US': {'base_coef': 0.02, 'max_adjustment': 0.12},
+                'HK': {'base_coef': 0.025, 'max_adjustment': 0.13}
+            }
+            
+            params = calibration_params.get(market_type, calibration_params['US'])
+            adjustment = (kurt - 3.0) * params['base_coef']
+            
+            result = max(0.0, min(adjustment, params['max_adjustment']))
+            logger.debug(f"{symbol} 跳跃修正: kurt={kurt:.2f}, adj={result:.4f}")
+            return result
         except Exception:
             return 0.0
+    
+    def _validate_sample_adequacy(self, method: str, sample_size: int) -> bool:
+        """
+        验证样本量是否满足方法要求（专家建议）
+        
+        Args:
+            method: VaR方法名称
+            sample_size: 样本数量
+        
+        Returns:
+            是否满足要求
+        """
+        min_requirements = {
+            'normal': 30,              # 中心极限定理
+            't_distribution': 50,       # 参数估计稳定性
+            'evt': 100,                # GPD拟合需要足够超额样本
+            'historical_simulation': 50,
+            'monte_carlo': 200         # 路径模拟需要更多数据
+        }
+        
+        required = min_requirements.get(method, 50)
+        is_adequate = sample_size >= required
+        
+        if not is_adequate:
+            logger.warning(f"方法{method}需要至少{required}个样本，当前{sample_size}个")
+        
+        return is_adequate
     
     def liquidity_risk_for_position(self, symbol: str, market_data: Dict[str, Any]) -> float:
         """
