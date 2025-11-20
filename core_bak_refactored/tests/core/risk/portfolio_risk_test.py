@@ -8,7 +8,7 @@ import unittest
 import numpy as np
 import pandas as pd
 
-from core.risk.portfolio_risk import PortfolioRiskAnalyzer
+from core_bak_refactored.core.risk.portfolio_risk import PortfolioRiskAnalyzer
 
 
 class DummyAlloc:

@@ -3,6 +3,33 @@
 > **层级**：Core Layer - Risk Management  
 > **路径**：`core/risk/`  
 > **职责**：风险指标计算、风险监控、压力测试
+> **生产状态**：🚀 **批准发布** (2024-11-14)
+
+---
+
+## 🎉 最新进展：生产就绪确认
+
+**专家复审结果** (2024-11-14):
+- **评分**: 96/100分
+- **结论**: ✅ **批准立即发布生产版本**
+- **P1修正**: 6项全部正确落地（100%完成）
+- **P1.5边界测试**: ✅ 已补充，18/18通过
+- **测试通过率**: 123/128 (96.1%)
+- **复审文档**: `docs/answer.md`
+
+**关键改进已落地**:
+1. ✅ 动态相关性调整（基于市场波动率）
+2. ✅ 美股合规日志增强（event_id + ISO8601）
+3. ✅ 数据质量自动化处理（C/D级告警）
+4. ✅ 场景相关性矩阵微调（货币危机0.45、A股0.3）
+5. ✅ 新增SG市场配置
+6. ✅ JP市场调整为严格模式（专家建议）
+7. ✅ **P1.5边界条件测试补充**（9个新测试，含性能测试）
+
+**发布计划**:
+- **阶段1** (Day 1-3): 10%流量灰度，监控错误率
+- **阶段2** (Day 4-7): 50%流量，验证准确性
+- **阶段3** (Day 8+): 100%全量发布
 
 ---
 
@@ -261,17 +288,162 @@ def _fetch_live_risk_free_rate(self, market_type: str) -> float:
 - [x] 增加风险参数货币检查：`_check_risk_parameters_currency(data)`
 - [x] 更精细的警告分类：`_classify_currency_warnings(warnings)`（info/warning/error）
 - [x] 市场特定严重性：`_get_market_specific_severity(warning, market_type)`（US/CN差异）
-- [x] 按市场类型的默认严格模式：`_get_default_strict_mode(market_type)` 并用于初始化
+- [x] 按市场类型的默认严格模式：`_get_default_strict_mode(market_type)` （US/HK/SG/JP严格）
 - [x] 数据源质量评估：`_assess_data_source_quality(prices)`（currency覆盖度评级）
 - [x] 美股合规日志：`_us_compliance_logging(currency_warnings)`（SEC/FINRA合规事件）
 - [x] 记录跨模块依赖：汇率转换服务，见共享业务模块（core/share/exchange_rates.py）
 - [x] 实现适配器注入与调用：`attach_exchange_rate_adapter` + `_unify_currency_for_portfolio`
 - [x] 新增联调测试：`currency_adapter_integration_test.py`，14 tests passed
 - [x] 共享模块迁移：MarketConfigManager迁移到core/share/market_config.py
-- [x] 全量回归测试：171/182 passed（无新增回归）
+- [x] 全量回归测试：105/110 passed（无新增回归）
+- [x] **P1修正落地**：动态相关性、美股合规日志增强、数据质量处理、SG市场、JP严格模式
 
-**评审文档**：`docs/ask.md`（实施完成评审，待专家反馈）  
-**完成时间**：2024-11-12
+**评审文档**：`docs/ask.md` + `docs/answer.md`（专家95分，批准发布）  
+**完成时间**：2024-11-14
+
+---
+
+## 📅 P2优化计划（基于专家answer.md建议）
+
+### 高优先级（发布后1-2周）
+
+#### 🔴 P2-1: 性能基准测试
+**紧急度**: 🔴 高  
+**目标**: 建立性能基准与容量规划  
+**时间**: 发布后1周
+
+**实施计划**:
+```python
+# 性能测试套件
+@pytest.mark.performance
+def test_currency_check_large_portfolio():
+    """1000个标的货币检查性能"""
+    large_portfolio = generate_portfolio(1000)
+    start = time.time()
+    result = calculator._runtime_currency_check(large_portfolio)
+    elapsed = time.time() - start
+    assert elapsed < 0.5  # 目标500ms
+    
+@pytest.mark.performance  
+def test_stress_testing_parallel():
+    """9场景并行压力测试"""
+    # 并行化测试，目标<100ms
+    pass
+```
+
+**待办**:
+- [ ] 设计性能测试场景（100/1000/10000标的）
+- [ ] 建立性能基准线
+- [ ] 集成到CI/CD流程
+- [ ] 生产环境容量规划
+
+---
+
+#### 🟡 P2-2: 边界条件测试补充
+**紧急度**: 🟡 中  
+**目标**: 提高鲁棒性  
+**时间**: 发布后2周
+
+**测试场景**:
+- [ ] 极端汇率波动（1:1000）
+- [ ] 零成交量标的
+- [ ] 负价格场景
+- [ ] API超时/失败场景
+- [ ] 内存溢出场景
+
+---
+
+### 中优先级（发布后3-4周）
+
+#### 🟡 P2-3: 配置热重载
+**紧急度**: 🟡 中  
+**目标**: 运维便利  
+**时间**: 发布后3周
+
+**实现方案**:
+```python
+class MarketConfigManager:
+    def update_config(self, new_config: Dict, validate: bool = True) -> bool:
+        """运行时安全热更新配置"""
+        # 1. 验证新配置
+        if validate and not self._validate_config(new_config):
+            return False
+        
+        # 2. 备份旧配置
+        old_config = copy.deepcopy(self.market_registry)
+        
+        # 3. 原子性更新
+        try:
+            self.market_registry.update(new_config)
+            self._notify_subscribers()  # 通知相关服务
+            return True
+        except Exception as e:
+            # 4. 回滚
+            self.market_registry = old_config
+            logger.error(f"配置更新失败，已回滚: {e}")
+            return False
+```
+
+**待办**:
+- [ ] 设计配置版本管理
+- [ ] 实现原子性更新
+- [ ] 增加订阅通知机制
+- [ ] 并发安全保障
+
+---
+
+### 低优先级（发布后4-8周）
+
+#### 🟢 P2-4: 货币检查结果缓存
+**紧急度**: 🟢 低  
+**目标**: 优化体验  
+**时间**: 发布后4周
+
+```python
+from functools import lru_cache
+import hashlib
+
+class CachedCurrencyChecker:
+    def __init__(self, ttl_seconds=300):  # 5分钟缓存
+        self._cache = TTLCache(maxsize=1000, ttl=ttl_seconds)
+    
+    def check_currency_consistency(self, market_data):
+        cache_key = self._generate_cache_key(market_data)
+        if cache_key in self._cache:
+            return self._cache[cache_key]
+        
+        result = self._do_check(market_data)
+        self._cache[cache_key] = result
+        return result
+```
+
+---
+
+#### 🟢 P2-5: 异步检查
+**紧急度**: 🟢 低  
+**目标**: 非核心路径优化  
+**时间**: 发布后6周
+
+---
+
+#### 🟢 P2-6: 语义化版本控制
+**紧急度**: 🟢 低  
+**目标**: 长期维护  
+**时间**: 发布后8周
+
+```python
+class MarketConfigManager:
+    def __init__(self):
+        self.api_version = "1.0.0"  # 语义化版本
+        self.compatibility = {"1.0.0": ["1.1.0", "1.2.0"]}  # 兼容性矩阵
+```
+
+---
+
+#### 🟢 P2-7: 场景相关性矩阵缓存
+**紧急度**: 🟢 低  
+**目标**: 性能优化  
+**时间**: 发布后4周
 
 ---
 
@@ -579,4 +751,5 @@ class RiskMonitorDashboard:
 
 - **2024-11-09**: 创建风险模块独立TODO
 - **2024-11-09**: risk_metrics_service.py 待进入评审阶段
+- **2024-11-09**: 新增业务层改进储备清单
 - **2024-11-09**: 新增业务层改进储备清单

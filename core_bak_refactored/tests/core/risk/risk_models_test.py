@@ -5,7 +5,7 @@
 import unittest
 from datetime import datetime
 
-from core.risk.risk_models import (
+from core_bak_refactored.core.risk.risk_models import (
     RiskLevel, RiskType, RiskMetric, RiskControlAction,
     RiskLimit, PositionLimit, RiskAssessment, RiskEvent, StressTestScenario
 )
@@ -258,7 +258,7 @@ class TestStressTestScenario(unittest.TestCase):
     
     def test_stress_test_scenario_creation(self):
         """测试压力测试场景创建（专家修正：使用ImpactLevel和duration_days）"""
-        from core.risk.risk_models import ImpactLevel
+        from core_bak_refactored.core.risk.risk_models import ImpactLevel
         scenario = StressTestScenario(
             scenario_id='scenario_001',
             name='Market Crash',
@@ -279,7 +279,7 @@ class TestStressTestScenario(unittest.TestCase):
     
     def test_stress_test_scenario_from_dict(self):
         """测试从字典创建压力测试场景（专家修正：支持旧字段兼容）"""
-        from core.risk.risk_models import ImpactLevel
+        from core_bak_refactored.core.risk.risk_models import ImpactLevel
         data = {
             'scenario_id': 'scenario_002',
             'name': 'Interest Rate Shock',

@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 from typing import Dict
 
-from core.risk.risk_processor import RiskProcessor
+from core_bak_refactored.core.risk.risk_processor import RiskProcessor
 
 
 class DummyAlloc:

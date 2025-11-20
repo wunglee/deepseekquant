@@ -6,8 +6,8 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../.
 
 import unittest
 
-from core.risk.stress_testing import StressTester
-from core.risk.risk_models import StressTestScenario, RiskLevel
+from core_bak_refactored.core.risk.stress_testing import StressTester
+from core_bak_refactored.core.risk.risk_models import StressTestScenario, RiskLevel
 
 
 class DummyAlloc:
@@ -63,68 +63,68 @@ class StressTesterTest(unittest.TestCase):
 
     def test_simulate_market_crash(self):
         """市场崩盘场景：30%下跌"""
-        scenario = StressTestScenario(
-            scenario_id='crash',
-            name='crash',
-            description='crash',
-            parameters={'type': 'market_crash', 'crash_magnitude': -0.30},
-            probability=0.05,
-            impact_level=RiskLevel.EXTREME,
-            duration='1d',
-            triggers=[],
-            mitigation_strategies=[]
-        )
+        scenario = StressTestScenario.from_dict({
+            'scenario_id': 'crash',
+            'name': 'crash',
+            'description': 'crash',
+            'parameters': {'type': 'market_crash', 'crash_magnitude': -0.30},
+            'probability': 0.05,
+            'impact_level': 'extreme',
+            'duration': '1d',
+            'triggers': [],
+            'mitigation_strategies': []
+        })
         result = self.tester._simulate_market_crash(scenario, self.portfolio_state, self.market_data)
         # 总敞口1.0 * -0.30 = -0.30
         self.assertAlmostEqual(result, -0.30, places=2)
 
     def test_simulate_liquidity_crisis(self):
         """流动性危机场景"""
-        scenario = StressTestScenario(
-            scenario_id='liquidity',
-            name='liquidity',
-            description='liquidity crisis',
-            parameters={'type': 'liquidity_crisis', 'liquidity_cost_multiplier': 3.0},
-            probability=0.1,
-            impact_level=RiskLevel.HIGH,
-            duration='3d',
-            triggers=[],
-            mitigation_strategies=[]
-        )
+        scenario = StressTestScenario.from_dict({
+            'scenario_id': 'liquidity',
+            'name': 'liquidity',
+            'description': 'liquidity crisis',
+            'parameters': {'type': 'liquidity_crisis', 'liquidity_cost_multiplier': 3.0},
+            'probability': 0.1,
+            'impact_level': 'high',
+            'duration': '3d',
+            'triggers': [],
+            'mitigation_strategies': []
+        })
         result = self.tester._simulate_liquidity_crisis(scenario, self.portfolio_state, self.market_data)
         # 应为负值（流动性成本）
         self.assertLess(result, 0)
 
     def test_simulate_interest_rate_shock(self):
         """利率冲击场景"""
-        scenario = StressTestScenario(
-            scenario_id='rate',
-            name='rate shock',
-            description='rate shock',
-            parameters={'type': 'interest_rate_shock', 'rate_shock_bps': 200, 'portfolio_duration': 3.0},
-            probability=0.2,
-            impact_level=RiskLevel.MODERATE,
-            duration='1d',
-            triggers=[],
-            mitigation_strategies=[]
-        )
+        scenario = StressTestScenario.from_dict({
+            'scenario_id': 'rate',
+            'name': 'rate shock',
+            'description': 'rate shock',
+            'parameters': {'type': 'interest_rate_shock', 'rate_shock_bps': 200, 'portfolio_duration': 3.0},
+            'probability': 0.2,
+            'impact_level': 'moderate',
+            'duration': '1d',
+            'triggers': [],
+            'mitigation_strategies': []
+        })
         result = self.tester._simulate_interest_rate_shock(scenario, self.portfolio_state, self.market_data)
         # 利率上升导致损失
         self.assertLess(result, 0)
 
     def test_simulate_correlation_breakdown(self):
         """相关性崩溃场景"""
-        scenario = StressTestScenario(
-            scenario_id='corr',
-            name='correlation breakdown',
-            description='correlation breakdown',
-            parameters={'type': 'correlation_breakdown', 'correlation_increase': 0.8},
-            probability=0.1,
-            impact_level=RiskLevel.HIGH,
-            duration='1w',
-            triggers=[],
-            mitigation_strategies=[]
-        )
+        scenario = StressTestScenario.from_dict({
+            'scenario_id': 'corr',
+            'name': 'correlation breakdown',
+            'description': 'correlation breakdown',
+            'parameters': {'type': 'correlation_breakdown', 'correlation_increase': 0.8},
+            'probability': 0.1,
+            'impact_level': 'high',
+            'duration': '1w',
+            'triggers': [],
+            'mitigation_strategies': []
+        })
         result = self.tester._simulate_correlation_breakdown(scenario, self.portfolio_state, self.market_data)
         # 多元化失效，风险增加
         self.assertLess(result, 0)
@@ -155,14 +155,15 @@ class StressTesterTest(unittest.TestCase):
     def test_builtin_scenarios_loaded(self):
         """
         P1增强测试：内置场景库加载
-        验证5个内置场景（专家answer.md线108-141）
+        验证6个内置场景（专家answer.md问题4增加货币危机）
         """
-        # 应该加载5个内置 + 1个自定义 = 6个
-        self.assertGreaterEqual(len(self.tester.scenarios), 5)
+        # 应该加载6个内置 + 1个自定义 = 7个
+        self.assertGreaterEqual(len(self.tester.scenarios), 6)
         
         # 验证全球市场场景
         self.assertIn('2008_financial_crisis', self.tester.scenarios)
         self.assertIn('covid_19_pandemic', self.tester.scenarios)
+        self.assertIn('currency_crisis', self.tester.scenarios)  # 专家新增
         
         # 验证A股特有场景
         self.assertIn('2015_china_market_crash', self.tester.scenarios)
@@ -197,6 +198,7 @@ class StressTesterTest(unittest.TestCase):
         self.assertIn('2008_financial_crisis', results)
         self.assertIn('2015_china_market_crash', results)
         self.assertIn('covid_19_pandemic', results)
+        self.assertIn('currency_crisis', results)  # 专家新增
         self.assertIn('circuit_breaker_2016', results)
         self.assertIn('thousand_stocks_limit_down', results)
         
@@ -330,5 +332,7 @@ class StressTesterTest(unittest.TestCase):
         self.assertGreaterEqual(leveraged, 0, "杠杆仓位应该非负")
 
 
+if __name__ == '__main__':
+    unittest.main(verbosity=2)
 if __name__ == '__main__':
     unittest.main(verbosity=2)

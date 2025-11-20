@@ -8,7 +8,7 @@ import unittest
 import numpy as np
 import pandas as pd
 
-from core.risk.risk_calculator import RiskCalculator
+from core_bak_refactored.core.risk.risk_calculator import RiskCalculator
 
 
 class RiskCalculatorTest(unittest.TestCase):

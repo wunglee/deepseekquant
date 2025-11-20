@@ -1,8 +1,8 @@
 """
-市场配置管理器（共享业务模块）
+市场配置管理器
 
 职责：管理不同市场的配置参数（纯配置，无业务逻辑）
-定位：业务基础共享
+定位：业务层配置管理
 """
 
 from typing import Dict, Any, List
@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 class MarketConfigManager:
-    """市场配置管理器（共享业务基础）"""
+    """市场配置管理器（业务层）"""
     
     def __init__(self):
         self.market_registry = self._initialize_market_registry()
@@ -72,16 +72,6 @@ class MarketConfigManager:
                 'regulatory_body': 'ESMA',
                 'market_cap_category': 'developed',
                 'default_trading_days': 255
-            },
-            'SG': {
-                'name': '新加坡股市',
-                'currency': 'SGD',
-                'timezone': 'Asia/Singapore',
-                'trading_hours': '09:00-12:00,13:00-17:00',
-                'settlement_days': 2,
-                'regulatory_body': 'MAS',
-                'market_cap_category': 'developed',
-                'default_trading_days': 250
             }
         }
     
@@ -178,8 +168,7 @@ class MarketConfigManager:
             'US': {'regular': '09:30-16:00', 'pre_market': '04:00-09:30', 'after_hours': '16:00-20:00'},
             'HK': {'regular': '09:30-12:00,13:00-16:00', 'pre_market': '09:00-09:30', 'after_hours': ''},
             'JP': {'regular': '09:00-11:30,12:30-15:00', 'pre_market': '', 'after_hours': ''},
-            'EU': {'regular': '09:00-17:30', 'pre_market': '08:00-09:00', 'after_hours': ''},
-            'SG': {'regular': '09:00-12:00,13:00-17:00', 'pre_market': '', 'after_hours': ''}
+            'EU': {'regular': '09:00-17:30', 'pre_market': '08:00-09:00', 'after_hours': ''}
         }
         return trading_hours_map.get(market_type, {'regular': '09:30-16:00'})
 
@@ -190,8 +179,7 @@ class MarketConfigManager:
             'US': 0.010,
             'HK': 0.020,
             'JP': 0.008,
-            'EU': 0.009,
-            'SG': 0.012
+            'EU': 0.009
         }
         return premium_map.get(market_type, 0.01)
     
@@ -202,7 +190,6 @@ class MarketConfigManager:
             'US': 0.045,
             'HK': 0.035,
             'JP': 0.005,
-            'EU': 0.025,
-            'SG': 0.030
+            'EU': 0.025
         }
         return rate_map.get(market_type, 0.03)

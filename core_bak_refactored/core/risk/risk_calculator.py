@@ -265,22 +265,38 @@ class RiskCalculator:
         return {'info': info, 'warning': warn, 'error': err}
 
     def _get_default_strict_mode(self, market_type: str) -> bool:
-        """根据市场类型获取默认严格模式"""
+        """根据市场类型获取默认严格模式（基于专家answer.md建议：US/HK/SG/JP严格）"""
         market_strict_defaults = {
             'US': True,
             'HK': True,
+            'SG': True,  # 新加坡默认严格模式
+            'JP': True,  # 日本调整为严格模式（日元为重要国际货币）
             'CN': False,
             'EU': False,
-            'JP': False,
         }
         return market_strict_defaults.get(market_type, False)
 
     def _assess_data_source_quality(self, prices: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
-        """评估数据源货币信息完整性"""
+        """评估数据源货币信息完整性，且C/D级时记录告警提示自动处理"""
         total_symbols = len(prices)
         symbols_with_currency = sum(1 for p in prices.values() if p.get('currency'))
         currency_coverage = symbols_with_currency / total_symbols if total_symbols > 0 else 0.0
-        rating = 'HIGH' if currency_coverage > 0.8 else ('MEDIUM' if currency_coverage > 0.5 else 'LOW')
+        # 调整评级：A(>=95%)、B(>=80%)、C(>=50%)、D(<50%)
+        if currency_coverage >= 0.95:
+            rating = 'A'
+        elif currency_coverage >= 0.80:
+            rating = 'B'
+        elif currency_coverage >= 0.50:
+            rating = 'C'
+        else:
+            rating = 'D'
+        # 如果为C/D级，记录告警（暂不自动触发清洗，留待后续增强）
+        if rating in ['C', 'D']:
+            missing_count = total_symbols - symbols_with_currency
+            logger.warning(
+                f"数据源质量{rating}级：货币覆盖{currency_coverage:.2%}，"
+                f"{missing_count}个标的缺失货币信息 - 建议触发数据清洗"
+            )
         return {
             'total_symbols': total_symbols,
             'currency_coverage': currency_coverage,
@@ -323,21 +339,27 @@ class RiskCalculator:
             return None
 
     def _us_compliance_logging(self, currency_warnings: List[str]) -> None:
-        """美股合规性日志记录（仅US市场）"""
+        """美股合规性日志记录（仅US市场），增强结构化日志"""
         if self.market_type != 'US' or not currency_warnings:
             return
+        import uuid
+        from datetime import datetime as dt
         compliance_events = []
         for warning in currency_warnings:
             if ('多币种' in warning) or ('≠' in warning):
                 compliance_events.append({
+                    'event_id': str(uuid.uuid4()),
                     'event_type': 'CURRENCY_INCONSISTENCY',
                     'message': warning,
-                    'timestamp': pd.Timestamp.now(),
-                    'severity': 'MEDIUM' if '多币种' in warning else 'HIGH'
+                    'timestamp': dt.utcnow().isoformat() + 'Z',  # ISO8601
+                    'market': self.market_type,
+                    'severity': 'MEDIUM' if '多币种' in warning else 'HIGH',
+                    'automated_action': 'LOG_ONLY'  # 暂不阻断交易
                 })
         if compliance_events:
-            logger.info(
-                f"美股货币合规事件记录: {len(compliance_events)}个事件",
+            logger.warning(
+                f"[US_COMPLIANCE_EVENT] 货币一致性问题检测 - 市场: {self.market_type}, "
+                f"警告数量: {len(compliance_events)}, 详情: {'; '.join(currency_warnings)}",
                 extra={'compliance_events': compliance_events}
             )
 
@@ -350,12 +372,18 @@ class RiskCalculator:
         - 委托 RiskMetricsService 计算指标
         """
         try:
-            # TODO：补充了货币一致性运行时检查，待确认，来源：docs/answer.md
+            # TODO：补充了货币一致性运行时检查，强化数据源质量评估，来源：docs/answer.md
             currency_warnings = self._runtime_currency_check(data)
             currency_warnings += self._check_risk_parameters_currency(data)
             self._handle_currency_warnings(currency_warnings)
             # 美股合规日志
             self._us_compliance_logging(currency_warnings)
+            # 数据源质量评估（调整为A/B/C/D分级）
+            market_data_prices = data.get('market_data', {}).get('prices', {}) or {}
+            if market_data_prices:
+                data_quality = self._assess_data_source_quality(market_data_prices)
+                logger.info(f"数据源质量评级: {data_quality['quality_rating']}, "
+                            f"货币覆盖率: {data_quality['currency_coverage']:.2%}")
             # 在存在多币种/不一致时，尝试统一货币（仅摘要，不影响指标计算）
             self._unify_currency_for_portfolio(data)
 

@@ -21,42 +21,55 @@ logger = logging.getLogger('DeepSeekQuant.StressTesting')
 # 常量定义（基于专家answer.md指导）
 # =============================================================================
 
-# 场景相关性矩阵（answer.md 147-173行）
+# 场景相关性矩阵（answer.md 问题4修正：金融危机vs货币危机0.45，A股大跌vs金融危机0.3）
 SCENARIO_CORRELATION_MATRIX = {
     '2008_financial_crisis': {
         '2008_financial_crisis': 1.0,
         'covid_19_pandemic': 0.5,
-        '2015_china_market_crash': 0.6,
+        '2015_china_market_crash': 0.3,  # 专家修正：0.6→0.3
         'circuit_breaker_2016': 0.7,
-        'thousand_stocks_limit_down': 0.7
+        'thousand_stocks_limit_down': 0.7,
+        'currency_crisis': 0.45  # 专家修正：新增货币危机相关性0.45
     },
     'covid_19_pandemic': {
         '2008_financial_crisis': 0.5,
         'covid_19_pandemic': 1.0,
         '2015_china_market_crash': 0.4,
         'circuit_breaker_2016': 0.5,
-        'thousand_stocks_limit_down': 0.6
+        'thousand_stocks_limit_down': 0.6,
+        'currency_crisis': 0.2
     },
     '2015_china_market_crash': {
-        '2008_financial_crisis': 0.6,
+        '2008_financial_crisis': 0.3,  # 专家修正：0.6→0.3
         'covid_19_pandemic': 0.4,
         '2015_china_market_crash': 1.0,
         'circuit_breaker_2016': 0.8,
-        'thousand_stocks_limit_down': 0.9
+        'thousand_stocks_limit_down': 0.9,
+        'currency_crisis': 0.25
     },
     'circuit_breaker_2016': {
         '2008_financial_crisis': 0.7,
         'covid_19_pandemic': 0.5,
         '2015_china_market_crash': 0.8,
         'circuit_breaker_2016': 1.0,
-        'thousand_stocks_limit_down': 0.8
+        'thousand_stocks_limit_down': 0.8,
+        'currency_crisis': 0.3
     },
     'thousand_stocks_limit_down': {
         '2008_financial_crisis': 0.7,
         'covid_19_pandemic': 0.6,
         '2015_china_market_crash': 0.9,
         'circuit_breaker_2016': 0.8,
-        'thousand_stocks_limit_down': 1.0
+        'thousand_stocks_limit_down': 1.0,
+        'currency_crisis': 0.35
+    },
+    'currency_crisis': {
+        '2008_financial_crisis': 0.45,  # 专家修正：新增货币危机
+        'covid_19_pandemic': 0.2,
+        '2015_china_market_crash': 0.25,
+        'circuit_breaker_2016': 0.3,
+        'thousand_stocks_limit_down': 0.35,
+        'currency_crisis': 1.0
     }
 }
 
@@ -89,7 +102,7 @@ class StressTester:
         self._load_custom_scenarios()    # 自定义
     
     def _load_builtin_scenarios(self):
-        """加载内置场景库（专家answer.md线108-141）"""
+        """加载内置场景库（专家answer.md线108-141，问题4增加货币危机）"""
         scenarios = [
             # 全球市场事件
             {'scenario_id': '2008_financial_crisis', 'name': '2008金融危机',
@@ -104,6 +117,12 @@ class StressTester:
              'mitigation_strategies': ['调整行业配置'],
              'parameters': {'type': 'market_crash', 'decline': -0.20, 'recovery_speed': 6, 
                            'sector_divergence': 0.4}},
+            {'scenario_id': 'currency_crisis', 'name': '货币危机',
+             'description': '汇率波动剧烈导致资产缩水', 'probability': 0.03, 'impact_level': 'high',
+             'duration': '3-6个月', 'triggers': ['外汇储备不足', '资本外流'], 
+             'mitigation_strategies': ['货币对冲', '减少外币敞口'],
+             'parameters': {'type': 'market_crash', 'decline': -0.25, 'currency_volatility': 2.5, 
+                           'capital_flight_intensity': 0.6}},
             # A股特有事件
             {'scenario_id': '2015_china_market_crash', 'name': '2015A股大跌',
              'description': '上证指数下跌35%', 'probability': 0.05, 'impact_level': 'high',
@@ -591,9 +610,19 @@ class StressTester:
             for i, s1 in enumerate(scenarios):
                 for j, s2 in enumerate(scenarios):
                     if s1 in SCENARIO_CORRELATION_MATRIX and s2 in SCENARIO_CORRELATION_MATRIX[s1]:
-                        corr_matrix[i, j] = SCENARIO_CORRELATION_MATRIX[s1][s2]
+                        base_corr = SCENARIO_CORRELATION_MATRIX[s1][s2]
                     else:
-                        corr_matrix[i, j] = 0.5 if i != j else 1.0  # 默认相关性0.5
+                        base_corr = 0.5 if i != j else 1.0  # 默认相关性0.5
+                    # 根据市场波动率做微调（最高+0.3），不存在则不调整
+                    market_vol = market_data.get('market_volatility')
+                    if market_vol is not None:
+                        try:
+                            adj = min(1.0, max(0.0, base_corr + min(0.3, float(market_vol) * 0.1)))
+                        except Exception:
+                            adj = base_corr
+                    else:
+                        adj = base_corr
+                    corr_matrix[i, j] = adj
             
             # 4. 计算总影响（考虑相关性）
             if len(impact_vector) > 1:

@@ -8,7 +8,7 @@ import unittest
 import numpy as np
 import pandas as pd
 
-from core.risk.position_risk import PositionRiskAnalyzer
+from core_bak_refactored.core.risk.position_risk import PositionRiskAnalyzer
 
 
 class DummyPosition:

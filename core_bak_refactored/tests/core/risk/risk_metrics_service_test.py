@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../.
 import unittest
 import numpy as np
 import pandas as pd
-from core.risk.risk_metrics_service import RiskMetricsService
+from core_bak_refactored.core.risk.risk_metrics_service import RiskMetricsService
 
 
 class TestRiskMetricsService(unittest.TestCase):
