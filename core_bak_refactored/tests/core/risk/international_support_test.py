@@ -27,6 +27,9 @@ class TestInternationalSupport(unittest.TestCase):
         self.returns_cn = pd.Series(np.random.normal(0.001, 0.025, 100))
         self.returns_us = pd.Series(np.random.normal(0.0008, 0.015, 100))
         self.returns_hk = pd.Series(np.random.normal(0.0009, 0.018, 100))
+        self.returns_jp = pd.Series(np.random.normal(0.0003, 0.012, 100))  # 日本：低收益低波动
+        self.returns_eu = pd.Series(np.random.normal(0.0007, 0.016, 100))  # 欧洲：政治风险
+        self.returns_sg = pd.Series(np.random.normal(0.0006, 0.020, 100))  # 新加坡：外部依赖
         
         # 添加市场特征
         # A股：添加涨跌停
@@ -35,6 +38,15 @@ class TestInternationalSupport(unittest.TestCase):
         
         # 美股：添加熔断级别波动
         self.returns_us.iloc[20] = -0.068  # 接近7%熔断
+        
+        # 日本：添加货币政策跳跃（黑田经济学）
+        self.returns_jp.iloc[30] = 0.035  # 政策跳跃
+        
+        # 欧洲：添加政治事件冲击（脱欧等）
+        self.returns_eu.iloc[40] = -0.045  # 政治事件冲击
+        
+        # 新加坡：添加全球冲击敏感性
+        self.returns_sg.iloc[60] = -0.055  # 外部冲击
         
         # 配置管理器
         self.config_manager = MarketConfigManager()
@@ -206,6 +218,159 @@ class TestInternationalSupport(unittest.TestCase):
         hk_config = self.config_manager.generate_config_template('HK')
         hk_service = RiskMetricsService(hk_config)
         self.assertEqual(hk_service.trading_days_per_year, 247)
+    
+    def test_jp_market_config(self):
+        """测试日本市场配置（第14轮专家补充）"""
+        config = self.config_manager.generate_config_template('JP')
+        jp_config = config['market_configs']['JP']
+        
+        # 验证专家建议的参数
+        self.assertEqual(jp_config['var_method_priority'], 't_distribution')  # 货币政策主导
+        self.assertEqual(jp_config['covariance_lookback'], 504)  # 2年政策持续性
+        self.assertEqual(jp_config['jump_adjustment_coef'], 0.022)  # 通缩环境跳跃较小
+        self.assertEqual(jp_config['evt_threshold'], 0.88)  # 尾部风险中等
+        self.assertEqual(jp_config['min_required_returns'], 60)  # 通缩环境需要更多样本
+        self.assertEqual(jp_config['volatility_persistence'], 0.95)  # 高度持续
+        self.assertEqual(jp_config['liquidity_risk_weight'], 0.9)  # 流动性充足
+        self.assertEqual(jp_config['deflation_risk_adjustment'], 0.01)  # 通缩风险调整
+        
+        # 验证无风险利率
+        service = RiskMetricsService(config)
+        jp_rf = service.get_risk_free_rate()
+        self.assertAlmostEqual(jp_rf, 0.005, places=3)  # 接近零利率
+    
+    def test_eu_market_config(self):
+        """测试欧洲市场配置（第14轮专家补充）"""
+        config = self.config_manager.generate_config_template('EU')
+        eu_config = config['market_configs']['EU']
+        
+        # 验证专家建议的参数
+        self.assertEqual(eu_config['var_method_priority'], 'historical_simulation')  # 政治事件驱动
+        self.assertEqual(eu_config['covariance_lookback'], 252)  # 1年政治周期
+        self.assertEqual(eu_config['jump_adjustment_coef'], 0.025)  # 政治事件跳跃
+        self.assertEqual(eu_config['evt_threshold'], 0.87)  # 政治尾部风险
+        self.assertEqual(eu_config['min_required_returns'], 45)  # 政治事件影响估计
+        self.assertEqual(eu_config['volatility_persistence'], 0.90)  # 政治事件降低持续性
+        self.assertEqual(eu_config['liquidity_risk_weight'], 1.0)  # 跨国流动性差异
+        self.assertEqual(eu_config['brexit_risk_weight'], 1.15)  # 英国脱欧风险
+        self.assertEqual(eu_config['banking_sector_risk'], 0.008)  # 银行体系风险
+        
+        # 验证无风险利率
+        service = RiskMetricsService(config)
+        eu_rf = service.get_risk_free_rate()
+        self.assertAlmostEqual(eu_rf, 0.025, places=3)  # 欧洲国债利率
+    
+    def test_sg_market_config(self):
+        """测试新加坡市场配置（第14轮专家补充）"""
+        config = self.config_manager.generate_config_template('SG')
+        sg_config = config['market_configs']['SG']
+        
+        # 验证专家建议的参数
+        self.assertEqual(sg_config['var_method_priority'], 'evt')  # 外部冲击敏感
+        self.assertEqual(sg_config['covariance_lookback'], 189)  # 9个月资本流动
+        self.assertEqual(sg_config['jump_adjustment_coef'], 0.028)  # 全球资本流动跳跃
+        self.assertEqual(sg_config['evt_threshold'], 0.84)  # 较低阈值（敏感）
+        self.assertEqual(sg_config['min_required_returns'], 40)  # 市场小但数据质量高
+        self.assertEqual(sg_config['volatility_persistence'], 0.88)  # 外部依赖性强
+        self.assertEqual(sg_config['liquidity_risk_weight'], 1.3)  # 市场规模小
+        self.assertEqual(sg_config['trade_openness_risk'], 0.012)  # 贸易开放度风险
+        self.assertEqual(sg_config['currency_risk_weight'], 1.25)  # 汇率政策风险
+        
+        # 验证无风险利率
+        service = RiskMetricsService(config)
+        sg_rf = service.get_risk_free_rate()
+        self.assertAlmostEqual(sg_rf, 0.030, places=3)  # 新加坡政府债券利率
+    
+    def test_jp_market_risk_calculation(self):
+        """测试日本市场风险计算"""
+        config = self.config_manager.generate_config_template('JP')
+        service = RiskMetricsService(config)
+        
+        # 计算风险指标
+        vol = service.calculate_volatility(self.returns_jp)
+        var = service.calculate_value_at_risk(self.returns_jp, 0.95)
+        sharpe = service.calculate_sharpe_ratio(self.returns_jp)
+        
+        self.assertGreater(vol, 0)
+        self.assertGreater(var, 0)
+        # 日本市场低收益率环境下夏普比率可能较低
+        self.assertIsNotNone(sharpe)
+    
+    def test_eu_market_risk_calculation(self):
+        """测试欧洲市场风险计算"""
+        config = self.config_manager.generate_config_template('EU')
+        service = RiskMetricsService(config)
+        
+        # 计算风险指标
+        vol = service.calculate_volatility(self.returns_eu)
+        var = service.calculate_value_at_risk(self.returns_eu, 0.95)
+        sharpe = service.calculate_sharpe_ratio(self.returns_eu)
+        
+        self.assertGreater(vol, 0)
+        self.assertGreater(var, 0)
+        self.assertIsNotNone(sharpe)
+    
+    def test_sg_market_risk_calculation(self):
+        """测试新加坡市场风险计算"""
+        config = self.config_manager.generate_config_template('SG')
+        service = RiskMetricsService(config)
+        
+        # 计算风险指标
+        vol = service.calculate_volatility(self.returns_sg)
+        var = service.calculate_value_at_risk(self.returns_sg, 0.95)
+        sharpe = service.calculate_sharpe_ratio(self.returns_sg)
+        
+        self.assertGreater(vol, 0)
+        self.assertGreater(var, 0)
+        self.assertIsNotNone(sharpe)
+    
+    def test_all_markets_config_completeness(self):
+        """测试所有6个市场配置完整性"""
+        markets = ['CN', 'US', 'HK', 'JP', 'EU', 'SG']
+        
+        for market in markets:
+            config = self.config_manager.generate_config_template(market)
+            market_config = config['market_configs'][market]
+            
+            # 验证必需参数存在
+            required_params = [
+                'var_method_priority',
+                'covariance_lookback',
+                'jump_adjustment_coef',
+                'evt_threshold',
+                'min_required_returns',
+                'volatility_persistence',
+                'liquidity_risk_weight',
+                'political_risk_premium'
+            ]
+            
+            for param in required_params:
+                self.assertIn(param, market_config, 
+                             f"{market}市场缺少参数: {param}")
+                self.assertIsNotNone(market_config[param], 
+                                   f"{market}市场参数{param}为None")
+    
+    def test_six_markets_cross_comparison(self):
+        """测试6个市场风险对比"""
+        config = self.config_manager.generate_config_template('CN')
+        service = RiskMetricsService(config)
+        
+        # 准备6市场数据
+        returns_map = {
+            'CN': self.returns_cn,
+            'US': self.returns_us,
+            'HK': self.returns_hk,
+            'JP': self.returns_jp,
+            'EU': self.returns_eu,
+            'SG': self.returns_sg
+        }
+        
+        # 执行跨市场对比
+        comparison = service.calculate_cross_market_risk_comparison(returns_map)
+        
+        self.assertEqual(len(comparison['markets_analyzed']), 6)
+        for market in ['CN', 'US', 'HK', 'JP', 'EU', 'SG']:
+            self.assertIn(market, comparison['risk_metrics'])
 
 
 if __name__ == '__main__':

@@ -163,7 +163,10 @@ class MarketConfigManager:
                 'max_jump_adjustment': 0.18,  # 专家微调: 0.15→0.18
                 'evt_threshold': 0.85,  # 较低阈值适应频繁跳跃
                 'limit_adjustment_enabled': True,  # 启用涨跌停调整
-                'min_required_returns': 30  # 最小样本量要求
+                'min_required_returns': 30,  # 最小样本量要求
+                'volatility_persistence': 0.94,  # 波动率持续性中等
+                'liquidity_risk_weight': 1.2,  # 流动性风险权重较高
+                'political_risk_premium': 0.008  # 政治风险溢价
             })
         elif market_type == 'US':
             config.update({
@@ -178,7 +181,10 @@ class MarketConfigManager:
                 'max_jump_adjustment': 0.12,  # 美股相对稳定
                 'evt_threshold': 0.90,  # 标准阈值
                 'limit_adjustment_enabled': False,
-                'min_required_returns': 50
+                'min_required_returns': 50,
+                'volatility_persistence': 0.97,  # 高度持续（机构主导）
+                'liquidity_risk_weight': 0.8,  # 流动性好
+                'political_risk_premium': 0.003  # 政治风险低
             })
         elif market_type == 'HK':
             config.update({
@@ -190,18 +196,75 @@ class MarketConfigManager:
                 'max_jump_adjustment': 0.15,  # 港股特殊调整
                 'evt_threshold': 0.86,  # 专家微调: 0.88→0.86 (尾部风险显著)
                 'limit_adjustment_enabled': True,  # 港股部分板块有限制
-                'min_required_returns': 50
+                'min_required_returns': 50,
+                'volatility_persistence': 0.92,  # 资金流动影响波动率持续性
+                'liquidity_risk_weight': 1.1,  # 受资金流动影响
+                'political_risk_premium': 0.015  # 地缘政治风险高
             })
-        else:
+        elif market_type == 'JP':
             config.update({
                 'has_limit_up_down': False,
-                # 其他市场默认参数
+                # 专家建议：日本市场参数配置 (第14轮补充)
+                'var_method_priority': 't_distribution',  # 货币政策主导，收益率分布相对稳定
+                'covariance_lookback': 504,  # 2年（日本央行政策持续性强）
+                'jump_adjustment_coef': 0.022,  # 通缩环境跳跃较小
+                'max_jump_adjustment': 0.15,  # 黑田经济学期间有政策跳跃
+                'evt_threshold': 0.88,  # 尾部风险中等
+                'limit_adjustment_enabled': False,
+                'min_required_returns': 60,  # 通缩环境需要更多样本
+                'volatility_persistence': 0.95,  # 货币政策主导，波动率高度持续
+                'liquidity_risk_weight': 0.9,  # 流动性充足
+                'political_risk_premium': 0.005,  # 政治风险中等
+                'deflation_risk_adjustment': 0.01  # 通缩风险调整系数
+            })
+        elif market_type == 'EU':
+            config.update({
+                'has_limit_up_down': False,
+                # 专家建议：欧洲市场参数配置 (第14轮补充)
+                'var_method_priority': 'historical_simulation',  # 政治事件驱动性强
+                'covariance_lookback': 252,  # 1年（政治周期短，政治不确定性高）
+                'jump_adjustment_coef': 0.025,  # 政治事件引发跳跃
+                'max_jump_adjustment': 0.15,  # 政治事件风险
+                'evt_threshold': 0.87,  # 政治尾部风险
+                'limit_adjustment_enabled': False,
+                'min_required_returns': 45,  # 政治事件影响估计
+                'volatility_persistence': 0.90,  # 政治事件降低持续性
+                'liquidity_risk_weight': 1.0,  # 跨国流动性差异
+                'political_risk_premium': 0.010,  # 欧盟政治风险
+                'brexit_risk_weight': 1.15,  # 英国脱欧风险权重
+                'banking_sector_risk': 0.008  # 银行体系风险溢价
+            })
+        elif market_type == 'SG':
+            config.update({
+                'has_limit_up_down': False,
+                # 专家建议：新加坡市场参数配置 (第14轮补充)
+                'var_method_priority': 'evt',  # 小型开放经济体对全球冲击敏感
+                'covariance_lookback': 189,  # 9个月（全球资本流动快速变化）
+                'jump_adjustment_coef': 0.028,  # 全球资本流动引发跳跃
+                'max_jump_adjustment': 0.15,  # 外部冲击风险
+                'evt_threshold': 0.84,  # 较低阈值（外部冲击敏感）
+                'limit_adjustment_enabled': False,
+                'min_required_returns': 40,  # 市场规模小但数据质量高
+                'volatility_persistence': 0.88,  # 外部依赖性强，持续性较低
+                'liquidity_risk_weight': 1.3,  # 市场规模小，流动性风险高
+                'political_risk_premium': 0.006,  # 政治稳定但外部依赖
+                'trade_openness_risk': 0.012,  # 贸易开放度风险溢价（贸易依存度300%+）
+                'currency_risk_weight': 1.25  # 汇率政策风险
+            })
+        else:
+            # 其他未配置市场使用默认参数
+            config.update({
+                'has_limit_up_down': False,
                 'var_method_priority': 'normal',
                 'covariance_lookback': 252,
                 'jump_adjustment_coef': 0.02,
+                'max_jump_adjustment': 0.15,
                 'evt_threshold': 0.90,
                 'limit_adjustment_enabled': False,
-                'min_required_returns': 50
+                'min_required_returns': 50,
+                'volatility_persistence': 0.92,
+                'liquidity_risk_weight': 1.0,
+                'political_risk_premium': 0.008
             })
         
         return config
@@ -219,14 +282,14 @@ class MarketConfigManager:
         return trading_hours_map.get(market_type, {'regular': '09:30-16:00'})
 
     def _get_default_risk_premium(self, market_type: str) -> float:
-        """获取默认风险溢价（业务参数）"""
+        """获取默认风险溢价（业务参数 + 专家建议第14轮补充）"""
         premium_map = {
-            'CN': 0.015,
-            'US': 0.010,
-            'HK': 0.020,
-            'JP': 0.008,
-            'EU': 0.009,
-            'SG': 0.012
+            'CN': 0.015,  # 新兴市场溢价
+            'US': 0.010,  # 成熟市场基准
+            'HK': 0.020,  # 地缘政治溢价
+            'JP': 0.008,  # 通缩环境溢价较低
+            'EU': 0.012,  # 政治风险溢价（专家微调: 0.009→0.012）
+            'SG': 0.014   # 小型开放经济体溢价（专家微调: 0.012→0.014）
         }
         return premium_map.get(market_type, 0.01)
     
