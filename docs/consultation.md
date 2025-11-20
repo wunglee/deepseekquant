@@ -1,5 +1,20 @@
 # 专家咨询记录
 
+（已清空，待新一轮咨询记录）
+
+---
+
+# 第12轮咨询 - 风险域阶段1 业务合理性与优化机会评审（提问）
+
+（以下内容来自 docs/ask.md）
+（由于篇幅限制，请参考 docs/ask.md 查看完整问题与文件清单）
+
+**目标文件**：
+- core_bak_refactored/core/risk/portfolio_risk.py
+- core_bak_refactored/core/risk/risk_monitor.py
+- core_bak_refactored/core/risk/position_risk.py
+- core_bak_refactored/core/risk/risk_models.py
+
 ---
 
 # 第10轮咨询 - 阶段3.1：货币单位一致性检查复审（提问）
@@ -82,7 +97,7 @@ class RiskCalculator:
 ### ⚠️ 建议补充的检查项
 
 **1. 风险参数货币一致性**
-```python
+``python
 # 建议增加对风险参数的货币检查
 def _check_risk_parameters_currency(self, data: Dict) -> List[str]:
     warnings = []
@@ -426,7 +441,7 @@ def _enhanced_currency_check(self, data: Dict) -> Dict[str, Any]:
 ## ✅ P1修正建议落地确认
 
 ### 修正1: 场景相关性矩阵微调 - ✅ **完全正确**
-```python
+```
 # 金融危机vs货币危机: 0.2→0.45 (专家建议0.4-0.5)
 '2008_financial_crisis': {'currency_crisis': 0.45}
 # A股大跌vs金融危机: 0.6→0.3 (专家建议略高调整)
@@ -504,7 +519,7 @@ regional_currency_crises = {
 - ✅ **SGD汇率**: 新元汇率相对稳定，当前参数足够
 
 **补充建议** (P2优化):
-```python
+```
 # 可增加新加坡特有机制
 'sg_specific': {
     'mas_intervention_threshold': 0.02,  # 金管局干预阈值2%
@@ -520,7 +535,7 @@ regional_currency_crises = {
 - ✅ **市场波动率输入**: 使用标准化波动率指标
 
 **优化建议** (P2):
-```python
+```
 # 更精细的动态调整算法
 def adjust_correlation_dynamically(base_corr, market_vol, scenario_type):
     """基于场景类型和市场状态的动态调整"""
@@ -620,7 +635,7 @@ except (KeyError, TypeError, ValueError) as e:
 5. **⚠️ 性能监控**: 需建立生产环境监控(可发布后补充)
 
 ### 监控指标建议
-```python
+```
 # 建议监控的关键指标
 production_metrics = {
     'stress_test_response_time': {'p95': '300ms', 'p99': '500ms'},
