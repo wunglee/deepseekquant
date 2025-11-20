@@ -3,86 +3,42 @@
 **模块**: 风险管理 (core/risk/)
 **阶段**: Phase 1（从 `core_bak/risk_manager.py` 拆分到 `core_bak_refactored/core/risk/*`）
 **提交时间**: 2025-11-12
-**评审类型**: 模块级业务规则合理性评审（第1轮，先聚焦模块内部）
-
----
-
-## 我们的架构组织
-- 分层：Core/Share（共享概念）、Core/业务模块（风险）、Infrastructure（技术/数学）
-- 模块职责：风险度量与分析、监控与告警；不包含交易执行与信号生成
-- 评审原则：本轮仅针对本模块的业务规则与可优化点，不扩展到跨模块集成
+**评审类型**: 模块级业务评审（仅本轮内容）
 
 ---
 
 ## 📁 相关文件清单（本次更新涉及）
-
-### 核心实现文件（本次评审）
 1. **core_bak_refactored/core/risk/portfolio_risk.py** — 组合层风险分析与归因
-2. **core_bak_refactored/core/risk/position_risk.py** — 单一持仓风险分析与微观结构影响
+2. **core_bak_refactored/core/risk/position_risk.py** — 单一持仓风险与微观结构影响
 3. **core_bak_refactored/core/risk/risk_monitor.py** — 实时风险监控与警报分级
 4. **core_bak_refactored/core/risk/risk_models.py** — 风险枚举与数据结构语义约定
 
 ---
 
-## 本轮评审目标
-- 请您从量化交易业务视角评估上述4个文件的业务规则与逻辑合理性
-- 指出可优化的机会（含参数校准、边界条件、异常场景与市场差异化）
-- 给出建议的业务改造方向与测试覆盖补充要点
+## 评审目标（精简）
+- 评估上述4文件的业务规则与逻辑合理性
+- 指出参数校准、边界条件、异常场景与市场差异化的优化点
+- 给出测试覆盖补充建议
 
 ---
 
-## 评审问题（按文件）
+## 评审问题（精简版）
 
-### 1) portfolio_risk.py（组合风险分析器）
-- 关于 `PortfolioRiskAnalyzer.calculate_portfolio_returns`：
-  - 采用对数收益并进行最短长度对齐，是否更符合实际组合估值过程？是否需要对缺失资产进行缺口填充或权重重标化？
-  - 业务上是否建议在极端缺口（如停牌/缺数）时引入“权重冻结”或“风险中性替代”的策略？
-- 关于 `calculate_risk_contributions_covariance` 与 `calculate_risk_contributions`：
-  - 当前使用边际风险贡献法（协方差矩阵优先）。在“相关性不稳定”时期，是否应引入收缩估计或稳健协方差以降低漂移？
-  - 归因结果是否需要“总和归一化”或“最小阈值截断”以减少微小噪声的业务干扰？
-- 关于 `analyze` 的7维度结构：
-  - VaR/CVaR采用绝对值呈现损失；从业务报表一致性角度是否合理？是否需要在报告层保留符号但在风控层统一绝对值？
-  - `concentration_risk` 使用 HHI，是否需要结合行业/地区/风格的分层集中度以反映“结构性集中”？
-- 优化建议征询：是否推荐引入“滚动窗口动态配置”（如交易日数、置信度）以适配不同市场（CN/US/HK/JP/SG）的业务周期？
+### portfolio_risk.py
+- 缺失数据场景下是否需要权重重标化与稳健协方差？
+- VaR/CVaR呈现与报表口径如何统一（绝对值 vs 保留符号）？
 
-### 2) position_risk.py（持仓风险分析器）
-- 关于 `PositionRiskAnalyzer.analyze_position`：
-  - 单仓VaR以log-returns的5分位近似，乘以 `current_value` 估值；在高波动和跳跃风险场景下，是否应引入“厚尾分布”（如学生t）或“峰度修正”的业务加权？
-  - `liquidity_risk` 基于成交量比率的线性映射，是否需要对“脉冲成交量”“盘后成交”进行业务折算？
-- 关于 `calculate_participation_rate_impact`：
-  - 价格冲击模型 `impact = α * participation_rate^β`（默认 α=0.4, β=0.6），是否建议按市场/板块进行参数校准？是否需要上限截断或分段函数以防过拟合？
-  - 买卖价差对“单边成本”的近似是否应改为“盘口深度”与“滑点”的组合估算以更贴近交易执行？
-- 关于 `estimate_liquidation_time`：
-  - 使用最大参与率（默认10%）估算清算天数；在高频交易或长周期策略场景下，是否需要考虑“资金承接能力”和“资金成本”的二阶影响？
-  - 是否建议通过历史交易轨迹与盘口数据建立“分批执行路径”的业务仿真以提高估算可靠性？
+### position_risk.py
+- 单仓VaR是否需厚尾分布或峰度修正以适配跳跃风险？
+- 参与率冲击参数（α、β）是否按市场/板块校准并设置上限？
 
-### 3) risk_monitor.py（风险监控与告警）
-- 关于 `RiskMonitor._determine_alert_level`：
-  - 当前将 `risk_score` 与 `breach_count` 合并分级；是否建议引入“指标权重矩阵”（如VaR、MDD、TE等）以提升分级敏感度？
-  - 分级阈值（40/60/75/90）是否需要按市场差异化（US/HK/JP/SG）进行业务微调？
-- 关于实时监控循环与 `alert_handlers`：
-  - 在高并发场景下，是否需要引入“防抖/节流”与“背压”机制防止告警风暴？
-  - 线程安全与处理顺序：是否建议在告警处理器间引入“失败重试”“熔断”“降级”策略以保障稳定性？
-- 风险事件生成 `RiskMonitor._create_risk_event`：
-  - 事件ID与严重性映射是否需要纳入“来源渠道”“市场信息”的维度以满足合规审计？
+### risk_monitor.py
+- 告警分级是否引入指标权重矩阵与市场差异化阈值？
+- 高并发下是否需要防抖/节流与熔断降级策略？
 
-### 4) risk_models.py（风险枚举与数据结构）
-- 枚举与语义：
-  - `RiskLevel` 6级划分与 `RiskType.BLACK_SWAN_EVENT` 的迁移，是否满足不同监管报告的一致性？
-  - `TimeHorizon` 与 `CalculationMethod` 的枚举语义是否建议扩展（如“季度/半年度”“极值风险方法”）？
-- 数据结构：
-  - `LimitBreach.breach_duration_seconds` 与 `RiskAssessment` 的数值语义（正负/比例/倍数）是否满足跨团队统一口径？是否建议增加“单位/范围校验”的业务层校验器？
-  - `StressTestScenario.impact_level` 的兼容映射（从 `RiskLevel` 到 `ImpactLevel`），在历史数据迁移时是否存在业务误解风险？
-- 容错与兼容：
-  - `from_dict` 容错策略（默认值与降级日志）是否满足生产稳健性？是否建议对“日志等级与审计字段”进行统一规范？
-
----
-
-## 额外业务优化机会（跨文件）
-- 市场差异化参数校准：按照 CN/US/HK/JP/SG 的交易机制、监管要求与流动性特征进行参数矩阵化管理（如冲击参数、分级阈值、热更新白名单）。
-- 稳健统计与收缩：在相关性/协方差不稳定时期，引入稳健统计或收缩估计减少漂移，提高归因与限额判断的稳定性。
-- 执行成本建模：将买卖价差、盘口深度、滑点与参与率冲击合并为统一的执行成本模型，以便与限额管理联动。
-- 边界与异常场景：补充停牌、零成交量、负价格、跳跃风险、汇率极端波动等测试用例，提升鲁棒性。
+### risk_models.py
+- RiskLevel/ImpactLevel与监管报表口径是否一致，是否需范围校验？
+- from_dict容错策略与审计字段是否需要统一规范？
 
 ---
 
@@ -216,7 +172,7 @@ corr_matrix[i, j] = adj
 **专家建议**: 增加新加坡(SG)市场，默认严格模式（与HK类似）
 
 **落地实施**:
-```python
+``python
 # market_config.py L76-L84（市场注册表）
 'SG': {
     'name': '新加坡股市',
