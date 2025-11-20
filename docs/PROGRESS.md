@@ -10,6 +10,28 @@
 
 ---
 
+## 全局迁移阶段进度
+
+### Phase 1：core_bak → core_bak_refactored（进行中）
+- 风险域（risk）：正在拆分 `core_bak/risk_manager.py` → `core_bak_refactored/core/risk/*`
+  - L1 数据模型：`risk_models.py`（待评审）
+  - L2 基础设施：统计计算/货币转换（部分完成）
+  - L3 共享配置：`share/market_config.py`（完成）
+  - L4 服务层：`risk_metrics_service.py`（完成）
+  - L5 分析器：`stress_testing.py`（完成）、`portfolio_risk.py`/`position_risk.py`（待评审）
+  - L6 协调器：`risk_calculator.py`（基础实现，待评审）
+  - L7 管理器：`risk_limits*.py`（已实现，待验证）
+  - L8 监控/处理：`risk_monitor.py`、`processors/*`（待评审）
+- 其他域（signal/exec/portfolio/data/optimization等）：未迁移（待规划）
+
+### Phase 2：core_bak_refactored → core（未开始）
+- 目标：接口/协议对齐，命名与契约统一，融合到 `core/` 路径
+- 依赖：Risk 域 Phase 1 完成度 + 初步跨域拆分骨架
+
+### Phase 3：发布（暂停）
+- 状态：⏸️ 全局未融合，不具备发布条件
+- 解锁条件：完成 Phase 2 + 全局集成测试通过
+
 ## 风险模块 (Risk Module)
 
 ### ✅ 已完成
@@ -68,11 +90,10 @@
 - ⏸️ P1-3: RiskLimitsManager智能化（已标记待验证，等待后续优化）
 - 📋 P1-4: 流动性风险评估（待实施）
 
-#### 生产发布准备
-- 🚀 **专家批准发布**（2024-11-14，96/100分）
-- ✅ P1.5边界条件测试完成（18/18通过）
-- 📦 灰度发布计划：10% → 50% → 100%（每阶段1-2天）
-- 📊 监控指标：错误率、性能、业务指标
+#### 发布状态（暂停）
+- ⏸️ 全局迁移未完成，暂不具备生产发布条件
+- 说明：仅完成风险子模块的部分重构，尚未融合至根路径 `core/`
+- 解锁条件：完成 Phase 2（融合至 `core/`）+ 全局集成测试通过
 
 ---
 
@@ -89,9 +110,9 @@
 ## 下一步计划
 
 ### 短期（1周内）
-1. 🚀 执行生产发布（3阶段灰度）
-2. 📊 性能基准测试（P2-1高优先级）
-3. ✅ ~~🧪 边界条件测试补充（P2-2）~~ **已完成**
+1. 🧩 完成 Risk 域 Phase 1 拆分与评审（`risk_models.py`、`risk_calculator.py`、`portfolio_risk.py`、`position_risk.py`）
+2. 🔧 准备 Risk 域 Phase 2 融合（接口/协议对齐、命名统一、契约检查）
+3. 📐 启动 Signal/Exec/Portfolio/Data 域 Phase 1 拆分的规划与骨架搭建
 
 ### 中期（2-4周）
 1. 真实汇率API集成（Yahoo Finance/Alpha Vantage）

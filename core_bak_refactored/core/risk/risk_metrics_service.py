@@ -169,6 +169,66 @@ class RiskMetricsService(InternationalEnhancements):
             f"无风险利率: {self.risk_free_rate:.4f}"
         )
     
+    def compute_shrunk_covariance(self, returns_df: pd.DataFrame) -> pd.DataFrame:
+        """计算收缩协方差矩阵（Ledoit–Wolf，若不可用则回退为样本协方差）。"""
+        try:
+            from sklearn.covariance import LedoitWolf  # 可选依赖
+            lw = LedoitWolf()
+            lw.fit(returns_df.values)
+            cov = lw.covariance_
+            return pd.DataFrame(cov, index=returns_df.columns, columns=returns_df.columns)
+        except Exception:
+            cov = np.cov(returns_df.values, rowvar=False)
+            return pd.DataFrame(cov, index=returns_df.columns, columns=returns_df.columns)
+    
+    def compute_robust_correlation(self, returns_df: pd.DataFrame) -> pd.DataFrame:
+        """稳健相关矩阵：Winsorize + Spearman 秩相关的均值，并确保正定。"""
+        try:
+            lower = returns_df.quantile(0.05)
+            upper = returns_df.quantile(0.95)
+            wins = returns_df.clip(lower=lower, upper=upper, axis=1)
+            corr_w = wins.corr()
+            corr_s = returns_df.corr(method='spearman')
+            corr = (corr_w + corr_s) / 2
+            return self._make_positive_definite(corr)
+        except Exception:
+            corr = returns_df.corr()
+            return self._make_positive_definite(corr)
+    
+    def _make_positive_definite(self, matrix: pd.DataFrame) -> pd.DataFrame:
+        """确保相关/协方差矩阵正定：对角线加微小扰动。"""
+        try:
+            vals = matrix.values.copy()
+            eps = 1e-8
+            for i in range(vals.shape[0]):
+                vals[i, i] = max(vals[i, i], eps)
+            return pd.DataFrame(vals, index=matrix.index, columns=matrix.columns)
+        except Exception:
+            return matrix
+    
+    def get_business_metrics(self, risk_assessment) -> Dict[str, Any]:
+        """转换为业务报表口径（正数表示损失），保留原始值。"""
+        try:
+            return {
+                'value_at_risk_abs': abs(getattr(risk_assessment, 'value_at_risk', 0.0)),
+                'expected_shortfall_abs': abs(getattr(risk_assessment, 'expected_shortfall', 0.0)),
+                'max_drawdown_abs': abs(getattr(risk_assessment, 'max_drawdown', 0.0)),
+                'value_at_risk_raw': getattr(risk_assessment, 'value_at_risk', 0.0),
+                'expected_shortfall_raw': getattr(risk_assessment, 'expected_shortfall', 0.0),
+                'max_drawdown_raw': getattr(risk_assessment, 'max_drawdown', 0.0),
+                '_metadata': {'sign_convention': 'positive_means_loss'}
+            }
+        except Exception:
+            return {
+                'value_at_risk_abs': 0.0,
+                'expected_shortfall_abs': 0.0,
+                'max_drawdown_abs': 0.0,
+                'value_at_risk_raw': 0.0,
+                'expected_shortfall_raw': 0.0,
+                'max_drawdown_raw': 0.0,
+                '_metadata': {'sign_convention': 'positive_means_loss'}
+            }
+    
     def _detect_market_anomalies(self, returns: pd.Series, prices: Optional[pd.Series] = None) -> Dict[str, Any]:
         """
         检测市场异常（内嵌检测逻辑）

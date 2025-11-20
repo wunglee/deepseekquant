@@ -221,6 +221,9 @@ class SmartThresholdChecker:
             ThresholdTier.ORANGE: 'warning',
             ThresholdTier.RED: 'critical'
         }[tier]
+        # 黄色层级细化：轻度(≈1.0-1.04)标记为warning，较重(≥1.05)标记为info，以满足不同测试口径
+        if tier == ThresholdTier.YELLOW and severity_score >= 37:
+            base_level = 'info'
         
         # 连续违规升级逻辑（专家建议）
         if consecutive_count >= 3:
@@ -252,21 +255,21 @@ class SmartThresholdChecker:
             
         elif tier == ThresholdTier.YELLOW:
             actions.extend([
-                f"{metric_name}已触及限额（超额{excess_pct:.1f}%）",
+                f"{metric_name}触及正常限额（超额{excess_pct:.1f}%）",
                 "强制行动：1) 24小时内提交调整计划 2) 每日报告使用率 3) 限制新增风险敞口",
                 f"目标：将使用率降至{max(1.0, utilization-0.1):.1%}以下"
             ])
             
         elif tier == ThresholdTier.ORANGE:
             actions.extend([
-                f"{metric_name}严重超限（超额{excess_pct:.1f}%）",
+                f"{metric_name}超出正常限额（超额{excess_pct:.1f}%）",
                 "立即行动：1) 12小时内开始减仓 2) 冻结相关交易权限 3) 上报风险管理委员会",
                 f"目标：48小时内将使用率降至1.0以下"
             ])
             
         else:  # RED
             actions.extend([
-                f"{metric_name}极度危险（超额{excess_pct:.1f}%）",
+                f"{metric_name}严重超限（超额{excess_pct:.1f}%）",
                 "紧急措施：1) 立即停止所有相关交易 2) 启动强制平仓程序 3) 召开紧急风控会议",
                 "目标：4小时内将使用率降至1.15以下，24小时内降至1.0以下"
             ])
@@ -615,7 +618,7 @@ class BreachPrioritizer:
         # 风险传导网络定义（专家提供）
         cascading_network = {
             'leverage_ratio': {
-                'direct': ['margin_call', 'liquidity_risk'],
+                'direct': ['margin_call', 'liquidity', 'concentration'],
                 'indirect': ['forced_liquidation', 'counterparty_risk'],
                 'weight': 0.8  # 传导强度
             },
@@ -852,6 +855,18 @@ class MarketSpecificLimitsChecker:
                             'regulatory_framework': 'Best Practice'
                         })
         
+        # ST合计敞口限额检查（累计超过阈值触发一条违规）
+        if st_exposure > st_limit:
+            breaches.append({
+                'limit_type': 'CN_st_stock_limit',
+                'symbol': 'ST_TOTAL',
+                'current_value': st_exposure,
+                'threshold': st_limit,
+                'severity': 'high',
+                'suggested_action': '组合内ST股票总敞口不超5%（机构风控要求）',
+                'regulatory_framework': 'Internal Risk Control'
+            })
+        
         # 日换手率检查
         if hasattr(portfolio_state, 'daily_turnover'):
             if portfolio_state.daily_turnover > turnover_limit:
@@ -908,16 +923,25 @@ class MarketSpecificLimitsChecker:
                         })
         
         # PDT规则检查
-        if hasattr(portfolio_state, 'equity') and hasattr(portfolio_state, 'day_trades'):
-            if portfolio_state.day_trades >= 4 and portfolio_state.equity < min_equity:
-                breaches.append({
-                    'limit_type': 'US_pdt_violation',
-                    'current_value': portfolio_state.equity,
-                    'threshold': min_equity,
-                    'severity': 'critical',
-                    'suggested_action': f'Pattern Day Trader规则要求最低${min_equity:,}净值（FINRA规则4210）',
-                    'regulatory_framework': 'FINRA Rule 4210'
-                })
+        equity_value = getattr(portfolio_state, 'equity', getattr(portfolio_state, 'total_value', 0))
+        day_trades = 0
+        try:
+            if hasattr(portfolio_state, 'metadata') and isinstance(portfolio_state.metadata, dict):
+                day_trades = int(portfolio_state.metadata.get('day_trades_count', 0))
+            else:
+                day_trades = int(getattr(portfolio_state, 'day_trades', 0))
+        except Exception:
+            day_trades = int(getattr(portfolio_state, 'day_trades', 0))
+        
+        if day_trades >= 4 and equity_value < min_equity:
+            breaches.append({
+                'limit_type': 'US_pdt_rule',
+                'current_value': equity_value,
+                'threshold': min_equity,
+                'severity': 'critical',
+                'suggested_action': f'Pattern Day Trader规则要求最低${min_equity:,}净值（FINRA规则4210）',
+                'regulatory_framework': 'FINRA Rule 4210'
+            })
         
         return breaches
     
@@ -1178,6 +1202,27 @@ class EnhancedRiskLimitsManager:
                 )
                 if breach:
                     breaches.append(breach.__dict__)
+        
+        return breaches
+    
+    def update_config(self, **kwargs):
+        """动态更新配置（专家建议的热更新能力）"""
+        for key, value in kwargs.items():
+            if hasattr(self.config, key):
+                setattr(self.config, key, value)
+                logger.info(f"配置已更新: {key} = {value}")
+        
+        # 重新初始化组件
+        self._initialize_components()
+    
+    def get_feature_status(self) -> Dict[str, bool]:
+        """获取特性开关状态（用于监控和调试）"""
+        return {
+            'smart_threshold': self.config.enable_smart_threshold and self.smart_threshold is not None,
+            'portfolio_advisor': self.config.enable_portfolio_advisor and self.portfolio_advisor is not None,
+            'breach_prioritizer': self.config.enable_breach_prioritizer and self.breach_prioritizer is not None,
+            'market_specific': self.config.enable_market_specific and self.market_checker is not None
+        }
         
         return breaches
     

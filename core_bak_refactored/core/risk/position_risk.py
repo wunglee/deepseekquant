@@ -23,6 +23,11 @@ class PositionRiskAnalyzer:
     
     def __init__(self, config: Dict):
         self.config = config
+        # 高级VaR配置：支持配置化启用与方法选择
+        self.advanced_var_enabled = config.get('advanced_var_enabled', False)
+        self.position_var_method = config.get('position_var_method', 'evt')  # 默认EVT方法
+        # 支持方法: 'normal', 't_distribution', 'evt', 'historical_simulation'
+        self.var_confidence_level = config.get('var_confidence_level', 0.99)
     
     def analyze_position(self, symbol: str, position: Any, market_data: Dict[str, Any]) -> Dict[str, float]:
         """分析单一持仓的风险"""
@@ -33,15 +38,36 @@ class PositionRiskAnalyzer:
         }
         
         try:
-            # 计算单一持仓的VaR（简化）
+            # 计算单一持仓的VaR（智能选择：高级方法 or 简单方法）
             if symbol in market_data.get('prices', {}):
                 closes = market_data['prices'][symbol].get('close', [])
                 if len(closes) >= 20:
                     # 使用基础设施层统一方法
                     returns = StatisticalCalculator.calculate_log_returns(np.array(closes))
-                    var_5pct = np.percentile(returns, 5)
+                    returns_series = pd.Series(returns)
+                    
+                    # 根据配置选择方法
+                    if self.advanced_var_enabled and len(returns) >= 50:
+                        var_results = self.calculate_advanced_position_var(
+                            symbol, returns_series, 
+                            method=self.position_var_method,
+                            confidence_level=self.var_confidence_level
+                        )
+                        # 取主要结果（根据方法命名）
+                        var_key = f'var_{self.position_var_method}'
+                        if var_key in var_results:
+                            var_value = var_results[var_key]
+                        else:
+                            # 回退逻辑：查找任何var_开头的key
+                            var_keys = [k for k in var_results.keys() if k.startswith('var_')]
+                            var_value = var_results[var_keys[0]] if var_keys else 0.0
+                    else:
+                        # 使用简单历史分位方法
+                        var_5pct = np.percentile(returns, 5)
+                        var_value = abs(var_5pct)
+                    
                     position_value = getattr(position, 'current_value', 0)
-                    result['position_var'] = float(abs(var_5pct * position_value))
+                    result['position_var'] = float(var_value * position_value)
             
             # 流动性风险（基于成交量比率）
             volumes = market_data.get('volumes', {})
@@ -68,6 +94,80 @@ class PositionRiskAnalyzer:
             return 0.0
         var = np.percentile(returns.values, (1 - confidence_level) * 100)
         return float(abs(var))
+    
+    def calculate_advanced_position_var(self, symbol: str, returns: pd.Series, 
+                                        method: str = 'evt', confidence_level: float = 0.99) -> Dict[str, float]:
+        """高级单仓VaR：支持normal/t_distribution/evt/historical_simulation，并可叠加跳跃修正。"""
+        results: Dict[str, float] = {}
+        if returns is None or len(returns) < 50:
+            fallback_returns = returns if returns is not None and len(returns) > 0 else pd.Series([])
+            return {'var_simple': self.calculate_single_position_var(symbol, fallback_returns, 0.95)}
+        try:
+            if method == 'normal':
+                mu, sigma = float(returns.mean()), float(returns.std())
+                from scipy.stats import norm
+                var_normal = mu + sigma * norm.ppf(1 - confidence_level)
+                results['var_normal'] = abs(var_normal)
+            elif method == 't_distribution':
+                from scipy.stats import t
+                df, loc, scale = t.fit(returns.values)
+                var_t = t.ppf(1 - confidence_level, df, loc, scale)
+                results['var_t'] = abs(var_t)
+            elif method == 'evt':
+                results['var_evt'] = self._calculate_evt_var(returns, confidence_level)
+            elif method == 'historical_simulation':
+                var_hs = np.percentile(returns.values, (1 - confidence_level) * 100)
+                results['var_hs'] = abs(var_hs)
+                results['var_stress'] = self._calculate_stress_var(returns, confidence_level)
+            else:
+                results['var_simple'] = self.calculate_single_position_var(symbol, returns, 0.95)
+        except Exception:
+            results['var_simple'] = self.calculate_single_position_var(symbol, returns, 0.95)
+        # 跳跃风险修正（若可用高频数据）
+        jump_adj = self._estimate_jump_risk(symbol, returns)
+        for k in list(results.keys()):
+            if k.startswith('var_'):
+                results[k] = results[k] * (1 + jump_adj)
+        return results
+    
+    def _calculate_evt_var(self, returns: pd.Series, confidence_level: float) -> float:
+        """极值理论VaR（POT方法，数据不足时回退历史分位）"""
+        try:
+            from scipy.stats import genpareto
+            threshold = returns.quantile(0.90)
+            exceedances = returns[returns > threshold] - threshold
+            if len(exceedances) < 10:
+                return abs(np.percentile(returns.values, (1 - confidence_level) * 100))
+            shape, loc, scale = genpareto.fit(exceedances.values)
+            n = len(returns)
+            nu = len(exceedances)
+            var_evt = threshold + (scale / max(shape, 1e-8)) * (((n / nu) * (1 - confidence_level)) ** (-shape) - 1)
+            return float(abs(var_evt))
+        except Exception:
+            return float(abs(np.percentile(returns.values, (1 - confidence_level) * 100)))
+    
+    def _calculate_stress_var(self, returns: pd.Series, confidence_level: float) -> float:
+        """压力期VaR近似：取历史最差窗口的分位作为保守估计。"""
+        try:
+            window = min(20, len(returns))
+            if window <= 1:
+                return float(abs(np.percentile(returns.values, (1 - confidence_level) * 100)))
+            rolling = returns.rolling(window).sum().dropna()
+            worst = rolling.nsmallest(1).values[0] if len(rolling) > 0 else returns.min()
+            return float(abs(worst))
+        except Exception:
+            return float(abs(np.percentile(returns.values, (1 - confidence_level) * 100)))
+    
+    def _estimate_jump_risk(self, symbol: str, returns: pd.Series) -> float:
+        """跳跃风险估计占位：数据不足时返回小幅调整因子。"""
+        try:
+            # 简化估计：峰度高→更大跳跃修正
+            if returns is not None and len(returns) > 0:
+                kurt = float(returns.kurtosis())
+                return max(0.0, min(0.10, (kurt - 3.0) * 0.01))  # 最高10%
+            return 0.0
+        except Exception:
+            return 0.0
     
     def liquidity_risk_for_position(self, symbol: str, market_data: Dict[str, Any]) -> float:
         """

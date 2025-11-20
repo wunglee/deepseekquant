@@ -272,4 +272,67 @@ class TestPortfolioRiskAnalyzer(unittest.TestCase):
         self.assertEqual(result['sharpe_ratio'], 0.0)
         self.assertEqual(result['max_drawdown'], 0.0)
         self.assertEqual(result['risk_contributions'], {})
+    
+    def test_auto_generate_robust_covariance_for_risk_contributions(self):
+        """测试自动生成稳健协方差矩阵用于风险贡献计算"""
+        allocations = {'A': DummyAlloc(0.5), 'B': DummyAlloc(0.5)}
+        portfolio_state = DummyPortfolioState(allocations)
+        
+        # 构造市场数据（但不提供协方差/相关性矩阵）
+        np.random.seed(42)
+        prices_A = list(100 + np.cumsum(np.random.randn(50) * 2))
+        prices_B = list(100 + np.cumsum(np.random.randn(50) * 1.5))
+        
+        market_data = {
+            'prices': {
+                'A': {'close': prices_A},
+                'B': {'close': prices_B}
+            },
+            'timestamp': list(range(50))
+        }
+        
+        data = {
+            'portfolio_state': portfolio_state,
+            'market_data': market_data,
+            # 故意不提供 covariance_matrix 和 correlation_matrix
+        }
+        
+        result = self.analyzer.analyze(data, risk_metrics={})
+        
+        # 验证风险贡献度已自动生成
+        self.assertIn('risk_contributions', result)
+        self.assertIn('A', result['risk_contributions'])
+        self.assertIn('B', result['risk_contributions'])
+        self.assertGreater(result['risk_contributions']['A'], 0)
+        self.assertGreater(result['risk_contributions']['B'], 0)
+        
+        # 验证自动生成标记
+        self.assertTrue(result.get('_auto_generated_covariance', False))
+        
+        # 验证其他指标仍然正常
+        self.assertGreater(result['volatility'], 0)
+        self.assertGreater(result['var_95'], 0)
+    
+    def test_auto_generate_robust_covariance_insufficient_data(self):
+        """测试自动生成稳健矩阵：数据不足"""
+        allocations = {'A': DummyAlloc(1.0)}
+        portfolio_state = DummyPortfolioState(allocations)
+        
+        # 仅提供1个数据点（无法计算协方差）
+        market_data = {
+            'prices': {
+                'A': {'close': [100]}
+            }
+        }
+        
+        data = {
+            'portfolio_state': portfolio_state,
+            'market_data': market_data
+        }
+        
+        result = self.analyzer.analyze(data, risk_metrics={})
+        
+        # 数据不足时风险贡献为空
+        self.assertEqual(result['risk_contributions'], {})
+        self.assertFalse(result.get('_auto_generated_covariance', False))
 

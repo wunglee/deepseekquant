@@ -79,6 +79,11 @@ class PortfolioRiskAnalyzer:
             symbols_used = list(returns_df.columns)
             # 获取权重（仅针对有效符号）
             weights = np.array([portfolio_state.allocations[s].weight for s in symbols_used])
+            # 权重重标定：当有效符号的权重和偏离1时进行归一化
+            total_weight = float(weights.sum())
+            if total_weight > 0 and abs(total_weight - 1.0) > 0.01:
+                weights = weights / total_weight
+                logger.info(f"有效资产权重重新标定: {total_weight:.3f} -> 1.000")
 
             # 计算加权组合收益
             portfolio_returns = returns_df.dot(weights)
@@ -312,18 +317,48 @@ class PortfolioRiskAnalyzer:
                 max_dd = self.risk_metrics_service.calculate_max_drawdown(portfolio_returns)
                 result['max_drawdown'] = abs(max_dd)  # 取绝对值表示回撤幅度
             
-            # 6. 计算风险贡献度（优先使用协方差矩阵）
+            # 6. 计算风险贡献度（智能选择：协方差>稳健矩阵自动生成>相关性矩阵）
             cov_matrix = data.get('covariance_matrix')
             if cov_matrix is not None:
+                # 优先使用提供的协方差矩阵
                 result['risk_contributions'] = self.calculate_risk_contributions_covariance(
                     portfolio_state, cov_matrix
                 )
             else:
+                # 未提供协方差矩阵，检查是否有相关性矩阵
                 corr_matrix = data.get('correlation_matrix')
                 if corr_matrix is not None:
                     result['risk_contributions'] = self.calculate_risk_contributions(
                         portfolio_state, corr_matrix
                     )
+                else:
+                    # 未提供任何矩阵，自动从收益序列生成稳健矩阵
+                    if len(portfolio_returns) > 1 and market_data:
+                        logger.info("未提供协方差/相关性矩阵，自动生成稳健矩阵用于风险贡献计算")
+                        # 构造多资产收益DataFrame用于矩阵生成
+                        symbols = list(portfolio_state.allocations.keys())
+                        returns_data = {}
+                        for symbol in symbols:
+                            if symbol in market_data.get('prices', {}):
+                                closes = market_data['prices'][symbol].get('close', [])
+                                if len(closes) >= 2:
+                                    log_returns = StatisticalCalculator.calculate_log_returns(np.array(closes))
+                                    returns_data[symbol] = log_returns
+                        
+                        if len(returns_data) > 0:
+                            # 对齐所有资产收益序列
+                            min_len = min(len(r) for r in returns_data.values())
+                            aligned_returns = {s: r[-min_len:] for s, r in returns_data.items()}
+                            returns_df = pd.DataFrame(aligned_returns)
+                            
+                            # 生成收缩协方差矩阵
+                            auto_cov = self.risk_metrics_service.compute_shrunk_covariance(returns_df)
+                            result['risk_contributions'] = self.calculate_risk_contributions_covariance(
+                                portfolio_state, auto_cov
+                            )
+                            result['_auto_generated_covariance'] = True  # 标记为自动生成
+                        else:
+                            logger.warning("无足够收益数据生成稳健矩阵，风险贡献为空")
             
             # 7. 计算集中度风险（HHI）
             weights_list = [alloc.weight for alloc in portfolio_state.allocations.values()]

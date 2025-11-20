@@ -165,6 +165,61 @@ class PositionRiskAnalyzerTest(unittest.TestCase):
         result = self.analyzer.estimate_liquidation_time('UNKNOWN', 100000, market_data)
         self.assertEqual(result['days_required'], 999)
         self.assertEqual(result['risk_level'], 'extreme')
+    
+    def test_advanced_var_enabled_in_analyze_position(self):
+        """测试高级VaR配置启用：分析持仓自动调用高级VaR"""
+        config_advanced = {
+            'advanced_var_enabled': True,
+            'position_var_method': 't_distribution',
+            'var_confidence_level': 0.99
+        }
+        analyzer_adv = PositionRiskAnalyzer(config_advanced)
+        
+        symbol = 'TEST'
+        position = DummyPosition(current_value=10000, weight=0.1)
+        market_data = {
+            'prices': {
+                'TEST': {'close': list(100 + np.cumsum(np.random.randn(100) * 2))}
+            },
+            'volumes': {
+                'TEST': {'volume': 1000000, 'avg_volume': 1200000}
+            }
+        }
+        
+        result = analyzer_adv.analyze_position(symbol, position, market_data)
+        
+        # 高级VaR启用时应返回非零position_var
+        self.assertIn('position_var', result)
+        self.assertGreater(result['position_var'], 0)
+    
+    def test_advanced_var_method_evt(self):
+        """测试高级VaR方法：EVT"""
+        returns = pd.Series(np.random.normal(0, 0.02, 200))
+        result = self.analyzer.calculate_advanced_position_var(
+            'TEST', returns, method='evt', confidence_level=0.99
+        )
+        self.assertIn('var_evt', result)
+        self.assertGreater(result['var_evt'], 0)
+    
+    def test_advanced_var_method_historical_simulation(self):
+        """测试高级VaR方法：历史模拟"""
+        returns = pd.Series(np.random.normal(0, 0.02, 200))
+        result = self.analyzer.calculate_advanced_position_var(
+            'TEST', returns, method='historical_simulation', confidence_level=0.99
+        )
+        self.assertIn('var_hs', result)
+        self.assertIn('var_stress', result)
+        self.assertGreater(result['var_hs'], 0)
+    
+    def test_advanced_var_insufficient_data_fallback(self):
+        """测试高级VaR：数据不足时回退简单方法"""
+        returns = pd.Series(np.random.randn(20))  # 少于50个点
+        result = self.analyzer.calculate_advanced_position_var(
+            'TEST', returns, method='evt', confidence_level=0.95
+        )
+        # 应回退到简单VaR
+        self.assertIn('var_simple', result)
+        self.assertGreater(result['var_simple'], 0)
 
 
 if __name__ == '__main__':
