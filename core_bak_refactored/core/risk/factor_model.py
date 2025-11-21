@@ -13,6 +13,7 @@ import pandas as pd
 from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass, field
 import logging
+import hashlib
 
 logger = logging.getLogger('DeepSeekQuant.FactorModel')
 
@@ -64,6 +65,27 @@ class FactorModelEstimator:
         if self.cache_service:
             logger.info("因子模型缓存已启用 (P0-3优化)")
     
+    def _generate_cache_key(self, returns: pd.DataFrame, method: str = 'factor_loadings') -> str:
+        """
+        生成缓存键 (P0-3优化)
+        
+        Args:
+            returns: 收益率DataFrame
+            method: 方法名称
+        
+        Returns:
+            缓存键字符串
+        """
+        # 生成返回数据的哈希
+        data_hash = hashlib.md5(
+            returns.values.tobytes() + 
+            str(returns.columns.tolist()).encode()
+        ).hexdigest()[:16]
+        
+        # 缓存键格式: factor_model:{method}:{market}:{n_assets}:{hash}
+        cache_key = f"factor_model:{method}:{self.config.market}:{len(returns.columns)}:{data_hash}"
+        return cache_key
+    
     def estimate_factor_loadings(
         self,
         returns: pd.DataFrame,
@@ -100,49 +122,50 @@ class FactorModelEstimator:
             r_squared_values = np.zeros(N)  # 跟踪R^2
             
             for i in range(N):
-                y = returns.iloc[:, i].values
-                X = factor_returns.values
-                
-                # 添加截距项
-                X_with_const = np.column_stack([np.ones(T), X])
-                
-                # P0-2: 数值稳定性检查 (专家建议)
-                condition_number = np.linalg.cond(X_with_const)
-                
-                if condition_number > 1e10:
-                    logger.warning(
-                        f"资产{returns.columns[i]}: 因子矩阵条件数过高 {condition_number:.2e}, "
-                        f"自动切换到Ridge回归"
-                    )
-                    # 使用Ridge回归降级
-                    beta = self._ridge_regression(y, X, alpha=0.1)
-                    beta_with_const = np.concatenate([[0], beta])  # 添加截距=0
-                else:
-                    # OLS回归: beta = (X'X)^-1 * X'y
-                    try:
-                        # 使用QR分解提高数值稳定性
-                        Q, R_qr = np.linalg.qr(X_with_const)
-                        beta_with_const = np.linalg.solve(R_qr, Q.T @ y)
-                    except np.linalg.LinAlgError:
-                        # 回退到伪逆
-                        logger.warning(f"资产{returns.columns[i]}: QR分解失败, 使用伪逆")
-                        beta_with_const = np.linalg.pinv(X_with_const) @ y
-                
-                loadings[i, :] = beta_with_const[1:]  # 去除截距
-                
-                # 计算残差方差和R^2
-                residuals = y - X_with_const @ beta_with_const
+                try:
+                    y = returns.iloc[:, i].values
+                    X = factor_returns.values
+                    
+                    # 添加截距项
+                    X_with_const = np.column_stack([np.ones(T), X])
+                    
+                    # P0-2: 数值稳定性检查 (专家建议)
+                    condition_number = np.linalg.cond(X_with_const)
+                    
+                    if condition_number > 1e10:
+                        logger.warning(
+                            f"资产{returns.columns[i]}: 因子矩阵条件数过高 {condition_number:.2e}, "
+                            f"自动切换到Ridge回归"
+                        )
+                        # 使用Ridge回归降级
+                        beta = self._ridge_regression(y, X, alpha=0.1)
+                        beta_with_const = np.concatenate([[0], beta])  # 添加截距=0
+                    else:
+                        # OLS回归: beta = (X'X)^-1 * X'y
+                        try:
+                            # 使用QR分解提高数值稳定性
+                            Q, R_qr = np.linalg.qr(X_with_const)
+                            beta_with_const = np.linalg.solve(R_qr, Q.T @ y)
+                        except np.linalg.LinAlgError:
+                            # 回退到伪逆
+                            logger.warning(f"资产{returns.columns[i]}: QR分解失败, 使用伪逆")
+                            beta_with_const = np.linalg.pinv(X_with_const) @ y
+                    
+                    loadings[i, :] = beta_with_const[1:]  # 去除截距
+                    
+                    # 计算残差方差和R^2
+                    residuals = y - X_with_const @ beta_with_const
                     ss_res = np.sum(residuals ** 2)
                     ss_tot = np.sum((y - np.mean(y)) ** 2)
                     r_squared_values[i] = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
                     
                     # 使用无偏估计
                     specific_vars[i] = ss_res / (T - K - 1) if T > K + 1 else np.var(residuals)
-                    
+                
                 except (np.linalg.LinAlgError, ValueError) as e:
                     logger.warning(f"资产{returns.columns[i]}回归失败: {e}，使用默认值")
                     loadings[i, :] = 0
-                    specific_vars[i] = np.var(y)
+                    specific_vars[i] = np.var(returns.iloc[:, i].values)
                     r_squared_values[i] = 0
             
             self.factor_loadings = pd.DataFrame(
@@ -224,6 +247,8 @@ class FactorModelEstimator:
         - F: 因子协方差矩阵 (K x K)
         - D: 特质方差对角矩阵 (N x N)
         
+        P0-3优化：缓存集成（预计50-70%计算加速）
+        
         Args:
             returns: 资产收益率矩阵 (T x N)
             factor_returns: 因子收益率矩阵 (T x K), None则自动生成
@@ -234,6 +259,14 @@ class FactorModelEstimator:
         """
         try:
             T, N = returns.shape
+            
+            # P0-3: 尝试从缓存获取
+            if self.cache_service:
+                cache_key = self._generate_cache_key(returns, 'covariance')
+                cached_result = self.cache_service.get(cache_key)
+                if cached_result is not None:
+                    logger.info(f"因子模型协方差: 缓存命中 (P0-3优化)")
+                    return cached_result
             
             # 1. 估计因子载荷
             if factor_returns is None:
@@ -293,8 +326,15 @@ class FactorModelEstimator:
                 f"因子贡献={metadata['factor_contribution']:.1%}"
             )
             
-            return cov_matrix, metadata
-        
+            # P0-3: 缓存结果
+            result = (cov_matrix, metadata)
+            if self.cache_service:
+                cache_key = self._generate_cache_key(returns, 'covariance')
+                self.cache_service.set(cache_key, result, ttl=3600)  # 1小时TTL
+                logger.debug(f"因子模型协方差: 缓存设置 (P0-3优化)")
+            
+            return result
+
         except Exception as e:
             logger.error(f"因子模型协方差计算失败: {e}")
             return returns.cov(), {'method': 'sample', 'success': False, 'error': str(e)}
@@ -351,6 +391,35 @@ class FactorModelEstimator:
             market_factor = returns.mean(axis=1)
             return pd.DataFrame({'Market': market_factor}, index=returns.index)
     
+    def _ridge_regression(self, y: np.ndarray, X: np.ndarray, alpha: float = 0.1) -> np.ndarray:
+        """
+        Ridge回归（带L2正则化）
+        
+        P0-2优化：数值稳定性降级策略
+        beta_ridge = (X'X + alpha*I)^-1 * X'y
+        
+        Args:
+            y: 因变量 (T,)
+            X: 自变量矩阵 (T x K)，不含截距
+            alpha: 正则化参数
+        
+        Returns:
+            beta系数 (K,)，不含截距
+        """
+        try:
+            T, K = X.shape
+            
+            # Ridge回归: (X'X + alpha*I)^-1 * X'y
+            XtX = X.T @ X
+            ridge_matrix = XtX + alpha * np.eye(K)
+            beta = np.linalg.solve(ridge_matrix, X.T @ y)
+            
+            return beta
+        except np.linalg.LinAlgError:
+            # 极端情况：回退到伪逆
+            logger.warning(f"Ridge回归失败，使用伪逆")
+            return np.linalg.pinv(X) @ y
+    
     def get_factor_summary(self) -> Dict[str, Any]:
         """
         获取因子模型摘要统计
@@ -368,11 +437,6 @@ class FactorModelEstimator:
             'max_loading': float(self.factor_loadings.abs().max().max()),
             'avg_specific_vol': float(np.sqrt(self.specific_variance.mean())),
         }
-        
-        if self.factor_covariance is not None:
-            summary['factor_volatility'] = float(np.sqrt(np.diag(self.factor_covariance)).mean())
-        
-        return summary
         
         if self.factor_covariance is not None:
             summary['factor_volatility'] = float(np.sqrt(np.diag(self.factor_covariance)).mean())
