@@ -14,17 +14,6 @@
 
 ---
 
-## 🧭 术语与层级定义
-
-- 全局阶段（Phase）: 由 docs/PLAN.md 定义的项目宏观阶段，用于跨模块的里程碑管理与发布节奏。
-- 模块迭代（Iteration）: 由各模块的 TODO.md 定义的模块内执行节奏（例如 risk 模块的“迭代计划”，用于细粒度推进与评审）。
-- 里程碑（Milestone）: 在 docs/PLAN.md 中定义的关键节点（验收/发布/集成），用于跨阶段的状态切换。
-
-关系与约束:
-- 迭代属于某一全局阶段之下；同一全局阶段内可有多次模块迭代。
-- 咨询文档管理以“全局阶段”为边界：同一全局阶段内，所有轮次的咨询记录持续追加到 docs/consultation.md；当进入下一全局阶段时，执行一次清空并重建。
-- ask.md/answer.md 始终是当前轮的临时文件，不用于历史；历史问答只归档在 docs/consultation.md。
-
 ## 🔄 五步工作流程
 
 ### 1️⃣ 需求分析
@@ -180,6 +169,12 @@ git commit -m "chore(docs): 清空consultation.md，阶段X已完成"
 
 ## 📄 文档管理
 
+### 概念定义（Phase / Iteration / Milestone）
+- 阶段（Phase，全局）：跨模块的宏观计划分段，由 `docs/PLAN.md` 定义与管理。阶段切换通常伴随方向/范围调整，是全局时间/范围的分段单位。
+- 迭代（Iteration，模块内）：某个模块的工作周期，统一在各模块 `TODO.md` 内维护为“迭代计划”。同一迭代内的专家咨询记录持续追加到 `docs/consultation.md`；迭代完成后清空该文件（保留标题），开启下一迭代。
+- 里程碑（Milestone，全局）：可交付或检查点，记录于 `docs/PLAN.md`。里程碑用于标注关键成果（例如 P0 完成、首版发布），可以位于某个阶段之内或跨阶段。区别：阶段是时间/范围分段；里程碑是事件/成果节点。
+
+
 ### 文档目录
 
 ```
@@ -210,6 +205,9 @@ docs/
 
 ### consultation.md管理
 
+> 迭代边界规则：同一迭代内持续追加，不跨迭代；迭代收尾提交后清空（保留标题）并开始下一迭代。
+
+
 **咨询阶段**:
 1. AI生成ask.md → **等待用户确认**
 2. 用户确认 → 追加到consultation.md
@@ -220,15 +218,13 @@ docs/
 5. 实施功能、更新TODO
 6. 提交代码 + consultation.md
 
-**提交后（按全局阶段）**:
-7. 当 docs/PLAN.md 标识进入“下一全局阶段（Phase）”的里程碑提交完成后，执行一次：**清空consultation.md**（只保留标题）
-8. 开始新阶段的第一轮咨询（从空白 consultation.md 重新追加）
+**提交后**:
+7. **清空consultation.md**（只保留标题）
+8. 开始新轮次
 
-⚠️ **关键规则（阶段/迭代约束）**:
-- ❌ 用户确认前不追加 ask.md（始终独立轮次）
-- ✅ 同一“全局阶段（Phase）”内：docs/consultation.md 持续追加所有轮次（跨模块迭代也追加）
-- ✅ 仅在“跨全局阶段（Phase）”切换时清空 consultation.md
-- ✅ 模块内“迭代（Iteration）”信息记录在各模块 TODO.md（例如 core_bak_refactored/core/risk/TODO.md），用于细粒度推进；不触发 consultation.md 清空
+⚠️ **关键规则**:
+- ❌ 用户确认前**不追加**ask.md
+- ✅ 迭代收尾提交后**必须清空**
 
 ---
 
@@ -296,6 +292,15 @@ docs/
 
 ## 🔗 相关文档
 
+- **项目计划**: `docs/PLAN.md`
+- **架构设计**: `docs/ARCHITECTURE.md`
+- **TODO索引**: `core_bak_refactored/TODO_INDEX.md`
+
+---
+
+**维护者**: DeepSeekQuant 开发团队  
+**版本**: v2.0 (2024-11-21) - 精简重构  
+**状态**: ✅ 生效中
 - **项目计划**: `docs/PLAN.md`
 - **架构设计**: `docs/ARCHITECTURE.md`
 - **TODO索引**: `core_bak_refactored/TODO_INDEX.md`
