@@ -90,6 +90,18 @@ class WorkerAnalyzerCache:
 
 _WORKER_ANALYZER_CACHE = WorkerAnalyzerCache()
 
+def _get_or_create_analyzer(config_dict: Dict[str, Any]) -> 'PortfolioRiskAnalyzer':
+    """获取或创建分析器（进程级缓存，TTL+容量控制）"""
+    import os
+    worker_id = os.getpid()
+    analyzer = _WORKER_ANALYZER_CACHE.get(worker_id)
+    if analyzer is None:
+        from core_bak_refactored.core.risk.portfolio_risk import PortfolioRiskAnalyzer
+        analyzer = PortfolioRiskAnalyzer(config_dict, enable_parallel=False)
+        _WORKER_ANALYZER_CACHE.put(worker_id, analyzer)
+        logger.debug(f"进程Worker {worker_id}: 创建分析器")
+    return analyzer
+
 def _prepare_shared_config(config: Dict[str, Any]) -> Dict[str, Any]:
     """按专家建议，仅传递并行必需配置项以降低序列化开销"""
     essential_keys = {
@@ -729,22 +741,9 @@ class PortfolioRiskAnalyzer:
     def _prepare_shared_config(self) -> Dict[str, Any]:
         """
         准备共享配置数据（P0优化）
-        
-        将config转换为可序列化的字典，避免传递复杂对象
-        
-        Returns:
-            配置字典
+        仅传递并行计算必需配置项，降低序列化开销
         """
-        # 如果config已经是字典，直接返回
-        if isinstance(self.config, dict):
-            return self.config
-        
-        # 如果是对象，转换为字典
-        if hasattr(self.config, '__dict__'):
-            return self.config.__dict__
-        
-        # 默认返回原值
-        return self.config
+        return _prepare_shared_config(self.config)
     
     def _calculate_single_portfolio(
         self, 
@@ -815,7 +814,7 @@ class PortfolioRiskAnalyzer:
                 'incremental_metrics': 增量计算指标
             }
         """
-        metrics = {
+        metrics: Dict[str, Any] = {
             'parallel_enabled': self.enable_parallel,
             'incremental_enabled': self.enable_incremental
         }
@@ -830,25 +829,4 @@ class PortfolioRiskAnalyzer:
             }
         
         return metrics
-
-
-                'incremental_metrics': 增量计算指标
-            }
-        """
-        metrics = {
-            'parallel_enabled': self.enable_parallel,
-            'incremental_enabled': self.enable_incremental
-        }
-        
-        if self.enable_parallel and hasattr(self, 'parallel_executor'):
-            metrics['parallel_metrics'] = self.parallel_executor.get_metrics()
-        
-        if self.enable_incremental and hasattr(self, 'incremental_calculator'):
-            metrics['incremental_metrics'] = {
-                'consecutive_updates': self.incremental_calculator.consecutive_updates,
-                'cumulative_error': self.incremental_calculator.cumulative_error
-            }
-        
-        return metrics
-
 

@@ -178,6 +178,19 @@ class ParallelExecutor:
                 
                 parallel_time = time.time() - start_time
                 
+                # 估算序列化开销占比（采样法）
+                try:
+                    import pickle
+                    sample_items = items[:min(3, n_items)]
+                    t0 = time.time()
+                    for it in sample_items:
+                        pickle.dumps(it)
+                    serialize_time = time.time() - t0
+                    if parallel_time > 0:
+                        self.metrics.serialization_overhead.append(round(serialize_time / parallel_time, 3))
+                except Exception:
+                    pass
+                
                 # 估算串行时间（用于计算加速比）
                 if len(results) > 0:
                     estimated_serial_time = parallel_time * self.config.max_workers_cpu
@@ -265,6 +278,13 @@ class ParallelExecutor:
                 
                 parallel_time = time.time() - start_time
                 speedup = self.config.max_workers_io if completed > 0 else 1.0
+                
+                # 线程池场景的GIL争用近似（CPU占用比）
+                try:
+                    import psutil
+                    self.metrics.gil_contention = round(psutil.cpu_percent(interval=0.0) / 100.0, 3)
+                except Exception:
+                    pass
                 
                 self._update_metrics(n_items, completed, failed, parallel_time, speedup)
                 
