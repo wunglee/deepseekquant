@@ -24,7 +24,7 @@ logger = logging.getLogger('DeepSeekQuant.PortfolioRisk')
 
 # 条件导入优化组件
 try:
-    from infrastructure.parallel_executor import get_parallel_executor
+    from core_bak_refactored.infrastructure.parallel_executor import get_parallel_executor
     PARALLEL_AVAILABLE = True
 except ImportError:
     PARALLEL_AVAILABLE = False

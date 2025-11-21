@@ -4,7 +4,7 @@
 
 import unittest
 import time
-from infrastructure.parallel_executor import (
+from core_bak_refactored.infrastructure.parallel_executor import (
     ParallelExecutor,
     ParallelConfig,
     get_parallel_executor
