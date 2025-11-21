@@ -116,6 +116,11 @@ class FactorModelEstimator:
             
             K = factor_returns.shape[1]
             
+            # 动态阈值（专家建议）
+            thresholds = self._get_dynamic_thresholds(getattr(self.config, 'market', 'US'), T)
+            condition_threshold = thresholds['condition_number']
+            ridge_alpha = thresholds['ridge_alpha']
+            
             # 时间序列回归估计beta
             loadings = np.zeros((N, K))
             specific_vars = np.zeros(N)
@@ -132,18 +137,23 @@ class FactorModelEstimator:
                     # P0-2: 数值稳定性检查 (专家建议)
                     condition_number = np.linalg.cond(X_with_const)
                     
-                    if condition_number > 1e10:
+                    if condition_number > condition_threshold:
                         logger.warning(
                             f"资产{returns.columns[i]}: 因子矩阵条件数过高 {condition_number:.2e}, "
-                            f"自动切换到Ridge回归"
+                            f"自动切换到Ridge回归(alpha={ridge_alpha})"
                         )
-                        # 使用Ridge回归降级
-                        beta = self._ridge_regression(y, X, alpha=0.1)
-                        beta_with_const = np.concatenate([[0], beta])  # 添加截距=0
+                        # Ridge降级
+                        beta_ridge = self._ridge_regression(y, X, alpha=ridge_alpha)
+                        beta_with_const = np.concatenate([[0], beta_ridge])
+                        # 评估Ridge影响
+                        impact = self._assess_ridge_impact(y, X, ols_beta=np.zeros(K), ridge_beta=beta_ridge)
+                        if impact.get('max_beta_change', 0.0) > 0.5:
+                            logger.warning(
+                                f"资产{returns.columns[i]}: Ridge影响较大，max_beta_change={impact['max_beta_change']:.3f}"
+                            )
                     else:
-                        # OLS回归: beta = (X'X)^-1 * X'y
+                        # OLS回归: QR分解提高数值稳定性
                         try:
-                            # 使用QR分解提高数值稳定性
                             Q, R_qr = np.linalg.qr(X_with_const)
                             beta_with_const = np.linalg.solve(R_qr, Q.T @ y)
                         except np.linalg.LinAlgError:
@@ -151,15 +161,14 @@ class FactorModelEstimator:
                             logger.warning(f"资产{returns.columns[i]}: QR分解失败, 使用伪逆")
                             beta_with_const = np.linalg.pinv(X_with_const) @ y
                     
-                    loadings[i, :] = beta_with_const[1:]  # 去除截距
+                    loadings[i, :] = beta_with_const[1:]
                     
-                    # 计算残差方差和R^2
+                    # 残差与R^2
                     residuals = y - X_with_const @ beta_with_const
                     ss_res = np.sum(residuals ** 2)
                     ss_tot = np.sum((y - np.mean(y)) ** 2)
                     r_squared_values[i] = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
-                    
-                    # 使用无偏估计
+                    # 无偏估计
                     specific_vars[i] = ss_res / (T - K - 1) if T > K + 1 else np.var(residuals)
                 
                 except (np.linalg.LinAlgError, ValueError) as e:
@@ -396,36 +405,33 @@ class FactorModelEstimator:
             market_factor = returns.mean(axis=1)
             return pd.DataFrame({'Market': market_factor}, index=returns.index)
     
-    def _ridge_regression(self, y: np.ndarray, X: np.ndarray, alpha: float = 0.1) -> np.ndarray:
-        """
-        Ridge回归（带L2正则化）
-        
-        P0-2优化：数值稳定性降级策略
-        beta_ridge = (X'X + alpha*I)^-1 * X'y
-        
-        Args:
-            y: 因变量 (T,)
-            X: 自变量矩阵 (T x K)，不含截距
-            alpha: 正则化参数
-        
-        Returns:
-            beta系数 (K,)，不含截距
-        """
+    def _get_dynamic_thresholds(self, market_type: str, n_observations: int) -> Dict[str, float]:
+        """按市场与样本量动态调整数值稳定性阈值（专家建议）"""
+        base_config = {
+            'US': {'condition_number': 1e10, 'ridge_alpha': 0.1},
+            'CN': {'condition_number': 1e8, 'ridge_alpha': 0.2},
+            'HK': {'condition_number': 1e9, 'ridge_alpha': 0.15}
+        }
+        config = base_config.get(market_type, base_config['US']).copy()
+        if n_observations < 100:
+            config['condition_number'] *= 0.1
+            config['ridge_alpha'] *= 2.0
+        return config
+
+    def _assess_ridge_impact(self, y: np.ndarray, X: np.ndarray,
+                             ols_beta: np.ndarray, ridge_beta: np.ndarray) -> Dict[str, float]:
+        """评估Ridge回归对结果的影响（专家建议）"""
         try:
-            T, K = X.shape
-            
-            # Ridge回归: (X'X + alpha*I)^-1 * X'y
-            XtX = X.T @ X
-            ridge_matrix = XtX + alpha * np.eye(K)
-            beta = np.linalg.solve(ridge_matrix, X.T @ y)
-            
-            return beta
-        except np.linalg.LinAlgError:
-            # 极端情况：回退到伪逆
-            logger.warning(f"Ridge回归失败，使用伪逆")
-            return np.linalg.pinv(X) @ y
-    
-    def _compute_model_diagnostics(
+            ols_pred = X @ ols_beta
+            ridge_pred = X @ ridge_beta
+            mse_change_pct = float(np.mean((ridge_pred - ols_pred) ** 2) / (np.var(y) if np.var(y) > 0 else 1.0))
+            max_beta_change = float(np.max(np.abs(ridge_beta - ols_beta)))
+            return {
+                'mse_change_pct': mse_change_pct,
+                'max_beta_change': max_beta_change
+            }
+        except Exception:
+            return {'mse_change_pct': 0.0, 'max_beta_change': 0.0}
         self,
         returns: pd.DataFrame,
         factor_returns: pd.DataFrame,

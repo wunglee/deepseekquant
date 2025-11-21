@@ -49,6 +49,11 @@ class ParallelMetrics:
     cpu_utilization_pct: float = 0.0  # CPU利用率
     task_distribution: Dict[str, int] = field(default_factory=dict)  # 任务分布
     
+    # 评审建议补充指标
+    task_times: List[float] = field(default_factory=list)  # 每批次平均任务耗时
+    serialization_overhead: List[float] = field(default_factory=list)  # 序列化开销估计（占比）
+    gil_contention: float = 0.0  # GIL争用估计（仅线程池场景）
+    
     def to_dict(self) -> Dict:
         return {
             'total_tasks': self.total_tasks,
@@ -59,7 +64,10 @@ class ParallelMetrics:
             'speedup_ratio': round(self.speedup_ratio, 2),
             'peak_memory_mb': round(self.peak_memory_mb, 2),
             'cpu_utilization_pct': round(self.cpu_utilization_pct, 1),
-            'task_distribution': self.task_distribution
+            'task_distribution': self.task_distribution,
+            'task_times': [round(t, 4) for t in self.task_times],
+            'serialization_overhead': [round(s, 3) for s in self.serialization_overhead],
+            'gil_contention': round(self.gil_contention, 3)
         }
 
 
@@ -149,12 +157,12 @@ class ParallelExecutor:
         
         # 计算chunk_size
         if chunk_size is None:
-            # P1-1: 动态分块算法
+            data_size_mb = self._estimate_data_size_mb(items)
             if self.config.enable_dynamic_chunking:
-                chunk_size = self._calculate_optimal_chunk_size(n_items)
-                logger.info(f"P1-1优化: 动态chunk_size={chunk_size}")
+                chunk_size = self._calculate_optimal_chunk_size(n_items, data_size_mb)
+                logger.info(f"P1-1优化: 动态chunk_size={chunk_size} (data_size≈{data_size_mb:.1f}MB)")
             else:
-                chunk_size = max(1, n_items // (self.config.max_workers_cpu * 4))
+                chunk_size = max(1, n_items // max(1, self.config.max_workers_cpu * 4))
         
         try:
             with ProcessPoolExecutor(
@@ -367,6 +375,10 @@ class ParallelExecutor:
         # P1-2: 性能监控增强
         if self.config.enable_monitoring:
             self._collect_system_metrics()
+        
+        # 批次级任务耗时记录（专家建议）
+        if completed > 0:
+            self.metrics.task_times.append(elapsed / completed)
     
     def _collect_system_metrics(self):
         """P1-2: 收集系统性能指标"""
@@ -393,52 +405,40 @@ class ParallelExecutor:
     ) -> int:
         """
         P1-1: 动态计算最优分块大小
-        
-        基于内存和CPU的智能分块算法（专家建议）
-        
-        Parameters:
-            n_tasks: 任务总数
-            data_size_mb: 单任务数据大小（MB），默认10MB
-        
-        Returns:
-            optimal_chunk_size: 最优分块大小
         """
         try:
             import psutil
-            
-            # 获取系统资源
             available_memory_gb = psutil.virtual_memory().available / (1024**3)
             cpu_count = self.config.max_workers_cpu
-            
-            # 基于内存的分块大小
             max_concurrent_tasks = int(
-                available_memory_gb * self.config.memory_threshold_gb * 1024 / data_size_mb
+                available_memory_gb * self.config.memory_threshold_gb * 1024 / max(1.0, data_size_mb)
             )
-            memory_based_chunk = max(1, max_concurrent_tasks // cpu_count)
-            
-            # 基于CPU的分块大小
-            cpu_based_chunk = max(1, n_tasks // (cpu_count * 3))
-            
-            # 取较小值，确保不会内存溢出
+            memory_based_chunk = max(1, max_concurrent_tasks // max(1, cpu_count))
+            cpu_based_chunk = max(1, n_tasks // max(1, cpu_count * 3))
             optimal_chunk = min(memory_based_chunk, cpu_based_chunk)
-            
-            # 限制在合理范围内 [1, 20]
-            optimal_chunk = max(1, min(optimal_chunk, 20))
-            
-            logger.debug(
-                f"动态分块: tasks={n_tasks}, memory={available_memory_gb:.1f}GB, "
-                f"cpu={cpu_count}, chunk={optimal_chunk} "
-                f"(memory_based={memory_based_chunk}, cpu_based={cpu_based_chunk})"
-            )
-            
-            return optimal_chunk
-            
+            return max(1, min(optimal_chunk, 20))
         except ImportError:
-            logger.warning("psutil未安装，使用默认分块策略")
-            return max(1, n_tasks // (self.config.max_workers_cpu * 4))
-        except Exception as e:
-            logger.error(f"动态分块计算失败: {e}，使用默认策略")
-            return max(1, n_tasks // (self.config.max_workers_cpu * 4))
+            return max(1, n_tasks // max(1, self.config.max_workers_cpu * 4))
+        except Exception:
+            return max(1, n_tasks // max(1, self.config.max_workers_cpu * 4))
+
+    def _estimate_data_size_mb(self, items: List[Any]) -> float:
+        """专家建议：动态估计任务数据大小（采样法）"""
+        if not items:
+            return 10.0
+        import pickle
+        sample_items = items[:min(5, len(items))]
+        total_size = 0.0
+        for item in sample_items:
+            try:
+                if hasattr(item, 'memory_usage'):
+                    total_size += float(item.memory_usage(deep=True)) / 1e6
+                else:
+                    total_size += float(len(pickle.dumps(item))) / 1e6
+            except Exception:
+                total_size += 10.0
+        avg = total_size / len(sample_items)
+        return max(1.0, avg)
 
     def get_metrics(self) -> Dict:
         """获取当前并行执行器的性能指标（字典）"""

@@ -22,6 +22,21 @@ from infrastructure.risk_metrics import StatisticalCalculator
 
 logger = logging.getLogger('DeepSeekQuant.PortfolioRisk')
 
+class RiskAnalyzerFactory:
+    """工厂模式：创建已优化的组合风险分析器（专家建议）"""
+    @staticmethod
+    def create_optimized_analyzer(
+        config: Dict[str, Any],
+        enable_parallel: bool = True,
+        enable_incremental: bool = True
+    ) -> 'PortfolioRiskAnalyzer':
+        # 依赖注入点：如需传入缓存服务/因子估计器，可在此扩展
+        return PortfolioRiskAnalyzer(
+            config,
+            enable_parallel=enable_parallel,
+            enable_incremental=enable_incremental
+        )
+
 # 条件导入优化组件
 try:
     from core_bak_refactored.infrastructure.parallel_executor import get_parallel_executor
@@ -41,30 +56,50 @@ except ImportError:
 # ============= 静态辅助函数 (优化并行计算) =============
 
 # 全局缓存配置和分析器（进程级）
-_WORKER_ANALYZER_CACHE = {}
+class WorkerAnalyzerCache:
+    def __init__(self, max_size: int = max(os.cpu_count() or 4, 4) * 2, ttl_seconds: int = 3600):
+        from datetime import datetime, timedelta
+        self._cache: Dict[int, 'PortfolioRiskAnalyzer'] = {}
+        self._access_time: Dict[int, 'datetime'] = {}
+        self.max_size = max_size
+        self.ttl = timedelta(seconds=ttl_seconds)
+        self._datetime = datetime
+    
+    def get(self, worker_id: int) -> Optional['PortfolioRiskAnalyzer']:
+        if worker_id in self._cache:
+            last = self._access_time.get(worker_id)
+            if last and self._datetime.now() - last < self.ttl:
+                self._access_time[worker_id] = self._datetime.now()
+                return self._cache[worker_id]
+            else:
+                self.evict(worker_id)
+        return None
+    
+    def put(self, worker_id: int, analyzer: 'PortfolioRiskAnalyzer') -> None:
+        if len(self._cache) >= self.max_size:
+            # 淘汰最早访问的
+            oldest = min(self._access_time.items(), key=lambda kv: kv[1])[0] if self._access_time else None
+            if oldest is not None:
+                self.evict(oldest)
+        self._cache[worker_id] = analyzer
+        self._access_time[worker_id] = self._datetime.now()
+    
+    def evict(self, worker_id: int) -> None:
+        self._cache.pop(worker_id, None)
+        self._access_time.pop(worker_id, None)
 
-def _get_or_create_analyzer(config_dict: Dict[str, Any]) -> 'PortfolioRiskAnalyzer':
-    """
-    获取或创建分析器（进程级缓存）
-    优化：避免每次任务都重建分析器
-    
-    Args:
-        config_dict: 配置字典（必须可序列化）
-    
-    Returns:
-        分析器实例
-    """
-    import os
-    worker_id = os.getpid()
-    
-    if worker_id not in _WORKER_ANALYZER_CACHE:
-        # 首次创建，缓存之
-        from core_bak_refactored.core.risk.portfolio_risk import PortfolioRiskAnalyzer
-        analyzer = PortfolioRiskAnalyzer(config_dict, enable_parallel=False)
-        _WORKER_ANALYZER_CACHE[worker_id] = analyzer
-        logger.debug(f"进程Worker {worker_id}: 创建分析器")
-    
-    return _WORKER_ANALYZER_CACHE[worker_id]
+_WORKER_ANALYZER_CACHE = WorkerAnalyzerCache()
+
+def _prepare_shared_config(config: Dict[str, Any]) -> Dict[str, Any]:
+    """按专家建议，仅传递并行必需配置项以降低序列化开销"""
+    essential_keys = {
+        'trading_days_per_year', 'market_type', 'risk_model_config',
+        'parallel_workers', 'chunk_size'
+    }
+    try:
+        return {k: v for k, v in config.items() if k in essential_keys}
+    except Exception:
+        return {}
 
 def _calculate_single_portfolio_static(
     item: Tuple[str, Any, Dict[str, Any], Dict[str, Any]]
@@ -74,8 +109,8 @@ def _calculate_single_portfolio_static(
     用于并行计算，避免序列化整个PortfolioRiskAnalyzer对象
     
     优化：
-    1. 使用进程级缓存分析器，避免重复创建
-    2. config_dict传递而非对象，减少序列化开销
+    1. 使用进程级缓存分析器（TTL+容量控制）
+    2. 传递最小配置子集，减少序列化开销
     """
     portfolio_id, portfolio_state, market_data, config_dict = item
     try:
@@ -120,6 +155,14 @@ class PortfolioRiskAnalyzer:
             self.incremental_calculator = IncrementalCovarianceCalculator()
             logger.info("增量计算已启用")
     
+    def _get_fallback_strategy(self, component_name: str) -> Dict[str, Any]:
+        """功能级别降级策略（专家建议）"""
+        strategies: Dict[str, Any] = {
+            'parallel': {'threshold': 5, 'method': 'sequential_chunking'},
+            'incremental': {'threshold': 100, 'method': 'batch_processing'},
+            'factor_model': {'threshold': 50, 'method': 'sample_covariance'}
+        }
+        return strategies.get(component_name, {})
     def _adjust_for_limit_hits(self, returns: np.ndarray, limit_threshold: float = 0.10) -> np.ndarray:
         """
         调整涨跌停导致的收益率截断（专家建议）
@@ -769,6 +812,26 @@ class PortfolioRiskAnalyzer:
         Returns:
             {
                 'parallel_metrics': 并行计算指标,
+                'incremental_metrics': 增量计算指标
+            }
+        """
+        metrics = {
+            'parallel_enabled': self.enable_parallel,
+            'incremental_enabled': self.enable_incremental
+        }
+        
+        if self.enable_parallel and hasattr(self, 'parallel_executor'):
+            metrics['parallel_metrics'] = self.parallel_executor.get_metrics()
+        
+        if self.enable_incremental and hasattr(self, 'incremental_calculator'):
+            metrics['incremental_metrics'] = {
+                'consecutive_updates': self.incremental_calculator.consecutive_updates,
+                'cumulative_error': self.incremental_calculator.cumulative_error
+            }
+        
+        return metrics
+
+
                 'incremental_metrics': 增量计算指标
             }
         """
