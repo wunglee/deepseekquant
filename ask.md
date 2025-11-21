@@ -63,7 +63,7 @@
        - 增强异常处理（资产名称日志）
 
 3. **缓存智能失效**
-   - `infrastructure/cache_service.py` (修改，+161行)
+   - `core_bak_refactored/infrastructure/cache_service.py` (修改，+161行)
      - `SmartInvalidationManager` 智能失效管理器
      - `InvalidationRule` 失效规则类
      - 3种默认规则（时间窗口/参数版本/市场数据）
@@ -93,7 +93,7 @@
      - 小样本回退机制测试
 
 7. **智能失效测试**
-   - `tests/infrastructure/test_smart_invalidation.py` (新增，91行)
+   - `core_bak_refactored/tests/infrastructure/test_smart_invalidation.py` (新增，91行)
      - 5个测试用例（100%通过）
      - 默认规则验证
      - 自定义规则扩展性测试
@@ -446,7 +446,7 @@ InvalidationRule(
 
 ### 技术与业务分离
 
-✅ **技术基础设施层** (`infrastructure/`)
+✅ **技术基础设施层** (`core_bak_refactored/infrastructure/`)
 - `parallel_executor.py` - 并行执行器
 - `cache_service.py` - 缓存服务（含智能失效）
 
@@ -460,7 +460,7 @@ InvalidationRule(
 ✅ **条件导入**：
 ```python
 try:
-    from infrastructure.parallel_executor import get_parallel_executor
+    from core_bak_refactored.infrastructure.parallel_executor import get_parallel_executor
     PARALLEL_AVAILABLE = True
 except ImportError:
     PARALLEL_AVAILABLE = False
@@ -617,7 +617,7 @@ if len(low_r2) > 0:
 ### 10.3 缓存智能失效使用
 
 ```python
-from infrastructure.cache_service import (
+from core_bak_refactored.infrastructure.cache_service import (
     get_cache_service,
     get_smart_invalidation_manager,
     InvalidationRule
@@ -669,7 +669,7 @@ print(f"缓存大小: {metrics['cache_size']}/{metrics['max_size']}”)
 # 完整的风险计算流程（集成所有优化）
 from core_bak_refactored.core.risk.portfolio_risk import PortfolioRiskAnalyzer
 from core_bak_refactored.core.risk.factor_model import FactorModelEstimator
-from infrastructure.cache_service import get_cache_service
+from core_bak_refactored.infrastructure.cache_service import get_cache_service
 
 # 1. 初始化（全部优化启用）
 config = generate_config('US')
