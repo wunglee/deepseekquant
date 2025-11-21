@@ -5,7 +5,8 @@
 定位：业务基础共享
 """
 
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
+from datetime import datetime
 import logging
 
 logger = logging.getLogger(__name__)
@@ -183,7 +184,7 @@ class MarketConfigManager:
                 'limit_adjustment_enabled': False,
                 'min_required_returns': 50,
                 'volatility_persistence': 0.97,  # 高度持续（机构主导）
-                'liquidity_risk_weight': 0.8,  # 流动性好
+                'liquidity_risk_weight': 0.85,  # 专家优化: 0.8→0.85 (反映近期流动性变化)
                 'political_risk_premium': 0.003  # 政治风险低
             })
         elif market_type == 'HK':
@@ -220,7 +221,7 @@ class MarketConfigManager:
         elif market_type == 'EU':
             config.update({
                 'has_limit_up_down': False,
-                # 专家建议：欧洲市场参数配置 (第14轮补充)
+                # 专家建议：欧洲市场参数配置 (第14轮补充 + 第15轮优化)
                 'var_method_priority': 'historical_simulation',  # 政治事件驱动性强
                 'covariance_lookback': 252,  # 1年（政治周期短，政治不确定性高）
                 'jump_adjustment_coef': 0.025,  # 政治事件引发跳跃
@@ -231,7 +232,7 @@ class MarketConfigManager:
                 'volatility_persistence': 0.90,  # 政治事件降低持续性
                 'liquidity_risk_weight': 1.0,  # 跨国流动性差异
                 'political_risk_premium': 0.010,  # 欧盟政治风险
-                'brexit_risk_weight': 1.15,  # 英国脱欧风险权重
+                'brexit_risk_weight': self._get_brexit_risk_weight(),  # 动态衰减机制
                 'banking_sector_risk': 0.008  # 银行体系风险溢价
             })
         elif market_type == 'SG':
@@ -246,7 +247,7 @@ class MarketConfigManager:
                 'limit_adjustment_enabled': False,
                 'min_required_returns': 40,  # 市场规模小但数据质量高
                 'volatility_persistence': 0.88,  # 外部依赖性强，持续性较低
-                'liquidity_risk_weight': 1.3,  # 市场规模小，流动性风险高
+                'liquidity_risk_weight': 1.25,  # 专家优化: 1.3→1.25 (反映良好市场基础设施)
                 'political_risk_premium': 0.006,  # 政治稳定但外部依赖
                 'trade_openness_risk': 0.012,  # 贸易开放度风险溢价（贸易依存度300%+）
                 'currency_risk_weight': 1.25  # 汇率政策风险
@@ -269,6 +270,37 @@ class MarketConfigManager:
         
         return config
 
+    def _get_brexit_risk_weight(self, as_of_date: Optional[datetime] = None) -> float:
+        """
+        计算动态Brexit风险权重（专家建议第15轮）
+        
+        Parameters:
+        as_of_date: 计算日期（默认为当前日期）
+        
+        Returns:
+        float: 动态调整后的风险权重（1.0-1.15）
+        
+        衰减机制:
+        - Brexit正式生效: 2020-01-31
+        - 基准权重: 1.15
+        - 衰减率: 每年5% (0.95)
+        - 下限: 1.0 (中性水平)
+        """
+        if as_of_date is None:
+            as_of_date = datetime.now()
+        
+        # Brexit正式生效日期: 2020-01-31
+        brexit_date = datetime(2020, 1, 31)
+        years_since_brexit = (as_of_date - brexit_date).days / 365.25
+        
+        # 每年衰减5%
+        base_weight = 1.15
+        decay_rate = 0.95
+        adjusted_weight = base_weight * (decay_rate ** years_since_brexit)
+        
+        # 设置下限1.0（不会低于中性水平）
+        return max(adjusted_weight, 1.0)
+    
     def _get_default_trading_hours(self, market_type: str) -> Dict[str, str]:
         """获取默认交易时间"""
         trading_hours_map = {

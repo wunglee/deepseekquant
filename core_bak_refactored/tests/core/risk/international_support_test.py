@@ -240,7 +240,7 @@ class TestInternationalSupport(unittest.TestCase):
         self.assertAlmostEqual(jp_rf, 0.005, places=3)  # 接近零利率
     
     def test_eu_market_config(self):
-        """测试欧洲市场配置（第14轮专家补充）"""
+        """测试欧洲市场配置（第14轮专家补充 + 第15轮动态Brexit）"""
         config = self.config_manager.generate_config_template('EU')
         eu_config = config['market_configs']['EU']
         
@@ -252,7 +252,13 @@ class TestInternationalSupport(unittest.TestCase):
         self.assertEqual(eu_config['min_required_returns'], 45)  # 政治事件影响估计
         self.assertEqual(eu_config['volatility_persistence'], 0.90)  # 政治事件降低持续性
         self.assertEqual(eu_config['liquidity_risk_weight'], 1.0)  # 跨国流动性差异
-        self.assertEqual(eu_config['brexit_risk_weight'], 1.15)  # 英国脱欧风险
+        
+        # 验证Brexit权重动态计算（应该是动态值，不再是静态1.15）
+        brexit_weight = eu_config['brexit_risk_weight']
+        self.assertIsInstance(brexit_weight, float)
+        self.assertGreaterEqual(brexit_weight, 1.0)  # 下限
+        self.assertLessEqual(brexit_weight, 1.15)  # 上限
+        
         self.assertEqual(eu_config['banking_sector_risk'], 0.008)  # 银行体系风险
         
         # 验证无风险利率
@@ -261,7 +267,7 @@ class TestInternationalSupport(unittest.TestCase):
         self.assertAlmostEqual(eu_rf, 0.025, places=3)  # 欧洲国债利率
     
     def test_sg_market_config(self):
-        """测试新加坡市场配置（第14轮专家补充）"""
+        """测试新加坡市场配置（第14轮专家补充 + 第15轮优化）"""
         config = self.config_manager.generate_config_template('SG')
         sg_config = config['market_configs']['SG']
         
@@ -272,7 +278,7 @@ class TestInternationalSupport(unittest.TestCase):
         self.assertEqual(sg_config['evt_threshold'], 0.84)  # 较低阈值（敏感）
         self.assertEqual(sg_config['min_required_returns'], 40)  # 市场小但数据质量高
         self.assertEqual(sg_config['volatility_persistence'], 0.88)  # 外部依赖性强
-        self.assertEqual(sg_config['liquidity_risk_weight'], 1.3)  # 市场规模小
+        self.assertEqual(sg_config['liquidity_risk_weight'], 1.25)  # 第15轮优化: 1.3→1.25
         self.assertEqual(sg_config['trade_openness_risk'], 0.012)  # 贸易开放度风险
         self.assertEqual(sg_config['currency_risk_weight'], 1.25)  # 汇率政策风险
         
@@ -371,6 +377,71 @@ class TestInternationalSupport(unittest.TestCase):
         self.assertEqual(len(comparison['markets_analyzed']), 6)
         for market in ['CN', 'US', 'HK', 'JP', 'EU', 'SG']:
             self.assertIn(market, comparison['risk_metrics'])
+    
+    def test_us_liquidity_weight_optimization(self):
+        """测试US流动性权重优化（第15轮）"""
+        config = self.config_manager.generate_config_template('US')
+        us_config = config['market_configs']['US']
+        
+        # 验证专家建议: 0.8 → 0.85
+        self.assertEqual(us_config['liquidity_risk_weight'], 0.85)
+    
+    def test_sg_liquidity_weight_optimization(self):
+        """测试SG流动性权重优化（第15轮）"""
+        config = self.config_manager.generate_config_template('SG')
+        sg_config = config['market_configs']['SG']
+        
+        # 验证专家建议: 1.3 → 1.25
+        self.assertEqual(sg_config['liquidity_risk_weight'], 1.25)
+    
+    def test_brexit_risk_weight_decay_mechanism(self):
+        """测试Brexit风险权重动态衰减机制（第15轮）"""
+        from datetime import datetime
+        
+        # 测试基准日期 (2020-01-31 Brexit生效日)
+        weight_2020 = self.config_manager._get_brexit_risk_weight(
+            datetime(2020, 1, 31)
+        )
+        self.assertAlmostEqual(weight_2020, 1.15, places=2)
+        
+        # 测试1年后 (2021-01-31)
+        weight_2021 = self.config_manager._get_brexit_risk_weight(
+            datetime(2021, 1, 31)
+        )
+        expected_2021 = 1.15 * 0.95  # 1.0925
+        self.assertAlmostEqual(weight_2021, expected_2021, places=2)
+        
+        # 测试5年后 (2025-01-31) - 应接近下限1.0
+        weight_2025 = self.config_manager._get_brexit_risk_weight(
+            datetime(2025, 1, 31)
+        )
+        expected_2025_calc = 1.15 * (0.95 ** 5)  # 约 0.898
+        expected_2025_clamped = max(expected_2025_calc, 1.0)  # 被限制在1.0
+        self.assertAlmostEqual(weight_2025, expected_2025_clamped, places=2)
+        self.assertEqual(weight_2025, 1.0)  # 应该触发下限
+        
+        # 测试10年后 (2030-01-31) - 应稳定在下限1.0
+        weight_2030 = self.config_manager._get_brexit_risk_weight(
+            datetime(2030, 1, 31)
+        )
+        self.assertEqual(weight_2030, 1.0)
+        
+        # 验证单调递减性
+        self.assertGreater(weight_2020, weight_2021)
+        self.assertGreaterEqual(weight_2021, weight_2025)
+    
+    def test_brexit_weight_in_eu_config(self):
+        """验证Brexit权重集成到EU配置中"""
+        config = self.config_manager.generate_config_template('EU')
+        eu_config = config['market_configs']['EU']
+        
+        # Brexit权重应该是动态计算的值（基于当前时间）
+        brexit_weight = eu_config['brexit_risk_weight']
+        
+        # 当前时间 (2025年) 应该已经衰减到接近或等于1.0
+        self.assertIsInstance(brexit_weight, float)
+        self.assertGreaterEqual(brexit_weight, 1.0)  # 不低于下限
+        self.assertLessEqual(brexit_weight, 1.15)  # 不高于基准值
 
 
 if __name__ == '__main__':
