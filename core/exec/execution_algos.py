@@ -223,3 +223,16 @@ class ExecutionAlgorithms:
             ))
         
         return slices
+
+"""
+兼容旧测试：暴露core.exec.execution_algos接口"""
+from core_bak_refactored.infrastructure.execution_algos import *
+
+__all__ = [
+    'VWAPStrategy',
+    'TWAPStrategy',
+    'POVStrategy',
+    'DarkPoolStrategy',
+    'SmartOrderRouter',
+    'ExecutionAlgoFactory'
+]

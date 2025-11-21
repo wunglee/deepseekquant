@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../.
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..')))
 
 from .risk_metrics_service import RiskMetricsService
-from infrastructure.risk_metrics import StatisticalCalculator
+from core_bak_refactored.infrastructure.risk_metrics import StatisticalCalculator
 
 logger = logging.getLogger('DeepSeekQuant.PortfolioRisk')
 
@@ -118,7 +118,7 @@ def _get_or_create_analyzer(config_dict: Dict[str, Any]) -> 'PortfolioRiskAnalyz
 def _prepare_shared_config(config: Dict[str, Any]) -> Dict[str, Any]:
     """按专家建议，仅传递并行必需配置项以降低序列化开销，并补齐risk_model_config"""
     essential_keys = {
-        'trading_days_per_year', 'market_type', 'risk_model_config',
+        'trading_days_per_year', 'market_type', 'market', 'risk_model_config',
         'parallel_workers', 'chunk_size'
     }
     try:

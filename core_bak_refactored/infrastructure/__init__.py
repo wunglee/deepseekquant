@@ -1,3 +1,1 @@
-"""
-从 core_bak 拆分的模块
-"""
+# Package marker for core_bak_refactored.infrastructure

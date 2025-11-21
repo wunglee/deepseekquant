@@ -24,14 +24,9 @@ import pandas as pd
 from typing import Optional, Tuple
 import logging
 import warnings
-
 logger = logging.getLogger('DeepSeekQuant.Infrastructure.TimeSeriesCalculator')
 
-
 class TimeSeriesCalculator:
-    """通用技术指标计算器"""
-    
-    @staticmethod
     def safe_divide(numerator: pd.Series, denominator: pd.Series, 
                    default: float = np.nan) -> pd.Series:
         """
@@ -329,3 +324,7 @@ class TimeSeriesCalculator:
         adx = dx.ewm(alpha=1/period, min_periods=period, adjust=False).mean()
         
         return plus_di, minus_di, adx
+
+class TechnicalIndicators(TimeSeriesCalculator):
+    """兼容旧测试别名：继承通用技术指标计算器"""
+    pass

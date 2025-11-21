@@ -24,7 +24,7 @@ import os
 # 添加项目根目录到路径
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
-from infrastructure.risk_metrics import StatisticalCalculator
+from core_bak_refactored.infrastructure.risk_metrics import StatisticalCalculator
 from ..share.market_config import MarketConfigManager
 from .international_enhancements import InternationalEnhancements
 

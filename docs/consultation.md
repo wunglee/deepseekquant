@@ -2,6 +2,51 @@
 
 ---
 
+## 第15轮咨询 - JP/EU/SG市场参数扩展
+
+### 📤 Ask (2024-11-14)
+
+- 目标：新增JP/EU/SG三市场完整风险参数，补全CN/US/HK参数结构一致性
+- 核心改动：市场参数配置、测试覆盖、国际化一致性
+
+变更摘要：
+- 市场参数：JP（t分布/504天窗口/通缩校正）、EU（历史模拟/252天窗口/脱欧与银行风险）、SG（EVT/189天窗口/贸易开放度与汇率风险）
+- 补全参数：CN/US/HK 的 volatility_persistence/liquidity_risk_weight/political_risk_premium
+- 测试：新增8个市场参数测试；6市场参数完整性与一致性验证通过
+
+关键片段（示例）：
+```python
+'JP': {
+    'var_method_priority': 't_distribution',
+    'covariance_lookback': 504,
+    'volatility_persistence': 0.95,
+    'risk_free_rate': 0.005,
+    # ...
+}
+'EU': {
+    'var_method_priority': 'historical_simulation',
+    'covariance_lookback': 252,
+    'brexit_risk_weight': 1.15,
+    'banking_sector_risk': 0.008,
+    # ...
+}
+'SG': {
+    'var_method_priority': 'evt',
+    'covariance_lookback': 189,
+    'trade_openness_risk': 0.012,
+    'currency_risk_weight': 1.25,
+    # ...
+}
+```
+
+测试结果：
+- 240/240 通过；新增测试覆盖JP/EU/SG配置、6市场对比、参数完整性检查
+
+相关文件：
+- 市场参数配置与测试（详见仓库对应模块）
+
+---
+
 ## 第16轮咨询 - 风险计算优化实施评审
 
 ### 📤 Ask (2024-11-21)

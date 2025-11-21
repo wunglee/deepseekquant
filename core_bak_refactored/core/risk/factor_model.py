@@ -72,7 +72,14 @@ class FactorModelEstimator:
         self.factor_covariance = None  # 因子协方差矩阵 (K x K)
         
         # P0-3: 缓存集成
-        self.cache_service = cache_service
+        if cache_service is None:
+            try:
+                from core_bak_refactored.infrastructure.cache_service import get_cache_service
+                self.cache_service = get_cache_service()
+            except Exception:
+                self.cache_service = None
+        else:
+            self.cache_service = cache_service
         if self.cache_service:
             logger.info("因子模型缓存已启用 (P0-3优化)")
         # 内部L1缓存（进程内，TTL）
@@ -295,14 +302,24 @@ class FactorModelEstimator:
             T, N = returns.shape
             
             # P0-3: 尝试从缓存获取（L1→L2顺序）
-            cache_key = self._generate_cache_key(returns, 'covariance')
+            method_tag = 'covariance_hybrid' if use_hybrid else 'covariance_factor'
+            cache_key = self._generate_cache_key(returns, method_tag)
             # L1缓存检查
             l1_entry = self._l1_cache.get(cache_key)
+            from datetime import datetime
             now_ts = datetime.now().timestamp()
             if l1_entry is not None:
                 (cached_cov, cached_meta), ts = l1_entry
                 if now_ts - ts <= self._l1_ttl_seconds:
                     logger.info("因子模型协方差: L1缓存命中 (P0-3优化)")
+                    # 保持内部状态一致（供摘要统计）
+                    if factor_returns is None:
+                        factor_returns = self._generate_statistical_factors(returns)
+                    self.factor_returns = factor_returns
+                    try:
+                        self.estimate_factor_loadings(returns, factor_returns)
+                    except Exception:
+                        pass
                     return (cached_cov, cached_meta)
                 else:
                     # 过期删除
@@ -312,8 +329,16 @@ class FactorModelEstimator:
                 cached_result = self.cache_service.get(cache_key)
                 if cached_result is not None:
                     logger.info("因子模型协方差: L2缓存命中 (P0-3优化)")
+                    # 保持内部状态一致（供摘要统计）
+                    if factor_returns is None:
+                        factor_returns = self._generate_statistical_factors(returns)
+                    self.factor_returns = factor_returns
+                    try:
+                        self.estimate_factor_loadings(returns, factor_returns)
+                    except Exception:
+                        pass
                     return cached_result
-            
+
             # 1. 估计因子载荷
             if factor_returns is None:
                 factor_returns = self._generate_statistical_factors(returns)
@@ -486,6 +511,7 @@ class FactorModelEstimator:
             }
         except Exception:
             return {'mse_change_pct': 0.0, 'max_beta_change': 0.0}
+    def _compute_model_diagnostics(
         self,
         returns: pd.DataFrame,
         factor_returns: pd.DataFrame,

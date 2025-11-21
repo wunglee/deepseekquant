@@ -10,6 +10,8 @@ __author__ = "DeepSeek AI"
 __license__ = "MIT"
 __email__ = "quant@deepseek.com"
 
+# Package marker for core
+
 # 轻量化初始化，避免在包导入时加载重模块
 try:
     from .main import DeepSeekQuantSystem

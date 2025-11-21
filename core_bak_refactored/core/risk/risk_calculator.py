@@ -20,7 +20,7 @@ from ..share.exchange_rates import CurrencyConverter, ExchangeRateAdapter
 import sys
 import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
-from infrastructure.data_preprocessor import RiskDataPreprocessor
+from core_bak_refactored.infrastructure.data_preprocessor import RiskDataPreprocessor
 
 logger = logging.getLogger('DeepSeekQuant.RiskCalculator')
 

@@ -7,6 +7,7 @@
 - 模块迭代计划：[`core_bak_refactored/core/risk/TODO.md`](TODO.md)
 
 ## 背景与目标
+基于上一轮专家评审的建议（并行优化、因子模型数值稳定性、性能监控与诊断），本次迭代聚焦于在风险模块落地上述改进，并对评审中提出的关键问题进行针对性验证与请您复核。
 
 ### 1.2 范围与成果
 - P0-1 并行内存优化（共享配置 + 进程级分析器缓存）
@@ -17,10 +18,10 @@
 - P1-3 模型诊断增强（因子质量、残差分析、健康评分）
 
 代码变更摘要：
-- [`portfolio_risk.py`](portfolio_risk.py)：并行优化（共享配置、进程级缓存、批量计算路径优化）
-- [`parallel_executor.py`](parallel_executor.py)：动态分块 + 性能监控指标收集
-- [`factor_model.py`](factor_model.py)：数值稳定性检查 + Ridge降级 + 缓存集成 + 模型诊断
-- [`core/risk/TODO.md`](TODO.md)：更新P0/P1任务状态为“已完成”
+- [`core_bak_refactored/core/risk/portfolio_risk.py`](portfolio_risk.py)：并行优化（共享配置、进程级缓存、批量计算路径优化）
+- [`core_bak_refactored/infrastructure/parallel_executor.py`](parallel_executor.py)：动态分块 + 性能监控指标收集 + 单例接口
+- [`core_bak_refactored/core/risk/factor_model.py`](factor_model.py)：数值稳定性检查 + Ridge降级 + QR回退 + 诊断
+- [`core_bak_refactored/core/risk/TODO.md`](TODO.md)：术语统一为“迭代”，更新迭代计划
 
 Git 提交：
 - P0优化完成：`4b414e7`
@@ -133,4 +134,3 @@ Git 提交：
 
 **重要：请尽可能详尽和充分，不要遗漏和简化，谢谢！**
 
-**重要：请尽可能详尽和充分，不要遗漏和简化，谢谢！**
