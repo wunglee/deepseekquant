@@ -73,7 +73,7 @@
 ### 测试文件
 
 4. **并行计算测试**
-   - `core_bak_refactored/tests/core/risk/test_portfolio_risk_parallel.py` (新增，219行)
+   - `core_bak_refactored/tests/core/risk/portfolio_risk_parallel_test.py` (新增，219行)
      - 5个集成测试（100%通过）
      - 批量并行计算验证
      - 并行/串行一致性测试
@@ -86,14 +86,14 @@
      - 初步结果：首次运行10.38x加速，平均4.16x
 
 6. **因子模型测试**
-   - `core_bak_refactored/tests/core/risk/test_factor_model.py` (新增，193行)
+   - `core_bak_refactored/tests/core/risk/factor_model_test.py` (新增，193行)
      - 9个测试用例（100%通过）
      - 因子载荷估计验证
      - 混合模型正确性验证
      - 小样本回退机制测试
 
 7. **智能失效测试**
-   - `core_bak_refactored/tests/infrastructure/test_smart_invalidation.py` (新增，91行)
+   - `core_bak_refactored/tests/infrastructure/smart_invalidation_test.py` (新增，91行)
      - 5个测试用例（100%通过）
      - 默认规则验证
      - 自定义规则扩展性测试
@@ -428,10 +428,10 @@ InvalidationRule(
 
 | 模块 | 测试文件 | 测试数 | 通过率 |
 |------|---------|--------|--------|
-| 并行计算集成 | test_portfolio_risk_parallel.py | 5 | 100% ✅ |
+| 并行计算集成 | portfolio_risk_parallel_test.py | 5 | 100% ✅ |
 | 并行性能基准 | benchmark_parallel.py | N/A | 执行成功 ✅ |
-| 因子模型 | test_factor_model.py | 9 | 100% ✅ |
-| 智能失效 | test_smart_invalidation.py | 5 | 100% ✅ |
+| 因子模型 | factor_model_test.py | 9 | 100% ✅ |
+| 智能失效 | smart_invalidation_test.py | 5 | 100% ✅ |
 | **总计** | **4个文件** | **19个测试** | **100%** ✅ |
 
 ### 回归测试
