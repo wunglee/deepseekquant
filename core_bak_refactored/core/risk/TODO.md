@@ -335,11 +335,31 @@ def _fetch_live_risk_free_rate(self, market_type: str) -> float:
 
 ### 🔥 P1 中优先级（1-2周内）
 
-**待办**:
-- [ ] P1-1: 动态任务分块算法（基于内存和CPU智能分块，15-25%效率提升）
-- [ ] P1-2: 性能监控增强（ParallelPerformanceMonitor）
-- [ ] P1-3: 模型诊断增强（因子质量、残差分析）
+**已完成** (完成时间: 2024-11-21):
+- [x] P1-1: 动态任务分块算法（基于内存和CPU智能分块，15-25%效率提升）
+  - ✅ `_calculate_optimal_chunk_size` 方法
+  - ✅ 基于内存和CPU的动态计算
+  - ✅ `enable_dynamic_chunking` 配置开关
+  - ✅ 限制分块大小在[1, 20]范围
+- [x] P1-2: 性能监控增强（ParallelPerformanceMonitor）
+  - ✅ `ParallelMetrics` 扩展：`peak_memory_mb`, `cpu_utilization_pct`, `task_distribution`
+  - ✅ `_collect_system_metrics` 方法
+  - ✅ 实时内存和CPU监控
+  - ✅ 集成到 `_update_metrics`
+- [x] P1-3: 模型诊断增强（因子质量、残差分析）
+  - ✅ `_compute_model_diagnostics` 方法
+  - ✅ 因子质量指标：平均/最小/最大R²
+  - ✅ 残差分析：异方差性、正态性、自相关
+  - ✅ 模型健康评分：excellent/good/acceptable/poor
+  - ✅ 集成到 `compute_covariance_matrix` metadata
+
+**跳过**:
 - [ ] P1-4: 实时Fama-French数据接入（分层获取策略，4周）
+  - 原因：需要外部数据源接入，本次不包含
+
+**下一步**:
+- 准备第17轮专家评审（P0+P1优化成果）
+- 性能基准测试
 
 ### ⚡ P2 中长期优化（1-3月）
 

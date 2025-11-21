@@ -321,6 +321,11 @@ class FactorModelEstimator:
                 'factor_contribution': float(np.trace(B @ F @ B.T) / np.trace(cov_matrix.values))
             }
             
+            # P1-3: 模型诊断增强
+            if hasattr(self, 'r_squared') and self.r_squared is not None:
+                diagnostics = self._compute_model_diagnostics(returns, factor_returns, loadings)
+                metadata['diagnostics'] = diagnostics
+            
             logger.info(
                 f"因子模型协方差计算完成: {method}, "
                 f"因子贡献={metadata['factor_contribution']:.1%}"
@@ -419,6 +424,111 @@ class FactorModelEstimator:
             # 极端情况：回退到伪逆
             logger.warning(f"Ridge回归失败，使用伪逆")
             return np.linalg.pinv(X) @ y
+    
+    def _compute_model_diagnostics(
+        self,
+        returns: pd.DataFrame,
+        factor_returns: pd.DataFrame,
+        loadings: pd.DataFrame
+    ) -> Dict[str, Any]:
+        """
+        P1-3: 计算模型诊断指标
+        
+        包括：因子质量、残差分析（异方差性、正态性、自相关）
+        
+        Args:
+            returns: 资产收益率
+            factor_returns: 因子收益率
+            loadings: 因子载荷
+        
+        Returns:
+            诊断指标字典
+        """
+        try:
+            diagnostics = {}
+            
+            # 1. 因子质量指标
+            if hasattr(self, 'r_squared'):
+                diagnostics['factor_quality'] = {
+                    'avg_r_squared': float(self.r_squared.mean()),
+                    'min_r_squared': float(self.r_squared.min()),
+                    'max_r_squared': float(self.r_squared.max()),
+                    'poor_fit_assets': int((self.r_squared < 0.3).sum())  # R²<0.3的资产数
+                }
+            
+            # 2. 残差分析
+            residuals_all = []
+            for i, asset in enumerate(returns.columns):
+                y = returns.iloc[:, i].values
+                X = factor_returns.values
+                
+                # 预测值
+                beta = loadings.iloc[i].values
+                y_pred = X @ beta
+                
+                # 残差
+                residuals = y - y_pred
+                residuals_all.append(residuals)
+            
+            residuals_matrix = np.array(residuals_all)
+            
+            # 2.1 异方差性检测（Breusch-Pagan简化版）
+            # 检查残差方差是否随时间变化
+            T = len(residuals_matrix[0])
+            mid_point = T // 2
+            var_first_half = np.var(residuals_matrix[:, :mid_point], axis=1).mean()
+            var_second_half = np.var(residuals_matrix[:, mid_point:], axis=1).mean()
+            heteroscedasticity_ratio = var_second_half / var_first_half if var_first_half > 0 else 1.0
+            
+            # 2.2 正态性检测（偏度和峰度）
+            from scipy import stats
+            skewness = stats.skew(residuals_matrix, axis=1).mean()
+            kurtosis = stats.kurtosis(residuals_matrix, axis=1).mean()
+            
+            # 2.3 自相关检测（Durbin-Watson近似）
+            autocorr_1 = np.corrcoef(
+                residuals_matrix[:, :-1].flatten(),
+                residuals_matrix[:, 1:].flatten()
+            )[0, 1]
+            
+            diagnostics['residual_analysis'] = {
+                'heteroscedasticity_ratio': round(heteroscedasticity_ratio, 3),
+                'heteroscedasticity_warning': heteroscedasticity_ratio > 1.5 or heteroscedasticity_ratio < 0.67,
+                'skewness': round(skewness, 3),
+                'kurtosis': round(kurtosis, 3),
+                'normality_warning': abs(skewness) > 1.0 or abs(kurtosis) > 3.0,
+                'autocorrelation_lag1': round(autocorr_1, 3),
+                'autocorrelation_warning': abs(autocorr_1) > 0.3
+            }
+            
+            # 3. 整体模型健康评分
+            warnings_count = sum([
+                diagnostics['residual_analysis']['heteroscedasticity_warning'],
+                diagnostics['residual_analysis']['normality_warning'],
+                diagnostics['residual_analysis']['autocorrelation_warning']
+            ])
+            
+            if warnings_count == 0:
+                model_health = 'excellent'
+            elif warnings_count == 1:
+                model_health = 'good'
+            elif warnings_count == 2:
+                model_health = 'acceptable'
+            else:
+                model_health = 'poor'
+            
+            diagnostics['model_health'] = model_health
+            
+            logger.info(
+                f"P1-3诊断: 平均R²={diagnostics['factor_quality']['avg_r_squared']:.2%}, "
+                f"模型健康={model_health}"
+            )
+            
+            return diagnostics
+            
+        except Exception as e:
+            logger.warning(f"模型诊断计算失败: {e}")
+            return {'error': str(e)}
     
     def get_factor_summary(self) -> Dict[str, Any]:
         """
