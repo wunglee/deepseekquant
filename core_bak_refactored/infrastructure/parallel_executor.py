@@ -439,3 +439,23 @@ class ParallelExecutor:
         except Exception as e:
             logger.error(f"动态分块计算失败: {e}，使用默认策略")
             return max(1, n_tasks // (self.config.max_workers_cpu * 4))
+
+    def get_metrics(self) -> Dict:
+        """获取当前并行执行器的性能指标（字典）"""
+        return self.metrics.to_dict()
+
+    def reset_metrics(self) -> None:
+        """重置性能指标"""
+        self.metrics = ParallelMetrics()
+
+_global_executor: Optional[ParallelExecutor] = None
+
+def get_parallel_executor(config: Optional[ParallelConfig] = None) -> ParallelExecutor:
+    """获取全局并行执行器单例"""
+    global _global_executor
+    if _global_executor is None:
+        _global_executor = ParallelExecutor(config)
+    elif config is not None:
+        # 如果传入新配置，则更新现有单例的配置
+        _global_executor.config = config
+    return _global_executor
