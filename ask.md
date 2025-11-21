@@ -80,7 +80,7 @@
      - 优化指标获取测试
 
 5. **性能基准测试**
-   - `core_bak_refactored/tests/core/risk/benchmark_parallel.py` (新增，243行)
+   - `core_bak_refactored/tests/core/risk/benchmark_parallel_test.py` (新增，243行)
      - 并行vs串行性能对比
      - 优化组件影响评估
      - 初步结果：首次运行10.38x加速，平均4.16x
