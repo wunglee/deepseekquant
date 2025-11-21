@@ -52,6 +52,12 @@
 - ✅ 新增功能添加TODO注释：`# TODO: 补充了XXXX，待确认，来源：XX文件`
 - ✅ 遵循现有代码风格和架构分层
 
+#### 测试文件命名规范（新增）
+- 所有测试文件必须以“_test.py”结尾，例如：factor_model_test.py
+- 禁止使用“test_*.py”前缀命名
+- 目录一一对应：core_bak_refactored/tests/** 对应 core_bak_refactored/core/** 或 core_bak_refactored/infrastructure/**
+- 已统一重命名示例：benchmark_parallel_test.py、factor_model_test.py、incremental_calculator_test.py、international_support_test.py、portfolio_risk_parallel_test.py、risk_limits_enhanced_test.py、risk_limits_integration_test.py、smart_invalidation_test.py
+
 ---
 
 ### 阶段3：专家评审准备

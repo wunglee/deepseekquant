@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 
 # 添加项目路径
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../infrastructure')))
 
 from core_bak_refactored.infrastructure.cache_service import (
     CacheService,

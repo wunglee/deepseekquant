@@ -19,7 +19,13 @@ from cachetools import TTLCache
 from dataclasses import dataclass, asdict
 from functools import wraps
 
-from core.base_processor import BaseProcessor
+try:
+    from core.base_processor import BaseProcessor
+except ImportError:
+    class BaseProcessor:
+        def __init__(self, *args, **kwargs):
+            pass
+
 from .interfaces import ICacheService
 
 logger = logging.getLogger(__name__)

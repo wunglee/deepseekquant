@@ -7,6 +7,8 @@ import time
 import numpy as np
 import pandas as pd
 from datetime import datetime, timedelta
+import sys, os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../..')))
 from core_bak_refactored.core.risk.portfolio_risk import PortfolioRiskAnalyzer
 from core_bak_refactored.core.share.market_config import MarketConfigManager
 
