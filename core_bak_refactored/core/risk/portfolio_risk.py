@@ -103,15 +103,26 @@ def _get_or_create_analyzer(config_dict: Dict[str, Any]) -> 'PortfolioRiskAnalyz
     return analyzer
 
 def _prepare_shared_config(config: Dict[str, Any]) -> Dict[str, Any]:
-    """按专家建议，仅传递并行必需配置项以降低序列化开销"""
+    """按专家建议，仅传递并行必需配置项以降低序列化开销，并补齐risk_model_config"""
     essential_keys = {
         'trading_days_per_year', 'market_type', 'risk_model_config',
         'parallel_workers', 'chunk_size'
     }
     try:
-        return {k: v for k, v in config.items() if k in essential_keys}
+        cfg = {k: v for k, v in config.items() if k in essential_keys}
     except Exception:
-        return {}
+        cfg = {}
+    # 补齐risk_model_config（外部化参数）
+    if 'risk_model_config' not in cfg:
+        try:
+            from common import RISK_MODEL_CONFIG
+            cfg['risk_model_config'] = RISK_MODEL_CONFIG
+        except Exception:
+            cfg['risk_model_config'] = {
+                'parallel': {'min_tasks_for_parallel': 10, 'dynamic_chunking': True, 'memory_threshold_gb': 0.8},
+                'factor_model': {'condition_number_threshold': 1e10, 'ridge_alpha': 0.1, 'cache_ttl_seconds': 3600}
+            }
+    return cfg
 
 def _calculate_single_portfolio_static(
     item: Tuple[str, Any, Dict[str, Any], Dict[str, Any]]

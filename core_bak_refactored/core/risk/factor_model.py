@@ -17,6 +17,17 @@ import hashlib
 
 logger = logging.getLogger('DeepSeekQuant.FactorModel')
 
+# 外部化风险模型参数（默认阈值）
+try:
+    from common import RISK_MODEL_CONFIG as _RMC
+except Exception:
+    _RMC = {
+        'factor_model': {
+            'condition_number_threshold': 1e10,
+            'ridge_alpha': 0.1
+        }
+    }
+
 
 @dataclass
 class FactorModelConfig:
@@ -406,16 +417,25 @@ class FactorModelEstimator:
             return pd.DataFrame({'Market': market_factor}, index=returns.index)
     
     def _get_dynamic_thresholds(self, market_type: str, n_observations: int) -> Dict[str, float]:
-        """按市场与样本量动态调整数值稳定性阈值（专家建议）"""
+        """按市场与样本量动态调整数值稳定性阈值（结合外部化配置）"""
+        base_defaults = _RMC.get('factor_model', {
+            'condition_number_threshold': 1e10,
+            'ridge_alpha': 0.1
+        })
+        # 市场差异映射（在外部化默认值基础上调整）
         base_config = {
-            'US': {'condition_number': 1e10, 'ridge_alpha': 0.1},
+            'US': {
+                'condition_number': float(base_defaults.get('condition_number_threshold', 1e10)),
+                'ridge_alpha': float(base_defaults.get('ridge_alpha', 0.1))
+            },
             'CN': {'condition_number': 1e8, 'ridge_alpha': 0.2},
             'HK': {'condition_number': 1e9, 'ridge_alpha': 0.15}
         }
         config = base_config.get(market_type, base_config['US']).copy()
+        # 根据观测数调整：数据量少时更保守
         if n_observations < 100:
-            config['condition_number'] *= 0.1
-            config['ridge_alpha'] *= 2.0
+            config['condition_number'] *= 0.1  # 更严格
+            config['ridge_alpha'] *= 2.0      # 更强正则化
         return config
 
     def _assess_ridge_impact(self, y: np.ndarray, X: np.ndarray,
