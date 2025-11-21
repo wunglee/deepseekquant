@@ -1,10 +1,23 @@
 # 风险计算优化实施评审
 
-## 一、优化目标
+## 一、背景说明
 
-根据专家第15轮评审建议，完成三项高优先级优化的技术实施：
+### 1.1 上下文
 
-### 已完成的优化阶段
+根据专家第15轮评审建议（docs/answer.md），完成三项高优先级优化的技术实施。本次评审覆盖：
+
+1. **阶段A** - 并行计算集成（实际应用）
+2. **阶段B** - 因子模型POC (US市场Fama-French)
+3. **阶段C** - 缓存智能失效策略
+
+### 1.2 业务目标
+
+- **性能目标**：100资产协方差计算从800ms降至<50ms
+- **缓存目标**：命中率>70%
+- **并行目标**：20+组合批量计算加速比2-3x
+- **模型质量**：因子模型平均R²>0.5，解释方差>70%
+
+### 1.3 已完成的优化阶段
 
 1. **阶段A - 并行计算集成** ✅
    - 将并行执行器集成到组合风险分析模块
@@ -526,7 +539,172 @@ except ImportError:
 
 ---
 
-## 十、下一步优化计划
+## 十、配置使用示例
+
+### 10.1 并行计算集成使用
+
+```python
+from core_bak_refactored.core.risk.portfolio_risk import PortfolioRiskAnalyzer
+from core_bak_refactored.core.share.market_config import MarketConfigManager
+
+# 1. 初始化分析器（启用并行）
+config_manager = MarketConfigManager()
+config = config_manager.generate_config_template('US')
+
+analyzer = PortfolioRiskAnalyzer(
+    config,
+    enable_parallel=True,      # 启用并行计算
+    enable_incremental=True    # 启用增量计算
+)
+
+# 2. 批量计算多个组合风险
+portfolios = [
+    ('portfolio_1', portfolio_state_1, market_data_1),
+    ('portfolio_2', portfolio_state_2, market_data_2),
+    # ... 更多组合
+]
+
+results = analyzer.batch_calculate_portfolio_risk(
+    portfolios,
+    use_parallel=True  # 强制使用并行
+)
+
+# 3. 获取优化指标
+metrics = analyzer.get_optimization_metrics()
+print(f"并行效率: {metrics.get('parallel_metrics', {})}”)
+print(f"增量计算: {metrics.get('incremental_metrics', {})}”)
+```
+
+### 10.2 因子模型使用
+
+```python
+from core_bak_refactored.core.risk.factor_model import (
+    FactorModelEstimator,
+    FactorModelConfig
+)
+import pandas as pd
+
+# 1. 配置因子模型
+config = FactorModelConfig(
+    market='US',
+    n_factors=10,              # 因子数量
+    shrinkage_alpha=0.7,       # 混合模型权重
+    min_observations=60,       # 最小观测数
+    use_industry_factors=True  # 使用行业因子
+)
+
+estimator = FactorModelEstimator(config)
+
+# 2. 计算因子模型协方差
+returns = pd.DataFrame(...)  # 资产收益率矩阵 (T x N)
+
+cov_matrix, metadata = estimator.compute_covariance_matrix(
+    returns,
+    factor_returns=None,  # 自动生成PCA因子
+    use_hybrid=True       # 使用混合模型
+)
+
+print(f"因子数: {metadata['n_factors']}”)
+print(f"因子贡献: {metadata['factor_contribution']:.1%}”)
+print(f"平均R^2: {estimator.r_squared.mean():.2%}”)
+
+# 3. 检查低R^2资产
+low_r2 = estimator.r_squared[estimator.r_squared < 0.3]
+if len(low_r2) > 0:
+    print(f"警告: {len(low_r2)}个资产R^2<0.3")
+```
+
+### 10.3 缓存智能失效使用
+
+```python
+from infrastructure.cache_service import (
+    get_cache_service,
+    get_smart_invalidation_manager,
+    InvalidationRule
+)
+from datetime import datetime
+
+# 1. 获取缓存服务
+cache_service = get_cache_service()
+manager = get_smart_invalidation_manager(cache_service)
+
+# 2. 添加自定义失效规则
+custom_rule = InvalidationRule(
+    'high_volatility_change',
+    lambda k, v, ctx: (
+        'volatility' in ctx and 
+        ctx['volatility'] > 0.05  # 波动率>5%时失效
+    )
+)
+manager.add_rule(custom_rule)
+
+# 3. 触发智能失效
+context = {
+    'time_window': datetime.now(),
+    'param_version': 'v2.0',
+    'market_data_updated': True,
+    'volatility': 0.06
+}
+
+invalidated_count = manager.check_and_invalidate(context)
+print(f"失效缓存数: {invalidated_count}”)
+
+# 4. 预加载热数据
+def load_covariance(key):
+    # 计算协方差矩阵
+    return compute_heavy_covariance(key)
+
+hot_keys = ['US:AAPL:MSFT', 'US:GOOGL:AMZN']
+manager.schedule_preload(hot_keys, load_covariance)
+
+# 5. 查看缓存指标
+metrics = cache_service.get_metrics()
+print(f"命中率: {metrics['l1_hit_rate']:.1%}”)
+print(f"缓存大小: {metrics['cache_size']}/{metrics['max_size']}”)
+```
+
+### 10.4 完整集成示例
+
+```python
+# 完整的风险计算流程（集成所有优化）
+from core_bak_refactored.core.risk.portfolio_risk import PortfolioRiskAnalyzer
+from core_bak_refactored.core.risk.factor_model import FactorModelEstimator
+from infrastructure.cache_service import get_cache_service
+
+# 1. 初始化（全部优化启用）
+config = generate_config('US')
+cache_service = get_cache_service()
+factor_estimator = FactorModelEstimator(config, cache_service)
+risk_analyzer = PortfolioRiskAnalyzer(
+    config, 
+    enable_parallel=True,
+    enable_incremental=True
+)
+
+# 2. 使用因子模型计算协方差（缓存加速）
+cov_matrix, _ = factor_estimator.compute_covariance_matrix(
+    returns,
+    use_hybrid=True
+)
+
+# 3. 批量计算风险（并行加速）
+results = risk_analyzer.batch_calculate_portfolio_risk(
+    portfolios,
+    use_parallel=True
+)
+
+# 4. 监控性能
+opt_metrics = risk_analyzer.get_optimization_metrics()
+cache_metrics = cache_service.get_metrics()
+
+print(f"并行加速比: {opt_metrics.get('speedup', 1.0):.2f}x")
+print(f"缓存命中率: {cache_metrics['l1_hit_rate']:.1%}”)
+print(f"因子模型质量: R^2={factor_estimator.r_squared.mean():.2%}”)
+```
+
+---
+
+## 十一、下一步优化计划
 
 ### 短期优化（1-2周）
 
@@ -559,7 +737,7 @@ except ImportError:
 
 ---
 
-## 十一、评审问题
+## 十二、评审问题
 
 ### 请专家指导
 
@@ -590,6 +768,85 @@ except ImportError:
 
 ---
 
+## 十三、总结与待确认要点
+
+### 13.1 核心成果
+
+本次实施完成了三项高优先级优化的技术落地：
+
+✅ **并行计算集成**
+- 批量并行风险计算功能已实现并测试通过
+- 智能阈值判断机制（10+任务自动并行）
+- 初步性能测试显示首次10.38x加速
+- 技术优化：静态函数避免self序列化开销
+
+✅ **因子模型POC**
+- 基于PCA的统计因子模型已实现
+- 支持Fama-French 5因子框架
+- 混合模型策略（0.7*因子 + 0.3*样本）
+- 技术优化：QR分解提高数值稳定性，R²监控模型质量
+
+✅ **缓存智能失效**
+- 3种默认失效规则覆盖主要场景
+- 可扩展的自定义规则机制
+- 缓存预加载功能
+- 技术优化：自适应TTL配置
+
+### 13.2 测试覆盖
+
+- **新增测试**: 19个测试100%通过
+- **回归测试**: 349/350通过（99.7%）
+- **性能基准**: 已建立并行计算性能基准
+
+### 13.3 技术质量
+
+- **代码贡献**: 1406行新增，161行修改
+- **技术优化**: 4项关键优化（内存效率、数值稳定性、诊断指标、异常处理）
+- **架构分层**: 技术/业务清晰分离
+- **向后兼容**: 条件导入、优雅降级
+
+### 13.4 待确认要点
+
+**业务适配性**：
+1. 因子模型是否需要真实Fama-French数据，还是PCA统计因子即可满足需求？
+2. 混合模型shrinkage_alpha=0.7是否符合业务经验？
+3. 7维度风险分析是否需要补充其他指标？
+
+**性能目标**：
+4. 目标缓存命中率>70%是否合理？实际业务场景中的访问模式如何？
+5. 并行计算阈值设为10是否合适？典型批量任务规模是多少？
+6. 因子模型计算延迟目标是多少？当前250ms是否可接受？
+
+**集成策略**：
+7. 因子模型是否应该立即集成到风险计算主流程，还是先作为可选项验证？
+8. 增量计算器是否需要与因子模型结合？
+9. 缓存预加载是否需要定时调度器支持？
+
+**优先级决策**：
+10. 三个优化方向（并行/因子/缓存）的实施优先级如何排序？
+11. 是否需要先完成性能优化（提升并行效率）再推广应用？
+12. 短期（1-2周）应该聚焦哪个优化方向？
+
+### 13.5 改进方向
+
+**技术层面**（已识别的优化点）：
+- 并行任务粒度优化（动态chunk_size）
+- 共享内存机制减少序列化开销
+- 因子模型缓存装饰器集成
+- L2 Redis缓存扩展
+
+**业务层面**（需专家确认）：
+- 真实Fama-French数据接入时机
+- 行业因子分类标准选择（GICS vs ICB）
+- 风险指标体系完善方向
+- 因子模型生产化路径
+
+---
+
 **提交时间**: 2025-11-12  
 **提交人**: AI Assistant  
-**Git提交**: dd10fe3, 326a8fe, 32fe4b3, 317b86c
+**Git提交**: dd10fe3, 326a8fe, 32fe4b3, 317b86c, 5b2237c
+
+---
+
+**重要：请尽可能详尽和充分，不要遗漏和简化，谢谢！**
