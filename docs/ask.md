@@ -1,9 +1,12 @@
 # 第16轮专家评审请求（合并P0+P1优化）
 
-## 一、本轮实施概述
+## 📁 相关文件清单（本次更新涉及）
+- 核心实现：[`core_bak_refactored/core/risk/portfolio_risk.py`](portfolio_risk.py)
+- 基础设施：[`core_bak_refactored/infrastructure/parallel_executor.py`](parallel_executor.py)
+- 因子模型：[`core_bak_refactored/core/risk/factor_model.py`](factor_model.py)
+- 模块迭代计划：[`core_bak_refactored/core/risk/TODO.md`](TODO.md)
 
-### 1.1 背景与目标
-在上一轮（第16轮）评审中，您给出P0/P1两阶段的优化建议。本次我们已一次性完成P0高优先级与P1中优先级优化，并按规范将历史评审保存在 `docs/consultation.md`，现独立提交“第16轮合并评审”的请求，供您统一检视与验收。
+## 背景与目标
 
 ### 1.2 范围与成果
 - P0-1 并行内存优化（共享配置 + 进程级分析器缓存）
