@@ -534,6 +534,20 @@ except ImportError:
     # 如果没有安装 numpy，使用 math 替代
     ANNUALIZATION_FACTOR = math.sqrt(TRADING_DAYS_PER_YEAR)  # 年化因子
 
+# 风险模型外部化参数（按专家建议）
+RISK_MODEL_CONFIG: Dict[str, Any] = {
+    'parallel': {
+        'min_tasks_for_parallel': 10,
+        'dynamic_chunking': True,
+        'memory_threshold_gb': 0.8
+    },
+    'factor_model': {
+        'condition_number_threshold': 1e10,
+        'ridge_alpha': 0.1,
+        'cache_ttl_seconds': 3600
+    }
+}
+
 def enum_to_dict(enum_class: Type[Enum]) -> Dict[str, Any]:
     """将枚举类转换为字典"""
     return {member.name: member.value for member in enum_class}

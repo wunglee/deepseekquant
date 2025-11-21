@@ -12,13 +12,28 @@ import time
 
 logger = logging.getLogger(__name__)
 
+try:
+    from common import RISK_MODEL_CONFIG as _RMC
+except Exception:
+    _RMC = {'parallel': {'min_tasks_for_parallel': 10, 'dynamic_chunking': True, 'memory_threshold_gb': 0.8}}
+
+_DEFAULT_PARALLEL_CFG = _RMC.get('parallel', {})
+logger = logging.getLogger(__name__)
+
+try:
+    from common import RISK_MODEL_CONFIG as _RMC
+except Exception:
+    _RMC = {'parallel': {'min_tasks_for_parallel': 10, 'dynamic_chunking': True, 'memory_threshold_gb': 0.8}}
+
+_DEFAULT_PARALLEL_CFG = _RMC.get('parallel', {})
+
 
 @dataclass
 class ParallelConfig:
     """并行计算配置"""
     # CPU密集型配置
     max_workers_cpu: int = field(default_factory=lambda: min(mp.cpu_count(), 8))
-    min_items_for_parallel_cpu: int = 10  # 最小任务数
+    min_items_for_parallel_cpu: int = _DEFAULT_PARALLEL_CFG.get('min_tasks_for_parallel', 10)  # 最小任务数
     
     # I/O密集型配置
     max_workers_io: int = field(default_factory=lambda: mp.cpu_count() * 2)
@@ -31,7 +46,7 @@ class ParallelConfig:
     
     # P1-1: 动态分块参数
     enable_dynamic_chunking: bool = True  # 启用动态分块
-    memory_threshold_gb: float = 0.8  # 内存阈值（占可用内存）
+    memory_threshold_gb: float = float(_DEFAULT_PARALLEL_CFG.get('memory_threshold_gb', 0.8))  # 内存阈值（占可用内存）
 
 
 @dataclass
