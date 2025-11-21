@@ -2,30 +2,68 @@
 组合风险分析 - 业务层
 从 core_bak/risk_manager.py 拆分
 职责: 组合层面的风险分析、风险贡献度
+
+优化: 集成增量计算和并行执行 (阶段1+2)
 """
 
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 import logging
 import sys
 import os
 
 # 添加项目根目录到路径
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..')))
 
 from .risk_metrics_service import RiskMetricsService
 from infrastructure.risk_metrics import StatisticalCalculator
 
 logger = logging.getLogger('DeepSeekQuant.PortfolioRisk')
 
+# 条件导入优化组件
+try:
+    from infrastructure.parallel_executor import get_parallel_executor
+    PARALLEL_AVAILABLE = True
+except ImportError:
+    PARALLEL_AVAILABLE = False
+    logger.warning("并行执行器未找到，并行计算将被禁用")
+
+try:
+    from .incremental_calculator import IncrementalCovarianceCalculator
+    INCREMENTAL_AVAILABLE = True
+except ImportError:
+    INCREMENTAL_AVAILABLE = False
+    logger.warning("增量计算器未找到，增量计算将被禁用")
+
 
 class PortfolioRiskAnalyzer:
-    """组合风险分析器"""
+    """组合风险分析器 - 集成增量计算和并行优化"""
     
-    def __init__(self, config: Dict):
+    def __init__(self, config: Dict, enable_parallel: bool = True, enable_incremental: bool = True):
+        """
+        初始化组合风险分析器
+        
+        Args:
+            config: 配置字典
+            enable_parallel: 启用并行计算 (默认True)
+            enable_incremental: 启用增量计算 (默认True)
+        """
         self.config = config
         self.risk_metrics_service = RiskMetricsService(config)
+        
+        # 优化组件
+        self.enable_parallel = enable_parallel and PARALLEL_AVAILABLE
+        self.enable_incremental = enable_incremental and INCREMENTAL_AVAILABLE
+        
+        if self.enable_parallel:
+            self.parallel_executor = get_parallel_executor()
+            logger.info("并行计算已启用")
+        
+        if self.enable_incremental:
+            self.incremental_calculator = IncrementalCovarianceCalculator()
+            logger.info("增量计算已启用")
     
     def _adjust_for_limit_hits(self, returns: np.ndarray, limit_threshold: float = 0.10) -> np.ndarray:
         """
@@ -531,14 +569,127 @@ class PortfolioRiskAnalyzer:
         except Exception as e:
             logger.error(f"组合风险分析失败: {e}")
             return result
-
-
-            
-            logger.debug(f"组合风险分析完成: 波动率={result['volatility']:.4f}, VaR={result['var_95']:.4f}, 夏普={result['sharpe_ratio']:.2f}")
-            return result
+    
+    # ============= 并行计算优化方法 (阶段2新增) =============
+    
+    def batch_calculate_portfolio_risk(
+        self,
+        portfolios: List[Tuple[str, Any, Dict[str, Any]]],
+        use_parallel: Optional[bool] = None
+    ) -> Dict[str, Dict[str, Any]]:
+        """
+        批量计算多个组合的风险指标（并行优化）
         
-        except Exception as e:
-            logger.error(f"组合风险分析失败: {e}")
-            return result
+        Args:
+            portfolios: List[(portfolio_id, portfolio_state, market_data)]
+            use_parallel: 是否使用并行，None使用全局配置
+        
+        Returns:
+            {portfolio_id: risk_result}
+        """
+        if use_parallel is None:
+            use_parallel = self.enable_parallel
+        
+        # 准备任务数据
+        def calculate_single_portfolio(item):
+            portfolio_id, portfolio_state, market_data = item
+            try:
+                data = {
+                    'portfolio_state': portfolio_state,
+                    'market_data': market_data
+                }
+                result = self.analyze(data, {})
+                return (portfolio_id, result)
+            except Exception as e:
+                logger.error(f"组合{portfolio_id}计算失败: {e}")
+                return (portfolio_id, {})
+        
+        # 判断是否并行
+        n_portfolios = len(portfolios)
+        if use_parallel and n_portfolios >= 10 and hasattr(self, 'parallel_executor'):
+            logger.info(f"并行计算{n_portfolios}个组合风险")
+            results_list = self.parallel_executor.map_cpu_intensive(
+                calculate_single_portfolio,
+                portfolios
+            )
+        else:
+            logger.info(f"串行计算{n_portfolios}个组合风险")
+            results_list = [calculate_single_portfolio(p) for p in portfolios]
+        
+        # 转换为字典
+        results_dict = {pid: result for pid, result in results_list if result}
+        
+        logger.info(
+            f"批量风险计算完成: {len(results_dict)}/{n_portfolios}成功"
+        )
+        return results_dict
+    
+    def batch_calculate_risk_contributions(
+        self,
+        portfolios_with_cov: List[Tuple[str, Any, pd.DataFrame]],
+        use_parallel: Optional[bool] = None
+    ) -> Dict[str, Dict[str, float]]:
+        """
+        批量计算风险贡献度（并行优化）
+        
+        Args:
+            portfolios_with_cov: List[(portfolio_id, portfolio_state, covariance_matrix)]
+            use_parallel: 是否使用并行
+        
+        Returns:
+            {portfolio_id: {symbol: contribution}}
+        """
+        if use_parallel is None:
+            use_parallel = self.enable_parallel
+        
+        def calculate_single_contribution(item):
+            portfolio_id, portfolio_state, cov_matrix = item
+            try:
+                contributions = self.calculate_risk_contributions_covariance(
+                    portfolio_state, cov_matrix
+                )
+                return (portfolio_id, contributions)
+            except Exception as e:
+                logger.error(f"组合{portfolio_id}风险贡献度计算失败: {e}")
+                return (portfolio_id, {})
+        
+        n_items = len(portfolios_with_cov)
+        if use_parallel and n_items >= 10 and hasattr(self, 'parallel_executor'):
+            logger.info(f"并行计算{n_items}个风险贡献度")
+            results_list = self.parallel_executor.map_cpu_intensive(
+                calculate_single_contribution,
+                portfolios_with_cov
+            )
+        else:
+            results_list = [calculate_single_contribution(item) for item in portfolios_with_cov]
+        
+        results_dict = {pid: result for pid, result in results_list if result}
+        return results_dict
+    
+    def get_optimization_metrics(self) -> Dict[str, Any]:
+        """
+        获取优化组件的性能指标
+        
+        Returns:
+            {
+                'parallel_metrics': 并行计算指标,
+                'incremental_metrics': 增量计算指标
+            }
+        """
+        metrics = {
+            'parallel_enabled': self.enable_parallel,
+            'incremental_enabled': self.enable_incremental
+        }
+        
+        if self.enable_parallel and hasattr(self, 'parallel_executor'):
+            metrics['parallel_metrics'] = self.parallel_executor.get_metrics()
+        
+        if self.enable_incremental and hasattr(self, 'incremental_calculator'):
+            metrics['incremental_metrics'] = {
+                'consecutive_updates': self.incremental_calculator.consecutive_updates,
+                'cumulative_error': self.incremental_calculator.cumulative_error
+            }
+        
+        return metrics
 
 
