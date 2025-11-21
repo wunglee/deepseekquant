@@ -75,6 +75,13 @@ class FactorModelEstimator:
         self.cache_service = cache_service
         if self.cache_service:
             logger.info("因子模型缓存已启用 (P0-3优化)")
+        # 内部L1缓存（进程内，TTL）
+        try:
+            from common import RISK_MODEL_CONFIG as _RMC
+            self._l1_ttl_seconds = int(_RMC.get('factor_model', {}).get('cache_ttl_seconds', 3600))
+        except Exception:
+            self._l1_ttl_seconds = 3600
+        self._l1_cache: Dict[str, Tuple[Tuple[pd.DataFrame, Dict[str, Any]], float]] = {}
     
     def _generate_cache_key(self, returns: pd.DataFrame, method: str = 'factor_loadings') -> str:
         """
@@ -131,6 +138,9 @@ class FactorModelEstimator:
             thresholds = self._get_dynamic_thresholds(getattr(self.config, 'market', 'US'), T)
             condition_threshold = thresholds['condition_number']
             ridge_alpha = thresholds['ridge_alpha']
+            logger.debug(
+                f"阈值来源: external_config+market+sample_size, condition_threshold={condition_threshold:.2e}, ridge_alpha={ridge_alpha}"
+            )
             
             # 时间序列回归估计beta
             loadings = np.zeros((N, K))
@@ -156,11 +166,15 @@ class FactorModelEstimator:
                         # Ridge降级
                         beta_ridge = self._ridge_regression(y, X, alpha=ridge_alpha)
                         beta_with_const = np.concatenate([[0], beta_ridge])
-                        # 评估Ridge影响
-                        impact = self._assess_ridge_impact(y, X, ols_beta=np.zeros(K), ridge_beta=beta_ridge)
+                        # 评估Ridge影响（与伪OLS比较）
+                        try:
+                            ols_beta = np.linalg.pinv(X) @ y
+                        except Exception:
+                            ols_beta = np.zeros(K)
+                        impact = self._assess_ridge_impact(y, X, ols_beta=ols_beta, ridge_beta=beta_ridge)
                         if impact.get('max_beta_change', 0.0) > 0.5:
                             logger.warning(
-                                f"资产{returns.columns[i]}: Ridge影响较大，max_beta_change={impact['max_beta_change']:.3f}"
+                                f"资产{returns.columns[i]}: Ridge影响较大，max_beta_change={impact['max_beta_change']:.3f}, mse_change_pct={impact.get('mse_change_pct', 0.0):.3f}"
                             )
                     else:
                         # OLS回归: QR分解提高数值稳定性
@@ -280,12 +294,24 @@ class FactorModelEstimator:
         try:
             T, N = returns.shape
             
-            # P0-3: 尝试从缓存获取
+            # P0-3: 尝试从缓存获取（L1→L2顺序）
+            cache_key = self._generate_cache_key(returns, 'covariance')
+            # L1缓存检查
+            l1_entry = self._l1_cache.get(cache_key)
+            now_ts = datetime.now().timestamp()
+            if l1_entry is not None:
+                (cached_cov, cached_meta), ts = l1_entry
+                if now_ts - ts <= self._l1_ttl_seconds:
+                    logger.info("因子模型协方差: L1缓存命中 (P0-3优化)")
+                    return (cached_cov, cached_meta)
+                else:
+                    # 过期删除
+                    self._l1_cache.pop(cache_key, None)
+            # L2缓存（外部）
             if self.cache_service:
-                cache_key = self._generate_cache_key(returns, 'covariance')
                 cached_result = self.cache_service.get(cache_key)
                 if cached_result is not None:
-                    logger.info(f"因子模型协方差: 缓存命中 (P0-3优化)")
+                    logger.info("因子模型协方差: L2缓存命中 (P0-3优化)")
                     return cached_result
             
             # 1. 估计因子载荷
@@ -338,7 +364,11 @@ class FactorModelEstimator:
                 'n_observations': T,
                 'shrinkage_alpha': self.config.shrinkage_alpha if use_hybrid else 0.0,
                 'avg_specific_variance': float(self.specific_variance.mean()),
-                'factor_contribution': float(np.trace(B @ F @ B.T) / np.trace(cov_matrix.values))
+                'factor_contribution': float(np.trace(B @ F @ B.T) / np.trace(cov_matrix.values)),
+                'thresholds': {
+                    'condition_number': float(self._get_dynamic_thresholds(getattr(self.config, 'market', 'US'), T)['condition_number']),
+                    'ridge_alpha': float(self._get_dynamic_thresholds(getattr(self.config, 'market', 'US'), T)['ridge_alpha'])
+                }
             }
             
             # P1-3: 模型诊断增强
@@ -353,10 +383,14 @@ class FactorModelEstimator:
             
             # P0-3: 缓存结果
             result = (cov_matrix, metadata)
+            # 设置L2/L1缓存
             if self.cache_service:
                 cache_key = self._generate_cache_key(returns, 'covariance')
                 self.cache_service.set(cache_key, result, ttl=3600)  # 1小时TTL
-                logger.debug(f"因子模型协方差: 缓存设置 (P0-3优化)")
+                logger.debug("因子模型协方差: L2缓存设置 (P0-3优化)")
+            # L1缓存设置
+            self._l1_cache[cache_key] = (result, datetime.now().timestamp())
+            logger.debug("因子模型协方差: L1缓存设置 (P0-3优化)")
             
             return result
 

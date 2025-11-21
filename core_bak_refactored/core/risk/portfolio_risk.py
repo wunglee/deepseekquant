@@ -76,6 +76,19 @@ class WorkerAnalyzerCache:
         return None
     
     def put(self, worker_id: int, analyzer: 'PortfolioRiskAnalyzer') -> None:
+        # 内存压力感知清理
+        try:
+            import psutil
+            vm = psutil.virtual_memory()
+            if vm.percent > 85 and self._access_time:
+                # 压力过高，先淘汰最早访问的若干个
+                to_evict = max(1, len(self._cache) // 4)
+                for _ in range(to_evict):
+                    oldest = min(self._access_time.items(), key=lambda kv: kv[1])[0]
+                    self.evict(oldest)
+        except Exception:
+            pass
+        
         if len(self._cache) >= self.max_size:
             # 淘汰最早访问的
             oldest = min(self._access_time.items(), key=lambda kv: kv[1])[0] if self._access_time else None
@@ -829,15 +842,11 @@ class PortfolioRiskAnalyzer:
             'parallel_enabled': self.enable_parallel,
             'incremental_enabled': self.enable_incremental
         }
-        
         if self.enable_parallel and hasattr(self, 'parallel_executor'):
             metrics['parallel_metrics'] = self.parallel_executor.get_metrics()
-        
         if self.enable_incremental and hasattr(self, 'incremental_calculator'):
             metrics['incremental_metrics'] = {
                 'consecutive_updates': self.incremental_calculator.consecutive_updates,
                 'cumulative_error': self.incremental_calculator.cumulative_error
             }
-        
         return metrics
-
