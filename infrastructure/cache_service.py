@@ -5,11 +5,12 @@
 2. TTL支持和自动过期
 3. 智能Key生成和命中率监控
 4. 装饰器模式集成
+5. 智能失效策略 (阶段C新增)
 
 架构定位：技术基础设施层
 """
 
-from typing import Any, Dict, Callable, Optional
+from typing import Any, Dict, Callable, Optional, List
 from datetime import datetime
 import hashlib
 import json
@@ -277,3 +278,159 @@ def get_cache_service(config: Optional[CacheConfig] = None) -> CacheService:
         logger.info("创建全局缓存服务实例")
     
     return _global_cache_service
+
+
+# ============= 智能失效策略 (阶段C新增) =============
+
+class InvalidationRule:
+    """缓存失效规则"""
+    
+    def __init__(self, name: str, condition: Callable[[str, Any, Dict], bool]):
+        """
+        Args:
+            name: 规则名称
+            condition: 判断条件 (key, value, context) -> bool
+        """
+        self.name = name
+        self.condition = condition
+    
+    def should_invalidate(self, key: str, value: Any, context: Dict) -> bool:
+        """判断是否应失效"""
+        try:
+            return self.condition(key, value, context)
+        except Exception as e:
+            logger.error(f"失效规则'{self.name}'执行错误: {e}")
+            return False
+
+
+class SmartInvalidationManager:
+    """智能失效管理器"""
+    
+    def __init__(self, cache_service: CacheService):
+        self.cache_service = cache_service
+        self.rules: List[InvalidationRule] = []
+        self._init_default_rules()
+    
+    def _init_default_rules(self):
+        """初始化默认失效规则"""
+        # 规列1: 时间窗口变化
+        self.add_rule(
+            InvalidationRule(
+                'time_window_change',
+                lambda k, v, ctx: 'time_window' in ctx and ctx['time_window'] != self._extract_time_from_key(k)
+            )
+        )
+        
+        # 规列2: 参数版本更新
+        self.add_rule(
+            InvalidationRule(
+                'param_version_change',
+                lambda k, v, ctx: 'param_version' in ctx and ctx['param_version'] not in k
+            )
+        )
+        
+        # 规列3: 市场数据更新
+        self.add_rule(
+            InvalidationRule(
+                'market_data_update',
+                lambda k, v, ctx: ctx.get('market_data_updated', False) and 'market' in k
+            )
+        )
+    
+    def add_rule(self, rule: InvalidationRule):
+        """添加失效规则"""
+        self.rules.append(rule)
+        logger.info(f"添加失效规则: {rule.name}")
+    
+    def check_and_invalidate(self, context: Dict) -> int:
+        """
+        检查并失效符合规则的缓存
+        
+        Args:
+            context: 上下文信息 (如时间窗口、参数版本等)
+        
+        Returns:
+            失效的缓存数量
+        """
+        invalidated_count = 0
+        keys_to_check = list(self.cache_service._l1_cache.keys())
+        
+        for key in keys_to_check:
+            try:
+                value = self.cache_service._l1_cache.get(key)
+                
+                # 逐个检查规则
+                for rule in self.rules:
+                    if rule.should_invalidate(key, value, context):
+                        self.cache_service.invalidate(key)
+                        invalidated_count += 1
+                        logger.debug(f"由于规则'{rule.name}'失效: {key}")
+                        break
+            except Exception as e:
+                logger.error(f"检查key'{key}'时出错: {e}")
+        
+        if invalidated_count > 0:
+            logger.info(f"智能失效: {invalidated_count}个缓存")
+        
+        return invalidated_count
+    
+    def invalidate_by_condition(self, condition: Callable[[str], bool]) -> int:
+        """
+        根据自定义条件失效缓存
+        
+        Args:
+            condition: 判断条件 (key) -> bool
+        
+        Returns:
+            失效的缓存数量
+        """
+        invalidated_count = 0
+        keys_to_check = list(self.cache_service._l1_cache.keys())
+        
+        for key in keys_to_check:
+            try:
+                if condition(key):
+                    self.cache_service.invalidate(key)
+                    invalidated_count += 1
+            except Exception as e:
+                logger.error(f"检查key'{key}'时出错: {e}")
+        
+        return invalidated_count
+    
+    def schedule_preload(self, keys: List[str], loader: Callable[[str], Any]):
+        """
+        计划预加载缓存
+        
+        Args:
+            keys: 要预加载的key列表
+            loader: 加载器函数 (key) -> value
+        """
+        success_count = 0
+        for key in keys:
+            try:
+                value = loader(key)
+                self.cache_service.set(key, value)
+                success_count += 1
+            except Exception as e:
+                logger.error(f"预加载key'{key}'失败: {e}")
+        
+        logger.info(f"缓存预加载完成: {success_count}/{len(keys)}")
+        return success_count
+    
+    @staticmethod
+    def _extract_time_from_key(key: str) -> Optional[str]:
+        """从key中提取时间信息"""
+        parts = key.split(':')
+        for part in parts:
+            if part.isdigit() and len(part) >= 10:  # 时间戳
+                return part
+        return None
+
+
+def get_smart_invalidation_manager(
+    cache_service: Optional[CacheService] = None
+) -> SmartInvalidationManager:
+    """获取智能失效管理器"""
+    if cache_service is None:
+        cache_service = get_cache_service()
+    return SmartInvalidationManager(cache_service)
