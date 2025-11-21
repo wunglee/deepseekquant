@@ -5,7 +5,7 @@
 
 import unittest
 
-from core.signal.signal_validator import SignalValidator
+from core_bak_refactored.core.signal.signal_validator import SignalValidator
 
 
 class TestSignalValidator(unittest.TestCase):

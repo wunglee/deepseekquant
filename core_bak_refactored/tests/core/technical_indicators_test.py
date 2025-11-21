@@ -13,7 +13,7 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from core.signal.technical_indicators import TechnicalIndicators, MARKET_PARAMS
+from core_bak_refactored.core.signal.technical_indicators import TechnicalIndicators, MARKET_PARAMS
 
 
 class TestTechnicalIndicators(unittest.TestCase):

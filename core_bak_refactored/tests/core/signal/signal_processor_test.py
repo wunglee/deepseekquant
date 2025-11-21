@@ -5,7 +5,7 @@
 import unittest
 from datetime import datetime
 
-from core.signal.signal_processor import SignalProcessor
+from core_bak_refactored.core.signal.signal_processor import SignalProcessor
 
 
 class TestSignalProcessor(unittest.TestCase):

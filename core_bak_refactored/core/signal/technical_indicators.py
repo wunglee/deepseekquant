@@ -12,15 +12,9 @@
 - 参数配置化，支持不同市场和策略
 """
 
-import sys
-import os
-
-# 添加项目根目录到路径
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
-
 import pandas as pd
 from typing import Tuple, Dict, Any
-from infrastructure.technical_indicators import TimeSeriesCalculator
+from core_bak_refactored.infrastructure.technical_indicators import TimeSeriesCalculator
 
 
 # 市场参数配置（业务概念）

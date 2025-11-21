@@ -5,10 +5,10 @@
 import unittest
 from datetime import datetime
 
-from core.signal.signal_models import (
+from core_bak_refactored.core.signal.signal_models import (
     TradingSignal, SignalType, SignalMetadata
 )
-from core.signal.signal_filter import SignalFilter
+from core_bak_refactored.core.signal.signal_filter import SignalFilter
 
 
 class TestSignalFilter(unittest.TestCase):

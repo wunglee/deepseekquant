@@ -50,22 +50,24 @@ from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import uuid
 
+# TODO: 该文件尚未完成迁移至core_bak_refactored，暂时禁用以符合架构隔离原则
+# 待所有依赖模块迁移后再启用
 # 导入内部模块
-from config.config_manager import ConfigManager
-from core.data_fetcher import DataFetcher
-from core.signal_engine import SignalEngine, Signal, SignalType
-from core.portfolio_manager import PortfolioManager, AllocationMethod
-from core.risk_manager import RiskManager, RiskLevel, RiskAssessment
-from core.execution_engine import ExecutionEngine, ExecutionStrategy, TradeCost
-from core.bayesian_optimizer import BayesianOptimizer
-from analytics.backtesting import BacktestingEngine
-from analytics.performance import PerformanceAnalyzer
-from infrastructure.monitoring import MonitoringSystem
-from infrastructure.api_gateway import APIGateway
-from infrastructure.disaster_recovery import DisasterRecoveryManager
-from infrastructure.logging_system import LoggingSystem
-from utils.helpers import validate_config, format_timestamp, calculate_hash
-from utils.validators import validate_market_data, validate_signals, validate_positions
+# from config.config_manager import ConfigManager
+# from core.data_fetcher import DataFetcher
+# from core.signal_engine import SignalEngine, Signal, SignalType
+# from core.portfolio_manager import PortfolioManager, AllocationMethod
+# from core.risk_manager import RiskManager, RiskLevel, RiskAssessment
+# from core.execution_engine import ExecutionEngine, ExecutionStrategy, TradeCost
+# from core.bayesian_optimizer import BayesianOptimizer
+# from analytics.backtesting import BacktestingEngine
+# from analytics.performance import PerformanceAnalyzer
+# from infrastructure.monitoring import MonitoringSystem
+# from infrastructure.api_gateway import APIGateway
+# from infrastructure.disaster_recovery import DisasterRecoveryManager
+# from infrastructure.logging_system import LoggingSystem
+# from utils.helpers import validate_config, format_timestamp, calculate_hash
+# from utils.validators import validate_market_data, validate_signals, validate_positions
 
 logger = logging.getLogger('DeepSeekQuant.Main')
 

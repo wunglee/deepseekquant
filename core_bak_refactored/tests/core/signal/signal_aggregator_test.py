@@ -5,10 +5,10 @@
 import unittest
 from datetime import datetime
 
-from core.signal.signal_models import (
+from core_bak_refactored.core.signal.signal_models import (
     TradingSignal, SignalType, SignalStrength, SignalSource, SignalMetadata
 )
-from core.signal.signal_aggregator import SignalAggregator
+from core_bak_refactored.core.signal.signal_aggregator import SignalAggregator
 
 
 class TestSignalAggregator(unittest.TestCase):

@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../.
 import unittest
 import time
 import numpy as np
-from infrastructure.risk_metrics import StatisticalCalculator
+from core_bak_refactored.infrastructure.risk_metrics import StatisticalCalculator
 
 
 class PerformanceBenchmarkTest(unittest.TestCase):

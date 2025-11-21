@@ -5,7 +5,7 @@
 
 import unittest
 
-from core.signal.signal_generator import SignalGenerator
+from core_bak_refactored.core.signal.signal_generator import SignalGenerator
 
 
 class TestSignalGenerator(unittest.TestCase):

@@ -149,22 +149,24 @@ class TestStatisticalCalculator(unittest.TestCase):
         self.assertTrue(np.isnan(beta_invalid))
     
     def test_calculate_downside_deviation(self):
-        """测试下行标准差"""
+        """测试下行标准差（半方差公式）"""
         downside_std = self.calculator.calculate_downside_deviation(self.returns)
         
-        # 验证只使用负收益
-        negative_returns = self.returns[self.returns < 0]
-        if len(negative_returns) > 0:
-            expected = np.std(negative_returns, ddof=1)
-            self.assertAlmostEqual(downside_std, expected, places=10)
+        # 验证半方差公式：sqrt(sum(min(values, 0)^2) / (n - ddof))
+        # 注意：这是标准金融公式，不同于仅对负值计算std
+        downside_values = np.minimum(self.returns, 0)  # 取负值部分
+        semi_variance = np.sum(downside_values**2) / (len(self.returns) - 1)
+        expected = np.sqrt(semi_variance)
+        self.assertAlmostEqual(downside_std, expected, places=10)
         
         # 带基准值
         baseline = 0.001
         downside_std_baseline = self.calculator.calculate_downside_deviation(self.returns, baseline)
-        below_baseline = self.returns[self.returns < baseline]
-        if len(below_baseline) > 0:
-            expected = np.std(below_baseline, ddof=1)
-            self.assertAlmostEqual(downside_std_baseline, expected, places=10)
+        excess = self.returns - baseline
+        downside_excess = np.minimum(excess, 0)
+        semi_var = np.sum(downside_excess**2) / (len(self.returns) - 1)
+        expected_baseline = np.sqrt(semi_var)
+        self.assertAlmostEqual(downside_std_baseline, expected_baseline, places=10)
         
         # 边界情况：所有值都大于基准
         positive_values = np.array([1.0, 2.0, 3.0])
