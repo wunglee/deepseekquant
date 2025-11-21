@@ -86,6 +86,7 @@ class FactorModelEstimator:
             # 时间序列回归估计beta
             loadings = np.zeros((N, K))
             specific_vars = np.zeros(N)
+            r_squared_values = np.zeros(N)  # 跟踪R^2
             
             for i in range(N):
                 y = returns.iloc[:, i].values
@@ -96,16 +97,25 @@ class FactorModelEstimator:
                 
                 # OLS回归: beta = (X'X)^-1 * X'y
                 try:
-                    beta = np.linalg.lstsq(X_with_const, y, rcond=None)[0]
+                    # 使用QR分解提高数值稳定性
+                    Q, R = np.linalg.qr(X_with_const)
+                    beta = np.linalg.solve(R, Q.T @ y)
                     loadings[i, :] = beta[1:]  # 去除截距
                     
-                    # 计算残差方差
+                    # 计算残差方差和R^2
                     residuals = y - X_with_const @ beta
-                    specific_vars[i] = np.var(residuals, ddof=K+1)
-                except np.linalg.LinAlgError:
-                    logger.warning(f"资产{i}回归失败，使用默认值")
+                    ss_res = np.sum(residuals ** 2)
+                    ss_tot = np.sum((y - np.mean(y)) ** 2)
+                    r_squared_values[i] = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
+                    
+                    # 使用无偏估计
+                    specific_vars[i] = ss_res / (T - K - 1) if T > K + 1 else np.var(residuals)
+                    
+                except (np.linalg.LinAlgError, ValueError) as e:
+                    logger.warning(f"资产{returns.columns[i]}回归失败: {e}，使用默认值")
                     loadings[i, :] = 0
                     specific_vars[i] = np.var(y)
+                    r_squared_values[i] = 0
             
             self.factor_loadings = pd.DataFrame(
                 loadings,
@@ -113,8 +123,13 @@ class FactorModelEstimator:
                 columns=factor_returns.columns
             )
             self.specific_variance = pd.Series(specific_vars, index=returns.columns)
+            self.r_squared = pd.Series(r_squared_values, index=returns.columns)
             
-            logger.info(f"因子载荷估计完成: {N}资产 x {K}因子")
+            avg_r2 = r_squared_values.mean()
+            logger.info(
+                f"因子载荷估计完成: {N}资产 x {K}因子, "
+                f"平均R^2={avg_r2:.2%}"
+            )
             return self.factor_loadings
         
         except Exception as e:
@@ -325,6 +340,11 @@ class FactorModelEstimator:
             'max_loading': float(self.factor_loadings.abs().max().max()),
             'avg_specific_vol': float(np.sqrt(self.specific_variance.mean())),
         }
+        
+        if self.factor_covariance is not None:
+            summary['factor_volatility'] = float(np.sqrt(np.diag(self.factor_covariance)).mean())
+        
+        return summary
         
         if self.factor_covariance is not None:
             summary['factor_volatility'] = float(np.sqrt(np.diag(self.factor_covariance)).mean())

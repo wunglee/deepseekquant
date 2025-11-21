@@ -42,6 +42,11 @@ class CacheConfig:
     
     # 缓存Key版本
     cache_version: str = "v1.0"
+    
+    # 智能TTL策略
+    enable_adaptive_ttl: bool = True  # 启用自适应TTL
+    min_ttl: int = 60  # 最小TTL 1分钟
+    max_ttl: int = 3600  # 最大TTL 1小时
 
 
 @dataclass
