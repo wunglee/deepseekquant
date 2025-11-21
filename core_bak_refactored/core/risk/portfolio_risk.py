@@ -40,25 +40,47 @@ except ImportError:
 
 # ============= 静态辅助函数 (优化并行计算) =============
 
+# 全局缓存配置和分析器（进程级）
+_WORKER_ANALYZER_CACHE = {}
+
+def _get_or_create_analyzer(config_dict: Dict[str, Any]) -> 'PortfolioRiskAnalyzer':
+    """
+    获取或创建分析器（进程级缓存）
+    优化：避免每次任务都重建分析器
+    
+    Args:
+        config_dict: 配置字典（必须可序列化）
+    
+    Returns:
+        分析器实例
+    """
+    import os
+    worker_id = os.getpid()
+    
+    if worker_id not in _WORKER_ANALYZER_CACHE:
+        # 首次创建，缓存之
+        from core_bak_refactored.core.risk.portfolio_risk import PortfolioRiskAnalyzer
+        analyzer = PortfolioRiskAnalyzer(config_dict, enable_parallel=False)
+        _WORKER_ANALYZER_CACHE[worker_id] = analyzer
+        logger.debug(f"进程Worker {worker_id}: 创建分析器")
+    
+    return _WORKER_ANALYZER_CACHE[worker_id]
+
 def _calculate_single_portfolio_static(
-    item: Tuple[str, Any, Dict[str, Any]]
+    item: Tuple[str, Any, Dict[str, Any], Dict[str, Any]]
 ) -> Tuple[str, Dict[str, Any]]:
     """
     静态函数：计算单个组合风险
     用于并行计算，避免序列化整个PortfolioRiskAnalyzer对象
     
-    Note: 这是一个简化版本，实际中需要重建分析器
+    优化：
+    1. 使用进程级缓存分析器，避免重复创建
+    2. config_dict传递而非对象，减少序列化开销
     """
-    portfolio_id, portfolio_state, market_data = item
+    portfolio_id, portfolio_state, market_data, config_dict = item
     try:
-        # TODO: 这里需要优化，避免重复创建分析器
-        # 当前作为占位符，实际使用时应传递config
-        from core_bak_refactored.core.share.market_config import MarketConfigManager
-        config_manager = MarketConfigManager()
-        config = config_manager.generate_config_template('CN')
-        
-        from core_bak_refactored.core.risk.portfolio_risk import PortfolioRiskAnalyzer
-        analyzer = PortfolioRiskAnalyzer(config, enable_parallel=False)
+        # 使用缓存的分析器
+        analyzer = _get_or_create_analyzer(config_dict)
         
         data = {
             'portfolio_state': portfolio_state,
@@ -613,6 +635,10 @@ class PortfolioRiskAnalyzer:
         """
         批量计算多个组合的风险指标（并行优化）
         
+        优化 (P0-1 专家建议):
+        1. 共享配置数据，减少序列化开销
+        2. 进程级缓存分析器，避免重复创建
+        
         Args:
             portfolios: List[(portfolio_id, portfolio_state, market_data)]
             use_parallel: 是否使用并行，None使用全局配置
@@ -626,11 +652,21 @@ class PortfolioRiskAnalyzer:
         # 判断是否并行
         n_portfolios = len(portfolios)
         if use_parallel and n_portfolios >= 10 and hasattr(self, 'parallel_executor'):
-            logger.info(f"并行计算{n_portfolios}个组合风险")
+            logger.info(f"并行计算{n_portfolios}个组合风险 (P0优化: 共享配置)")
+            
+            # P0优化: 共享配置数据，减少序列化开销
+            config_dict = self._prepare_shared_config()
+            
+            # 为每个任务添加配置
+            portfolios_with_config = [
+                (pid, pstate, mdata, config_dict)
+                for pid, pstate, mdata in portfolios
+            ]
+            
             # 使用静态方法避免self序列化
             results_list = self.parallel_executor.map_cpu_intensive(
                 _calculate_single_portfolio_static,
-                portfolios
+                portfolios_with_config
             )
         else:
             logger.info(f"串行计算{n_portfolios}个组合风险")
@@ -646,6 +682,26 @@ class PortfolioRiskAnalyzer:
             f"批量风险计算完成: {len(results_dict)}/{n_portfolios}成功"
         )
         return results_dict
+    
+    def _prepare_shared_config(self) -> Dict[str, Any]:
+        """
+        准备共享配置数据（P0优化）
+        
+        将config转换为可序列化的字典，避免传递复杂对象
+        
+        Returns:
+            配置字典
+        """
+        # 如果config已经是字典，直接返回
+        if isinstance(self.config, dict):
+            return self.config
+        
+        # 如果是对象，转换为字典
+        if hasattr(self.config, '__dict__'):
+            return self.config.__dict__
+        
+        # 默认返回原值
+        return self.config
     
     def _calculate_single_portfolio(
         self, 

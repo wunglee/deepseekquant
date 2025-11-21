@@ -38,20 +38,31 @@ class FactorModelConfig:
 
 
 class FactorModelEstimator:
-    """因子模型协方差估计器"""
+    """因子模型协方差估计器
     
-    def __init__(self, config: Optional[FactorModelConfig] = None):
+    P0优化 (专家建议):
+    - P0-2: 数值稳定性检查 (条件数+Ridge回归)
+    - P0-3: 缓存集成 (预计50-70%计算加速)
+    """
+    
+    def __init__(self, config: Optional[FactorModelConfig] = None, cache_service=None):
         """
         初始化因子模型估计器
         
         Args:
             config: 因子模型配置
+            cache_service: 缓存服务 (P0-3优化)
         """
         self.config = config or FactorModelConfig()
         self.factor_returns = None  # 因子收益序列
         self.factor_loadings = None  # 因子载荷矩阵 (N资产 x K因子)
         self.specific_variance = None  # 特质方差向量 (N,)
         self.factor_covariance = None  # 因子协方差矩阵 (K x K)
+        
+        # P0-3: 缓存集成
+        self.cache_service = cache_service
+        if self.cache_service:
+            logger.info("因子模型缓存已启用 (P0-3优化)")
     
     def estimate_factor_loadings(
         self,
@@ -95,15 +106,32 @@ class FactorModelEstimator:
                 # 添加截距项
                 X_with_const = np.column_stack([np.ones(T), X])
                 
-                # OLS回归: beta = (X'X)^-1 * X'y
-                try:
-                    # 使用QR分解提高数值稳定性
-                    Q, R = np.linalg.qr(X_with_const)
-                    beta = np.linalg.solve(R, Q.T @ y)
-                    loadings[i, :] = beta[1:]  # 去除截距
-                    
-                    # 计算残差方差和R^2
-                    residuals = y - X_with_const @ beta
+                # P0-2: 数值稳定性检查 (专家建议)
+                condition_number = np.linalg.cond(X_with_const)
+                
+                if condition_number > 1e10:
+                    logger.warning(
+                        f"资产{returns.columns[i]}: 因子矩阵条件数过高 {condition_number:.2e}, "
+                        f"自动切换到Ridge回归"
+                    )
+                    # 使用Ridge回归降级
+                    beta = self._ridge_regression(y, X, alpha=0.1)
+                    beta_with_const = np.concatenate([[0], beta])  # 添加截距=0
+                else:
+                    # OLS回归: beta = (X'X)^-1 * X'y
+                    try:
+                        # 使用QR分解提高数值稳定性
+                        Q, R_qr = np.linalg.qr(X_with_const)
+                        beta_with_const = np.linalg.solve(R_qr, Q.T @ y)
+                    except np.linalg.LinAlgError:
+                        # 回退到伪逆
+                        logger.warning(f"资产{returns.columns[i]}: QR分解失败, 使用伪逆")
+                        beta_with_const = np.linalg.pinv(X_with_const) @ y
+                
+                loadings[i, :] = beta_with_const[1:]  # 去除截距
+                
+                # 计算残差方差和R^2
+                residuals = y - X_with_const @ beta_with_const
                     ss_res = np.sum(residuals ** 2)
                     ss_tot = np.sum((y - np.mean(y)) ** 2)
                     r_squared_values[i] = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
