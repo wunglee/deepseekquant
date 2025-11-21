@@ -14,6 +14,17 @@
 
 ---
 
+## 🧭 术语与层级定义
+
+- 全局阶段（Phase）: 由 docs/PLAN.md 定义的项目宏观阶段，用于跨模块的里程碑管理与发布节奏。
+- 模块迭代（Iteration）: 由各模块的 TODO.md 定义的模块内执行节奏（例如 risk 模块的“迭代计划”，用于细粒度推进与评审）。
+- 里程碑（Milestone）: 在 docs/PLAN.md 中定义的关键节点（验收/发布/集成），用于跨阶段的状态切换。
+
+关系与约束:
+- 迭代属于某一全局阶段之下；同一全局阶段内可有多次模块迭代。
+- 咨询文档管理以“全局阶段”为边界：同一全局阶段内，所有轮次的咨询记录持续追加到 docs/consultation.md；当进入下一全局阶段时，执行一次清空并重建。
+- ask.md/answer.md 始终是当前轮的临时文件，不用于历史；历史问答只归档在 docs/consultation.md。
+
 ## 🔄 五步工作流程
 
 ### 1️⃣ 需求分析
@@ -209,13 +220,15 @@ docs/
 5. 实施功能、更新TODO
 6. 提交代码 + consultation.md
 
-**提交后**:
-7. **清空consultation.md**（只保留标题）
-8. 开始新轮次
+**提交后（按全局阶段）**:
+7. 当 docs/PLAN.md 标识进入“下一全局阶段（Phase）”的里程碑提交完成后，执行一次：**清空consultation.md**（只保留标题）
+8. 开始新阶段的第一轮咨询（从空白 consultation.md 重新追加）
 
-⚠️ **关键规则**:
-- ❌ 用户确认前**不追加**ask.md
-- ✅ 阶段提交后**必须清空**
+⚠️ **关键规则（阶段/迭代约束）**:
+- ❌ 用户确认前不追加 ask.md（始终独立轮次）
+- ✅ 同一“全局阶段（Phase）”内：docs/consultation.md 持续追加所有轮次（跨模块迭代也追加）
+- ✅ 仅在“跨全局阶段（Phase）”切换时清空 consultation.md
+- ✅ 模块内“迭代（Iteration）”信息记录在各模块 TODO.md（例如 core_bak_refactored/core/risk/TODO.md），用于细粒度推进；不触发 consultation.md 清空
 
 ---
 
