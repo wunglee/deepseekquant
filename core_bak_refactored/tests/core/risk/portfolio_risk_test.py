@@ -113,6 +113,96 @@ class TestPortfolioRiskAnalyzer(unittest.TestCase):
         self.assertIn('concentration_risk', result)
         self.assertEqual(result['concentration_risk'], 0.0)
     
+    def test_report_snapshot_fields_completeness(self):
+        """验收测试：报告快照字段完整性（第20轮迭代目标）"""
+        allocations = {'A': DummyAlloc(0.5), 'B': DummyAlloc(0.5)}
+        portfolio_state = DummyPortfolioState(allocations)
+        cov_matrix = pd.DataFrame(
+            [[0.0004, 0.0002], [0.0002, 0.0001]],
+            index=['A', 'B'], columns=['A', 'B']
+        )
+        
+        # 构造市场数据以生成 portfolio_returns
+        prices_A = list(100 + np.cumsum(np.random.randn(80)))
+        prices_B = list(100 + np.cumsum(np.random.randn(80)))
+        market_data = {
+            'prices': {
+                'A': {'close': prices_A},
+                'B': {'close': prices_B}
+            },
+            'timestamp': list(range(80)),
+            'last_updated_ts': 1700000000
+        }
+        
+        data = {
+            'portfolio_state': portfolio_state,
+            'market_data': market_data,
+            'covariance_matrix': cov_matrix
+        }
+        
+        result = self.analyzer.analyze(data, risk_metrics={})
+        
+        # 验证 report_snapshot 字段存在
+        self.assertIn('report_snapshot', result)
+        rs = result['report_snapshot']
+        
+        # 验证必要字段（第20轮迭代目标）
+        required_fields = [
+            'report_id', 'environment', 'timestamp', 'market_type',
+            'calculation_id', 'trigger_reason', 'cache_status', 'data_freshness_seconds'
+        ]
+        for field in required_fields:
+            self.assertIn(field, rs, f"缺少必要字段: {field}")
+        
+        # 验证字段类型
+        self.assertIsInstance(rs['calculation_id'], str)
+        self.assertIsInstance(rs['data_freshness_seconds'], int)
+        self.assertIn(rs['trigger_reason'], ['SCHEDULED', 'VOLATILITY_SPIKE'])
+    
+    def test_model_health_jp_market_thresholds(self):
+        """验收测试：JP市场模型健康分级阈值（第20轮迭代目标）"""
+        # 测试JP市场特定阈值：min_points=55, optimal_points=220
+        config = {'trading_days_per_year': 245, 'market_type': 'JP'}
+        analyzer = PortfolioRiskAnalyzer(config)
+        
+        allocations = {'A': DummyAlloc(1.0)}
+        portfolio_state = DummyPortfolioState(allocations)
+        cov_matrix = pd.DataFrame([[0.0004]], index=['A'], columns=['A'])
+        
+        # 测试不同数据点数的分级
+        test_cases = [
+            (220, 'EXCELLENT', 'NONE'),      # >= optimal_points
+            (100, 'GOOD', 'MINIMAL'),        # >= min_points (55)
+            (50, 'FAIR', 'MODERATE'),        # >= min_points * 0.7 (38.5)
+            (30, 'POOR', 'SIGNIFICANT'),     # >= min_points * 0.5 (27.5)
+            (20, 'INSUFFICIENT', 'SEVERE')   # < min_points * 0.5
+        ]
+        
+        for data_points, expected_quality, expected_degradation in test_cases:
+            # 构造有data_points个数据点的市场数据
+            prices = list(100 + np.cumsum(np.random.randn(data_points + 1)))
+            market_data = {
+                'prices': {'A': {'close': prices}},
+                'timestamp': list(range(data_points + 1))
+            }
+            
+            data = {
+                'portfolio_state': portfolio_state,
+                'market_data': market_data,
+                'covariance_matrix': cov_matrix
+            }
+            result = analyzer.analyze(data, risk_metrics={})
+            
+            self.assertIn('model_health', result)
+            mh = result['model_health']
+            
+            # 数据点数应该接近（收益序列比价格序列少1个点）
+            self.assertAlmostEqual(mh['data_points'], data_points, delta=1)
+            self.assertEqual(mh['quality'], expected_quality, 
+                           f"数据点{data_points}时，期望质量为{expected_quality}，实际为{mh['quality']}")
+            self.assertEqual(mh['degradation_level'], expected_degradation,
+                           f"数据点{data_points}时，期望降级为{expected_degradation}，实际为{mh['degradation_level']}")
+
     def test_factor_risk_attribution_with_market_industry_style(self):
         """测试因子风险归因分解：市场、行业、风格因子"""
         # 构造两资产组合

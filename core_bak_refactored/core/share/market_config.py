@@ -169,6 +169,21 @@ class MarketConfigManager:
                 'liquidity_risk_weight': 1.2,  # 流动性风险权重较高
                 'political_risk_premium': 0.008  # 政治风险溢价
             })
+            config['volatility_spike_threshold'] = 0.05
+            config['limit_hit_ratio_threshold'] = 0.25
+            config['major_event_sensitivity'] = 'MEDIUM'
+            config['volatility_tiers'] = {
+                'NORMAL': {'max': 0.05, 'cache_ttl': 3600},
+                'MEDIUM': {'max': 0.075, 'cache_ttl': 1800},
+                'HIGH': {'max': 0.10, 'cache_ttl': 600},
+                'EXTREME': {'max': float('inf'), 'cache_ttl': 60}
+            }
+            config['event_weights'] = {
+                'circuit_breaker': 0.6,
+                'extreme_correlation': 0.2,
+                'limit_hits': 0.4,
+                'major_event': 0.3
+            }
         elif market_type == 'US':
             config.update({
                 'has_limit_up_down': False,
@@ -187,6 +202,21 @@ class MarketConfigManager:
                 'liquidity_risk_weight': 0.85,  # 专家优化: 0.8→0.85 (反映近期流动性变化)
                 'political_risk_premium': 0.003  # 政治风险低
             })
+            config['volatility_spike_threshold'] = 0.03
+            config['limit_hit_ratio_threshold'] = 0.20
+            config['major_event_sensitivity'] = 'HIGH'
+            config['volatility_tiers'] = {
+                'NORMAL': {'max': 0.05, 'cache_ttl': 3600},
+                'MEDIUM': {'max': 0.075, 'cache_ttl': 1800},
+                'HIGH': {'max': 0.10, 'cache_ttl': 600},
+                'EXTREME': {'max': float('inf'), 'cache_ttl': 60}
+            }
+            config['event_weights'] = {
+                'circuit_breaker': 0.4,
+                'extreme_correlation': 0.3,
+                'limit_hits': 0.2,
+                'major_event': 0.5
+            }
         elif market_type == 'HK':
             config.update({
                 'has_limit_up_down': False,
@@ -202,6 +232,15 @@ class MarketConfigManager:
                 'liquidity_risk_weight': 1.1,  # 受资金流动影响
                 'political_risk_premium': 0.015  # 地缘政治风险高
             })
+            config['volatility_spike_threshold'] = 0.04
+            config['limit_hit_ratio_threshold'] = 0.25
+            config['major_event_sensitivity'] = 'HIGH'
+            config['volatility_tiers'] = {
+                'NORMAL': {'max': 0.05, 'cache_ttl': 3600},
+                'MEDIUM': {'max': 0.075, 'cache_ttl': 1800},
+                'HIGH': {'max': 0.10, 'cache_ttl': 600},
+                'EXTREME': {'max': float('inf'), 'cache_ttl': 60}
+            }
         elif market_type == 'JP':
             config.update({
                 'has_limit_up_down': False,
@@ -218,6 +257,15 @@ class MarketConfigManager:
                 'political_risk_premium': 0.005,  # 政治风险中等
                 'deflation_risk_adjustment': 0.01  # 通缩风险调整系数
             })
+            config['volatility_spike_threshold'] = 0.04
+            config['limit_hit_ratio_threshold'] = 0.25
+            config['major_event_sensitivity'] = 'MEDIUM'
+            config['volatility_tiers'] = {
+                'NORMAL': {'max': 0.05, 'cache_ttl': 3600},
+                'MEDIUM': {'max': 0.075, 'cache_ttl': 1800},
+                'HIGH': {'max': 0.10, 'cache_ttl': 600},
+                'EXTREME': {'max': float('inf'), 'cache_ttl': 60}
+            }
         elif market_type == 'EU':
             config.update({
                 'has_limit_up_down': False,
@@ -235,6 +283,15 @@ class MarketConfigManager:
                 'brexit_risk_weight': self._get_brexit_risk_weight(),  # 动态衰减机制
                 'banking_sector_risk': 0.008  # 银行体系风险溢价
             })
+            config['volatility_spike_threshold'] = 0.035
+            config['limit_hit_ratio_threshold'] = 0.20
+            config['major_event_sensitivity'] = 'HIGH'
+            config['volatility_tiers'] = {
+                'NORMAL': {'max': 0.05, 'cache_ttl': 3600},
+                'MEDIUM': {'max': 0.075, 'cache_ttl': 1800},
+                'HIGH': {'max': 0.10, 'cache_ttl': 600},
+                'EXTREME': {'max': float('inf'), 'cache_ttl': 60}
+            }
         elif market_type == 'SG':
             config.update({
                 'has_limit_up_down': False,
@@ -252,6 +309,15 @@ class MarketConfigManager:
                 'trade_openness_risk': 0.012,  # 贸易开放度风险溢价（贸易依存度300%+）
                 'currency_risk_weight': 1.25  # 汇率政策风险
             })
+            config['volatility_spike_threshold'] = 0.05
+            config['limit_hit_ratio_threshold'] = 0.30
+            config['major_event_sensitivity'] = 'MEDIUM'
+            config['volatility_tiers'] = {
+                'NORMAL': {'max': 0.05, 'cache_ttl': 3600},
+                'MEDIUM': {'max': 0.075, 'cache_ttl': 1800},
+                'HIGH': {'max': 0.10, 'cache_ttl': 600},
+                'EXTREME': {'max': float('inf'), 'cache_ttl': 60}
+            }
         else:
             # 其他未配置市场使用默认参数
             config.update({

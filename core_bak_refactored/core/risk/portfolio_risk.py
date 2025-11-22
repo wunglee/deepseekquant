@@ -12,6 +12,9 @@ from typing import Dict, List, Optional, Any, Tuple
 import logging
 import sys
 import os
+from datetime import datetime
+import time
+import uuid
 
 # 添加项目根目录到路径
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
@@ -43,6 +46,7 @@ try:
     PARALLEL_AVAILABLE = True
 except ImportError:
     PARALLEL_AVAILABLE = False
+    get_parallel_executor = None
     logger.warning("并行执行器未找到，并行计算将被禁用")
 
 try:
@@ -50,6 +54,7 @@ try:
     INCREMENTAL_AVAILABLE = True
 except ImportError:
     INCREMENTAL_AVAILABLE = False
+    IncrementalCovarianceCalculator = None
     logger.warning("增量计算器未找到，增量计算将被禁用")
 
 
@@ -183,11 +188,11 @@ class PortfolioRiskAnalyzer:
         self.enable_parallel = enable_parallel and PARALLEL_AVAILABLE
         self.enable_incremental = enable_incremental and INCREMENTAL_AVAILABLE
         
-        if self.enable_parallel:
+        if self.enable_parallel and get_parallel_executor is not None:
             self.parallel_executor = get_parallel_executor()
             logger.info("并行计算已启用")
         
-        if self.enable_incremental:
+        if self.enable_incremental and IncrementalCovarianceCalculator is not None:
             self.incremental_calculator = IncrementalCovarianceCalculator()
             logger.info("增量计算已启用")
     
@@ -586,7 +591,33 @@ class PortfolioRiskAnalyzer:
             'risk_contributions': {},       # 各资产风险贡献
             # 额外保留的原有字段
             'portfolio_returns': pd.Series(),
-            'concentration_risk': 0.0
+            'concentration_risk': 0.0,
+            # 新增：报告快照与模型健康
+            'report_snapshot': {
+                'report_id': str(uuid.uuid4()),
+                'environment': os.getenv('DEPLOYMENT_ENV', 'dev'),
+                'timestamp': datetime.utcnow().isoformat() + 'Z',
+                'market_type': self.config.get('market_type', 'CN'),
+                'trading_days_per_year': self.config.get('trading_days_per_year', 252),
+                'confidence_levels': self.config.get('confidence_levels', {}),
+                'risk_free_rate': self.risk_metrics_service.risk_free_rate,
+                'market_status': 'NORMAL',
+                'volatility_regime': 'LOW',
+                'liquidity_regime': 'NORMAL',
+                'calculation_mode': 'REALTIME',
+                'data_source_version': str(self.config.get('data_source_version', 'v1.0.0')),
+                'model_version': str(self.config.get('model_version', 'risk_v1')),
+                'calculation_id': str(uuid.uuid4()),
+                'trigger_reason': 'SCHEDULED',
+                'cache_status': 'UNKNOWN',
+                'data_freshness_seconds': 0
+            },
+            'model_health': {
+                'data_points': 0,
+                'quality': 'UNKNOWN',
+                'degradation_level': 'NONE',
+                'fallback_method': None
+            }
         }
         
         try:
@@ -602,6 +633,31 @@ class PortfolioRiskAnalyzer:
             if market_data:
                 portfolio_returns = self.calculate_portfolio_returns(portfolio_state, market_data)
                 result['portfolio_returns'] = portfolio_returns
+                result['model_health']['data_points'] = int(len(portfolio_returns))
+                # 业务增强：按市场阈值计算质量与降级策略
+                market_type = self.config.get('market_type', 'CN')
+                thresholds = {
+                    'US': {'min_points': 63, 'optimal_points': 252},
+                    'CN': {'min_points': 30, 'optimal_points': 180},
+                    'JP': {'min_points': 55, 'optimal_points': 220},
+                    'EU': {'min_points': 60, 'optimal_points': 220},
+                    'SG': {'min_points': 50, 'optimal_points': 180}
+                }
+                th = thresholds.get(market_type, {'min_points': 60, 'optimal_points': 252})
+                dp = int(len(portfolio_returns))
+                if dp >= th['optimal_points']:
+                    quality, degradation, fallback = 'EXCELLENT', 'NONE', 'FULL_MODEL'
+                elif dp >= th['min_points']:
+                    quality, degradation, fallback = 'GOOD', 'MINIMAL', 'FULL_MODEL'
+                elif dp >= int(th['min_points'] * 0.7):
+                    quality, degradation, fallback = 'FAIR', 'MODERATE', 'SIMPLIFIED_COVARIANCE'
+                elif dp >= int(th['min_points'] * 0.5):
+                    quality, degradation, fallback = 'POOR', 'SIGNIFICANT', 'HISTORICAL_SIMULATION'
+                else:
+                    quality, degradation, fallback = 'INSUFFICIENT', 'SEVERE', 'BASIC_STATISTICS'
+                result['model_health']['quality'] = quality
+                result['model_health']['degradation_level'] = degradation
+                result['model_health']['fallback_method'] = fallback
             
             # 2. 计算波动率（总风险）
             if len(portfolio_returns) > 1:
@@ -609,6 +665,34 @@ class PortfolioRiskAnalyzer:
                 annual_volatility = daily_volatility * np.sqrt(self.config.get('trading_days_per_year', 252))
                 result['volatility'] = annual_volatility
                 result['total_risk'] = annual_volatility  # 专家指导：总风险=波动率
+                # 业务增强：报告快照市场状态与波动率分层
+                base_threshold = float(self.config.get('volatility_spike_threshold', self.config.get('market_configs', {}).get(self.config.get('market_type', 'CN'), {}).get('volatility_spike_threshold', 0.05)))
+                daily_vol = float(portfolio_returns.std())
+                vol_tier = 'NORMAL'
+                if daily_vol > base_threshold * 2.0:
+                    vol_tier = 'EXTREME'
+                elif daily_vol > base_threshold * 1.5:
+                    vol_tier = 'HIGH'
+                elif daily_vol > base_threshold:
+                    vol_tier = 'MEDIUM'
+                liquidity_regime = 'STRESSED' if bool(self.config.get('liquidity_stressed', False)) else 'NORMAL'
+                market_status = 'EXTREME' if (vol_tier == 'EXTREME' or liquidity_regime == 'STRESSED') else ('VOLATILE' if vol_tier in ('HIGH', 'MEDIUM') else 'NORMAL')
+                rs = result['report_snapshot']
+                rs['volatility_regime'] = vol_tier
+                rs['liquidity_regime'] = liquidity_regime
+                rs['market_status'] = market_status
+                # 触发原因与数据新鲜度（默认口径）
+                try:
+                    rs['trigger_reason'] = 'VOLATILITY_SPIKE' if vol_tier in ('MEDIUM','HIGH','EXTREME') else 'SCHEDULED'
+                    last_updated_ts = None
+                    if isinstance(market_data, dict):
+                        last_updated_ts = market_data.get('last_updated_ts') or market_data.get('last_updated')
+                    if isinstance(last_updated_ts, (int, float)):
+                        rs['data_freshness_seconds'] = int(max(0, time.time() - float(last_updated_ts)))
+                    else:
+                        rs['data_freshness_seconds'] = rs.get('data_freshness_seconds', 0)
+                except Exception:
+                    pass
             
             # 3. 计算VaR和CVaR（使用RiskMetricsService）
             if len(portfolio_returns) > 1:
@@ -730,6 +814,80 @@ class PortfolioRiskAnalyzer:
         
         # 判断是否并行
         n_portfolios = len(portfolios)
+        # 智能缓存失效触发（批量任务、市场波动）
+        try:
+            from core_bak_refactored.infrastructure.cache_service import get_smart_invalidation_manager
+            manager = get_smart_invalidation_manager()
+            vol = 0.0
+            for _, _, mdata in portfolios:
+                try:
+                    mv = mdata.get('market_volatility') if isinstance(mdata, dict) else None
+                    if mv is not None:
+                        vol = max(vol, float(mv))
+                except Exception:
+                    pass
+            base_threshold = float(self.config.get('volatility_spike_threshold', 0.05))
+            vol_tier = 'NORMAL'
+            if vol > base_threshold * 2.0:
+                vol_tier = 'EXTREME'
+            elif vol > base_threshold * 1.5:
+                vol_tier = 'HIGH'
+            elif vol > base_threshold:
+                vol_tier = 'MEDIUM'
+            market_status = 'EXTREME' if (vol_tier == 'EXTREME' or bool(self.config.get('liquidity_stressed', False))) else ('VOLATILE' if vol_tier in ('HIGH','MEDIUM') else 'NORMAL')
+            base_threshold = float(self.config.get('volatility_spike_threshold', 0.05))
+            vol_tier = 'NORMAL'
+            if vol > base_threshold * 2.0:
+                vol_tier = 'EXTREME'
+            elif vol > base_threshold * 1.5:
+                vol_tier = 'HIGH'
+            elif vol > base_threshold:
+                vol_tier = 'MEDIUM'
+            market_status = 'EXTREME' if (vol_tier == 'EXTREME' or bool(self.config.get('liquidity_stressed', False))) else ('VOLATILE' if vol_tier in ('HIGH','MEDIUM') else 'NORMAL')
+            # 事件触发聚合（从组合市场数据与配置汇总）
+            circuit_breaker_triggered = False
+            extreme_correlation_breakdown = bool(self.config.get('extreme_correlation_breakdown', False))
+            limit_hit_ratio = float(self.config.get('limit_hit_ratio', 0.0))
+            major_event = bool(self.config.get('major_market_event', False))
+            try:
+                for _, _, mdata in portfolios:
+                    if isinstance(mdata, dict):
+                        circuit_breaker_triggered = circuit_breaker_triggered or bool(mdata.get('circuit_breaker_triggered', False))
+                        extreme_correlation_breakdown = extreme_correlation_breakdown or bool(mdata.get('extreme_correlation_breakdown', False))
+                        if 'limit_hit_ratio' in mdata:
+                            limit_hit_ratio = max(limit_hit_ratio, float(mdata.get('limit_hit_ratio', 0.0)))
+                        major_event = major_event or bool(mdata.get('major_market_event', False))
+            except Exception:
+                pass
+            context = {
+                'time_window': str(int(time.time())),
+                'param_version': str(self.config.get('param_version', 'v1')),
+                'market_data_updated': bool(self.config.get('market_data_updated', False)),
+                'volatility': vol,
+                'market_type': self.config.get('market_type', 'CN'),
+                'volatility_tier': vol_tier,
+                'market_status': market_status,
+                'circuit_breaker_triggered': circuit_breaker_triggered,
+                'extreme_correlation_breakdown': extreme_correlation_breakdown,
+                'limit_hit_ratio': limit_hit_ratio,
+                'major_market_event': major_event
+            }
+            threshold = float(self.config.get('volatility_spike_threshold', 0.05))
+            limit_threshold = float(self.config.get('limit_hit_ratio_threshold', self.config.get('market_configs', {}).get(self.config.get('market_type', 'CN'), {}).get('limit_hit_ratio_threshold', 0.3)))
+            # 触发条件：波动率或重大事件/极端相关/熔断/涨跌停比例（分市场阈值）
+            event_trigger = circuit_breaker_triggered or extreme_correlation_breakdown or (limit_hit_ratio > limit_threshold) or major_event
+            # 触发分数（结合事件权重与波动率占比）
+            weights = self.config.get('market_configs', {}).get(self.config.get('market_type','CN'), {}).get('event_weights', {})
+            trigger_score = (vol / threshold if threshold > 0 else 0.0) 
+            trigger_score += (weights.get('circuit_breaker', 0.0) if circuit_breaker_triggered else 0.0)
+            trigger_score += (weights.get('extreme_correlation', 0.0) if extreme_correlation_breakdown else 0.0)
+            trigger_score += (weights.get('limit_hits', 0.0) if limit_hit_ratio > limit_threshold else 0.0)
+            trigger_score += (weights.get('major_event', 0.0) if major_event else 0.0)
+            context['trigger_score'] = float(trigger_score)
+            if vol > threshold or event_trigger:
+                manager.check_and_invalidate(context)
+        except Exception:
+            pass
         if use_parallel and n_portfolios >= 10 and hasattr(self, 'parallel_executor'):
             logger.info(f"并行计算{n_portfolios}个组合风险 (P0优化: 共享配置)")
             

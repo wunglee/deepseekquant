@@ -1,136 +1,88 @@
-# 第16轮专家评审请求（合并P0+P1优化）
+# 第19轮咨询 - 迭代验收与参数冻结业务确认
 
 ## 📁 相关文件清单（本次更新涉及）
-- 核心实现：[`core_bak_refactored/core/risk/portfolio_risk.py`](portfolio_risk.py)
-- 基础设施：[`core_bak_refactored/infrastructure/parallel_executor.py`](parallel_executor.py)
-- 因子模型：[`core_bak_refactored/core/risk/factor_model.py`](factor_model.py)
-- 模块迭代计划：[`core_bak_refactored/core/risk/TODO.md`](TODO.md)
+### 核心实现文件（本次修改）
+- `core_bak_refactored/core/share/market_config.py`
+- `core_bak_refactored/core/risk/portfolio_risk.py`
+- `core_bak_refactored/core/risk/risk_calculator.py`
 
-## 背景与目标
-基于上一轮专家评审的建议（并行优化、因子模型数值稳定性、性能监控与诊断），本次迭代聚焦于在风险模块落地上述改进，并对评审中提出的关键问题进行针对性验证与请您复核。
+### 测试文件（本次验证）
+- `core_bak_refactored/tests/core/share/exchange_rates_test.py` (30项配置验收，全部通过)
+- `core_bak_refactored/tests/core/risk/test_cache_manager.py` (20项缓存能力，全部通过)
+- `core_bak_refactored/tests/**` (数值类验证待环境恢夏)
 
-### 1.2 范围与成果
-- P0-1 并行内存优化（共享配置 + 进程级分析器缓存）
-- P0-2 因子模型数值稳定性（条件数检查 + Ridge回归降级 + QR失败回退）
-- P0-3 因子模型缓存集成（协方差矩阵读取/写入缓存，TTL=3600s）
-- P1-1 动态任务分块算法（基于内存/CPU的智能分块）
-- P1-2 性能监控增强（峰值内存、CPU利用率、任务分布）
-- P1-3 模型诊断增强（因子质量、残差分析、健康评分）
+### 配置文档
+- `docs/SPECIFICATIONS.md` (新增静默执行、依赖缺失处理、测试方法命名等规范)
+- `core_bak_refactored/core/risk/TODO.md` (更新迭代进展与指标对齐分析)
 
-代码变更摘要：
-- [`core_bak_refactored/core/risk/portfolio_risk.py`](portfolio_risk.py)：并行优化（共享配置、进程级缓存、批量计算路径优化）
-- [`core_bak_refactored/infrastructure/parallel_executor.py`](parallel_executor.py)：动态分块 + 性能监控指标收集 + 单例接口
-- [`core_bak_refactored/core/risk/factor_model.py`](factor_model.py)：数值稳定性检查 + Ridge降级 + QR回退 + 诊断
-- [`core_bak_refactored/core/risk/TODO.md`](TODO.md)：术语统一为“迭代”，更新迭代计划
+## 📁 上一轮（第18轮）修改代码清单与关键评审部分（含详细解释）
+- 核心实现：`core_bak_refactored/core/risk/portfolio_risk.py`
+  - 关键评审点：
+    - `PortfolioRiskAnalyzer.batch_calculate_portfolio_risk` 接入“智能缓存失效触发”（市场波动率阈值 + 重大事件），请确认触发口径与上下文字段是否满足业务审计与复核。
+- 核心实现：`core_bak_refactored/core/risk/risk_calculator.py`
+  - 关键评审点：
+    - `RiskCalculator.calculate_all_metrics` 接入“智能缓存失效触发”（returns_std + major_market_event）。
+    - 触发上下文字段：`time_window`、`param_version`、`market_data_updated`、`volatility`；请确认字段完备性与口径。
+    - 阈值参数化与市场配置回退：`volatility_spike_threshold`；请确认默认值与市场差异化的合理性。
 
-Git 提交：
-- P0优化完成：`4b414e7`
-- P1优化完成：`8af9515`
+## 背景说明
+第19轮迭代目标是对第18轮专家建议进行收敛实施与验收，确保分市场阈值、事件权重、报告快照与模型健康字段增强等核心功能的业务可用性与可量化验收。根据第18轮专家回答，已完成：
+- 分市场阈值配置：`volatility_spike_threshold`、`limit_hit_ratio_threshold`、`major_event_sensitivity`、`volatility_tiers`、`event_weights` 已下沉至 `market_config.py`。
+- 报告快照增强：`report_snapshot` 新增字段 `calculation_id`、`trigger_reason`、`cache_status`、`data_freshness_seconds` 等，用于审计追溯。
+- 模型健康分级：JP 市场阈值调整为 `min_points=55, optimal_points=220`。
+- 触发评分与影响范围：`trigger_score`、`affected_symbols_count` 注入两处入口的上下文。
 
----
-
-## 二、实施细节与验证
-
-### 2.1 并行计算优化（P0-1）
-- 进程级分析器缓存：避免每任务重建分析器（预计节省20-30%开销）
-- 共享配置数据传递：将配置序列化为字典在并行任务间复用
-- 批量风险计算路径：统一注入共享配置，避免 self 序列化
-
-验证要点：
-- 并行阈值≥10，路径切换正确
-- 缓存命中后不重复创建分析器实例
-
-### 2.2 因子模型稳定性（P0-2）
-- 条件数检查阈值：1e10（病态矩阵自动降级）
-- Ridge回归：`beta = (X'X + αI)^-1 X'y`（α=0.1，失败回退伪逆）
-- QR分解失败回退：使用伪逆保证载荷估计完成
-
-验证要点：
-- 高条件数样本不抛异常，载荷合理、R²稳定
-- 降级路径日志可追溯（条件数、降级决策）
-
-### 2.3 因子模型缓存（P0-3）
-- 缓存键：`factor_model:{method}:{market}:{n_assets}:{hash}`
-- 读缓存命中直接返回；未命中计算后写入（TTL=3600s）
-
-验证要点：
-- 重复输入数据命中缓存，性能显著提升（预计50-70%）
-- 缓存键稳定且不冲突
-
-### 2.4 动态任务分块（P1-1）
-- 基于可用内存/CPU计算最优 chunk_size（限制[1,20]）
-- `psutil`不可用时降级为默认公式
-
-验证要点：
-- 大任务数场景 chunk_size 自动调整
-- 无内存溢出与过载现象
-
-### 2.5 性能监控增强（P1-2）
-- 指标：峰值内存、CPU利用率、任务分布
-- 自动汇总到执行器指标（`get_metrics()`）
-
-验证要点：
-- 指标采集线程安全
-- 指标随任务规模、并行策略变化而变化
-
-### 2.6 模型诊断增强（P1-3）
-- 因子质量（avg/min/max R²、低拟合数）
-- 残差分析（异方差性、正态性、DW近似自相关）
-- 健康评分（excellent/good/acceptable/poor）
-
-验证要点：
-- 异常情形给出告警（偏度/峰度/自相关）
-- 评分与指标一致性良好
-
----
+由于数值库环境依赖（numpy C-extensions 加载失败），我们采用了“非阻塞跳过”策略，优先执行了不依赖数值库的配置与合规验收，并保留数值类验证（触发评分上下文、字段完整性、分级场景）待环境恢复后自动执行。
 
 ## 我们的架构组织
-- 当前工作模块：`core_bak_refactored/core/risk/`
-- 职责边界：
-  - ✅ 风险指标计算、并行批量风险计算、因子模型协方差
-  - ✅ 基础设施依赖（并行执行器、缓存服务）通过接口调用
-  - ❌ 不涉及数据源接入（实时Fama-French），仅预留接口与缓存
+- 共享配置层：`MarketConfigManager` 统一管理分市场阈值、事件权重、分层TTL、交易日、风险率等配置参数。
+- 业务分析器：`PortfolioRiskAnalyzer` 负责组合风险分析与批量触发；`RiskCalculator` 作为协调器统一风险计算入口。
+- 缓存管理：`get_smart_invalidation_manager` 提供智能缓存失效触发能力，依据波动率分层与重大事件动态失效。
 
-## 核心问题
+## 业务问题（基于迭代目标与差距分析）
+所有问题严格围绕“迭代目标（可量化）”与“差距分析”，请按每项给出业务口径的签署（是/否+必要调整范围与理由）：
 
-1) 并行与内存优化是否符合生产级预期？
-- 是否建议进一步提高共享数据粒度以降低序列化开销？
-- 进程级缓存的生命周期管理是否需要更细粒度控制？
+### 1) 风险识别与响应（目标：触发正确率≥95%，误触发≤5%，单组合P95时延≤800ms）
+- 当前测得数值/状态：分市场阈值配置验证通过率=100% (30/30)；触发评分上下文字段=待数值环境恢复后验证。
+- 差距与阻碍：numpy C-extensions 加载失败（libgfortran.5 二进制依赖冲突），已采用非阻塞跳过策略，保留可运行子集持续推进。
+- 期望专家输入：确认分市场阈值配置（US=0.03, CN=0.05, EU=0.035, HK=0.04, JP=0.04, SG=0.05）、涨跌停比例阈值（US=0.20, CN=0.25, EU=0.20, HK=0.25, JP=0.25, SG=0.30）、事件敏感度（US/HK/EU=HIGH; CN/JP/SG=MEDIUM）是否可冻结为P2基准；如需调整请给出范围与理由。
 
-2) 因子模型稳定性与降级策略是否合理？
-- 条件数阈值与 Ridge α 是否需要按市场动态化？
-- 伪逆回退对残差分布与特质方差的影响是否可接受？
+### 2) 审计与追溯（目标：report_snapshot完整性=100%；model_health分级准确率≥95%，异常标注漏报=0%）
+- 当前测得数值/状态：字段定义与取值口径=待数值环境恢复后验证。
+- 差距与阻碍：同上。
+- 期望专家输入：确认 `report_snapshot` 新增字段（`calculation_id`、`trigger_reason`、`cache_status`、`data_freshness_seconds`）是否满足审计需求；确认 `model_health` 分级阈值（各市场min/optimal points，特别JP=55/220）是否合理；如需补充其他字段请明确。
 
-3) 缓存架构的键设计与TTL是否合适？
-- 是否建议引入L2/L3（Redis/磁盘）分层缓存？
-- 业务感知失效（波动率突变/重大事件）是否应优先支持？
+### 3) 触发可靠性与成本（目标：平稳市况缓存失效率≤10%；极端市况命中率≥85%；重算CPU时间降低≥20%）
+- 当前测得数值/状态：缓存管理器基础能力通过率=100% (20/20)；分层TTL与失效策略=待场景验证。
+- 差距与阻碍：同上。
+- 期望专家输入：确认波动率分层与TTL配置（NORMAL≤0.05/3600s、MEDIUM≤0.075/1800s、HIGH≤0.10/600s、EXTREME>0.10/60s）、事件权重（US: circuit_breaker=0.4, extreme_correlation=0.3, limit_hits=0.2, major_event=0.5；CN: 0.6/0.2/0.4/0.3）是否可冻结为P2基准；如需调整请给出分市场差异化范围与理由。
 
-4) 动态分块算法在不同负载下的适配性？
-- 是否建议引入数据尺寸探测，动态估计 data_size_mb？
-- 是否需要区分CPU密集/I-O密集的不同策略？
+### 4) 市场差异化合规（目标：各市场场景测试通过率=100%；回退生效率=100%）
+- 当前测得数值/状态：配置模板完整性与一致性验证通过率=100% (30/30)；分市场参数口径、交易日、风险率、VaR方法、波动性持续、流动性权重等验证均通过；回退机制=待数值环境恢复后场景验证。
+- 差距与阻碍：同上。
+- 期望专家输入：确认各市场核心配置参数（trading_days, risk_free_rate, var_method_priority, covariance_lookback, volatility_persistence, liquidity_risk_weight）是否符合各市场特征与合规要求；如需补充其他市场配置请明确。
 
-5) 性能监控与诊断指标是否满足评审需求？
-- 指标种类/采样周期/存储方式是否建议调整？
-- 模型健康评分的阈值是否需要按市场或数据质量分层？
+## 代码实现的业务视角评审要点
+请从业务角度评审以下实现是否符合口径：
+- `MarketConfigManager.generate_config_template` 生成的分市场配置模板是否满足各市场的差异化需求？
+- `PortfolioRiskAnalyzer.analyze` 返回的 `report_snapshot` 与 `model_health` 字段是否满足报表维度与质量评估需求？
+- `RiskCalculator.calculate_all_metrics` 构造的触发上下文字段（包括 `trigger_score`、`affected_symbols_count`）是否满足审计与复核？
+
 ## 评审请求
-- 请您按“核心问题”逐项评审实现质量与生产可用性；
-- 对于建议（参数、阈值、缓存策略、分块算法），请给出明确调优建议；
-- 如需跨模块配合（数据源/缓存分层），请指明接口与契约。
+请针对上述四类指标提供业务口径签署（是/否+必要调整范围与理由）；如需分市场口径，请给出分市场阈值与说明。确认后冻结参数进入P2实施。
+
+## 测试策略与降级说明
+由于numpy C-extensions 环境依赖问题，我们采用了“非阻塞跳过”策略：
+- 优先执行了不依赖数值库的配置与合规验收（`exchange_rates_test.py` 30项、`test_cache_manager.py` 20项），覆盖所有目标的静态配置层（阈值、权重、分层、参数口径）。
+- 保留数值类验证（触发评分上下文、字段完整性、分级场景）待环境恢复后自动执行，不影响当前迭代推进。
+- 测试证据映射：
+  - 触发可靠性与成本 → `core_bak_refactored/tests/core/risk/test_cache_manager.py` (20/20通过)
+  - 市场差异化合规 → `core_bak_refactored/tests/core/share/exchange_rates_test.py` (30/30通过)
+  - 风险识别与响应/审计与追溯 → `core_bak_refactored/tests/core/risk/{portfolio_risk_test.py, risk_calculator_test.py}` (待执行)
+
+重要：请尽可能详尽和充分，不要遗漏和简化，谢谢！
 
 
-- 并行加速比：目标 3–5x（大规模批量）
-- 缓存命中率：目标 ≥85%
-- 因子计算延迟：目标 <20ms（命中缓存场景）
-- 模型健康评分：在生产数据集上保持≥good
 
-若通过本次评审，我们将进入 P2 阶段：多级缓存、智能预热、业务感知失效、实时因子数据接入等。
 
----
-
-## 五、附录（参考文件）
-- 代码：[`portfolio_risk.py`](portfolio_risk.py)、[`parallel_executor.py`](parallel_executor.py)、[`factor_model.py`](factor_model.py)
-- 任务状态：[`core/risk/TODO.md`](TODO.md)
-- 历史评审与答复记录：`docs/consultation.md`
-
-**重要：请尽可能详尽和充分，不要遗漏和简化，谢谢！**
 
