@@ -1,6 +1,6 @@
-# DeepSeekQuant 工作流程规范
+# DeepSeekQuant 项目规范
 
-> **版本**: v2.2 | **更新**: 2024-11-21 | **范围**: 开发、评审、提交流程
+> **版本**: v3.0 | **更新**: 2024-11-21 | **范围**: 架构约束、开发规范、工作流程、质量标准
 
 ---
 
@@ -8,7 +8,7 @@
 
 ### 🔴 每次任务前必须读取本文件
 
-**强制要求**: AI在执行任何任务前，**必须先读取 `docs/WORKFLOW.md` 的最新内容**，确认规范后再行动。
+**强制要求**: AI在执行任何任务前，**必须先读取 `docs/SPECIFICATIONS.md` 的最新内容**，确认规范后再行动。
 
 **适用场景**:
 - ✅ 代码实施（功能开发、bug修复、重构优化）
@@ -25,7 +25,7 @@
 
 **执行流程**:
 ```
-1. 收到用户任务 → 2. read_file("docs/WORKFLOW.md") 
+1. 收到用户任务 → 2. read_file("docs/SPECIFICATIONS.md") 
 → 3. 理解工作范围和约束 → 4. 执行任务 → 5. 对照规范自检
 ```
 
@@ -326,7 +326,7 @@ docs/
 ├── ask.md              # 临时：当前提问（不提交历史）
 ├── answer.md           # 临时：专家回答（不提交历史）
 ├── consultation.md     # 版本控制：对话记录（多轮追加，阶段后清空）
-├── WORKFLOW.md         # 版本控制：流程规范
+├── SPECIFICATIONS.md   # 版本控制：项目规范（架构约束、开发流程、质量标准）
 ├── PLAN.md             # 版本控制：项目计划
 ├── PROGRESS.md         # 版本控制：项目进展
 ├── ARCHITECTURE.md     # 版本控制：架构文档
@@ -345,7 +345,7 @@ docs/
 
 **架构变更时**:
 - `ARCHITECTURE.md` - 新增模块、职责调整
-- `WORKFLOW.md` - 流程规范变更
+- `SPECIFICATIONS.md` - 项目规范变更
 
 ### consultation.md管理
 
@@ -436,6 +436,7 @@ docs/
 
 ## 🔗 相关文档
 
+- **项目规范**: `docs/SPECIFICATIONS.md` (本文件)
 - **项目计划**: `docs/PLAN.md`
 - **架构设计**: `docs/ARCHITECTURE.md`
 - **TODO索引**: `core_bak_refactored/TODO_INDEX.md`
@@ -443,14 +444,5 @@ docs/
 ---
 
 **维护者**: DeepSeekQuant 开发团队  
-**版本**: v2.0 (2024-11-21) - 精简重构  
-**状态**: ✅ 生效中
-- **项目计划**: `docs/PLAN.md`
-- **架构设计**: `docs/ARCHITECTURE.md`
-- **TODO索引**: `core_bak_refactored/TODO_INDEX.md`
-
----
-
-**维护者**: DeepSeekQuant 开发团队  
-**版本**: v2.0 (2024-11-21) - 精简重构  
+**版本**: v3.0 (2024-11-21) - 重命名为项目规范  
 **状态**: ✅ 生效中
