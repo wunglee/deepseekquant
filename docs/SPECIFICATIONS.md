@@ -1,6 +1,6 @@
 # DeepSeekQuant 项目规范
 
-> **版本**: v3.3 | **更新**: 2024-11-21 | **范围**: 架构约束、开发规范、工作流程、质量标准
+> **版本**: v3.4 | **更新**: 2024-11-21 | **范围**: 架构约束、开发规范、工作流程、质量标准
 
 ---
 
@@ -353,7 +353,6 @@ git commit -m "docs: 记录阶段X专家改进建议到TODO"
 - [ ] ask.md已生成并确认
 - [ ] 专家评审已通过
 - [ ] 全量回归测试通过
-- [ ] consultation.md准备清空
 
 #### 5.2 提交顺序
 
@@ -364,9 +363,9 @@ git commit -m "feat/fix: 简短描述\n\n详细说明\nTests: X/X passed ✅"
 # 2. TODO更新
 git commit -m "docs: 记录阶段X专家改进建议到TODO"
 
-# 3. 清空consultation.md
+# 3. 迭代结束时：清空consultation.md
 echo "# 专家咨询记录" > docs/consultation.md
-git commit -m "chore(docs): 清空consultation.md，阶段X已完成"
+git commit -m "chore(docs): 清空consultation.md，迭代X已完成"
 ```
 
 **Commit类型**: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`
@@ -387,7 +386,7 @@ git commit -m "chore(docs): 清空consultation.md，阶段X已完成"
 docs/
 ├── ask.md              # 临时：当前提问（不提交历史）
 ├── answer.md           # 临时：专家回答（不提交历史）
-├── consultation.md     # 版本控制：对话记录（多轮追加，阶段后清空）
+├── consultation.md     # 版本控制：对话记录（多轮追加，迭代后清空）
 ├── SPECIFICATIONS.md   # 版本控制：项目规范（架构约束、开发流程、质量标准）
 ├── PLAN.md             # 版本控制：项目计划
 ├── PROGRESS.md         # 版本控制：项目进展
@@ -417,7 +416,7 @@ docs/
 |------|------|------|
 | **咨询阶段** | 1. AI生成ask.md → **等待用户确认**<br>2. 用户确认 → 追加到consultation.md<br>3. 用户提供answer.md → AI读取并追加<br>4. 重复1-3直到实施 | 用户确认前不追加ask.md |
 | **实施阶段** | 5. 实施功能、更新TODO<br>6. 提交代码 + consultation.md | - |
-| **提交后** | 7. **清空consultation.md**（只保留标题）<br>8. 开始新轮次 | 迭代收尾提交后必须清空 |
+| **提交后** | 7. **清空consultation.md**（只保留标题）<br>8. 开始新轮次 | 仅在迭代收尾时清空 |
 
 ---
 
@@ -454,7 +453,7 @@ docs/
 |------|------|------|----------|
 | **流程** | 未经测试提交 | 修改后直接提交 | 每次修改后立即跑测试 |
 | | 提前追加ask.md | 生成后立即追加 | 等用户确认后才追加 |
-| | 忘记清空consultation | 阶段后不清空 | 提交后立即清空 |
+| | 忘记清空consultation | 迭代结束后不清空 | 迭代收尾时立即清空 |
 | **优化** | 重构引入新特性 | 优化时添加业务逻辑 | 仅限内部技术优化 |
 | | 重构要求用户确认 | 优化方案询问用户 | AI自主决策，报告体现细节 |
 | **评审** | 直接照搬专家建议 | 未考虑架构实际 | 理解消化后落地，检查冗余 |
@@ -490,7 +489,11 @@ docs/
 - [ ] 越界建议已识别并记录TODO，不影响当前任务
 - [ ] 高优先级问题已修复
 - [ ] 修复已测试并提交
-- [ ] consultation.md已清空
+
+**迭代结束时**:
+- [ ] 本迭代所有任务已完成
+- [ ] 所有代码已提交
+- [ ] consultation.md已清空（仅保留标题）
 
 ---
 
@@ -504,5 +507,5 @@ docs/
 ---
 
 **维护者**: DeepSeekQuant 开发团队  
-**版本**: v3.3 (2024-11-21) - 优化文档结构，精简冗余表达  
+**版本**: v3.4 (2024-11-21) - 修正consultation.md清空时机（迭代结束时）  
 **状态**: ✅ 生效中
