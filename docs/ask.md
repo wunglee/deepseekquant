@@ -1,62 +1,49 @@
-# 第21轮咨询 - P2.1专家补充需求实施完成
+# 第21轮咨询 - P2.1专家补充需求实施完成验收
 
-## 📁 相关文件清单（本次更新涉及）
-### 核心实现文件（本次修改）
+## 📁 相关文件清单（本次更新）
+### 核心实现文件
 - `core_bak_refactored/core/risk/portfolio_risk.py` (P2.1字段补充 + JP阈值优化 + 性能监控)
-- `core_bak_refactored/tests/core/risk/portfolio_risk_test.py` (P2.1验收测试更新)
-
-### 测试文件（本次验证）
-- `core_bak_refactored/tests/` 全量494项测试全部通过（100%）
+- `core_bak_refactored/tests/core/risk/portfolio_risk_test.py` (验收测试更新)
 
 ### 配置文档
-- `core_bak_refactored/core/risk/TODO.md` (更新P2.1进展)
+- `core_bak_refactored/core/risk/TODO.md` (P2.1进展记录)
 
-## 📁 上一轮（第20轮）专家回复与核心要求
-### 第20轮专家决策
+## 上一轮（第20轮）专家回复核心要点
 
-**✅ 批准立即冻结的参数**：
+### ✅ 批准立即冻结的参数
 1. 所有分市场阈值配置（波动率、涨跌停、事件权重等）
 2. 缓存分层TTL策略（NORMAL→EXTREME四档）
 3. 市场差异化参数（交易日、风险率、VaR方法等）
 4. 基础审计字段结构（现有report_snapshot字段）
 
-**⚠️ 需P2.1阶段补充后冻结**：
-1. **增强审计字段**：
-   - `calculation_cost_ms`：计算耗时（毫秒）
-   - `approval_status`：审批状态 (AUTO_APPROVED/PENDING/REJECTED)
-   - `risk_rating`：风险评级 (LOW/MEDIUM/HIGH)
-   - `compliance_flags`：合规标识 (DEGRADED_MODEL/STALE_DATA/SLOW_CALCULATION)
+### ⚠️ P2.1阶段补充需求（2周内完成）
+1. **审计字段补充**：
+   - calculation_cost_ms: 计算耗时（毫秒）
+   - approval_status: 审批状态（AUTO_APPROVED/PENDING/REJECTED）
+   - risk_rating: 风险评级（LOW/MEDIUM/HIGH）
+   - compliance_flags: 合规标识（DEGRADED_MODEL/STALE_DATA/SLOW_CALCULATION）
 
 2. **model_health优化**：
-   - JP市场阈值调整：min_points=60, optimal_points=240（从h55/220优化）
+   - JP市场阈值调整：min_points=60, optimal_points=240（从55/220优化）
 
 3. **性能监控增强**：
    - 计算耗时统计
    - 性能阈值告警（>5000ms）
 
-### 第20轮专家P2优先级建议
-- **高优先级（P2.1）**：补充审计字段 + 性能监控增强（预计3周）
-- **中优先级（P2.2）**：配置管理界面 + 数据质量监控（预计5周）
-- **低优先级（P2.3）**：机器学习优化（预计4周）
-
 ## 背景说明
-第21轮是第20轮专家评审后的P2.1阶段实施轮，根据专家建议完成审计字段补充、JP市场阈值优化、性能监控增强。
+
+第21轮是第20轮专家评审后的P2.1阶段实施验收轮，已完成专家建议的所有补充需求。
 
 **P2.1实施成果**：
-1. report_snapshot字段增强：新增4个必要字段（calculation_cost_ms, approval_status, risk_rating, compliance_flags）
-2. JP市场阈值优化：min_points 55→60, optimal_points 220→240
-3. 性能监控自动化：计算耗时统计 + 基于市场状态的动态风险评级 + 合规标识自动化
-4. 验收测试更新：test_report_snapshot_fields_completeness + test_model_health_jp_market_thresholds扩充P2.1字段验证
+1. report_snapshot字段增强：新增4个必要字段
+2. JP市场阈值优化：60/240更符合日本市场245个交易日特征
+3. 性能监控自动化：计算耗时统计 + 动态风险评级 + 合规标识自动化
+4. 验收测试更新：2项测试扩充P2.1字段验证
 5. 全量测试验证：494/494通过（100%）
-
-## 我们的架构组织
-- 共享配置层：`MarketConfigManager` 统一管理分市场阈值、事件权重、分层TTL、交易日、风险率等配置参数。
-- 业务分析器：`PortfolioRiskAnalyzer` 负责组合风险分析与批量触发；`RiskCalculator` 作为协调器统一风险计算入口。
-- 缓存管理：`get_smart_invalidation_manager` 提供智能缓存失效触发能力，依据波动率分层与重大事件动态失效。
 
 ## P2.1实施详情
 
-### 1) report_snapshot字段增强（基于第20轮专家建议）
+### 1) report_snapshot字段增强
 
 **新增字段**：
 ```python
@@ -73,13 +60,13 @@
 ```
 
 **业务逻辑**：
-- `calculation_cost_ms`：基于`time.time()`计算实际耗时，用于性能SLA监控
-- `approval_status`：默认AUTO_APPROVED，为未来人工审批流程预留
-- `risk_rating`：基于`market_status`和`volatility_regime`动态评级
+- `calculation_cost_ms`: 基于time.time()计算实际耗时，用于性能SLA监控
+- `approval_status`: 默认AUTO_APPROVED，为未来人工审批流程预留
+- `risk_rating`: 基于market_status和volatility_regime动态评级
   - EXTREME市场或EXTREME波动 → HIGH
   - VOLATILE市场或HIGH/MEDIUM波动 → MEDIUM
   - 其他 → LOW
-- `compliance_flags`：自动标识合规风险
+- `compliance_flags`: 自动标识合规风险
   - DEGRADED_MODEL：降级级别为SIGNIFICANT/SEVERE
   - STALE_DATA：数据新鲜度>3600秒
   - SLOW_CALCULATION：计算耗时>5000ms
@@ -89,7 +76,7 @@
 - 第628-630行：记录开始时间`start_time = time.time()`
 - 第790-818行：P2.1性能监控与风险评级逻辑
 
-### 2) JP市场阈值优化（基于第20轮专家建议）
+### 2) JP市场阈值优化
 
 **调整内容**：
 ```python
@@ -114,7 +101,7 @@
 
 **实现位置**：`core_bak_refactored/core/risk/portfolio_risk.py`
 - 第790-795行：计算耗时统计与calculation_cost_ms填充
-- 笭813-815行：SLOW_CALCULATION合规标识逻辑
+- 第813-815行：SLOW_CALCULATION合规标识逻辑
 - 第817行：debug日志输出计算耗时
 
 ### 4) 验收测试更新
@@ -199,9 +186,3 @@
 - P2.1实施结果的业务评审意见
 - 字段/阈值的优化调整建议（如有）
 - P2.2阶段的功能优先级排序
-
-
-
-
-
-
