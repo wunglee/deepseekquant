@@ -14,7 +14,7 @@ import os
 # 添加父目录到路径
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from infrastructure.timeseries_calculator import TimeSeriesCalculator
+from core_bak_refactored.infrastructure.timeseries_calculator import TimeSeriesCalculator
 
 
 class TestTimeSeriesCalculator(unittest.TestCase):
