@@ -610,7 +610,12 @@ class PortfolioRiskAnalyzer:
                 'calculation_id': str(uuid.uuid4()),
                 'trigger_reason': 'SCHEDULED',
                 'cache_status': 'UNKNOWN',
-                'data_freshness_seconds': 0
+                'data_freshness_seconds': 0,
+                # P2.1专家建议补充字段
+                'calculation_cost_ms': 0,  # 计算耗时（毫秒）
+                'approval_status': 'AUTO_APPROVED',  # 审批状态
+                'risk_rating': 'MEDIUM',  # 风险评级
+                'compliance_flags': []  # 合规标识
             },
             'model_health': {
                 'data_points': 0,
@@ -619,6 +624,9 @@ class PortfolioRiskAnalyzer:
                 'fallback_method': None
             }
         }
+        
+        # P2.1性能监控：记录开始时间
+        start_time = time.time()
         
         try:
             portfolio_state = data.get('portfolio_state')
@@ -639,7 +647,7 @@ class PortfolioRiskAnalyzer:
                 thresholds = {
                     'US': {'min_points': 63, 'optimal_points': 252},
                     'CN': {'min_points': 30, 'optimal_points': 180},
-                    'JP': {'min_points': 55, 'optimal_points': 220},
+                    'JP': {'min_points': 60, 'optimal_points': 240},  # P2.1专家建议：调整为60/240
                     'EU': {'min_points': 60, 'optimal_points': 220},
                     'SG': {'min_points': 50, 'optimal_points': 180}
                 }
@@ -781,7 +789,31 @@ class PortfolioRiskAnalyzer:
                 hhi = sum(w ** 2 for w in weights_list)
                 result['concentration_risk'] = float(min(hhi, 1.0))
             
-            logger.debug(f"组合风险分析完成: 波动率={result['volatility']:.4f}, VaR={result['var_95']:.4f}, 夏普={result['sharpe_ratio']:.2f}")
+            # P2.1性能监控：计算耗时与风险评级
+            calculation_cost_ms = int((time.time() - start_time) * 1000)
+            result['report_snapshot']['calculation_cost_ms'] = calculation_cost_ms
+            
+            # P2.1风险评级：根据市场状态动态评级
+            market_status = result['report_snapshot']['market_status']
+            volatility_regime = result['report_snapshot']['volatility_regime']
+            if market_status == 'EXTREME' or volatility_regime == 'EXTREME':
+                result['report_snapshot']['risk_rating'] = 'HIGH'
+            elif market_status == 'VOLATILE' or volatility_regime in ('HIGH', 'MEDIUM'):
+                result['report_snapshot']['risk_rating'] = 'MEDIUM'
+            else:
+                result['report_snapshot']['risk_rating'] = 'LOW'
+            
+            # P2.1合规标识：基于数据完整性与质量
+            compliance_flags = []
+            if result['model_health']['degradation_level'] in ('SIGNIFICANT', 'SEVERE'):
+                compliance_flags.append('DEGRADED_MODEL')
+            if result['report_snapshot']['data_freshness_seconds'] > 3600:
+                compliance_flags.append('STALE_DATA')
+            if calculation_cost_ms > 5000:  # 超过5秒告警
+                compliance_flags.append('SLOW_CALCULATION')
+            result['report_snapshot']['compliance_flags'] = compliance_flags
+            
+            logger.debug(f"组合风险分析完成: 波动率={result['volatility']:.4f}, VaR={result['var_95']:.4f}, 夏普={result['sharpe_ratio']:.2f}, 耗时={calculation_cost_ms}ms")
             return result
         
         except Exception as e:

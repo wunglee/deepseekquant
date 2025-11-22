@@ -114,7 +114,7 @@ class TestPortfolioRiskAnalyzer(unittest.TestCase):
         self.assertEqual(result['concentration_risk'], 0.0)
     
     def test_report_snapshot_fields_completeness(self):
-        """验收测试：报告快照字段完整性（第20轮迭代目标）"""
+        """验收测试：报告快照字段完整性（P2.1专家补充）"""
         allocations = {'A': DummyAlloc(0.5), 'B': DummyAlloc(0.5)}
         portfolio_state = DummyPortfolioState(allocations)
         cov_matrix = pd.DataFrame(
@@ -146,7 +146,7 @@ class TestPortfolioRiskAnalyzer(unittest.TestCase):
         self.assertIn('report_snapshot', result)
         rs = result['report_snapshot']
         
-        # 验证必要字段（第20轮迭代目标）
+        # 验证基础字段（第20轮迭代目标）
         required_fields = [
             'report_id', 'environment', 'timestamp', 'market_type',
             'calculation_id', 'trigger_reason', 'cache_status', 'data_freshness_seconds'
@@ -154,14 +154,24 @@ class TestPortfolioRiskAnalyzer(unittest.TestCase):
         for field in required_fields:
             self.assertIn(field, rs, f"缺少必要字段: {field}")
         
+        # P2.1专家补充字段验证
+        p21_fields = ['calculation_cost_ms', 'approval_status', 'risk_rating', 'compliance_flags']
+        for field in p21_fields:
+            self.assertIn(field, rs, f"P2.1缺少补充字段: {field}")
+        
         # 验证字段类型
         self.assertIsInstance(rs['calculation_id'], str)
         self.assertIsInstance(rs['data_freshness_seconds'], int)
         self.assertIn(rs['trigger_reason'], ['SCHEDULED', 'VOLATILITY_SPIKE'])
+        self.assertIsInstance(rs['calculation_cost_ms'], int)
+        self.assertGreaterEqual(rs['calculation_cost_ms'], 0)
+        self.assertIn(rs['approval_status'], ['AUTO_APPROVED', 'PENDING', 'REJECTED'])
+        self.assertIn(rs['risk_rating'], ['LOW', 'MEDIUM', 'HIGH'])
+        self.assertIsInstance(rs['compliance_flags'], list)
     
     def test_model_health_jp_market_thresholds(self):
-        """验收测试：JP市场模型健康分级阈值（第20轮迭代目标）"""
-        # 测试JP市场特定阈值：min_points=55, optimal_points=220
+        """验收测试：JP市场模型健康分级阈值（P2.1专家优化：60/240）"""
+        # P2.1专家建议：JP市场阈值调整为min_points=60, optimal_points=240
         config = {'trading_days_per_year': 245, 'market_type': 'JP'}
         analyzer = PortfolioRiskAnalyzer(config)
         
@@ -169,12 +179,12 @@ class TestPortfolioRiskAnalyzer(unittest.TestCase):
         portfolio_state = DummyPortfolioState(allocations)
         cov_matrix = pd.DataFrame([[0.0004]], index=['A'], columns=['A'])
         
-        # 测试不同数据点数的分级
+        # 测试不同数据点数的分级（基于新阈值60/240）
         test_cases = [
-            (220, 'EXCELLENT', 'NONE'),      # >= optimal_points
-            (100, 'GOOD', 'MINIMAL'),        # >= min_points (55)
-            (50, 'FAIR', 'MODERATE'),        # >= min_points * 0.7 (38.5)
-            (30, 'POOR', 'SIGNIFICANT'),     # >= min_points * 0.5 (27.5)
+            (240, 'EXCELLENT', 'NONE'),      # >= optimal_points (240)
+            (100, 'GOOD', 'MINIMAL'),        # >= min_points (60)
+            (50, 'FAIR', 'MODERATE'),        # >= min_points * 0.7 (42)
+            (35, 'POOR', 'SIGNIFICANT'),     # >= min_points * 0.5 (30)
             (20, 'INSUFFICIENT', 'SEVERE')   # < min_points * 0.5
         ]
         
