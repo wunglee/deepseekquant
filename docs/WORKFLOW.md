@@ -11,6 +11,60 @@
 3. **文档同步** - 代码与文档通过Git统一管理
 4. **TODO驱动** - 专家建议记录到TODO形成闭环
 5. **自动执行** - 按规范自动执行，无需用户确认
+6. **🔒 架构隔离** - core_bak_refactored目录完全自包含，不依赖目录外任何代码
+
+---
+
+## 🏗️ 架构隔离约定（强制）
+
+### core_bak_refactored 自包含原则
+
+**核心规则**:
+- ✅ **core_bak_refactored/** 下所有代码**必须完全自包含**
+- ✅ 仅允许导入 core_bak_refactored/ 内部模块和标准库/第三方包
+- ❌ **严禁**导入 core_bak_refactored/ 外的项目代码（包括根目录的 core/、infrastructure/、common 等）
+- ❌ **严禁**在 core_bak_refactored/ 外创建兼容层或映射文件来"暴露"接口
+
+**目录结构**:
+```
+core_bak_refactored/          # 重构后的自包含代码库
+├── core/                     # 业务核心层
+│   └── risk/                 # 风险模块
+├── infrastructure/           # 基础设施层
+└── tests/                    # 测试套件
+
+# 以下目录与 core_bak_refactored 完全隔离，互不依赖
+core/                         # 旧代码库（逐步废弃）
+infrastructure/               # 旧基础设施（逐步废弃）
+common.py                     # 旧共享模块（仅供旧代码使用）
+```
+
+**导入规范**:
+```python
+# ✅ 正确：core_bak_refactored 内部导入
+from core_bak_refactored.infrastructure.parallel_executor import get_parallel_executor
+from core_bak_refactored.core.risk.portfolio_risk import PortfolioRiskAnalyzer
+
+# ❌ 错误：导入外部模块
+from infrastructure.parallel_executor import ...  # 禁止
+from core.risk.xxx import ...                     # 禁止
+from common import ...                            # 禁止（除非在core_bak_refactored/外）
+```
+
+**测试运行**:
+```bash
+# core_bak_refactored 测试必须独立运行通过
+cd core_bak_refactored
+pytest tests/ -q
+
+# 或从项目根使用相对路径
+PYTHONPATH=. pytest core_bak_refactored/tests/ -q
+```
+
+**违反处理**:
+- 🚫 立即回滚违反隔离原则的代码
+- 🚫 删除在 core_bak_refactored/ 外创建的兼容/映射文件
+- ✅ 将所需功能在 core_bak_refactored/ 内重新实现或迁移
 
 ---
 
