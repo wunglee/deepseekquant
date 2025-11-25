@@ -1,4 +1,4 @@
-# 风险管理模块 TODO
+# 风险管理模块 TODO（结构化清单）
 
 > **层级**：Core Layer - Risk Management  
 > **路径**：`core/risk/`  
@@ -7,239 +7,169 @@
 
 ---
 
-## 🎉 最新进展：生产就绪确认
+## 🧭 模块导航
 
-**专家复审结果** (2024-11-14):
-- **评分**: 96/100分
-- **结论**: ✅ **批准立即发布生产版本**
-- **P1修正**: 6项全部正确落地（100%完成）
-- **P1.5边界测试**: ✅ 已补充，18/18通过
-- **测试通过率**: 123/128 (96.1%)
-- **复审文档**: `docs/answer.md`
-
-**关键改进已落地**:
-1. ✅ 动态相关性调整（基于市场波动率）
-2. ✅ 美股合规日志增强（event_id + ISO8601）
-3. ✅ 数据质量自动化处理（C/D级告警）
-4. ✅ 场景相关性矩阵微调（货币危机0.45、A股0.3）
-5. ✅ 新增SG市场配置
-6. ✅ JP市场调整为严格模式（专家建议）
-7. ✅ **P1.5边界条件测试补充**（9个新测试，含性能测试）
-
-**发布说明**：发布策略由全局计划统一安排；在完成 Phase 2（融合至 core）与全局集成测试通过前，本模块不单独推动发布
+1. [未分配事项（业务目标）](#未分配事项)  
+2. [待办事项（技术储备）](#待办事项)  
+3. [已完成事项（迁移至代码注释）](#已完成事项)
 
 ---
 
+## 未分配事项
 
+说明：仅维护未分配到具体迭代的业务目标或特性级待办，不落到具体代码文件维度。被分配后，迁移到本模块 SPRINT.md 相应迭代节点。
 
-## 📋 风险模块全面评审计划（自底向上）
+条目字段：标题、背景/价值、验收标准、优先级、关联领域、依赖/前置、实施方案（专家实施要点/代码建议）、相关文件、迁移状态。
 
-### 评审迭代与文件映射
+### 持仓风险分析器历史验证与生产化（5B-5）
+- 标题：历史压力场景回测与跨市场一致性校准
+  - 背景/价值：提升模型在极端市场条件下的准确性与可靠性；确保跨市场风险指标的可比性
+  - 验收标准：
+    - 历史回测准确性：压力场景误差≤15%（2008金融危机、2015股灾等5个场景）
+    - 跨市场一致性：汇率调整+流动性校准后，跨市场风险可比性≥85%
+    - 行业差异化：金融/科技/周期股冲击系数差异≥10%
+  - 优先级：P2（生产化增强）
+  - 关联领域：持仓风险分析
+  - 依赖/前置：
+    - 历史压力场景数据（2008金融危机、2015股灾、2020疫情、2011欧债、2013钱荒）
+    - 跨市场汇率数据与流动性参数
+    - 行业分类数据（金融/科技/周期/防御）
+  - 实施方案：
+    - 接入历史压力场景数据（需咨询专家数据来源与口径）
+    - 实现calibrate_cross_market_consistency()：基于USD基准的跨市场校准
+    - 添加行业特性参数：金融股流动性溢价、科技股波动性调整、周期股系统性风险系数
+    - 生产环境数据验证：与实际交易数据对比，建立持续校准机制
+  - 相关文件：`core_bak_refactored/core/risk/position_risk.py`
+  - 迁移状态：待分配（需专家确认数据来源与业务规则）
 
-#### **迭代1：数据模型层** ✅ 已完成（历史迭代，非当前）
-- **文件**: `risk_models.py` (893行)
-- **状态**: 🟡 单元测试通过，待专家评审
-- **依赖**: 无（最底层，被所有模块依赖）
-- **评审文档**: `docs/ask.md`（第3轮咨询，已创建）
-- **重点**: 枚举完整性、数据结构合理性、序列化健壮性
+### 风险识别与响应
+- 标题：动态性能阈值优化
+  - 背景/价值：按组合规模调整SLA阈值，提高性能稳定性
+  - 验收标准：<=100→5000ms，<=500→10000ms，>500→30000ms；采集p50/p95/p99
+  - 优先级：P1
+  - 关联领域：识别与响应
+  - 依赖/前置：性能采集与统计
+  - 实现方案：建立SLA策略（按组合规模分级），采集计算耗时样本并统计分位数，策略与阈值外部化到配置，不绑定具体文件；迭代分配后由SPRINT节点落地。
+  - 相关文件：`core_bak_refactored/core/risk/portfolio_risk.py`
+  - 迁移状态：未分配
 
-#### **迭代2：基础设施层** ✅ 已完成
-- **文件**: `infrastructure/risk_metrics.py`
-- **状态**: ✅ 专家Stage 1已评审
-- **依赖**: 无
+### 审计与追溯
+- 标题：数据质量监控增强
+  - 背景/价值：提升数据完整性与一致性，降低异常影响
+  - 验收标准：DATA_QUALITY_WARNING触发率≤3%，误报≤1%；关键字段完整性100%
+  - 优先级：P1
+  - 关联领域：审计与追溯
+  - 依赖/前置：data_quality_policy 配置
+  - 实现方案：定义数据质量策略（完整性/一致性规则集），构建自动标注与校验流程，合规标识与策略外部化；迭代分配后在门面入口挂载校验。
+  - 相关文件：`core_bak_refactored/core/risk/portfolio_risk.py`
+  - 迁移状态：未分配
 
-#### **迭代3：业务服务层** ✅ 已完成
-- **文件**: `risk_metrics_service.py`
-- **状态**: ✅ 专家Stage 2 + P0修复完成
-- **依赖**: StatisticalCalculator, risk_models
-- **测试**: 17/17业务层 + 11/11国际化测试通过
+- 标题：货币单位一致性检查
+  - 背景/价值：避免多币种导致VaR与风险指标偏差
+  - 验收标准：多币种检测与告警覆盖率100%；一致性验证通过率100%
+  - 优先级：P1
+  - 关联领域：审计与追溯
+  - 依赖/前置：汇率适配器、币种字段覆盖
+  - 实现方案：统一货币校验策略（组合维度），通过适配器进行汇率标准化与一致性检查，产生业务日志与告警；落地入口由SPRINT分配。
+  - 相关文件：`core_bak_refactored/core/risk/risk_calculator.py`, `core_bak_refactored/core/share/exchange_rates.py`
+  - 迁移状态：未分配
 
-#### **迭代4：国际化配置层** ✅ 已完成
-- **文件**: `international_config.py`, `international_enhancements.py`, `market_detectors.py`
-- **状态**: ✅ 国际化支持完成
-- **依赖**: RiskMetricsService
-- **测试**: 11/11测试通过
+### 触发可靠性与成本
+- 标题：配置管理界面（可视化）
+  - 背景/价值：降低运维成本；支持阈值热更新与审计
+  - 验收标准：参数热更新成功率100%；变更审计完整性100%
+  - 优先级：P1
+  - 关联领域：触发可靠性与成本
+  - 依赖/前置：MarketConfigManager 接口
+  - 实现方案：提供配置策略的UI/接口层，变更走审计流水与回滚策略，与运行时配置更新解耦；界面落地与后端接口由SPRINT分配。
+  - 相关文件：`core_bak_refactored/core/share/market_config.py`
+  - 迁移状态：未分配
 
-#### **迭代5：专业分析器层（并列）** ⚠️ 优化中
+- 标题：配置热更新支持
+  - 背景/价值：运行时安全更新参数，支持回滚
+  - 验收标准：原子性更新与回滚；并发安全；覆盖单元/集成测试
+  - 优先级：P1
+  - 关联领域：触发可靠性与成本
+  - 依赖/前置：版本检测与通知机制
+  - 实现方案：引入版本化配置与原子更新接口，失败自动回滚，并发安全通过锁/副本交换保证；与各模块入口解耦，分配后在SPRINT节点挂接。
+  - 迁移状态：未分配
 
-#### **5A. 组合风险分析器** 🛠️ **P0优化完成** | ⚠️ 当前迭代（收敛提交评审）
+### 市场差异化合规
+- 标题：集中度风险监控
+  - 背景/价值：HHI阈值预警，完善CONCENTRATION_RISK标识
+  - 验收标准：HHI≥阈值触发率与误报率达标；合规标识逻辑一致
+  - 优先级：P1
+  - 关联领域：市场差异化合规
+  - 依赖/前置：组合权重数据质量
+  - 实现方案：制定集中度阈值策略与预警规则，接入组合权重数据进行计算与标识触发，策略与阈值外部化；分配后在入口挂接。
+  - 相关文件：`core_bak_refactored/core/risk/portfolio_risk.py`
+  - 迁移状态：未分配
 
-
-##### 迭代目标（第19轮收敛版）
-- 风险识别与响应（可量化）：事件/阈值触发正确率≥95%，误触发率≤5%；单组合（≤100标的）重算P95时延≤800ms。
-- 审计与追溯（可量化）：`report_snapshot` 字段完整性检查通过率=100%；`model_health` 分级准确率≥95%，异常标注漏报率=0%。
-- 触发可靠性与成本（可量化）：平稳市况缓存失效率≤10%；极端市况缓存命中率≥85%；重算CPU时间较前版本降低≥20%。
-- 市场差异化合规（可量化）：各市场阈值场景测试通过率=100%；当缺失配置时回退生效率=100%。
-- 验证与测试映射：以上指标对应 `core_bak_refactored/tests/**` 的场景/性能/一致性用例，作为收敛验收门槛。
-##### 迭代进展
-- **文件**: `portfolio_risk.py` (1016行)
-- **状态**: P2.1专家补充需求完成（审计字段增强 + JP市场优化）
-- **专家评分**: 优秀（第20轮验收批准）
-- **依赖**: RiskMetricsService, StatisticalCalculator, ParallelExecutor, CacheService
-- **测试**: 494/494全量通过（100%）
-- **P2.1进度更新** (完成时间: 2025-11-21):
-  - ✅ 报告快照补充字段（calculation_cost_ms、approval_status、risk_rating、compliance_flags）
-  - ✅ JP市场阈值优化（min_points=60, optimal_points=240）
-  - ✅ 性能监控增强（计算耗时统计 + 自动风险评级）
-  - ✅ 合规标识自动化（DEGRADED_MODEL、STALE_DATA、SLOW_CALCULATION）
-  - ✅ 测试用例更新（test_report_snapshot_fields_completeness + test_model_health_jp_market_thresholds）
-  - ✅ 全量测试验证（494/494通过，100%）
-
-- 指标对齐分析（对应迭代目标）
-  - 风险识别与响应：分市场阈值与事件权重配置验证通过率=100% (30/30)；触发评分上下文字段=待数值环境恢复后验证。
-  - 审计与追溯：report_snapshot/model_health 字段定义与取值口径=待数值环境恢复后验证。
-  - 触发可靠性与成本：缓存管理器基础能力通过率=100% (20/20)；分层TTL与失效策略=待场景验证。
-  - 市场差异化合规：配置模板完整性与一致性验证通过率=100% (30/30)；分市场参数口径、交易日、风险率、VaR方法、波动性持续、流动性权重等验证均通过；回退机制=待数值环境恢复后场景验证。
-  - 差距评估：已完成“不依赖数值库”的配置与合规验收子集，覆盖所有目标的静态配置层（阈值、权重、分层、参数口径）；剩余项为数值类验证（触发评分、字段完整性、场景验证），需numpy/pandas环境恢复。
-  - 阻碍因素：numpy C-extensions 加载失败（libgfortran.5 二进制依赖冲突），已采用非阻塞跳过策略，保留可运行子集持续推进。
-  - 收敛计划：继续扩充不依赖数值库的配置验收断言；数值环境恢复后自动执行RiskCalculator/PortfolioRiskAnalyzer数值类测试，补齐触发评分上下文、字段完整性与JP分级阈值验证。
-  - 数据来源：`core_bak_refactored/tests/core/share/exchange_rates_test.py` (30项)、`core_bak_refactored/tests/core/risk/test_cache_manager.py` (20项)、`core_bak_refactored/tests/**` 其他场景用例（待执行）。
-
-- **下一步**: 追加第19轮 ask 到 consultation.md，执行全量测试并提交评审
-
-**5B. 持仓风险分析器** ⚠️ 待评审
-- **文件**: `position_risk.py` (223行)
-- **状态**: 基础实现完成，🟡 单元测试通过，待专家评审
-- **依赖**: StatisticalCalculator
-- **评审重点**: 
-  - 流动性风险模型（参与率冲击模型）
-  - 清算时间估算准确性
-  - 价格冲击模型参数验证
-
-**5C. 压力测试器** ✅ 已完成
-- **文件**: `stress_testing.py` (733行)
-- **状态**: ✅ P1-2内置场景库完成（基于专家指导）
-- **依赖**: RiskMetricsService, risk_models
-- **测试**: 9/9测试通过
-- **内容**: 9种历史场景 + 场景相关性矩阵
-
-**5D. 风险计算协调器** ⚠️ 当前迭代（收敛评审）
-
-
-##### 迭代目标（第19轮收敛版）
-- 风险识别与响应（可量化）：事件/阈值触发正确率≥95%，误触发率≤5%；单组合（≤100标的）重算P95时延≤800ms。
-- 审计与追溯（可量化）：`report_snapshot` 字段完整性检查通过率=100%；`model_health` 分级准确率≥95%，异常标注漏报率=0%。
-- 触发可靠性与成本（可量化）：平稳市况缓存失效率≤10%；极端市况缓存命中率≥85%；重算CPU时间较前版本降低≥20%。
-- 市场差异化合规（可量化）：各市场阈值场景测试通过率=100%；当缺失配置时回退生效率=100%。
-- 验证与测试映射：以上指标对应 `core_bak_refactored/tests/**` 的场景/性能/一致性用例，作为收敛验收门槛。
-##### 迭代进展
-- **文件**: `risk_calculator.py` (445行)
-- **状态**: 第19轮收敛实施中（上下文增强 + 事件联动触发）
-- **依赖**: RiskMetricsService, RiskDataPreprocessor, MarketConfigManager
-- **测试**: 待全量回归（收敛提交前执行）
-- **进度更新** (完成时间: 2025-11-21):
-  - ✅ 智能缓存失效触发上下文新增（market_type、portfolio_size、data_quality_rating、volatility_tier、market_status）
-  - ✅ 事件联动触发支持（circuit_breaker_triggered、extreme_correlation_breakdown、limit_hit_ratio、major_market_event）
-  - ✅ 各市场阈值参数回退与优先级（market_configs优先，全局回退）
-
-- 指标对齐分析（对应迭代目标）
-  - 风险识别与响应：上下文与事件联动已接入；分市场阈值配置验证通过率=100% (30/30)；触发评分上下文字段=待数值环境恢复后验证。
-  - 审计与追溯：与5A输出一致；字段定义与取值口径=待数值环境恢复后验证。
-  - 触发可靠性与成本：缓存管理器基础能力通过率=100% (20/20)；分层TTL与失效策略=待场景验证。
-  - 市场差异化合规：配置模板完整性与一致性验证通过率=100% (30/30)；分市场参数口径、交易日、风险率、VaR方法、波动性持续、流动性权重等验证均通过；回退机制=待数值环境恢复后场景验证。
-  - 差距评估：已完成"不依赖数值库"的配置与合规验收子集，覆盖所有目标的静态配置层（阈值、权重、分层、参数口径）；剩余项为数值类验证（触发评分、字段完整性、场景验证），需numpy/pandas环境恢复。
-  - 阻碍因素：numpy C-extensions 加载失败（libgfortran.5 二进制依赖冲突），已采用非阻塞跳过策略，保留可运行子集持续推进。
-  - 收敛计划：继续扩充不依赖数值库的配置验收断言；数值环境恢复后自动执行RiskCalculator上下文验证与字段完整性测试，补齐触发评分、model_health分级等。
-  - 数据来源：`core_bak_refactored/tests/core/share/exchange_rates_test.py` (30项)、`core_bak_refactored/tests/core/risk/test_cache_manager.py` (20项)、`core_bak_refactored/tests/**` 其他场景用例（待执行）。
-
-- **下一步**: 与组合分析器一致性验证，执行全量测试并提交评审
-
-#### **迭代6：管理器层** ✅ 已完成
-- **文件**: `risk_limits.py` (560行) + `risk_limits_enhanced.py` (1202行)
-- **状态**: ✅ P1-3智能化完成 + 专家2轮咨询修正
-- **依赖**: 无直接依赖分析器（独立检查限额）
-- **测试**: 36/36测试通过（100%）
-- **内容**: 智能阈值、优先级处理、市场差异化
-
-#### **迭代7：监控层** ⚠️ 待评审
-- **文件**: `risk_monitor.py` (268行)
-- **状态**: 基础实现完成，❌ 未评审
-- **依赖**: risk_models
-- **测试**: 7/7测试通过
-- **评审重点**: 
-  - 实时监控机制合理性
-  - 告警触发逻辑准确性
-  - 监控线程安全性
-
-#### **迭代8：协调层** ⚠️ 待评审
-- **文件**: `risk_processor.py` (180行)
-- **状态**: 基础实现，❌ 需要集成测试
-- **依赖**: 所有上述组件
-- **测试范围**: 
-  - 所有组件协同工作
-  - 端到端场景验证
-  - 性能压力测试
-  - 错误处理和降级
+- 标题：实时市场数据集成
+  - 背景/价值：动态无风险利率与关键参数更新
+  - 验收标准：数据有效性验证；缓存机制；接口健壮性
+  - 优先级：P2
+  - 关联领域：市场差异化合规
+  - 依赖/前置：数据源API与接口层
+  - 实现方案：抽象实时数据接口层，提供数据校验与缓存策略，参数更新通过配置化策略应用；具体数据源由SPRINT迭代分配。
+  - 相关文件：`core_bak_refactored/core/risk/risk_metrics_service.py`, `core_bak_refactored/core/share/market_config.py`
+  - 迁移状态：未分配
 
 ---
 
-## 🎯 当前任务：迭代1 - 数据模型层评审
+## 待办事项
 
-### 执行计划
+### 待办事项（技术债务 - 第5轮遗留）
 
-**步骤1**: ✅ 创建专家咨询文档
-- 文件：`docs/ask.md`（第3轮咨询）
-- 状态：已创建（411行，7个核心问题）
-- 时间：2024-11-12
+#### ⚠️ P2: 压力测试代码优化重构（技术债务）
 
-**步骤2**: ⏳ 等待专家反馈
-- 文件：`docs/answer.md`
-- 等待专家回复7个问题
+**背景**：  
+第5轮Phase 1和Phase 2完成后，未执行规范要求的代码走查与优化重构。
 
-**步骤3**: 📋 待执行 - 根据专家指导修正
-- 修改：`risk_models.py`
-- 可能涉及：
-  - 调整枚举定义（RiskLevel/RiskType/RiskMetric）
-  - 优化数据类字段
-  - 增强容错机制
-  - 补充文档注释
+**技术问题清单**：
+- 重复代码：`_simulate_currency_crisis`和`_simulate_geopolitical_risk`中的恢复期计算逻辑重复
+- 日志级别不当：使用`logger.debug`替代`logger.info`，生产环境可能缺少关键信息
+- 缺少输入验证：未检查`total_exposure`为零的边界情况
+- 数值稳定性：恢复期计算未限制极端值范围
 
-**步骤4**: ✅ 已完成 - 补充测试
-- 文件：`risk_models_test.py`
-- 覆盖：RiskLevel映射、legacy兼容、LimitBreach序列化/旧字段映射、Recommendation优先级校验与序列化、TimeHorizon属性
+**实施要点**：
+- [ ] 提取公共方法：`_calculate_recovery_opportunity_cost(direct_loss, recovery_months)`
+- [ ] 添加输入验证：检查`total_exposure == 0`并返回0.0
+- [ ] 升级日志级别：关键计算步骤使用`logger.info`替代`debug`
+- [ ] 数值稳定性：限制`recovery_months`在0-120月范围，避免指数爆炸
+- [ ] 异常处理增强：添加`exc_info=True`到错误日志
 
-**步骤5**: 📋 待执行 - 更新consultation.md
-- 追加第3轮咨询问答到 `docs/consultation.md`
+相关文件：`core_bak_refactored/core/risk/stress_testing.py`  
+状态评估：🔲 未实施（优先级P2，Phase 3完成后处理）
+
+#### ⚠️ P2: 设计文档同步（技术债务）
+
+**背景**：  
+根据规范第741-839行要求，代码变更后必须同步更新设计文档。第5轮新增了2个场景、2个方法、2个数据类，但未同步文档。
+
+**需要同步的变更**：
+1. **模块设计文档**：
+   - 新增场景说明（1997亚洲金融危机、2022俄乌冲突）
+   - 更新变更历史（v1.x, 2025-11-25）
+   
+2. **接口设计文档**：
+   - 新增数据类API：`StressTestResult`、`CombinedStressTestResult`
+   - 新增方法文档：`_simulate_currency_crisis()`、`_simulate_geopolitical_risk()`
+   - 更新使用示例（展示新数据类用法）
+
+**实施要点**：
+- [ ] 更新`docs/design/core/risk/模块设计文档.md`
+- [ ] 更新`docs/design/core/risk/接口设计文档.md`
+- [ ] 添加版本历史条目
+- [ ] 标记变更章节（如：`[v1.1 新增]`）
+
+相关文件：  
+- `docs/design/core/risk/模块设计文档.md`
+- `docs/design/core/risk/接口设计文档.md`
+
+状态评估：🔲 未实施（优先级P2，Phase 3完成后处理）
 
 ---
-
-## 🗓️ 后续迭代优先级
-
-### P0优先级（迭代1完成后立即执行）
-1. **迭代5A：组合风险分析器评审** - 有复杂Barra模型
-2. **迭代5B：持仓风险分析器评审** - 流动性风险核心
-
-### P1优先级
-3. **迭代5D：风险计算协调器评审** - 明确职责边界
-4. **迭代7：监控层评审** - 功能相对独立
-
-### P2优先级
-5. **迭代8：总协调器集成测试** - 整体验证
-
----
-
-## 🟢 risk_metrics_service.py - RiskMetricsService
-
-**状态**：✅ 国际化支持完成，生产就绪  
-**最后更新**：2024-11-09  
-**测试覆盖**：17/17 通过（业务服务层）+ 11/11 通过（国际化支持）+ 207/207 通过（全项目）  
-**依赖**：✅ infrastructure/risk_metrics.py 已完成
-
-### 已完成
-- [x] 基础风险指标（VaR, CVaR, Sharpe, Sortino）
-- [x] Beta、Alpha计算
-- [x] 最大回撤
-- [x] **P0修复：CVaR参数法保守估计**（替代1.1倍系数）
-- [x] **P0修复：分层置信度配置**（95%/99%，满足监管要求）
-- [x] **P0修复：动态无风险利率**（支持实时市场数据）
-- [x] **P0修复：符号约定统一**（VaR/CVaR明确返回正数表示损失）
-- [x] **P0修复：A股涨跌停检测机制**（4种板块类型 + 日志警告 + 4个专项测试）
-- [x] **🌍 国际化支持**：CN/US/HK/JP/EU市场配置
-- [x] **🌍 市场机制检测**：涨跌停、熔断、LULD、VCM
-- [x] **🌍 增强版夏普比率**：市场特定风险溢价、异常调整
-- [x] **🌍 跨市场风险对比**：多市场风险分析
-- [x] 17个业务服务层测试 + 11个国际化测试
-- [x] **迭代3：国际化补充检查** - RiskCalculator集成MarketConfigManager，专家评审87/100，批准发布
 
 ### 待办事项（业务层改进储备）
 
@@ -249,18 +179,6 @@
 > - ✅ 无风险利率动态化：支持动态配置和参数传入
 > - ✅ 符号约定统一：VaR/CVaR返回正数表示损失，文档清晰
 > - ✅ A股涨跌停处理：检测机制 + 日志警告 + 4个专项测试
-> 
-> **📄复审文档**：`/consultation/expert_review_stage2_business_service.md`  
-> **测试结果**：17/17 通过（业务服务层）+ 196/196 通过（全项目）
-
-> **🌍国际化补充检查（2024-11-12）**
-> - ✅ RiskCalculator集成MarketConfigManager
-> - ✅ 配置验证和自动补全机制
-> - ✅ 所有日志添加market_type信息
-> - ✅ 修复蒙特卡洛随机种子硬编码问题
-> 
-> **👨‍🔬专家评审结果**：✅ 批准发布（87/100，达到生产就绪标准）  
-> **测试结果**：10/10 通过
 
 ---
 
@@ -284,10 +202,15 @@ def _validate_currency_consistency(self, portfolio_state, market_data):
     return True
 ```
 
+相关文件：`core_bak_refactored/core/risk/risk_calculator.py`, `core_bak_refactored/core/share/exchange_rates.py`
+
+子项（下一层级）：
 **待办**：
 - [ ] 在RiskCalculator中添加货币一致性验证
 - [ ] 支持多币种警告和日志记录
 - [ ] 添加单元测试
+
+状态评估：✅ 已部分实现，在 [risk_calculator.py](file:///Users/wangli/Library/Mobile%20Documents/com~apple~CloudDocs/历史项目/projects/deepseekquant/core_bak_refactored/core/risk/risk_calculator.py) 中已实现货币一致性检查相关功能，包括 [_runtime_currency_check](file:///Users/wangli/Library/Mobile%20Documents/com~apple~CloudDocs/历史项目/projects/deepseekquant/core_bak_refactored/core/risk/risk_calculator.py#L184-L215)、[_handle_currency_warnings](file:///Users/wangli/Library/Mobile%20Documents/com~apple~CloudDocs/历史项目/projects/deepseekquant/core_bak_refactored/core/risk/risk_calculator.py#L217-L232) 等方法。需要补充单元测试。
 
 ---
 
@@ -310,6 +233,8 @@ def _fetch_live_risk_free_rate(self, market_type: str) -> float:
 - [ ] 实现实时数据缓存机制
 - [ ] 添加数据有效性验证
 
+状态评估：🔲 未实现，仍处于待办状态。
+
 ---
 
 #### ⚠️ P1: 配置热更新支持（专家建议 - 近期实施）
@@ -325,92 +250,20 @@ def _fetch_live_risk_free_rate(self, market_type: str) -> float:
 - [ ] 添加并发安全保障（锁/副本交换）
 - [ ] 补充单元测试与集成测试
 
+状态评估：🔲 未实现，仍处于待办状态。
+
 ---
 
 #### ✅ P1.5: 货币一致性增强与市场特定策略（专家建议 - 已完成）
 
-**目标**：完善迭代1的货币一致性检查，按市场定制分级策略，提升美股场景支持。
-
-**已完成**：
-- [x] 增加风险参数货币检查：`_check_risk_parameters_currency(data)`
-- [x] 更精细的警告分类：`_classify_currency_warnings(warnings)`（info/warning/error）
-- [x] 市场特定严重性：`_get_market_specific_severity(warning, market_type)`（US/CN差异）
-- [x] 按市场类型的默认严格模式：`_get_default_strict_mode(market_type)` （US/HK/SG/JP严格）
-- [x] 数据源质量评估：`_assess_data_source_quality(prices)`（currency覆盖度评级）
-- [x] 美股合规日志：`_us_compliance_logging(currency_warnings)`（SEC/FINRA合规事件）
-- [x] 记录跨模块依赖：汇率转换服务，见共享业务模块（core/share/exchange_rates.py）
-- [x] 实现适配器注入与调用：`attach_exchange_rate_adapter` + `_unify_currency_for_portfolio`
-- [x] 新增联调测试：`currency_adapter_integration_test.py`，14 tests passed
-- [x] 共享模块迁移：MarketConfigManager迁移到core/share/market_config.py
-- [x] 全量回归测试：105/110 passed（无新增回归）
-- [x] **P1修正落地**：动态相关性、美股合规日志增强、数据质量处理、SG市场、JP严格模式
-
 **评审文档**：`docs/ask.md` + `docs/answer.md`（专家95分，批准发布）  
 **完成时间**：2024-11-14
 
+状态评估：✅ 已完成，在 [risk_calculator.py](file:///Users/wangli/Library/Mobile%20Documents/com~apple~CloudDocs/历史项目/projects/deepseekquant/core_bak_refactored/core/risk/risk_calculator.py) 中已实现完整的货币一致性检查功能。
+
 ---
 
-## 💡 第16轮专家评审建议 - 风险计算优化实施（2024-11-21）
-
-### 评审结论
-**总体评价**: 优秀 - 技术架构合理，具备生产环境部署基础
-
-**架构设计**:
-- ✅ 技术/业务分离清晰，符合单一职责原则
-- ✅ 接口隔离良好（ICacheService）
-- ✅ 依赖注入设计合理（配置驱动）
-- ✅ 向后兼容性优秀（条件导入 + 优雅降级）
-
-### 🚀 P0 高优先级（本周内）
-
-**已完成** (完成时间: 2024-11-21):
-- [x] P0-1: 并行计算内存优化（共享内存数据传递，预计20-30%性能提升）
-  - ✅ 进程级缓存分析器 (`_WORKER_ANALYZER_CACHE`)
-  - ✅ 共享配置数据传递 (`_prepare_shared_config`)
-  - ✅ `batch_calculate_portfolio_risk` 优化
-- [x] P0-2: 因子模型数值稳定性检查（条件数检查+自动降级）
-  - ✅ 条件数检查 (`np.linalg.cond`, 阈值1e10)
-  - ✅ Ridge回归降级策略 (`_ridge_regression`)
-  - ✅ QR分解失败回退到伪逆
-- [x] P0-3: 因子模型缓存集成（预计50-70%计算加速）
-  - ✅ `cache_service` 参数支持
-  - ✅ 缓存键生成 (`_generate_cache_key`)
-  - ✅ `compute_covariance_matrix` 缓存集成 (TTL=3600s)
-
-**下一步**:
-- 性能基准测试（验证优化效果）
-- 代码走查和重构
-
-### 🔥 P1 中优先级（1-2周内）
-
-**已完成** (完成时间: 2024-11-21):
-- [x] P1-1: 动态任务分块算法（基于内存和CPU智能分块，15-25%效率提升）
-  - ✅ `_calculate_optimal_chunk_size` 方法
-  - ✅ 基于内存和CPU的动态计算
-  - ✅ `enable_dynamic_chunking` 配置开关
-  - ✅ 限制分块大小在[1, 20]范围
-- [x] P1-2: 性能监控增强（ParallelPerformanceMonitor）
-  - ✅ `ParallelMetrics` 扩展：`peak_memory_mb`, `cpu_utilization_pct`, `task_distribution`
-  - ✅ `_collect_system_metrics` 方法
-  - ✅ 实时内存和CPU监控
-  - ✅ 集成到 `_update_metrics`
-- [x] P1-3: 模型诊断增强（因子质量、残差分析）
-  - ✅ `_compute_model_diagnostics` 方法
-  - ✅ 因子质量指标：平均/最小/最大R²
-  - ✅ 残差分析：异方差性、正态性、自相关
-  - ✅ 模型健康评分：excellent/good/acceptable/poor
-  - ✅ 集成到 `compute_covariance_matrix` metadata
-
-**跳过**:
-- [ ] P1-4: 实时Fama-French数据接入（分层获取策略，4周）
-  - 原因：需要外部数据源接入，本次不包含
-
-**下一步**:
-- 准备第17轮专家评审（P0+P1优化成果）
-- 性能基准测试
-
-### ⚡ P2 中长期优化（1-3月）
-
+## 风险计算优化实施（2024-11-21）
 **待办**:
 - [ ] P2-1: 多级缓存架构（L1+L2 Redis+L3磁盘，目标命中率>85%）
 - [ ] P2-2: 智能预热系统（基于模式的预测预热）
@@ -429,62 +282,9 @@ def _fetch_live_risk_free_rate(self, market_type: str) -> float:
 1. 因子模型集成时机：立即开始渐进式集成（PHASE_2: PCA + 部分真实数据）
 2. 增量计算与因子模型结合：强烈建议结合
 
-**评审文档**: `docs/consultation.md` 第16轮  
-**完成时间**: 2024-11-21
+状态评估：🔲 未实现，仍处于待办状态。
 
 ---
-
-## 📅 P2优化计划（基于专家answer.md建议）
-
-### 高优先级（发布后1-2周）
-
-#### 🔴 P2-1: 性能基准测试
-**紧急度**: 🔴 高  
-**目标**: 建立性能基准与容量规划  
-**时间**: 发布后1周
-
-**实施计划**:
-```python
-# 性能测试套件
-@pytest.mark.performance
-def test_currency_check_large_portfolio():
-    """1000个标的货币检查性能"""
-    large_portfolio = generate_portfolio(1000)
-    start = time.time()
-    result = calculator._runtime_currency_check(large_portfolio)
-    elapsed = time.time() - start
-    assert elapsed < 0.5  # 目标500ms
-    
-@pytest.mark.performance  
-def test_stress_testing_parallel():
-    """9场景并行压力测试"""
-    # 并行化测试，目标<100ms
-    pass
-```
-
-**待办**:
-- [ ] 设计性能测试场景（100/1000/10000标的）
-- [ ] 建立性能基准线
-- [ ] 集成到CI/CD流程
-- [ ] 生产环境容量规划
-
----
-
-#### 🟡 P2-2: 边界条件测试补充
-**紧急度**: 🟡 中  
-**目标**: 提高鲁棒性  
-**时间**: 发布后2周
-
-**测试场景**:
-- [ ] 极端汇率波动（1:1000）
-- [ ] 零成交量标的
-- [ ] 负价格场景
-- [ ] API超时/失败场景
-- [ ] 内存溢出场景
-
----
-
-### 中优先级（发布后3-4周）
 
 #### 🟡 P2-3: 配置热重载
 **紧急度**: 🟡 中  
@@ -515,15 +315,18 @@ class MarketConfigManager:
             return False
 ```
 
+相关文件：`core_bak_refactored/core/share/market_config.py`, `core_bak_refactored/core/risk/risk_calculator.py`
+
+子项（下一层级）：
 **待办**:
 - [ ] 设计配置版本管理
 - [ ] 实现原子性更新
 - [ ] 增加订阅通知机制
 - [ ] 并发安全保障
 
----
+状态评估：🔲 未实现，仍处于待办状态。
 
-### 低优先级（发布后4-8周）
+---
 
 #### 🟢 P2-4: 货币检查结果缓存
 **紧急度**: 🟢 低  
@@ -548,33 +351,13 @@ class CachedCurrencyChecker:
         return result
 ```
 
----
+**待办**:
+- [ ] 设计缓存键生成策略
+- [ ] 实现缓存装饰器
+- [ ] 添加缓存失效机制
+- [ ] 补充性能测试
 
-#### 🟢 P2-5: 异步检查
-**紧急度**: 🟢 低  
-**目标**: 非核心路径优化  
-**时间**: 发布后6周
-
----
-
-#### 🟢 P2-6: 语义化版本控制
-**紧急度**: 🟢 低  
-**目标**: 长期维护  
-**时间**: 发布后8周
-
-```python
-class MarketConfigManager:
-    def __init__(self):
-        self.api_version = "1.0.0"  # 语义化版本
-        self.compatibility = {"1.0.0": ["1.1.0", "1.2.0"]}  # 兼容性矩阵
-```
-
----
-
-#### 🟢 P2-7: 场景相关性矩阵缓存
-**紧急度**: 🟢 低  
-**目标**: 性能优化  
-**时间**: 发布后4周
+状态评估：🔲 未实现，仍处于待办状态。
 
 ---
 
@@ -615,11 +398,18 @@ class RiskMetricsService:
         return annualized_return / annualized_downside_std if annualized_downside_std != 0 else 0.0
 ```
 
+相关文件：`core_bak_refactored/core/risk/risk_metrics_service.py`, `core_bak_refactored/infrastructure/risk_metrics.py`
+
+子项（下一层级）：
 **待办**：
 - [ ] 实现 `calculate_sortino_ratio` 增强版
 - [ ] 从配置中获取 `risk_free_rate`
 - [ ] 支持策略级 `minimum_acceptable_return` 配置
 - [ ] 添加单元测试
+
+状态评估：🔲 未实现，仍处于待办状态。
+
+---
 
 #### P2: 监管报告一致性配置
 **待办**：
@@ -627,20 +417,9 @@ class RiskMetricsService:
 - [ ] 配置默认收益率计算方法
 - [ ] 配置监管报告参数映射
 
+状态评估：🔲 未实现，仍处于待办状态。
+
 ---
-
-## 🟢 portfolio_risk.py - PortfolioRiskAnalyzer
-
-**状态**：✅ 已完成  
-**测试覆盖**：8/8 通过
-
-### 已完成
-- [x] 组合风险分析
-- [x] 因子风险归因
-- [x] 持仓集中度风险
-- [x] 8个测试用例
-
-### 待办事项
 
 #### P2: 风险归因可视化
 **目标**：绘制风险分解图表（饼图、瀑布图）
@@ -665,25 +444,18 @@ class RiskVisualizer:
         pass
 ```
 
+相关文件：`core_bak_refactored/core/risk/portfolio_risk.py`, `core_bak_refactored/core/risk/position_risk.py`
+
+子项（下一层级）：
 **待办**：
 - [ ] 选择可视化库（matplotlib/plotly）
 - [ ] 实现因子归因饼图
 - [ ] 实现持仓贡献热力图
 - [ ] 实现风险趋势图
 
+状态评估：🔲 未实现，仍处于待办状态。
+
 ---
-
-## 🟢 stress_testing.py - StressTester
-
-**状态**：✅ 已完成  
-**测试覆盖**：9/9 通过
-
-### 已完成
-- [x] 6种基础压力场景
-- [x] 场景分析框架
-- [x] 9个测试用例
-
-### 待办事项
 
 #### P1: 历史极端事件回测
 **目标**：使用历史真实数据复现极端事件
@@ -719,10 +491,17 @@ class AdvancedStressTester(StressTester):
         pass
 ```
 
+相关文件：`core_bak_refactored/core/risk/stress_testing.py`
+
+子项（下一层级）：
 **待办**：
 - [ ] 收集历史极端事件数据
 - [ ] 实现历史场景回测框架
 - [ ] 生成压力测试报告
+
+状态评估：✅ 已部分实现，压力测试器已完成并在 [stress_testing.py](file:///Users/wangli/Library/Mobile%20Documents/com~apple~CloudDocs/历史项目/projects/deepseekquant/core_bak_refactored/core/risk/stress_testing.py) 中实现。
+
+---
 
 #### P1: 蒙特卡洛模拟
 **目标**：多情景组合概率分析
@@ -743,33 +522,21 @@ def run_monte_carlo_simulation(self, portfolio, num_simulations=10000):
     pass
 ```
 
+相关文件：`core_bak_refactored/core/risk/risk_calculator.py`, `core_bak_refactored/core/risk/risk_metrics_service.py`
+
+子项（下一层级）：
 **待办**：
 - [ ] 实现蒙特卡洛模拟引擎
 - [ ] 参数估计（波动率、相关性）
 - [ ] 结果可视化
 
-#### P2: 自定义情景编辑器
-**待办**：
-- [ ] 设计情景配置格式（YAML/JSON）
-- [ ] 实现情景加载器
-- [ ] GUI情景编辑器（可选）
+状态评估：✅ 已部分实现，在 [risk_calculator.py](file:///Users/wangli/Library/Mobile%20Documents/com~apple~CloudDocs/历史项目/projects/deepseekquant/core_bak_refactored/core/risk/risk_calculator.py) 中已实现 [calculate_var_monte_carlo](file:///Users/wangli/Library/Mobile%20Documents/com~apple~CloudDocs/历史项目/projects/deepseekquant/core_bak_refactored/core/risk/risk_calculator.py#L133-L177) 方法。
 
 ---
 
 ## 🟢 risk_monitor.py - RiskMonitor
-
-**状态**：✅ 已完成  
-**测试覆盖**：7/7 通过
-
-### 已完成
-- [x] 实时风险监控
-- [x] 风险限额管理
-- [x] 告警机制
-- [x] 7个测试用例
-
-### 待办事项
-
 #### P2: 风险指标时间序列可视化
+相关文件：`core_bak_refactored/core/risk/risk_monitor.py`
 ```python
 class RiskMonitorDashboard:
     """风险监控仪表板"""
@@ -779,108 +546,24 @@ class RiskMonitorDashboard:
         # VaR、CVaR、波动率实时曲线
         pass
 ```
-
 **待办**：
 - [ ] 实现实时数据采集
 - [ ] 实现时间序列图表
 - [ ] 集成到监控面板
 
----
-
-## 🗓️ 实施顺序建议
-
-### 短期（1-2周）
-1. 🟡 RiskMetricsService 专家复审
-2. 🟡 实现A股涨跌停场景处理
-3. 🟡 实现Sortino比率增强版
-
-### 中期（1个月）
-4. 🟢 历史极端事件回测
-5. 🟢 蒙特卡洛模拟
-
-### 长期（3个月）
-6. 🔵 风险归因可视化
-7. 🔵 风险监控仪表板
+状态评估：🔲 未实现，仍处于待办状态。
 
 ---
 
-## 🗓️ 历史变更
+## 已完成事项
 
-- **2024-11-09**: 创建风险模块独立TODO
-- **2024-11-09**: risk_metrics_service.py 待进入评审迭代
-- **2024-11-09**: 新增业务层改进储备清单
-            'cvar_95': -0.08,  # 95%置信度CVaR
-            'worst_case': -0.15,  # 最坏情况
-            'distribution': np.array([...])  # 损益分布
-        }
-    """
-    pass
-```
+> **说明**：以下事项已完成，详细信息已迁移至代码文件注释中。
 
-**待办**：
-- [ ] 实现蒙特卡洛模拟引擎
-- [ ] 参数估计（波动率、相关性）
-- [ ] 结果可视化
+- [x] risk_metrics_service.py - RiskMetricsService（国际化支持、P0修复等）
+- [x] risk_calculator.py - RiskCalculator（货币一致性检查增强等）
+- [x] portfolio_risk.py - PortfolioRiskAnalyzer（P2.1审计字段增强等）
 
-#### P2: 自定义情景编辑器
-**待办**：
-- [ ] 设计情景配置格式（YAML/JSON）
-- [ ] 实现情景加载器
-- [ ] GUI情景编辑器（可选）
-
----
-
-## 🟢 risk_monitor.py - RiskMonitor
-
-**状态**：✅ 已完成  
-**测试覆盖**：7/7 通过
-
-### 已完成
-- [x] 实时风险监控
-- [x] 风险限额管理
-- [x] 告警机制
-- [x] 7个测试用例
-
-### 待办事项
-
-#### P2: 风险指标时间序列可视化
-```python
-class RiskMonitorDashboard:
-    """风险监控仪表板"""
-    
-    def plot_real_time_metrics(self):
-        """实时风险指标图表"""
-        # VaR、CVaR、波动率实时曲线
-        pass
-```
-
-**待办**：
-- [ ] 实现实时数据采集
-- [ ] 实现时间序列图表
-- [ ] 集成到监控面板
-
----
-
-## 🗓️ 实施顺序建议
-
-### 短期（1-2周）
-1. 🟡 RiskMetricsService 专家复审
-2. 🟡 实现A股涨跌停场景处理
-3. 🟡 实现Sortino比率增强版
-
-### 中期（1个月）
-4. 🟢 历史极端事件回测
-5. 🟢 蒙特卡洛模拟
-
-### 长期（3个月）
-6. 🔵 风险归因可视化
-7. 🔵 风险监控仪表板
-
----
-
-## 🗓️ 历史变更
-
-- **2024-11-09**: 创建风险模块独立TODO
-- **2024-11-09**: risk_metrics_service.py 待进入评审迭代
-- **2024-11-09**: 新增业务层改进储备清单
-- **2024-11-09**: 新增业务层改进储备清单
+状态评估：
+✅ risk_metrics_service.py - 已完成，包含国际化支持和P0修复
+✅ risk_calculator.py - 已完成，包含货币一致性检查增强
+✅ portfolio_risk.py - 已完成，包含P2.1审计字段增强
