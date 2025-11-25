@@ -1,0 +1,1 @@
+我们将继续之前的工作，这是一个基于和领域专家交互驱动的项目，请先了解它的上下文，.qoder/rules/PECIFICATIONS.md是最重要的背景、环境和规范描述，是你第一个要阅读的文档，docs路径是其余的项目相关文档（不确定有没有过期，要通过逆向工程进行比对和完善），core_bak_refactored是你要马上进行阅读的所有代码，你可以从docs/consultation.md了解最近完成工作的对话记录，docs/ask.md和docs/answer.md是最后一轮对话记录，这些对话后工作成果，可能已经完成，具体可以看core_bak_refactored/core/risk/SPRINT.md的进展情况，这也是我们后续工作的起点，你要在熟悉完整的项目上下文后以上完整内容后，继续后面的工作，请开始熟悉

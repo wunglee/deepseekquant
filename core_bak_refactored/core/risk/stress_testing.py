@@ -21,7 +21,7 @@ logger = logging.getLogger('DeepSeekQuant.StressTesting')
 # 常量定义（基于专家answer.md指导）
 # =============================================================================
 
-# 场景相关性矩阵（answer.md 问题4修正：金融危机vs货币危机0.45，A股大跌vs金融危机0.3）
+# 场景相关性矩阵（第5轮专家answer.md更新：新增1997亚洲金融危机、2022俄乌冲突）
 SCENARIO_CORRELATION_MATRIX = {
     '2008_financial_crisis': {
         '2008_financial_crisis': 1.0,
@@ -29,7 +29,9 @@ SCENARIO_CORRELATION_MATRIX = {
         '2015_china_market_crash': 0.3,  # 专家修正：0.6→0.3
         'circuit_breaker_2016': 0.7,
         'thousand_stocks_limit_down': 0.7,
-        'currency_crisis': 0.45  # 专家修正：新增货币危机相关性0.45
+        'currency_crisis': 0.45,  # 专家修正：新增货币危机相关性0.45
+        '1997_asian_financial_crisis': 0.4,  # 第5轮新增
+        '2022_russia_ukraine_conflict': 0.3  # 第5轮新增
     },
     'covid_19_pandemic': {
         '2008_financial_crisis': 0.5,
@@ -37,7 +39,9 @@ SCENARIO_CORRELATION_MATRIX = {
         '2015_china_market_crash': 0.4,
         'circuit_breaker_2016': 0.5,
         'thousand_stocks_limit_down': 0.6,
-        'currency_crisis': 0.2
+        'currency_crisis': 0.2,
+        '1997_asian_financial_crisis': 0.2,  # 第5轮新增
+        '2022_russia_ukraine_conflict': 0.4  # 第5轮新增
     },
     '2015_china_market_crash': {
         '2008_financial_crisis': 0.3,  # 专家修正：0.6→0.3
@@ -45,7 +49,9 @@ SCENARIO_CORRELATION_MATRIX = {
         '2015_china_market_crash': 1.0,
         'circuit_breaker_2016': 0.8,
         'thousand_stocks_limit_down': 0.9,
-        'currency_crisis': 0.25
+        'currency_crisis': 0.25,
+        '1997_asian_financial_crisis': 0.3,  # 第5轮新增
+        '2022_russia_ukraine_conflict': 0.2  # 第5轮新增
     },
     'circuit_breaker_2016': {
         '2008_financial_crisis': 0.7,
@@ -53,7 +59,9 @@ SCENARIO_CORRELATION_MATRIX = {
         '2015_china_market_crash': 0.8,
         'circuit_breaker_2016': 1.0,
         'thousand_stocks_limit_down': 0.8,
-        'currency_crisis': 0.3
+        'currency_crisis': 0.3,
+        '1997_asian_financial_crisis': 0.25,  # 第5轮新增
+        '2022_russia_ukraine_conflict': 0.2  # 第5轮新增
     },
     'thousand_stocks_limit_down': {
         '2008_financial_crisis': 0.7,
@@ -61,7 +69,9 @@ SCENARIO_CORRELATION_MATRIX = {
         '2015_china_market_crash': 0.9,
         'circuit_breaker_2016': 0.8,
         'thousand_stocks_limit_down': 1.0,
-        'currency_crisis': 0.35
+        'currency_crisis': 0.35,
+        '1997_asian_financial_crisis': 0.3,  # 第5轮新增
+        '2022_russia_ukraine_conflict': 0.25  # 第5轮新增
     },
     'currency_crisis': {
         '2008_financial_crisis': 0.45,  # 专家修正：新增货币危机
@@ -69,7 +79,29 @@ SCENARIO_CORRELATION_MATRIX = {
         '2015_china_market_crash': 0.25,
         'circuit_breaker_2016': 0.3,
         'thousand_stocks_limit_down': 0.35,
-        'currency_crisis': 1.0
+        'currency_crisis': 1.0,
+        '1997_asian_financial_crisis': 0.8,  # 第5轮新增：高度相关
+        '2022_russia_ukraine_conflict': 0.35  # 第5轮新增
+    },
+    '1997_asian_financial_crisis': {
+        '2008_financial_crisis': 0.4,  # 第5轮专家answer.md 2.3节
+        'covid_19_pandemic': 0.2,
+        '2015_china_market_crash': 0.3,
+        'circuit_breaker_2016': 0.25,
+        'thousand_stocks_limit_down': 0.3,
+        'currency_crisis': 0.8,  # 高度相关
+        '1997_asian_financial_crisis': 1.0,
+        '2022_russia_ukraine_conflict': 0.25
+    },
+    '2022_russia_ukraine_conflict': {
+        '2008_financial_crisis': 0.3,  # 第5轮专家answer.md 2.3节
+        'covid_19_pandemic': 0.4,
+        '2015_china_market_crash': 0.2,
+        'circuit_breaker_2016': 0.2,
+        'thousand_stocks_limit_down': 0.25,
+        'currency_crisis': 0.35,
+        '1997_asian_financial_crisis': 0.25,
+        '2022_russia_ukraine_conflict': 1.0
     }
 }
 
@@ -102,7 +134,7 @@ class StressTester:
         self._load_custom_scenarios()    # 自定义
     
     def _load_builtin_scenarios(self):
-        """加载内置场景库（专家answer.md线108-141，问题4增加货币危机）"""
+        """加载内置场景库（第5轮更新：新增1997亚洲金融危机、2022俄乌冲突）"""
         scenarios = [
             # 全球市场事件
             {'scenario_id': '2008_financial_crisis', 'name': '2008金融危机',
@@ -123,6 +155,20 @@ class StressTester:
              'mitigation_strategies': ['货币对冲', '减少外币敞口'],
              'parameters': {'type': 'market_crash', 'decline': -0.25, 'currency_volatility': 2.5, 
                            'capital_flight_intensity': 0.6}},
+            # 第5轮新增：1997亚洲金融危机（专家answer.md 2.3节参数）
+            {'scenario_id': '1997_asian_financial_crisis', 'name': '1997亚洲金融危机',
+             'description': '恒生指数跌60%，对A股影响约-35%', 'probability': 0.01, 'impact_level': 'high',
+             'duration': '24个月', 'triggers': ['泰铢崩盘', '区域传导'], 
+             'mitigation_strategies': ['货币对冲', '区域多元化'],
+             'parameters': {'type': 'currency_crisis', 'decline': -0.35, 'currency_volatility': 3.0, 
+                           'regional_contagion': 0.6, 'recovery_period': 24, 'liquidity_dry_up': 0.7}},
+            # 第5轮新增：2022俄乌冲突（专家answer.md 2.3节参数）
+            {'scenario_id': '2022_russia_ukraine_conflict', 'name': '2022俄乌冲突',
+             'description': '地缘政治风险，全球指数平均跌20%', 'probability': 0.02, 'impact_level': 'moderate',
+             'duration': '12个月', 'triggers': ['地缘政治', '供应链中断'], 
+             'mitigation_strategies': ['避险资产配置', '商品对冲'],
+             'parameters': {'type': 'geopolitical_risk', 'decline': -0.20, 'commodity_shock': 0.8, 
+                           'sanction_impact': 0.6, 'flight_to_quality': 0.7, 'recovery_period': 12}},
             # A股特有事件
             {'scenario_id': '2015_china_market_crash', 'name': '2015A股大跌',
              'description': '上证指数下跌35%', 'probability': 0.05, 'impact_level': 'high',
@@ -198,7 +244,7 @@ class StressTester:
             return {'default_stress_test': -0.25}
     
     def _run_single_stress_test(self, scenario: StressTestScenario, portfolio_state, market_data: Dict[str, Any]) -> float:
-        """运行单个压力测试"""
+        """运行单个压力测试（第5轮更新：支持currency_crisis和geopolitical_risk类型）"""
         try:
             scenario_type = scenario.parameters.get('type', 'market_crash')
 
@@ -206,6 +252,10 @@ class StressTester:
                 return self._simulate_market_crash(scenario, portfolio_state, market_data)
             elif scenario_type == 'liquidity_crisis':
                 return self._simulate_liquidity_crisis(scenario, portfolio_state, market_data)
+            elif scenario_type == 'currency_crisis':  # 第5轮新增：1997亚洲金融危机
+                return self._simulate_currency_crisis(scenario, portfolio_state, market_data)
+            elif scenario_type == 'geopolitical_risk':  # 第5轮新增：2022俄乌冲突
+                return self._simulate_geopolitical_risk(scenario, portfolio_state, market_data)
             elif scenario_type == 'interest_rate_shock':
                 return self._simulate_interest_rate_shock(scenario, portfolio_state, market_data)
             elif scenario_type == 'correlation_breakdown':
@@ -448,6 +498,114 @@ class StressTester:
             logger.error(f"相关性崩溃场景模拟失败: {e}")
             return -0.03
     
+    def _simulate_currency_crisis(self, scenario: StressTestScenario, portfolio_state, market_data: Dict[str, Any]) -> float:
+        """
+        模拟货币危机（第5轮新增：1997亚洲金融危机）
+        基于专家answer.md 2.3节参数
+        """
+        try:
+            params = scenario.parameters
+            total_impact = 0
+            total_exposure = sum(alloc.weight for alloc in portfolio_state.allocations.values())
+            
+            # 1. 直接损失（decline参数）
+            decline = params.get('decline', -0.35)
+            direct_loss = total_exposure * decline
+            total_impact += direct_loss
+            
+            # 2. 汇率波动（currency_volatility参数）
+            if 'currency_volatility' in params:
+                currency_vol = params['currency_volatility']
+                # 汇率波动导致额外VaR
+                base_var = abs(direct_loss * 0.1)
+                currency_var_impact = base_var * (currency_vol - 1)
+                total_impact -= currency_var_impact
+                logger.debug(f"汇率波动: currency_vol={currency_vol}, var_impact={currency_var_impact:.4f}")
+            
+            # 3. 区域传导（regional_contagion参数）
+            if 'regional_contagion' in params:
+                contagion_factor = params['regional_contagion']
+                # 区域传导导致额外损失
+                contagion_loss = abs(direct_loss) * contagion_factor * 0.3
+                total_impact -= contagion_loss
+                logger.debug(f"区域传导: contagion_factor={contagion_factor}, loss={contagion_loss:.4f}")
+            
+            # 4. 流动性枯竭（liquidity_dry_up参数）
+            if 'liquidity_dry_up' in params:
+                liquidity_ratio = params['liquidity_dry_up']
+                liquidity_impact = abs(direct_loss) * liquidity_ratio * 0.2
+                total_impact -= liquidity_impact
+                logger.debug(f"流动性枯竭: liquidity_ratio={liquidity_ratio}, impact={liquidity_impact:.4f}")
+            
+            # 5. 恢复期影响（recovery_period参数）
+            if 'recovery_period' in params:
+                recovery_months = params['recovery_period']
+                risk_free_rate = self.config.get('risk_free_rate', 0.03)
+                t_years = recovery_months / 12
+                opportunity_cost = abs(direct_loss) * ((1 + risk_free_rate) ** t_years - 1)
+                total_impact -= opportunity_cost
+                logger.debug(f"恢复期影响: months={recovery_months}, opp_cost={opportunity_cost:.4f}")
+            
+            return float(total_impact)
+            
+        except Exception as e:
+            logger.error(f"货币危机场景模拟失败: {e}")
+            return -0.35
+    
+    def _simulate_geopolitical_risk(self, scenario: StressTestScenario, portfolio_state, market_data: Dict[str, Any]) -> float:
+        """
+        模拟地缘政治风险（第5轮新增：2022俄乌冲突）
+        基于专家answer.md 2.3节参数
+        """
+        try:
+            params = scenario.parameters
+            total_impact = 0
+            total_exposure = sum(alloc.weight for alloc in portfolio_state.allocations.values())
+            
+            # 1. 直接损失（decline参数）
+            decline = params.get('decline', -0.20)
+            direct_loss = total_exposure * decline
+            total_impact += direct_loss
+            
+            # 2. 商品价格冲击（commodity_shock参数）
+            if 'commodity_shock' in params:
+                commodity_shock = params['commodity_shock']
+                # 商品价格冲击导致成本上升
+                commodity_impact = abs(direct_loss) * commodity_shock * 0.15
+                total_impact -= commodity_impact
+                logger.debug(f"商品冲击: commodity_shock={commodity_shock}, impact={commodity_impact:.4f}")
+            
+            # 3. 制裁影响（sanction_impact参数）
+            if 'sanction_impact' in params:
+                sanction_level = params['sanction_impact']
+                # 制裁导致贸易受限
+                sanction_loss = abs(direct_loss) * sanction_level * 0.1
+                total_impact -= sanction_loss
+                logger.debug(f"制裁影响: sanction_level={sanction_level}, loss={sanction_loss:.4f}")
+            
+            # 4. 避险情绪（flight_to_quality参数）
+            if 'flight_to_quality' in params:
+                flight_intensity = params['flight_to_quality']
+                # 避险情绪导致流动性枯竭
+                flight_impact = abs(direct_loss) * flight_intensity * 0.12
+                total_impact -= flight_impact
+                logger.debug(f"避险情绪: flight_intensity={flight_intensity}, impact={flight_impact:.4f}")
+            
+            # 5. 恢复期影响（recovery_period参数）
+            if 'recovery_period' in params:
+                recovery_months = params['recovery_period']
+                risk_free_rate = self.config.get('risk_free_rate', 0.03)
+                t_years = recovery_months / 12
+                opportunity_cost = abs(direct_loss) * ((1 + risk_free_rate) ** t_years - 1)
+                total_impact -= opportunity_cost
+                logger.debug(f"恢复期影响: months={recovery_months}, opp_cost={opportunity_cost:.4f}")
+            
+            return float(total_impact)
+            
+        except Exception as e:
+            logger.error(f"地缘政治风险场景模拟失败: {e}")
+            return -0.20
+    
     def _simulate_market_downturn(self, scenario_params: Dict, portfolio_state, market_data: Dict[str, Any]) -> float:
         """模拟市场下行"""
         growth_shock = scenario_params.get('growth_shock', -0.02)
@@ -633,8 +791,8 @@ class StressTester:
             else:
                 total_impact = impact_vector[0]
             
-            # 5. 系统性风险溢价（20%）
-            systemic_premium = self.config.get('stress_testing', {}).get('systemic_premium', 0.2)
+            # 5. 系统性风险溢价（25%，第5轮专家调整：20%→25%）
+            systemic_premium = self.config.get('stress_testing', {}).get('systemic_premium', 0.25)
             total_impact *= (1 + systemic_premium)
             
             logger.debug(f"并发冲击: impacts={impacts}, total={total_impact:.4f}")

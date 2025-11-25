@@ -1,3 +1,8 @@
+---
+trigger: glob
+glob: .qoder/rules/PECIFICATIONS.md
+---
+
 # DeepSeekQuant 项目规范
 
 > **版本**: v3.4 | **更新**: 2024-11-21 | **范围**: 架构约束、开发规范、工作流程、质量标准
@@ -466,6 +471,20 @@ git commit -m "chore(docs): 清空consultation.md，迭代X已完成"
 ---
 
 ## 📄 文档管理
+
+### 迭代与待办文档组织规范（强制）
+- 各模块 SPRINT.md（模块内）：仅维护“迭代计划与进展跟踪”，按树形结构分解迭代；每个节点（迭代）包含：
+  - 迭代目标（收敛版）：可量化指标与验收断言
+  - 进展跟踪：当前状态、已完成项、阻碍因素与解除计划
+  - 唯一入口文件（门面模式）：明确本迭代对应模块的入口文件路径（例如：`core_bak_refactored/core/risk/risk_calculator.py`），用于评审与测试映射的聚焦。
+- 各模块 TODO.md：仅维护“未分配事项”，按业务目标或特性组织；不得直接落到具体代码文件维度（一个目标/特性可能涉及多个文件）。
+- 迁移规范：当迭代开始时，将目标与进展从模块 TODO.md 迁移到该模块的 SPRINT.md 相应节点；迭代结束后在 SPRINT.md 标记“已结束”，并将未完成项回收至对应模块的 TODO.md（未分配）。
+- 一致性要求：
+  - 迭代编号必须递增；子迭代按树形层级管理（如“迭代5→5A/5B/5C/5D”）
+  - SPRINT.md 不记录未分配事项；TODO.md 不记录具体迭代计划
+  - 咨询记录（ask/answer）仍统一在 `docs/consultation.md`，每轮追加，迭代切换时清空为仅标题
+
+### 概念定义（Phase / Iteration / Milestone）
 
 ### 概念定义（Phase / Iteration / Milestone）
 - 阶段（Phase，全局）：跨模块的宏观计划分段，由 `docs/PLAN.md` 定义与管理。阶段切换通常伴随方向/范围调整，是全局时间/范围的分段单位。
