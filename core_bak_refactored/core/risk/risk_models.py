@@ -890,3 +890,129 @@ class StressTestScenario:
                         parsed_data['recovery_days'] = num
         
         return cls(**parsed_data)
+
+
+# =============================================================================
+# 第5轮新增：压力测试结果标准化数据类（为5D集成准备）
+# 基于专家answer.md 2.4节接口标准
+# =============================================================================
+
+@dataclass
+class StressTestResult:
+    """
+    压力测试结果标准化输出（第5轮新增）
+    
+    用于5D风险计算协调器集成，提供统一的压力测试结果接口。
+    
+    基于专家answer.md 2.4节设计。
+    
+    Attributes:
+        scenario_id: 场景ID
+        scenario_name: 场景名称
+        loss_amount: 损失金额（绝对值）
+        loss_percentage: 损失百分比（相对值）
+        confidence_level: 置信度水平，默认0.99（99%）
+        risk_decomposition: 风险分解（市场/流动性/信用风险占比）
+        recovery_period_months: 恢复期估计（月）
+        triggered_actions: 触发的控制动作列表
+        metadata: 其他元数据
+    
+    Example:
+        >>> result = StressTestResult(
+        ...     scenario_id='2008_financial_crisis',
+        ...     scenario_name='2008金融危机',
+        ...     loss_amount=1000000.0,
+        ...     loss_percentage=-0.25,
+        ...     confidence_level=0.99,
+        ...     risk_decomposition={'market_risk': 0.7, 'liquidity_risk': 0.2, 'credit_risk': 0.1},
+        ...     recovery_period_months=18,
+        ...     triggered_actions=['WARN', 'REDUCE'],
+        ...     metadata={'volatility_spike': 3.5, 'correlation_break': 0.8}
+        ... )
+    """
+    scenario_id: str
+    scenario_name: str
+    loss_amount: float  # 损失金额
+    loss_percentage: float  # 损失百分比
+    confidence_level: float = 0.99  # 映射置信度
+    risk_decomposition: Dict[str, float] = field(default_factory=dict)  # 风险分解
+    recovery_period_months: int = 0  # 恢复期估计
+    triggered_actions: List[str] = field(default_factory=list)  # 触发动作
+    metadata: Dict[str, Any] = field(default_factory=dict)  # 元数据
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """转换为字典（供5D集成使用）"""
+        return asdict(self)
+    
+    @classmethod
+    def from_legacy_result(cls, scenario_id: str, scenario_name: str, 
+                          loss_value: float, portfolio_value: float = 1000000.0,
+                          **kwargs) -> 'StressTestResult':
+        """
+        从旧版本结果转换（向后兼容）
+        
+        Args:
+            scenario_id: 场景ID
+            scenario_name: 场景名称
+            loss_value: 损失值（负数表示损失）
+            portfolio_value: 组合总价值，默认100万
+            **kwargs: 其他可选参数
+        
+        Returns:
+            标准化的StressTestResult对象
+        """
+        loss_amount = abs(loss_value) if loss_value < 0 else loss_value
+        loss_percentage = loss_value / portfolio_value if portfolio_value != 0 else loss_value
+        
+        return cls(
+            scenario_id=scenario_id,
+            scenario_name=scenario_name,
+            loss_amount=loss_amount,
+            loss_percentage=loss_percentage,
+            **kwargs
+        )
+
+
+@dataclass
+class CombinedStressTestResult:
+    """
+    组合场景测试结果（第5轮新增）
+    
+    用于顺序冲击/并发冲击/反馈循环测试结果输出。
+    
+    基于专家answer.md 2.4节设计。
+    
+    Attributes:
+        test_type: 测试类型（sequential/concurrent/feedback）
+        combined_loss: 组合损失（总计）
+        individual_results: 各场景结果列表
+        transmission_factors: 传导因子字典
+        analysis: 分析结果
+    
+    Example:
+        >>> result = CombinedStressTestResult(
+        ...     test_type='sequential',
+        ...     combined_loss=-0.45,
+        ...     individual_results=[
+        ...         StressTestResult(...),
+        ...         StressTestResult(...)
+        ...     ],
+        ...     transmission_factors={'propagation': 0.3},
+        ...     analysis={'max_scenario': '2008_financial_crisis', 'diversification_benefit': 0.15}
+        ... )
+    """
+    test_type: str  # sequential/concurrent/feedback
+    combined_loss: float  # 组合损失
+    individual_results: List[StressTestResult] = field(default_factory=list)  # 各场景结果
+    transmission_factors: Dict[str, float] = field(default_factory=dict)  # 传导因子
+    analysis: Dict[str, Any] = field(default_factory=dict)  # 分析结果
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """转换为字典（供5D集成使用）"""
+        return {
+            'test_type': self.test_type,
+            'combined_loss': self.combined_loss,
+            'individual_results': [r.to_dict() for r in self.individual_results],
+            'transmission_factors': self.transmission_factors,
+            'analysis': self.analysis
+        }
