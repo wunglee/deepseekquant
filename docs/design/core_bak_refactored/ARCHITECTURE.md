@@ -69,6 +69,19 @@ graph TD
     Strategy --> Signal
     Exec --> Portfolio
     Optimization --> Strategy
-    Share --> Backtest
+    Data --> Share
 ```
+
+**依赖说明**：
+- **Share（业务基础）**：纯配置与工具模块，不依赖任何业务模块；提供市场配置、汇率转换等共享能力。
+- **Data**：依赖 Share 获取市场配置（如交易日历、市场代码映射）。
+- **Portfolio**：依赖 Share 获取汇率转换与市场参数。
+- **Risk**：依赖 Share 获取市场配置与汇率适配器。
+- **Backtest**：依赖 Data（数据提供者）和 Portfolio（合成组合构建器）。
+- **Strategy/Exec/Optimization**：高层业务模块，依赖下层服务。
+
+**架构原则**：
+- Share 为最底层，仅依赖标准库与第三方库，不依赖任何业务模块。
+- Data 作为数据抽象层，依赖 Share 的市场配置。
+- 业务模块（Risk/Backtest/Portfolio）通过 Protocol 接口依赖 Data，实现依赖倒置。
 

@@ -130,3 +130,43 @@
 ---
 
 *最后更新：2024-11-14*
+
+## 路径一致性校验与目录结构报告（2025-11-25）
+
+校验目标（旧路径字符串）：
+- docs/ARCHITECTURE.md → docs/design/core_bak_refactored/ARCHITECTURE.md
+- docs/ARCHITECTURE_FUTURE.md → docs/design/ARCHITECTURE.md
+- docs/PLAN.md → docs/process/PLAN.md
+- docs/PROGRESS.md → docs/process/PROGRESS.md
+- docs/design/core/risk → docs/design/core_bak_refactored/core/risk
+- docs/design/core/ → docs/design/core_bak_refactored/core/
+
+扫描范围：
+- 全仓库（代码/文档/配置）：**/*.*
+
+结论：
+- 未发现旧路径残留引用，路径迁移一致性通过。
+
+目录结构摘要（迁移后）：
+- docs/design/
+  - ARCHITECTURE.md（未来目标系统）
+  - core_bak_refactored/
+    - ARCHITECTURE.md（临时系统）
+    - core/
+      - risk/（模块设计、接口设计）
+- docs/process/
+  - PLAN.md、PROGRESS.md、TODO.md、CHANGELOG.md
+  - core_bak_refactored/
+    - TODO.md、TODO_INDEX.md
+    - core/
+      - risk/（SPRINT.md、TODO.md）
+      - share/（TODO.md）
+      - signal/（TODO.md）
+      - strategy/（TODO.md）
+    - infrastructure/（TODO.md）
+
+备注：
+- `.qoder/rules/PECIFICATIONS.md` 已新增架构文档路径重要说明并同步相关链接。
+- 后续提交将继续启用路径校验以防止旧引用回流。
+
+*自动校验完成：2025-11-25*
