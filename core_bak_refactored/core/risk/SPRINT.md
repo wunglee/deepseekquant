@@ -175,14 +175,20 @@
           - 阈值标准：全球≥25%（原30%）、中国≥20%（原25%）、特殊机制触发、与A股相关性≥0.3
         - 验收断言: test_qualifying_events_coverage（7个事件），test_correlation_threshold_validation
         - 当前状态：6/7达成（85.7%，接近90%目标），缺1997亚洲金融危机、2022俄乌冲突
-      - [业务目标2]: 损失预测准确性验证能力（新增 - 历史回测核心）
+      - [业务目标2]: 损失预测准确性验证能力（历史回测核心）
         - 可量化目标（专家标准）: 
           - MVP范围：完成3个事件回测（2015股灾、COVID-19、2008危机）
           - 损失预测误差≤20%（基于事件窗口回测 + 合成组合）
           - 合成组合类型：沪深300等权、行业轮动、A+H混合
-          - 数据来源：Yahoo Finance（免费）+ JoinQuant（A股）
+          - 数据来源：阶段性方案 - 模拟数据（当前）→ Yahoo Finance + JoinQuant（待core/data模块）
         - 验收断言: test_backtest_loss_prediction_accuracy（3事件×3组合）
-        - 当前状态：❌ 未实施（第5轮核心任务）
+        - 当前状态：⏸️ Phase 3A完成（模拟数据版本），等待数据集成
+          - ✅ 数据抽象层：HistoricalDataProvider接口 + MockHistoricalDataProvider
+          - ✅ 合成组合构造器：3种标准组合实现
+          - ✅ 事件窗口回测引擎：3个核心事件处理逻辑
+          - ✅ 报告生成器：统计摘要 + 详细结果
+          - ✅ 测试覆盖：15/15通过（100%）
+          - ⏳ Phase 3B待办：集成真实数据（等待core_bak_refactored/core/data模块开发）
       - [业务目标3]: 参数实证支持能力
         - 可量化目标（专家标准）: 
           - 立即验证：核心参数（decline/volatility_spike）100%有文献支持
