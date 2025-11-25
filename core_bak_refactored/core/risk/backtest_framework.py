@@ -7,6 +7,17 @@
 - 数据抽象层：预留真实数据集成点
 - 模拟优先：使用模拟数据快速验证框架
 - 接口稳定：真实数据集成时无需修改业务逻辑
+
+使用示例：
+    # Phase 3A: 使用模拟数据
+    from core_bak_refactored.core.risk.backtest_framework import create_data_provider
+    provider = create_data_provider('mock')
+    
+    # Phase 3B: 使用Yahoo Finance真实数据
+    provider = create_data_provider('yahoo', fallback_to_mock=True)
+    
+    # 推荐：自动选择（优先真实数据，失败回退）
+    provider = create_data_provider('auto')
 """
 
 import numpy as np
@@ -67,6 +78,63 @@ class HistoricalDataProvider(Protocol):
 # =============================================================================
 
 from core_bak_refactored.core.data._fragments.historical_data_provider import MockHistoricalDataProvider
+
+
+# =============================================================================
+# 真实数据提供者（Phase 3B实现）
+# =============================================================================
+
+from core_bak_refactored.core.data._fragments.yahoo_finance_provider import YahooFinanceDataProvider
+
+
+# =============================================================================
+# 数据提供者工厂函数
+# =============================================================================
+
+def create_data_provider(provider_type: str = 'mock', **kwargs) -> HistoricalDataProvider:
+    """
+    创建历史数据提供者
+    
+    Args:
+        provider_type: 数据提供者类型
+            - 'mock': 模拟数据提供者（Phase 3A）
+            - 'yahoo': Yahoo Finance真实数据（Phase 3B）
+            - 'auto': 自动选择（优先yahoo，失败回退mock）
+        **kwargs: 传递给数据提供者的额外参数
+    
+    Returns:
+        HistoricalDataProvider实例
+    
+    Examples:
+        # Phase 3A: 使用模拟数据
+        provider = create_data_provider('mock')
+        
+        # Phase 3B: 使用Yahoo Finance真实数据
+        provider = create_data_provider('yahoo', fallback_to_mock=True)
+        
+        # 自动选择（推荐）
+        provider = create_data_provider('auto')
+    """
+    if provider_type == 'mock':
+        logger.info("Creating MockHistoricalDataProvider (Phase 3A)")
+        return MockHistoricalDataProvider()
+    
+    elif provider_type == 'yahoo':
+        logger.info("Creating YahooFinanceDataProvider (Phase 3B)")
+        fallback = kwargs.get('fallback_to_mock', True)  # 默认启用回退
+        return YahooFinanceDataProvider(fallback_to_mock=fallback)
+    
+    elif provider_type == 'auto':
+        logger.info("Auto-selecting data provider (Yahoo with fallback)")
+        try:
+            # 尝试创建Yahoo提供者，启用回退
+            return YahooFinanceDataProvider(fallback_to_mock=True)
+        except Exception as e:
+            logger.warning(f"Yahoo provider unavailable, falling back to Mock: {e}")
+            return MockHistoricalDataProvider()
+    
+    else:
+        raise ValueError(f"Unknown provider_type: {provider_type}. Use 'mock', 'yahoo', or 'auto'")
 
 
 # =============================================================================
