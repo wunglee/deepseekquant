@@ -2,6 +2,12 @@
 风险计算器 - 业务层
 从 core_bak/risk_manager.py 拆分
 职责: 协调器 - 统一风险计算入口，委托给业务服务层
+
+完成特性摘要（迁移自TODO.md）：
+- 货币一致性检查：参数货币检查、警告分类（info/warning/error）、默认严格模式（US/HK/SG/JP）
+- 数据源质量评估：currency覆盖度评级；多币种检测与日志
+- 合规日志：US市场SEC/FINRA合规事件记录
+- 汇率适配器：`attach_exchange_rate_adapter` 与 `_unify_currency_for_portfolio` 集成
 """
 
 import numpy as np
@@ -17,9 +23,6 @@ from ..share.market_config import MarketConfigManager
 from ..share.exchange_rates import CurrencyConverter, ExchangeRateAdapter
 
 # 导入数据预处理器
-import sys
-import os
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 from core_bak_refactored.infrastructure.data_preprocessor import RiskDataPreprocessor
 
 logger = logging.getLogger('DeepSeekQuant.RiskCalculator')

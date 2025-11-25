@@ -15,12 +15,14 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 import pytest
-from core.risk.stress_test_validator import (
+from core_bak_refactored.core.risk.stress_test_validator import (
     StressTestValidator,
-    MockHistoricalDataSource,
-    MockPortfolioBuilder,
     HistoricalEvent,
     ValidationResult
+)
+from core_bak_refactored.tests.core.risk.mocks import (
+    MockHistoricalDataSource,
+    MockPortfolioBuilder
 )
 
 

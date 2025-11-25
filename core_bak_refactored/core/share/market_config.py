@@ -167,7 +167,73 @@ class MarketConfigManager:
                 'min_required_returns': 30,  # 最小样本量要求
                 'volatility_persistence': 0.94,  # 波动率持续性中等
                 'liquidity_risk_weight': 1.2,  # 流动性风险权重较高
-                'political_risk_premium': 0.008  # 政治风险溢价
+                'political_risk_premium': 0.008,  # 政治风险溢价
+                # 专家建议：持仓风险参数（第1轮评审 - Almgren et al. 2005）
+                'price_impact_alpha': 0.55,  # 散户主导，冲击系数高（范围0.5-0.7）
+                'price_impact_beta': 0.52,   # 非线性较弱（范围0.5-0.55）
+                'default_spread': 0.0025,    # A股典型spread（0.25%）
+                # 专家建议：参与率限制（第2轮评审调整 - 考虑T+1限制）
+                'participation_limits': {
+                    'NORMAL': 0.08,    # 从10%降至8%（T+1限制）
+                    'VOLATILE': 0.05,  # 市场波动加剧
+                    'EXTREME': 0.02    # 极端行情
+                },
+                # 专家建议：市场状态阈值（第2轮评审优化 - 基于滚动分位数校准）
+                'state_thresholds': {
+                    'normal_vol_max': 1.15,      # 从1.2调低（A股波动容忍度低）
+                    'normal_volume_min': 0.75,   # 从0.8调低（成交量波动大）
+                    'volatile_vol_max': 1.4,     # 从1.5调低
+                    'volatile_volume_min': 0.55  # 从0.6调低
+                },
+                # 专家建议（第2轮评审 P0）：市值分层参数
+                'market_cap_tiers': {
+                    'large_cap': {'impact_discount': 0.8, 'liquidity_buffer': 1.2},
+                    'mid_cap': {'impact_discount': 1.0, 'liquidity_buffer': 1.0},
+                    'small_cap': {'impact_discount': 1.3, 'liquidity_buffer': 0.7}
+                },
+                # 专家建议（第2轮评审 P0）：日内时段调整
+                'intraday_adjustments': {
+                    'open_30min': 1.5,    # 开盘30分钟冲击扩大50%
+                    'close_30min': 1.3,   # 收盘30分钟冲击扩大30%
+                    'lunch_break': 0.8    # 午间休市冲击减少20%
+                },
+                # 专家建议（第2轮评审 P0重构）：流动性成本折扣配置
+                'liquidity_cost_discount': {
+                    'cn_t1_single_day': 0.95,        # A股T+1限制，1天折扣
+                    'cn_penalty_factor': 0.85,       # A股多日额外惩罚系数
+                    'dynamic_bound_increment': 0.05, # 天数增长系数
+                    'dynamic_bound_max_increment': 0.3,  # 最大增量
+                    'dynamic_bound_cap': 0.8,        # 动态下限上限
+                    'base_lower_bounds': {           # 各市场基础下限
+                        'CN': 0.6,
+                        'US': 0.4,
+                        'HK': 0.55,
+                        'JP': 0.5,
+                        'SG': 0.65,
+                        'EU': 0.45
+                    },
+                    'market_adjustments': {          # 市场类型调整系数
+                        'US': 0.95,
+                        'HK': 0.88,
+                        'JP': 0.92,
+                        'SG': 0.85,
+                        'EU': 0.94
+                    },
+                    'liquidity_adjustments': {       # 流动性调整系数
+                        'top_20%': 0.96,
+                        'mid_60%': 0.90,
+                        'bottom_20%': 0.82
+                    },
+                    'simple_thresholds': {           # 简单分类阈值（回退用）
+                        'high_liquidity': 10_000_000,
+                        'mid_liquidity': 1_000_000
+                    },
+                    'quantile_min_samples': 100      # 动态分位数最小样本数
+                },
+                # 涨跌停与停牌（延后至5B后续迭代实施）
+                'price_limit': 0.10,
+                'halt_risk_factor': 0.15,
+                'consecutive_limit_days_p95': 3
             })
             config['volatility_spike_threshold'] = 0.05
             config['limit_hit_ratio_threshold'] = 0.25
@@ -200,7 +266,43 @@ class MarketConfigManager:
                 'min_required_returns': 50,
                 'volatility_persistence': 0.97,  # 高度持续（机构主导）
                 'liquidity_risk_weight': 0.85,  # 专家优化: 0.8→0.85 (反映近期流动性变化)
-                'political_risk_premium': 0.003  # 政治风险低
+                'political_risk_premium': 0.003,  # 政治风险低
+                # 专家建议：持仓风险参数（第1轮评审 - Kissell 2013）
+                'price_impact_alpha': 0.25,  # 机构主导，流动性好，冲击低（范围0.2-0.3）
+                'price_impact_beta': 0.65,   # 算法交易优化（范围0.6-0.7）
+                'default_spread': 0.0015,    # 美股典型spread（0.15%）
+                # 专家建议：参与率限制（按市场状态）
+                'participation_limits': {
+                    'NORMAL': 0.15,    # 美股深度好，允许更高参与率
+                    'VOLATILE': 0.08,  # 波动加剧
+                    'EXTREME': 0.03    # 极端行情
+                },
+                # 专家建议：市场状态阈值
+                'state_thresholds': {
+                    'normal_vol_max': 1.3,      # 美股波动容忍度较高
+                    'normal_volume_min': 0.7,
+                    'volatile_vol_max': 1.8,
+                    'volatile_volume_min': 0.5
+                },
+                # 无涨跌停
+                'price_limit': None,
+                'halt_risk_factor': 0.05,
+                # 专家建议（第2轮评审 P0）：市值分层参数
+                'market_cap_tiers': {
+                    'large_cap': {'impact_discount': 0.7, 'liquidity_buffer': 1.3},
+                    'mid_cap': {'impact_discount': 1.0, 'liquidity_buffer': 1.0},
+                    'small_cap': {'impact_discount': 1.4, 'liquidity_buffer': 0.6}
+                },
+                # 专家建议（第2轮评审 P0）：日内时段调整
+                'intraday_adjustments': {
+                    'open_30min': 1.4,    # 开盘30分钟冲击扩大40%
+                    'close_30min': 1.2,   # 收盘30分钟冲击扩大20%
+                    'after_hours': 0.9    # 盘后交易冲击较低
+                },
+                # 专家建议（第2轮评审 P0重构）：流动性成本折扣配置
+                'liquidity_cost_discount': {
+                    # 继承通用配置即可，无T+1限制
+                }
             })
             config['volatility_spike_threshold'] = 0.03
             config['limit_hit_ratio_threshold'] = 0.20
@@ -230,7 +332,39 @@ class MarketConfigManager:
                 'min_required_returns': 50,
                 'volatility_persistence': 0.92,  # 资金流动影响波动率持续性
                 'liquidity_risk_weight': 1.1,  # 受资金流动影响
-                'political_risk_premium': 0.015  # 地缘政治风险高
+                'political_risk_premium': 0.015,  # 地缘政治风险高
+                # 专家建议：持仓风险参数（第2轮评审微调 - Chan & Lakonishok 1995）
+                'price_impact_alpha': 0.42,  # 国际资金影响，从0.45调至0.42
+                'price_impact_beta': 0.58,   # 国际资金流动影响（范围0.55-0.6）
+                'default_spread': 0.0020,    # 港股典型spread（0.20%）
+                # 专家建议：参与率限制（按市场状态）
+                'participation_limits': {
+                    'NORMAL': 0.12,    # 混合市场
+                    'VOLATILE': 0.06,  # 波动加剧
+                    'EXTREME': 0.025   # 极端行情
+                },
+                # 专家建议：市场状态阈值
+                'state_thresholds': {
+                    'normal_vol_max': 1.25,     # 港股介于中美之间
+                    'normal_volume_min': 0.75,
+                    'volatile_vol_max': 1.6,
+                    'volatile_volume_min': 0.55
+                },
+                # 无涨跌停但有限制
+                'price_limit': None,
+                'halt_risk_factor': 0.10,
+                # 专家建议（第2轮评审 P0）：市值分层参数
+                'market_cap_tiers': {
+                    'large_cap': {'impact_discount': 0.75, 'liquidity_buffer': 1.25},
+                    'mid_cap': {'impact_discount': 1.0, 'liquidity_buffer': 1.0},
+                    'small_cap': {'impact_discount': 1.35, 'liquidity_buffer': 0.65}
+                },
+                # 专家建议（第2轮评审 P0）：日内时段调整
+                'intraday_adjustments': {
+                    'open_30min': 1.45,   # 开盘30分钟冲击扩大45%
+                    'close_30min': 1.25,  # 收盘30分钟冲击扩大25%
+                    'lunch_break': 0.85   # 午间休市冲击较低
+                }
             })
             config['volatility_spike_threshold'] = 0.04
             config['limit_hit_ratio_threshold'] = 0.25
@@ -255,7 +389,39 @@ class MarketConfigManager:
                 'volatility_persistence': 0.95,  # 货币政策主导，波动率高度持续
                 'liquidity_risk_weight': 0.9,  # 流动性充足
                 'political_risk_premium': 0.005,  # 政治风险中等
-                'deflation_risk_adjustment': 0.01  # 通缩风险调整系数
+                'deflation_risk_adjustment': 0.01,  # 通缩风险调整系数
+                # 专家建议：持仓风险参数（第1轮评审 - Iihara et al. 2001）
+                'price_impact_alpha': 0.35,  # 机构主导，流动性集中（范围0.3-0.4）
+                'price_impact_beta': 0.62,   # 交叉持股影响（范围0.6-0.65）
+                'default_spread': 0.0018,    # 日股典型spread（0.18%）
+                # 专家建议：参与率限制（按市场状态）
+                'participation_limits': {
+                    'NORMAL': 0.13,    # 机构主导
+                    'VOLATILE': 0.07,  # 波动加剧
+                    'EXTREME': 0.03    # 极端行情
+                },
+                # 专家建议：市场状态阈值
+                'state_thresholds': {
+                    'normal_vol_max': 1.25,
+                    'normal_volume_min': 0.75,
+                    'volatile_vol_max': 1.6,
+                    'volatile_volume_min': 0.55
+                },
+                # 无涨跌停
+                'price_limit': None,
+                'halt_risk_factor': 0.06,
+                # 专家建议（第2轮评审 P0）：市值分层参数
+                'market_cap_tiers': {
+                    'large_cap': {'impact_discount': 0.75, 'liquidity_buffer': 1.2},
+                    'mid_cap': {'impact_discount': 1.0, 'liquidity_buffer': 1.0},
+                    'small_cap': {'impact_discount': 1.3, 'liquidity_buffer': 0.7}
+                },
+                # 专家建议（第2轮评审 P0）：日内时段调整
+                'intraday_adjustments': {
+                    'open_30min': 1.4,    # 开盘30分钟冲击扩大40%
+                    'close_30min': 1.25,  # 收盘30分钟冲击扩大25%
+                    'lunch_break': 0.85   # 午间休市冲击较低
+                }
             })
             config['volatility_spike_threshold'] = 0.04
             config['limit_hit_ratio_threshold'] = 0.25
@@ -281,7 +447,39 @@ class MarketConfigManager:
                 'liquidity_risk_weight': 1.0,  # 跨国流动性差异
                 'political_risk_premium': 0.010,  # 欧盟政治风险
                 'brexit_risk_weight': self._get_brexit_risk_weight(),  # 动态衰减机制
-                'banking_sector_risk': 0.008  # 银行体系风险溢价
+                'banking_sector_risk': 0.008,  # 银行体系风险溢价
+                # 专家建议：持仓风险参数（第1轮评审 - Huang & Stoll 1997）
+                'price_impact_alpha': 0.30,  # 市场分散但深度好（范围0.25-0.35）
+                'price_impact_beta': 0.63,   # MiFID II改善透明度（范围0.6-0.65）
+                'default_spread': 0.0016,    # 欧洲典型spread（0.16%）
+                # 专家建议：参与率限制（按市场状态）
+                'participation_limits': {
+                    'NORMAL': 0.14,    # 市场深度好
+                    'VOLATILE': 0.07,  # 波动加剧
+                    'EXTREME': 0.03    # 极端行情
+                },
+                # 专家建议：市场状态阈值
+                'state_thresholds': {
+                    'normal_vol_max': 1.25,
+                    'normal_volume_min': 0.75,
+                    'volatile_vol_max': 1.65,
+                    'volatile_volume_min': 0.55
+                },
+                # 无涨跌停
+                'price_limit': None,
+                'halt_risk_factor': 0.07,
+                # 专家建议（第2轮评审 P0）：市值分层参数
+                'market_cap_tiers': {
+                    'large_cap': {'impact_discount': 0.7, 'liquidity_buffer': 1.25},
+                    'mid_cap': {'impact_discount': 1.0, 'liquidity_buffer': 1.0},
+                    'small_cap': {'impact_discount': 1.35, 'liquidity_buffer': 0.65}
+                },
+                # 专家建议（第2轮评审 P0）：日内时段调整
+                'intraday_adjustments': {
+                    'open_30min': 1.35,   # 开盘30分钟冲击扩大35%
+                    'close_30min': 1.2,   # 收盘30分钟冲击扩大20%
+                    'midday': 0.9         # 中午时段冲击较低
+                }
             })
             config['volatility_spike_threshold'] = 0.035
             config['limit_hit_ratio_threshold'] = 0.20
@@ -307,7 +505,39 @@ class MarketConfigManager:
                 'liquidity_risk_weight': 1.25,  # 专家优化: 1.3→1.25 (反映良好市场基础设施)
                 'political_risk_premium': 0.006,  # 政治稳定但外部依赖
                 'trade_openness_risk': 0.012,  # 贸易开放度风险溢价（贸易依存度300%+）
-                'currency_risk_weight': 1.25  # 汇率政策风险
+                'currency_risk_weight': 1.25,  # 汇率政策风险
+                # 专家建议：持仓风险参数（第1轮评审 - Biais et al. 1995）
+                'price_impact_alpha': 0.50,  # 市场规模小，国际资金敏感（范围0.45-0.55）
+                'price_impact_beta': 0.54,   # 外部冲击影响（范围0.5-0.55）
+                'default_spread': 0.0028,    # 新加坡典型spread（0.28%）
+                # 专家建议：参与率限制（按市场状态）
+                'participation_limits': {
+                    'NORMAL': 0.10,    # 小市场限制较严
+                    'VOLATILE': 0.05,  # 波动加剧
+                    'EXTREME': 0.02    # 极端行情
+                },
+                # 专家建议：市场状态阈值
+                'state_thresholds': {
+                    'normal_vol_max': 1.3,
+                    'normal_volume_min': 0.7,
+                    'volatile_vol_max': 1.7,
+                    'volatile_volume_min': 0.5
+                },
+                # 无涨跌停
+                'price_limit': None,
+                'halt_risk_factor': 0.08,
+                # 专家建议（第2轮评审 P0）：市值分层参数
+                'market_cap_tiers': {
+                    'large_cap': {'impact_discount': 0.75, 'liquidity_buffer': 1.15},
+                    'mid_cap': {'impact_discount': 1.0, 'liquidity_buffer': 1.0},
+                    'small_cap': {'impact_discount': 1.4, 'liquidity_buffer': 0.6}
+                },
+                # 专家建议（第2轮评审 P0）：日内时段调整
+                'intraday_adjustments': {
+                    'open_30min': 1.5,    # 开盘30分钟冲击扩大50%
+                    'close_30min': 1.3,   # 收盘30分钟冲击扩大30%
+                    'lunch_break': 0.8    # 午间休市冲击减少20%
+                }
             })
             config['volatility_spike_threshold'] = 0.05
             config['limit_hit_ratio_threshold'] = 0.30

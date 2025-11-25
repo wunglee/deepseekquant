@@ -155,7 +155,7 @@ class TestPortfolioRiskAnalyzer(unittest.TestCase):
             self.assertIn(field, rs, f"缺少必要字段: {field}")
         
         # P2.1专家补充字段验证
-        p21_fields = ['calculation_cost_ms', 'approval_status', 'risk_rating', 'compliance_flags']
+        p21_fields = ['calculation_cost_ms', 'approval_status', 'risk_rating', 'compliance_flags', 'calculation_percentiles']
         for field in p21_fields:
             self.assertIn(field, rs, f"P2.1缺少补充字段: {field}")
         
@@ -165,9 +165,16 @@ class TestPortfolioRiskAnalyzer(unittest.TestCase):
         self.assertIn(rs['trigger_reason'], ['SCHEDULED', 'VOLATILITY_SPIKE'])
         self.assertIsInstance(rs['calculation_cost_ms'], int)
         self.assertGreaterEqual(rs['calculation_cost_ms'], 0)
-        self.assertIn(rs['approval_status'], ['AUTO_APPROVED', 'PENDING', 'REJECTED'])
-        self.assertIn(rs['risk_rating'], ['LOW', 'MEDIUM', 'HIGH'])
+        self.assertIn(rs['approval_status'], ['AUTO_APPROVED', 'PENDING', 'REJECTED', 'MANUAL_OVERRIDE'])
+        self.assertIn(rs['risk_rating'], ['LOW', 'MEDIUM', 'HIGH', 'EXTREME'])
         self.assertIsInstance(rs['compliance_flags'], list)
+        # 新增：分位数统计字段验证
+        self.assertIn('calculation_percentiles', rs)
+        self.assertIsInstance(rs['calculation_percentiles'], dict)
+        for k in ['p50_ms', 'p95_ms', 'p99_ms']:
+            self.assertIn(k, rs['calculation_percentiles'])
+            self.assertIsInstance(rs['calculation_percentiles'][k], int)
+            self.assertGreaterEqual(rs['calculation_percentiles'][k], 0)
     
     def test_model_health_jp_market_thresholds(self):
         """验收测试：JP市场模型健康分级阈值（P2.1专家优化：60/240）"""

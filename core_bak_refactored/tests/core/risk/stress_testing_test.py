@@ -181,9 +181,9 @@ class StressTesterTest(unittest.TestCase):
         self.assertEqual(crisis_2008.parameters['volatility_spike'], 3.5)
         self.assertEqual(crisis_2008.parameters['correlation_break'], 0.8)
         
-        # 2015A股大跌：decline=-0.30, liquidity_dry_up=0.8
+        # 2015A股大跌：decline=-0.43, liquidity_dry_up=0.8
         crash_2015 = self.tester.scenarios['2015_china_market_crash']
-        self.assertEqual(crash_2015.parameters['decline'], -0.30)
+        self.assertEqual(crash_2015.parameters['decline'], -0.43)
         self.assertEqual(crash_2015.parameters['liquidity_dry_up'], 0.8)
         self.assertEqual(crash_2015.parameters['limit_hit_frequency'], 0.3)
     
@@ -331,6 +331,59 @@ class StressTesterTest(unittest.TestCase):
         leveraged = self.tester._get_leveraged_position(self.portfolio_state)
         self.assertGreaterEqual(leveraged, 0, "杠杆仓位应该非负")
 
+
+
+    def test_combined_with_us_debt_ceiling_crisis_sequential(self):
+        """
+        顺序冲击：新增场景2011美国债务上限危机的传导效应
+        """
+        self.config['stress_testing'] = {
+            'enable_sequential_test': True,
+            'sequential_scenarios': [['2011_us_debt_ceiling_crisis', '2015_china_market_crash']],
+            'propagation_factor': 0.3
+        }
+        self.tester = StressTester(self.config)
+        results = self.tester.run_combined_stress_tests(self.portfolio_state, self.market_data)
+        self.assertIn('sequential', results)
+        self.assertTrue(len(results['sequential']) > 0)
+        seq_loss = list(results['sequential'].values())[0]
+        self.assertLess(seq_loss, -0.2, "顺序冲击损失应为显著负值")
+
+    def test_combined_with_us_debt_ceiling_crisis_concurrent(self):
+        """
+        并发冲击：新增场景与2008金融危机的相关性影响
+        """
+        self.config['stress_testing'] = {
+            'enable_concurrent_test': True,
+            'concurrent_scenarios': [['2011_us_debt_ceiling_crisis', '2008_financial_crisis']],
+            'systemic_premium': 0.25
+        }
+        self.tester = StressTester(self.config)
+        results = self.tester.run_combined_stress_tests(self.portfolio_state, self.market_data)
+        self.assertIn('concurrent', results)
+        self.assertTrue(len(results['concurrent']) > 0)
+        conc_loss = list(results['concurrent'].values())[0]
+        self.assertLess(conc_loss, -0.3, "并发冲击损失应为显著负值")
+
+
+    def test_feedback_loop_with_us_debt_ceiling_crisis(self):
+        """
+        反馈循环：新增场景2011美国债务上限危机的风险叠加验证
+        """
+        self.config['stress_testing'] = {
+            'enable_feedback_loop_test': True,
+            'feedback_loop_scenarios': ['2011_us_debt_ceiling_crisis'],
+            'feedback_factor': 0.25,
+            'max_feedback_iterations': 5
+        }
+        self.tester = StressTester(self.config)
+        results = self.tester.run_combined_stress_tests(self.portfolio_state, self.market_data)
+        self.assertIn('feedback_loop', results)
+        self.assertIn('2011_us_debt_ceiling_crisis', results['feedback_loop'])
+        feedback_loss = results['feedback_loop']['2011_us_debt_ceiling_crisis']
+        single_loss = self.tester.run_stress_tests(self.portfolio_state, self.market_data)['2011_us_debt_ceiling_crisis']
+        # 反馈循环应放大损失（更负）
+        self.assertLess(feedback_loss, single_loss * 0.95)
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

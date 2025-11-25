@@ -309,40 +309,40 @@ class StressTestValidator:
 # 功能碎片占位符（待未来模块实现）
 # =============================================================================
 
-class MockHistoricalDataSource:
-    """
-    模拟历史数据源（临时实现）
-    
-    状态：功能碎片
-    迁移目标：core/data/_fragments/historical_data_provider.py
-    
-    警告：仅用于框架验证，生产环境需替换为真实数据源
-    """
-    
-    def get_event_returns(self, event: HistoricalEvent, asset_id: str) -> float:
-        """返回模拟的事件收益率（基于expected_decline）"""
-        # 简化：直接返回预期下跌，实际应从真实数据计算
-        import random
-        # 添加随机扰动模拟真实数据偏差
-        noise = random.uniform(-0.1, 0.1) * event.expected_decline
-        return event.expected_decline + noise
+# Deleted:class MockHistoricalDataSource:
+# Deleted:    """
+# Deleted:    模拟历史数据源（临时实现）
+# Deleted:    
+# Deleted:    状态：功能碎片
+# Deleted:    迁移目标：core/data/_fragments/historical_data_provider.py
+# Deleted:    
+# Deleted:    警告：仅用于框架验证，生产环境需替换为真实数据源
+# Deleted:    """
+# Deleted:    
+# Deleted:    def get_event_returns(self, event: HistoricalEvent, asset_id: str) -> float:
+# Deleted:        """返回模拟的事件收益率（基于expected_decline）"""
+# Deleted:        # 简化：直接返回预期下跌，实际应从真实数据计算
+# Deleted:        import random
+# Deleted:        # 添加随机扰动模拟真实数据偏差
+# Deleted:        noise = random.uniform(-0.1, 0.1) * event.expected_decline
+# Deleted:        return event.expected_decline + noise
 
 
-class MockPortfolioBuilder:
-    """
-    模拟组合构造器（临时实现）
-    
-    状态：功能碎片
-    迁移目标：core/portfolio/_fragments/synthetic_portfolio_builder.py
-    """
-    
-    def build_test_portfolio(self, portfolio_type: str) -> Dict[str, float]:
-        """返回简化的测试组合"""
-        if portfolio_type == 'csi300':
-            return {'000300.SH': 1.0}
-        elif portfolio_type == 'sector_rotation':
-            return {'finance': 0.30, 'consumer': 0.25, 'tech': 0.20, 'other': 0.25}
-        elif portfolio_type == 'ah_hybrid':
-            return {'000300.SH': 0.70, 'HSI': 0.30}
-        else:
-            return {'000300.SH': 1.0}
+# Deleted:class MockPortfolioBuilder:
+# Deleted:    """
+# Deleted:    模拟组合构造器（临时实现）
+# Deleted:    
+# Deleted:    状态：功能碎片
+# Deleted:    迁移目标：core/portfolio/_fragments/synthetic_portfolio_builder.py
+# Deleted:    """
+# Deleted:    
+# Deleted:    def build_test_portfolio(self, portfolio_type: str) -> Dict[str, float]:
+# Deleted:        """返回简化的测试组合"""
+# Deleted:        if portfolio_type == 'csi300':
+# Deleted:            return {'000300.SH': 1.0}
+# Deleted:        elif portfolio_type == 'sector_rotation':
+# Deleted:            return {'finance': 0.30, 'consumer': 0.25, 'tech': 0.20, 'other': 0.25}
+# Deleted:        elif portfolio_type == 'ah_hybrid':
+# Deleted:            return {'000300.SH': 0.70, 'HSI': 0.30}
+# Deleted:        else:
+# Deleted:            return {'000300.SH': 1.0}

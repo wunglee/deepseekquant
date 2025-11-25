@@ -10,15 +10,10 @@ import numpy as np
 import pandas as pd
 from typing import Dict, List, Optional, Any, Tuple
 import logging
-import sys
 import os
 from datetime import datetime
 import time
 import uuid
-
-# 添加项目根目录到路径
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..')))
 
 from .risk_metrics_service import RiskMetricsService
 from core_bak_refactored.infrastructure.risk_metrics import StatisticalCalculator
@@ -132,14 +127,10 @@ def _prepare_shared_config(config: Dict[str, Any]) -> Dict[str, Any]:
         cfg = {}
     # 补齐risk_model_config（外部化参数）
     if 'risk_model_config' not in cfg:
-        try:
-            from common import RISK_MODEL_CONFIG
-            cfg['risk_model_config'] = RISK_MODEL_CONFIG
-        except Exception:
-            cfg['risk_model_config'] = {
-                'parallel': {'min_tasks_for_parallel': 10, 'dynamic_chunking': True, 'memory_threshold_gb': 0.8},
-                'factor_model': {'condition_number_threshold': 1e10, 'ridge_alpha': 0.1, 'cache_ttl_seconds': 3600}
-            }
+        cfg['risk_model_config'] = {
+            'parallel': {'min_tasks_for_parallel': 10, 'dynamic_chunking': True, 'memory_threshold_gb': 0.8},
+            'factor_model': {'condition_number_threshold': 1e10, 'ridge_alpha': 0.1, 'cache_ttl_seconds': 3600}
+        }
     return cfg
 
 def _calculate_single_portfolio_static(
@@ -615,7 +606,12 @@ class PortfolioRiskAnalyzer:
                 'calculation_cost_ms': 0,  # 计算耗时（毫秒）
                 'approval_status': 'AUTO_APPROVED',  # 审批状态
                 'risk_rating': 'MEDIUM',  # 风险评级
-                'compliance_flags': []  # 合规标识
+                'compliance_flags': [],  # 合规标识
+                'calculation_percentiles': {
+                    'p50_ms': 0,
+                    'p95_ms': 0,
+                    'p99_ms': 0
+                }
             },
             'model_health': {
                 'data_points': 0,
@@ -796,7 +792,9 @@ class PortfolioRiskAnalyzer:
             # P2.1风险评级：根据市场状态动态评级
             market_status = result['report_snapshot']['market_status']
             volatility_regime = result['report_snapshot']['volatility_regime']
-            if market_status == 'EXTREME' or volatility_regime == 'EXTREME':
+            if market_status == 'EXTREME' and volatility_regime == 'EXTREME':
+                result['report_snapshot']['risk_rating'] = 'EXTREME'
+            elif market_status == 'EXTREME' or volatility_regime == 'EXTREME':
                 result['report_snapshot']['risk_rating'] = 'HIGH'
             elif market_status == 'VOLATILE' or volatility_regime in ('HIGH', 'MEDIUM'):
                 result['report_snapshot']['risk_rating'] = 'MEDIUM'
@@ -807,10 +805,33 @@ class PortfolioRiskAnalyzer:
             compliance_flags = []
             if result['model_health']['degradation_level'] in ('SIGNIFICANT', 'SEVERE'):
                 compliance_flags.append('DEGRADED_MODEL')
-            if result['report_snapshot']['data_freshness_seconds'] > 3600:
+            # 分市场数据新鲜度阈值
+            market_type = self.config.get('market_type', 'CN')
+            data_freshness_thresholds = {
+                'US': 1800,
+                'CN': 3600,
+                'JP': 7200,
+                'EU': 3600,
+                'SG': 10800
+            }
+            freshness_thresh = data_freshness_thresholds.get(market_type, 3600)
+            if result['report_snapshot']['data_freshness_seconds'] > freshness_thresh:
                 compliance_flags.append('STALE_DATA')
-            if calculation_cost_ms > 5000:  # 超过5秒告警
+            # 动态SLA阈值（基于组合规模）
+            portfolio_size = len(getattr(portfolio_state, 'allocations', {}) or {})
+            sla_threshold = 5000 if portfolio_size <= 100 else (10000 if portfolio_size <= 500 else 30000)
+            if calculation_cost_ms > sla_threshold:  # 超过阈值告警
                 compliance_flags.append('SLOW_CALCULATION')
+            # 集中度风险与数据质量标识
+            try:
+                if float(result.get('concentration_risk', 0.0)) >= 0.3:
+                    compliance_flags.append('CONCENTRATION_RISK')
+            except Exception:
+                pass
+            pr = result.get('portfolio_returns')
+            pr_len = getattr(pr, 'size', 0)
+            if (not isinstance(pr, pd.Series)) or pr_len < 2:
+                compliance_flags.append('DATA_QUALITY_WARNING')
             result['report_snapshot']['compliance_flags'] = compliance_flags
             
             logger.debug(f"组合风险分析完成: 波动率={result['volatility']:.4f}, VaR={result['var_95']:.4f}, 夏普={result['sharpe_ratio']:.2f}, 耗时={calculation_cost_ms}ms")

@@ -17,16 +17,14 @@ import hashlib
 
 logger = logging.getLogger('DeepSeekQuant.FactorModel')
 
-# 外部化风险模型参数（默认阈值）
-try:
-    from common import RISK_MODEL_CONFIG as _RMC
-except Exception:
-    _RMC = {
-        'factor_model': {
-            'condition_number_threshold': 1e10,
-            'ridge_alpha': 0.1
-        }
+# 外部化风险模型参数（默认阈值，仅使用本模块默认，禁止跨根导入）
+_RMC = {
+    'factor_model': {
+        'condition_number_threshold': 1e10,
+        'ridge_alpha': 0.1,
+        'cache_ttl_seconds': 3600
     }
+}
 
 
 @dataclass
@@ -83,11 +81,7 @@ class FactorModelEstimator:
         if self.cache_service:
             logger.info("因子模型缓存已启用 (P0-3优化)")
         # 内部L1缓存（进程内，TTL）
-        try:
-            from common import RISK_MODEL_CONFIG as _RMC
-            self._l1_ttl_seconds = int(_RMC.get('factor_model', {}).get('cache_ttl_seconds', 3600))
-        except Exception:
-            self._l1_ttl_seconds = 3600
+        self._l1_ttl_seconds = int(_RMC.get('factor_model', {}).get('cache_ttl_seconds', 3600))
         self._l1_cache: Dict[str, Tuple[Tuple[pd.DataFrame, Dict[str, Any]], float]] = {}
     
     def _generate_cache_key(self, returns: pd.DataFrame, method: str = 'factor_loadings') -> str:

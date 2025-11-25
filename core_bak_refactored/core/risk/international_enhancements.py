@@ -229,8 +229,8 @@ class InternationalEnhancements:
                 else:
                     enhanced_sharpe = {'enhanced_sharpe': metrics.get('sharpe_ratio', 0)}
                 
-                # 检测市场异常
-                anomalies = market_service.market_detector.detect_anomalies(returns)
+                # 检测市场异常（直接调用内置方法）
+                anomalies = market_service._detect_market_anomalies(returns)
                 
                 comparison_report['risk_metrics'][market_name] = {
                     'basic_metrics': metrics,

@@ -245,8 +245,8 @@ stress_config = {
 
 ## 🔗 相关文档
 
-- **架构设计**: `docs/ARCHITECTURE.md`
-- **工作流程规范**: `docs/WORKFLOW.md`
+- **架构设计**: `docs/design/ARCHITECTURE.md`
+- **工作规范**: `.qoder/rules/PECIFICATIONS.md`
 - **测试用例**: `core_bak_refactored/tests/core/risk/position_risk_test.py`
 
 ---

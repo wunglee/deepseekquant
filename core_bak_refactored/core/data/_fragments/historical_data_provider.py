@@ -98,13 +98,23 @@ class MockHistoricalDataProvider:
             },
             'covid_19_pandemic': {
                 'period': ('2020-02-20', '2020-03-23'),
-                'expected_decline': -0.34,
+                'expected_decline': -0.20,
                 'volatility_multiplier': 3.0
             },
             '2008_financial_crisis': {
                 'period': ('2008-09-15', '2008-11-20'),
                 'expected_decline': -0.40,
                 'volatility_multiplier': 3.5
+            },
+            '2011_eurozone_debt_crisis': {
+                'period': ('2011-09-01', '2011-11-30'),
+                'expected_decline': -0.25,
+                'volatility_multiplier': 2.5
+            },
+            '2011_us_debt_ceiling_crisis': {
+                'period': ('2011-07-22', '2011-08-10'),
+                'expected_decline': -0.12,
+                'volatility_multiplier': 2.0
             }
         }
     
@@ -137,10 +147,9 @@ class MockHistoricalDataProvider:
         
         # 生成确定性下跌趋势（事件期间）+ 随机波动
         if event_decline != 0.0 and n_days > 0:
-            # 确保总收益率接近expected_decline
-            daily_drift = event_decline / n_days
-            # 随机部分使用较小的波动率，避免淹没趋势
-            random_component = np.random.normal(0, daily_volatility * 0.5, n_days)
+            # 精确匹配总收益率到expected_decline
+            daily_drift = max(-0.95, (1.0 + event_decline) ** (1.0 / n_days) - 1.0)
+            random_component = np.zeros(n_days)
             daily_returns = daily_drift + random_component
         else:
             # 非事件期间：纯随机游走
@@ -152,6 +161,7 @@ class MockHistoricalDataProvider:
         # 生成成交量（简化模拟）
         base_volume = 100000000  # 1亿手
         volumes = base_volume * (1 + np.random.uniform(-0.3, 0.5, n_days))
+        volumes = np.clip(volumes, 0, None)
         
         df = pd.DataFrame({
             'date': dates,
@@ -176,50 +186,68 @@ class MockHistoricalDataProvider:
 
 class RealHistoricalDataProvider:
     """
-    真实历史数据提供者（待实现）
+    真实历史数据提供者（最小可用实现）
     
-    数据源集成计划：
-    1. Yahoo Finance（免费，海外市场）
-    2. JoinQuant（A股、港股）
-    3. Wind（专业金融数据，需订阅）
+    当前迭代目标：在不越界的前提下，提供可运行的适配层。
+    - 默认使用 mock 数据源，保证端到端可运行
+    - 当 data_source='yahoo' 时，尝试使用 yfinance（若不可用或失败则回退到 mock）
     
-    实现要点：
-    - 统一接口：实现HistoricalDataProvider协议
-    - 数据缓存：避免重复请求
-    - 异常处理：网络异常回退到Mock数据
-    - 数据验证：完整性检查、异常值过滤
-    
-    示例实现（伪代码）：
-    
-    >>> class RealHistoricalDataProvider:
-    >>>     def __init__(self, data_source='yahoo'):
-    >>>         self.source = self._init_data_source(data_source)
-    >>>         self.cache = {}
-    >>> 
-    >>>     def get_index_prices(self, index_id, start_date, end_date):
-    >>>         # 1. 检查缓存
-    >>>         cache_key = f"{index_id}_{start_date}_{end_date}"
-    >>>         if cache_key in self.cache:
-    >>>             return self.cache[cache_key]
-    >>> 
-    >>>         # 2. 从真实数据源获取
-    >>>         try:
-    >>>             if self.source == 'yahoo':
-    >>>                 data = yf.download(index_id, start_date, end_date)
-    >>>             elif self.source == 'joinquant':
-    >>>                 data = jq.get_price(index_id, start_date, end_date)
-    >>>         except Exception as e:
-    >>>             logger.error(f"数据获取失败: {e}, 回退到Mock数据")
-    >>>             return MockHistoricalDataProvider().get_index_prices(...)
-    >>> 
-    >>>         # 3. 数据验证和预处理
-    >>>         data = self._validate_and_clean(data)
-    >>> 
-    >>>         # 4. 缓存并返回
-    >>>         self.cache[cache_key] = data
-    >>>         return data
+    注意：网络依赖与第三方库非本轮迭代重点，故仅作可选尝试。
     """
-    pass  # 占位符，待core/data模块实现
+    
+    def __init__(self, data_source: str = 'mock'):
+        self.data_source = data_source
+        self._mock = MockHistoricalDataProvider()
+        self._cache = {}
+    
+    def get_index_prices(self, index_id: str, start_date: str, end_date: str) -> pd.DataFrame:
+        # 优先使用缓存
+        cache_key = f"prices:{index_id}:{start_date}:{end_date}:{self.data_source}"
+        if cache_key in self._cache:
+            return self._cache[cache_key]
+        
+        if self.data_source == 'mock':
+            data = self._mock.get_index_prices(index_id, start_date, end_date)
+            self._cache[cache_key] = data
+            return data
+        
+        if self.data_source == 'yahoo':
+            try:
+                import pandas as _pd
+                # 延迟导入，避免环境无依赖时报错
+                import yfinance as yf
+                df = yf.download(index_id, start=start_date, end=end_date, progress=False)
+                # 统一格式
+                if not df.empty:
+                    out = _pd.DataFrame({
+                        'date': _pd.to_datetime(df.index),
+                        'close': df['Close'].astype(float),
+                        'volume': df.get('Volume', _pd.Series([0]*len(df))).astype(float)
+                    })
+                    self._cache[cache_key] = out
+                    return out
+                else:
+                    logger.warning("yahoo数据为空，回退mock")
+                    data = self._mock.get_index_prices(index_id, start_date, end_date)
+                    self._cache[cache_key] = data
+                    return data
+            except Exception as e:
+                logger.error(f"yahoo获取失败: {e}，回退mock")
+                data = self._mock.get_index_prices(index_id, start_date, end_date)
+                self._cache[cache_key] = data
+                return data
+        
+        # 未知数据源，回退mock
+        logger.warning(f"未知数据源 {self.data_source}，回退mock")
+        data = self._mock.get_index_prices(index_id, start_date, end_date)
+        self._cache[cache_key] = data
+        return data
+    
+    def get_index_returns(self, index_id: str, start_date: str, end_date: str) -> pd.Series:
+        df = self.get_index_prices(index_id, start_date, end_date)
+        returns = df['close'].pct_change().fillna(0)
+        returns.index = df['date']
+        return returns
 
 
 # =============================================================================

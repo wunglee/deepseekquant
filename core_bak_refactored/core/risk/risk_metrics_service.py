@@ -1,6 +1,12 @@
 """
 风险指标业务服务
 职责：将数学计算映射为金融风险概念，包含业务逻辑
+
+完成特性摘要（迁移自TODO.md）：
+- 国际化支持：CN/US/HK/JP/EU
+- 市场机制检测：涨跌停、熔断、LULD、VCM
+- 增强版夏普比率、跨市场风险对比
+- P0修复：CVaR参数法保守估计、分层置信度、动态无风险利率、符号约定统一
 """
 
 import numpy as np
@@ -17,12 +23,6 @@ except Exception:
     _PROM_ENABLED = False
     Counter = None
     Histogram = None
-
-import sys
-import os
-
-# 添加项目根目录到路径
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
 from core_bak_refactored.infrastructure.risk_metrics import StatisticalCalculator
 from ..share.market_config import MarketConfigManager

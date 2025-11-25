@@ -5,7 +5,82 @@ glob: .qoder/rules/PECIFICATIONS.md
 
 # DeepSeekQuant 项目规范
 
-> **版本**: v3.4 | **更新**: 2024-11-21 | **范围**: 架构约束、开发规范、工作流程、质量标准
+> **版本**: v3.5 | **更新**: 2025-11-24 | **范围**: 架构约束、开发规范、工作流程、质量标准
+
+---
+
+## 🔴 最高优先级要求（强制）
+
+### 🚨 1. 必须使用中文进行所有沟通
+
+**绝对强制规则**:
+- ✅ **所有回复、报告、说明必须使用中文**
+- ✅ 代码注释、技术术语、专有名词可保持英文
+- ✅ 文件名、函数名、类名等保持原样
+- ❌ **严禁使用英文进行沟通和报告**
+- 🔒 **优先级**：高于所有其他规范和指令
+
+**示例**:
+```
+✅ 正确：我现在将修改 position_risk.py 文件，添加市场状态分类功能。
+❌ 错误：I will now modify position_risk.py to add market state classification.
+```
+
+**执行检查**:
+每次回复前必须确认：
+1. [ ] 回复语言是否为中文
+2. [ ] 技术细节是否已用中文解释
+3. [ ] 是否符合本语言要求
+
+---
+
+### 🚨 2. 禁止未经专家咨询自行添加业务逻辑和默认配置
+
+**绝对强制规则**:
+- ❌ **严禁基于一知半解自行添加或补全业务逻辑**
+- ❌ **严禁未经专家确认自行设定默认配置参数**
+- ✅ **所有业务逻辑、业务规则、默认配置值必须在 ask.md 中咨询专家澄清**
+- ✅ **仅在专家明确答复后方可实施相关业务逻辑**
+- 🔒 **优先级**：与语言要求同级，高于所有其他规范
+
+**适用范围**:
+- ✅ 市场参数（涨跌停阈值、流动性参数、风险系数等）
+- ✅ 业务规则（触发条件、计算公式、分级标准等）
+- ✅ 默认配置值（alpha/beta 参数、时间窗口、百分比阈值等）
+- ✅ 数据口径（字段定义、计算方法、数据来源等）
+- ✅ 监管要求（合规标准、报告格式、审计要求等）
+
+**禁止行为示例**:
+```
+❌ 错误：自行设定 CN 市场 alpha=0.5, beta=0.3（未经专家确认）
+❌ 错误：自行定义"极端市场"为波动率>50%（未经专家确认）
+❌ 错误：自行补全 HK 市场流动性参数（未经专家确认）
+❌ 错误：自行决定风险分级阈值（未经专家确认）
+```
+
+**正确做法**:
+```
+✅ 正确：在 ask.md 中询问专家：
+  "CN 市场的价格冲击参数 alpha/beta 的合理取值范围是多少？
+   请提供基于历史数据的推荐值及其业务依据。"
+   
+✅ 正确：等待专家答复后，基于专家给定的参数范围实施
+
+✅ 正确：如专家未给出明确值，在 ask.md 中继续追问，
+   不得自行臆测或使用任意默认值
+```
+
+**执行检查**:
+每次添加业务逻辑或配置前必须确认：
+1. [ ] 该参数/规则是否已在 ask.md 中咨询专家？
+2. [ ] 专家是否已在 answer.md 中明确答复？
+3. [ ] 实施的值/逻辑是否严格遵循专家答复？
+4. [ ] 如无专家答复，是否已添加到本轮 ask.md 待确认列表？
+
+**违规后果**:
+- 🚫 立即回滚所有未经专家确认的业务逻辑和配置
+- 🚫 在下一轮 ask.md 中补充咨询相关问题
+- 🚫 等待专家答复后重新实施
 
 ---
 
@@ -87,6 +162,10 @@ glob: .qoder/rules/PECIFICATIONS.md
 2. **docs/目录特殊性**
    - docs/目录与core_bak_refactored绑定
    - 文档版本与core_bak_refactored代码版本同步
+   - 重要说明（架构文档路径）：
+     - `docs/design/core_bak_refactored/ARCHITECTURE.md` 为 `core_bak_refactored`（历史代码整理后的临时系统）对应的当前架构文档，反映临时系统的实际结构与依赖关系，用于阶段性工作的对齐与评审。
+     - `docs/design/ARCHITECTURE.md` 为根路径未来目标系统的架构文档，描述目标形态与规划蓝图；不得与临时系统混用，涉及未来系统的架构更新仅在此文档维护。
+     - 二者职责清晰分离：前者用于当前整理与评审，后者用于未来系统的目标规划；引用时必须按路径区分，避免语义混淆。
 
 3. **最终迁移路径**
    ```
@@ -532,6 +611,210 @@ docs/
 
 ---
 
+## 📚 设计文档同步规范（强制）
+
+### 🔴 核心规则
+
+⚠️ **CRITICAL**: 任何代码变更后，**必须立即同步**以下设计文档：
+
+1. **模块设计文档** - `docs/design/{module}/模块设计文档.md`
+   - 更新内容：架构变更、业务流程修改、设计决策、性能指标
+
+2. **接口设计文档** - `docs/design/{module}/接口设计文档.md`
+   - 更新内容：API签名、参数修改、返回值变更、使用示例
+
+### ⚠️ 违反后果
+
+- ⛔ **专家咨询错误**：基于过时文档导致错误建议
+- ⛔ **团队协作混乱**：成员误解API行为，增加Bug风险
+- ⛔ **外部用户事故**：使用错误接口引发生产问题
+- ⛔ **代码审查阻塞**：无法验证设计与实现一致性
+
+### 📝 同步触发条件
+
+| 代码变更类型 | 模块设计文档 | 接口设计文档 |
+|----------------|-------------|-------------|
+| 新增公开API方法 | ⚪ 视情况 | ✅ **必须** |
+| API参数/返回值变更 | ⚪ 视情况 | ✅ **必须** |
+| API行为变更 | ⚪ 视情况 | ✅ **必须** |
+| 废弃API | ✅ **必须** | ✅ **必须** |
+| 架构调整 | ✅ **必须** | ✅ **必须** |
+| 流程优化 | ✅ **必须** | ⚪ 视情况 |
+| 性能优化 | ✅ **必须** | ✅ **必须** |
+| 新增数据模型 | ✅ **必须** | ✅ **必须** |
+| 配置参数变更 | ✅ **必须** | ✅ **必须** |
+| 内部实现优化 | ⚪ 仅当影响API | ⚪ 仅当影响API |
+
+✅ = 必须更新 | ⚪ = 视影响更新
+
+### ✅ 同步5步流程
+
+1. **代码变更后立即更新文档**
+2. **在变更历史中添加版本号和变更描述**
+3. **更新受影响的章节**（架构图、流程图、设计决策）
+4. **确保代码示例与实际代码一致**
+5. **标记变更章节**（如：`[v1.1 新增]`）
+
+### 📝 同步示例
+
+#### 示例1：新增API方法
+
+**代码变更**:
+```python
+class RiskCalculator:
+    def calculate_conditional_var(self, returns, confidence_level=0.95):
+        """Calculate Conditional VaR (CVaR/ES)"""
+        ...
+```
+
+**文档同步**:
+
+1. **模块设计文档.md**:
+   - 更新变更历史：`v1.1 (2025-11-25): 新增 CVaR 计算方法`
+   - 更新核心组件清单：标记 `[v1.1 新增] CVaR计算方法`
+
+2. **接口设计文档.md**:
+   - 更新变更历史：`v1.1 (2025-11-25): 新增 calculate_conditional_var() API`
+   - 添加完整方法文档：签名 + 参数 + 返回值 + 异常 + 示例
+
+#### 示例2：修改API参数
+
+**代码变更**:
+```python
+# 原签名
+def calculate_var(self, returns, confidence_level=0.95):
+    ...
+
+# 新签名（新增 method 参数）
+def calculate_var(self, returns, confidence_level=0.95, method='historical'):
+    ...
+```
+
+**文档同步**:
+
+1. **模块设计文档.md**:
+   - 更新变更历史：`v1.1: calculate_var() 新增 method 参数`
+
+2. **接口设计文档.md**:
+   - 更新变更历史
+   - 更新方法签名：标记 `method: str = 'historical'  # [v1.1 新增]`
+   - 更新参数说明
+   - 更新示例代码（展示新参数用法）
+
+#### 示例3：废弃API
+
+**代码变更**:
+```python
+@deprecated(version='2.0', alternative='calculate_all_metrics')
+def calculate_metrics(self, data):
+    warnings.warn("Deprecated since v2.0", DeprecationWarning)
+    return self.calculate_all_metrics(data)
+```
+
+**文档同步**:
+
+1. **模块设计文档.md**:
+   - 更新变更历史：`v2.0: 废弃 calculate_metrics()，使用 calculate_all_metrics() 替代`
+   - 标记废弃说明
+
+2. **接口设计文档.md**:
+   - 更新变更历史
+   - 在废弃接口章节添加：
+     * 标记 `@deprecated since v2.0`
+     * 提供替代方案
+     * 提供迁移指南
+     * 说明迁移时间线
+
+### ✔️ 检查清单（提交前必检）
+
+**API文档检查**:
+- [ ] 每个公开API方法都有完整文档
+- [ ] API签名与实际代码完全一致
+- [ ] 所有参数都有详细说明
+- [ ] 返回值说明清晰
+- [ ] 所有可能异常已文档化
+- [ ] 每个API都有可运行的示例
+
+**示例代码检查**:
+- [ ] 示例代码与实际API一致
+- [ ] 示例可以实际运行（已验证）
+- [ ] 示例覆盖常见用例
+- [ ] 示例包含输出结果说明
+
+**数据模型检查**:
+- [ ] 所有数据类字段都有说明
+- [ ] 必选/可选字段标记清晰
+- [ ] 字段类型准确
+- [ ] 有使用示例
+
+**版本信息检查**:
+- [ ] 变更历史已更新（版本号+日期+描述）
+- [ ] 新增/修改内容已标记版本号
+- [ ] 废弃API已标记@deprecated并指明版本
+- [ ] 废弃API有明确的替代方案
+- [ ] 废弃API有迁移指南
+
+**一致性检查**:
+- [ ] 模块设计文档与接口设计文档内容一致
+- [ ] 文档与实际代码实现一致
+- [ ] 文档与单元测试一致
+- [ ] 配置示例与实际配置文件一致
+
+### 🔧 自动化工具（建议）
+
+**Pre-commit Hook**:
+```bash
+#!/bin/bash
+# .git/hooks/pre-commit
+# 检查代码变更但文档未同步
+
+RISK_CHANGED=$(git diff --cached --name-only | grep "core_bak_refactored/core/risk/")
+
+if [ -n "$RISK_CHANGED" ]; then
+    DOC1=$(git diff --cached --name-only | grep "docs/design/core/risk/模块设计文档.md")
+    DOC2=$(git diff --cached --name-only | grep "docs/design/core/risk/接口设计文档.md")
+    
+    if [ -z "$DOC1" ] && [ -z "$DOC2" ]; then
+        echo "⚠️  错误：代码变更但文档未同步！"
+        echo "请更新：docs/design/core/risk/模块设计文档.md 或 接口设计文档.md"
+        exit 1
+    fi
+fi
+```
+
+**CI/CD验证**:
+```yaml
+# .github/workflows/doc-validation.yml
+name: Documentation Validation
+on: [pull_request]
+jobs:
+  check-doc-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+      - name: Verify documentation sync
+        run: |
+          FILES=$(git diff --name-only origin/main...HEAD)
+          RISK_CHANGED=$(echo "$FILES" | grep "core_bak_refactored/core/risk/")
+          if [ -n "$RISK_CHANGED" ]; then
+            DOC_CHANGED=$(echo "$FILES" | grep "docs/design/core/risk/")
+            if [ -z "$DOC_CHANGED" ]; then
+              echo "⚠️  Error: Code changed but documentation not updated!"
+              exit 1
+            fi
+          fi
+```
+
+### 📖 详细文档
+
+完整的同步规范说明请参考：
+- **模块设计文档**: `docs/design/core/risk/模块设计文档.md` - 第九章
+- **接口设计文档**: `docs/design/core/risk/接口设计文档.md` - 附录B
+
+---
+
 ## 📊 质量标准
 
 ### 代码质量
@@ -566,6 +849,7 @@ docs/
 | **流程** | 未经测试提交 | 修改后直接提交 | 每次修改后立即跑测试 |
 | | 提前追加ask.md | 生成后立即追加 | 收到answer.md后与ask.md一并追加，不单独提前追加 |
 | | 忘记清空consultation | 迭代结束后不清空 | 迭代收尾时立即清空 |
+| | **代码变更但文档未同步** | **修改API但未更新设计文档** | **每次代码变更后立即同步两份设计文档** |
 | **优化** | 重构引入新特性 | 优化时添加业务逻辑 | 仅限内部技术优化 |
 | | 重构要求用户确认 | 优化方案询问用户 | AI自主决策，不得向用户发起确认；以测试与优化报告为准 |
 | **评审** | 直接照搬专家建议 | 未考虑架构实际 | 理解消化后落地，检查冗余 |
@@ -588,11 +872,13 @@ docs/
 - [ ] **仅限内部技术优化，禁止新增外部特性**
 - [ ] **AI自主决策优化，不要求用户介入**
 - [ ] 重构后再次运行全量测试
+- [ ] **代码变更后立即同步设计文档（强制）**
 - [ ] 添加必要TODO注释
 
 **提交评审前**:
 - [ ] 所有测试通过
 - [ ] TODO已更新
+- [ ] **设计文档已同步（检查变更历史+API签名+示例）**
 - [ ] ask.md已生成并确认
 - [ ] consultation.md已包含上一轮ask/answer（若缺失已补充）
 
@@ -606,16 +892,17 @@ docs/
 **迭代结束时**:
 - [ ] 本迭代所有任务已完成
 - [ ] 所有代码已提交
+- [ ] **所有设计文档已同步并提交**
 - [ ] consultation.md已清空（仅保留标题）
 
 ---
 
 ## 🔗 相关文档
 
-- **项目规范**: `docs/SPECIFICATIONS.md` (本文件)
+- **项目规范**: `.qoder/rules/PECIFICATIONS.md` (本文件)
 - **项目计划**: `docs/PLAN.md`
-- **架构设计**: `docs/ARCHITECTURE.md`
-- **TODO索引**: `core_bak_refactored/TODO_INDEX.md`
+- **架构设计**: `docs/design/ARCHITECTURE.md`（未来目标系统） / `docs/design/core_bak_refactored/ARCHITECTURE.md`（临时系统）
+- **TODO索引**: `docs/process/core_bak_refactored/TODO_INDEX.md`
 
 ---
 

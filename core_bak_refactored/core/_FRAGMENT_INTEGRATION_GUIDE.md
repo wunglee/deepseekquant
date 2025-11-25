@@ -4,7 +4,7 @@
 
 本文档记录了从 `core/risk/backtest_framework.py` 拆分出的功能碎片，这些碎片因跨越模块职责边界而被暂时存放在各目标模块的 `_fragments/` 目录中，等待目标模块完成开发后整合。
 
-**拆分原因**：根据 `docs/design/core/risk/模块设计文档.md` 的职责定义，原 `backtest_framework.py` 混合了多个模块的职责，违反了单一职责原则和模块边界。
+**拆分原因**：根据 `docs/design/core_bak_refactored/core/risk/模块设计文档.md` 的职责定义，原 `backtest_framework.py` 混合了多个模块的职责，违反了单一职责原则和模块边界。
 
 ---
 
@@ -311,7 +311,7 @@ from core.portfolio.builders import SyntheticPortfolioBuilder
 
 ## 📚 参考文档
 
-- [风险模块设计文档](../docs/design/core/risk/模块设计文档.md)
-- [风险模块接口设计文档](../docs/design/core/risk/接口设计文档.md)
+- [风险模块设计文档](../docs/design/core_bak_refactored/core/risk/模块设计文档.md)
+- [风险模块接口设计文档](../docs/design/core_bak_refactored/core/risk/接口设计文档.md)
 - [回测引擎实现](../core/backtest/backtest_engine.py)
 - [专家咨询记录](../docs/consultation.md)

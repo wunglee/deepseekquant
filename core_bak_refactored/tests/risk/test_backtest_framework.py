@@ -19,9 +19,9 @@ from pathlib import Path
 # 添加core_bak_refactored到路径
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from core.risk.backtest_framework import (
-    MockHistoricalDataProvider,
-    SyntheticPortfolioBuilder,
+from core_bak_refactored.core.data._fragments.historical_data_provider import MockHistoricalDataProvider
+from core_bak_refactored.core.portfolio._fragments.synthetic_portfolio import SyntheticPortfolioBuilder
+from core_bak_refactored.core.backtest._fragments.event_window_backtester import (
     EventWindowBacktester,
     BacktestReporter,
     BacktestResult
@@ -124,12 +124,14 @@ class TestEventWindowBacktester:
         provider = MockHistoricalDataProvider()
         backtester = EventWindowBacktester(provider)
         
-        assert len(backtester.events) == 3, "应加载3个事件"
+        assert len(backtester.events) == 5, "应加载5个事件"
         
         event_ids = [e.event_id for e in backtester.events]
         assert '2015_china_market_crash' in event_ids
         assert 'covid_19_pandemic' in event_ids
         assert '2008_financial_crisis' in event_ids
+        assert '2011_eurozone_debt_crisis' in event_ids
+        assert '2011_us_debt_ceiling_crisis' in event_ids
     
     def test_calculate_actual_loss(self):
         """测试实际损失计算"""
@@ -171,7 +173,7 @@ class TestEventWindowBacktester:
         # 运行回测（无真实StressTester，使用简化逻辑）
         results = backtester.run_backtest(portfolio, stress_tester=None)
         
-        assert len(results) == 3, "应返回3个事件的回测结果"
+        assert len(results) == 5, "应返回5个事件的回测结果"
         
         for result in results:
             assert isinstance(result, BacktestResult)
@@ -263,8 +265,8 @@ class TestIntegration:
         summary = BacktestReporter.generate_summary(results)
         
         # 验证完整流程
-        assert len(results) == 3, "应完成3个事件回测"
-        assert summary['total_tests'] == 3
+        assert len(results) == 5, "应完成5个事件回测"
+        assert summary['total_tests'] == 5
         assert 'avg_error' in summary
         
         # 检查所有结果都有有效数据
@@ -289,7 +291,7 @@ class TestIntegration:
             results = backtester.run_backtest(portfolio, stress_tester=None)
             all_results.extend(results)
         
-        assert len(all_results) == 9, "3个组合 × 3个事件 = 9个结果"
+        assert len(all_results) == 15, "3个组合 × 5个事件 = 15个结果"
         
         # 检查portfolio_id正确
         portfolio_ids = set(r.portfolio_id for r in all_results)

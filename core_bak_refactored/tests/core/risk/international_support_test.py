@@ -1,7 +1,7 @@
 """
 国际化支持测试
 
-测试不同市场（US/CN/HK）的风险指标计算
+测试不同市场（US/CN/HK/JP/EU/SG）的风险指标计算与专家参数优化验证
 """
 
 import unittest
@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 import sys
 import os
+from datetime import datetime
 
 # 添加项目路径
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..')))
@@ -206,6 +207,72 @@ class TestInternationalSupport(unittest.TestCase):
         hk_config = self.config_manager.generate_config_template('HK')
         hk_service = RiskMetricsService(hk_config)
         self.assertEqual(hk_service.trading_days_per_year, 247)
+
+
+    def test_sg_liquidity_weight_adjustment(self):
+        """测试SG流动性权重调整为1.25（专家建议第15轮）"""
+        config = self.config_manager.generate_config_template('SG')
+        sg_config = config['market_configs']['SG']
+        self.assertEqual(sg_config['liquidity_risk_weight'], 1.25,
+                        "SG流动性权重应为1.25（反映良好市场基础设施）")
+    
+    def test_us_liquidity_weight_adjustment(self):
+        """测试US流动性权重调整为0.85（专家建议第15轮）"""
+        config = self.config_manager.generate_config_template('US')
+        us_config = config['market_configs']['US']
+        self.assertEqual(us_config['liquidity_risk_weight'], 0.85,
+                        "US流动性权重应为0.85（反映近期流动性变化）")
+    
+    def test_brexit_risk_weight_decay_baseline(self):
+        """测试Brexit权重时间衰减机制：基准日期（专家建议第15轮）"""
+        # 2020年基准：应为1.15
+        weight_2020 = self.config_manager._get_brexit_risk_weight(datetime(2020, 1, 31))
+        self.assertAlmostEqual(weight_2020, 1.15, places=2,
+                              msg="2020-01-31（Brexit生效日）权重应为1.15")
+    
+    def test_brexit_risk_weight_decay_progression(self):
+        """测试Brexit权重时间衰减机制：衰减过程（专家建议第15轮）"""
+        # 2021年：应衰减至约1.0925
+        weight_2021 = self.config_manager._get_brexit_risk_weight(datetime(2021, 1, 31))
+        expected_2021 = 1.15 * 0.95
+        self.assertAlmostEqual(weight_2021, expected_2021, places=3,
+                              msg="2021年权重应按年5%衰减")
+        
+        # 2022年：应继续衰减但未触及下限
+        weight_2022 = self.config_manager._get_brexit_risk_weight(datetime(2022, 1, 31))
+        expected_2022 = 1.15 * (0.95 ** 2)  # 1.15 * 0.9025 = 1.037875
+        self.assertAlmostEqual(weight_2022, expected_2022, places=3,
+                              msg="2022年权重应按年5%持续衰减")
+    
+    def test_brexit_risk_weight_decay_floor(self):
+        """测试Brexit权重时间衰减机制：下限保护（专家建议第15轮）"""
+        # 2025年及以后：应触发下限1.0
+        weight_2025 = self.config_manager._get_brexit_risk_weight(datetime(2025, 1, 31))
+        self.assertGreaterEqual(weight_2025, 1.0,
+                               msg="权重下限应为1.0（中性水平）")
+        self.assertLess(weight_2025, 1.15,
+                       msg="2025年权重应已衰减")
+        
+        # 远期（2030年）：仍应保持在下限
+        weight_2030 = self.config_manager._get_brexit_risk_weight(datetime(2030, 1, 31))
+        self.assertEqual(weight_2030, 1.0,
+                        msg="远期权重应稳定在下限1.0")
+    
+    def test_eu_config_uses_dynamic_brexit_weight(self):
+        """测试EU市场配置集成动态Brexit权重（专家建议第15轮）"""
+        config = self.config_manager.generate_config_template('EU')
+        eu_config = config['market_configs']['EU']
+        
+        # 验证EU配置包含brexit_risk_weight
+        self.assertIn('brexit_risk_weight', eu_config,
+                     "EU配置应包含动态Brexit权重")
+        
+        # 验证权重在合理范围内
+        brexit_weight = eu_config['brexit_risk_weight']
+        self.assertGreaterEqual(brexit_weight, 1.0,
+                               msg="Brexit权重应 >= 1.0")
+        self.assertLessEqual(brexit_weight, 1.15,
+                            msg="Brexit权重应 <= 1.15")
 
 
 if __name__ == '__main__':

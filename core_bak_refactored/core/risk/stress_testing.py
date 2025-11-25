@@ -21,17 +21,20 @@ logger = logging.getLogger('DeepSeekQuant.StressTesting')
 # 常量定义（基于专家answer.md指导）
 # =============================================================================
 
-# 场景相关性矩阵（第5轮专家answer.md更新：新增1997亚洲金融危机、2022俄乌冲突）
+# 场景相关性矩阵（第6轮更新：扩展至11×11矩阵，新增2011欧债危机、2013钱荒、2011美国债务上限危机）
 SCENARIO_CORRELATION_MATRIX = {
     '2008_financial_crisis': {
         '2008_financial_crisis': 1.0,
         'covid_19_pandemic': 0.5,
-        '2015_china_market_crash': 0.3,  # 专家修正：0.6→0.3
+        '2015_china_market_crash': 0.3,
         'circuit_breaker_2016': 0.7,
         'thousand_stocks_limit_down': 0.7,
-        'currency_crisis': 0.45,  # 专家修正：新增货币危机相关性0.45
-        '1997_asian_financial_crisis': 0.4,  # 第5轮新增
-        '2022_russia_ukraine_conflict': 0.3  # 第5轮新增
+        'currency_crisis': 0.45,
+        '1997_asian_financial_crisis': 0.4,
+        '2022_russia_ukraine_conflict': 0.3,
+        '2011_eurozone_debt_crisis': 0.75,
+        '2013_china_credit_crunch': 0.5,
+        '2011_us_debt_ceiling_crisis': 0.6
     },
     'covid_19_pandemic': {
         '2008_financial_crisis': 0.5,
@@ -40,18 +43,24 @@ SCENARIO_CORRELATION_MATRIX = {
         'circuit_breaker_2016': 0.5,
         'thousand_stocks_limit_down': 0.6,
         'currency_crisis': 0.2,
-        '1997_asian_financial_crisis': 0.2,  # 第5轮新增
-        '2022_russia_ukraine_conflict': 0.4  # 第5轮新增
+        '1997_asian_financial_crisis': 0.2,
+        '2022_russia_ukraine_conflict': 0.4,
+        '2011_eurozone_debt_crisis': 0.3,
+        '2013_china_credit_crunch': 0.3,
+        '2011_us_debt_ceiling_crisis': 0.3
     },
     '2015_china_market_crash': {
-        '2008_financial_crisis': 0.3,  # 专家修正：0.6→0.3
+        '2008_financial_crisis': 0.3,
         'covid_19_pandemic': 0.4,
         '2015_china_market_crash': 1.0,
         'circuit_breaker_2016': 0.8,
         'thousand_stocks_limit_down': 0.9,
         'currency_crisis': 0.25,
-        '1997_asian_financial_crisis': 0.3,  # 第5轮新增
-        '2022_russia_ukraine_conflict': 0.2  # 第5轮新增
+        '1997_asian_financial_crisis': 0.3,
+        '2022_russia_ukraine_conflict': 0.2,
+        '2011_eurozone_debt_crisis': 0.25,
+        '2013_china_credit_crunch': 0.7,
+        '2011_us_debt_ceiling_crisis': 0.2
     },
     'circuit_breaker_2016': {
         '2008_financial_crisis': 0.7,
@@ -60,8 +69,11 @@ SCENARIO_CORRELATION_MATRIX = {
         'circuit_breaker_2016': 1.0,
         'thousand_stocks_limit_down': 0.8,
         'currency_crisis': 0.3,
-        '1997_asian_financial_crisis': 0.25,  # 第5轮新增
-        '2022_russia_ukraine_conflict': 0.2  # 第5轮新增
+        '1997_asian_financial_crisis': 0.25,
+        '2022_russia_ukraine_conflict': 0.2,
+        '2011_eurozone_debt_crisis': 0.3,
+        '2013_china_credit_crunch': 0.6,
+        '2011_us_debt_ceiling_crisis': 0.25
     },
     'thousand_stocks_limit_down': {
         '2008_financial_crisis': 0.7,
@@ -70,38 +82,89 @@ SCENARIO_CORRELATION_MATRIX = {
         'circuit_breaker_2016': 0.8,
         'thousand_stocks_limit_down': 1.0,
         'currency_crisis': 0.35,
-        '1997_asian_financial_crisis': 0.3,  # 第5轮新增
-        '2022_russia_ukraine_conflict': 0.25  # 第5轮新增
+        '1997_asian_financial_crisis': 0.3,
+        '2022_russia_ukraine_conflict': 0.25,
+        '2011_eurozone_debt_crisis': 0.35,
+        '2013_china_credit_crunch': 0.75,
+        '2011_us_debt_ceiling_crisis': 0.3
     },
     'currency_crisis': {
-        '2008_financial_crisis': 0.45,  # 专家修正：新增货币危机
+        '2008_financial_crisis': 0.45,
         'covid_19_pandemic': 0.2,
         '2015_china_market_crash': 0.25,
         'circuit_breaker_2016': 0.3,
         'thousand_stocks_limit_down': 0.35,
         'currency_crisis': 1.0,
-        '1997_asian_financial_crisis': 0.8,  # 第5轮新增：高度相关
-        '2022_russia_ukraine_conflict': 0.35  # 第5轮新增
+        '1997_asian_financial_crisis': 0.8,
+        '2022_russia_ukraine_conflict': 0.35,
+        '2011_eurozone_debt_crisis': 0.5,
+        '2013_china_credit_crunch': 0.3,
+        '2011_us_debt_ceiling_crisis': 0.3
     },
     '1997_asian_financial_crisis': {
-        '2008_financial_crisis': 0.4,  # 第5轮专家answer.md 2.3节
+        '2008_financial_crisis': 0.4,
         'covid_19_pandemic': 0.2,
         '2015_china_market_crash': 0.3,
         'circuit_breaker_2016': 0.25,
         'thousand_stocks_limit_down': 0.3,
-        'currency_crisis': 0.8,  # 高度相关
+        'currency_crisis': 0.8,
         '1997_asian_financial_crisis': 1.0,
-        '2022_russia_ukraine_conflict': 0.25
+        '2022_russia_ukraine_conflict': 0.25,
+        '2011_eurozone_debt_crisis': 0.4,
+        '2013_china_credit_crunch': 0.25,
+        '2011_us_debt_ceiling_crisis': 0.3
     },
     '2022_russia_ukraine_conflict': {
-        '2008_financial_crisis': 0.3,  # 第5轮专家answer.md 2.3节
+        '2008_financial_crisis': 0.3,
         'covid_19_pandemic': 0.4,
         '2015_china_market_crash': 0.2,
         'circuit_breaker_2016': 0.2,
         'thousand_stocks_limit_down': 0.25,
         'currency_crisis': 0.35,
         '1997_asian_financial_crisis': 0.25,
-        '2022_russia_ukraine_conflict': 1.0
+        '2022_russia_ukraine_conflict': 1.0,
+        '2011_eurozone_debt_crisis': 0.3,
+        '2013_china_credit_crunch': 0.2,
+        '2011_us_debt_ceiling_crisis': 0.25
+    },
+    '2011_eurozone_debt_crisis': {
+        '2008_financial_crisis': 0.75,
+        'covid_19_pandemic': 0.3,
+        '2015_china_market_crash': 0.25,
+        'circuit_breaker_2016': 0.3,
+        'thousand_stocks_limit_down': 0.35,
+        'currency_crisis': 0.5,
+        '1997_asian_financial_crisis': 0.4,
+        '2022_russia_ukraine_conflict': 0.3,
+        '2011_eurozone_debt_crisis': 1.0,
+        '2013_china_credit_crunch': 0.4,
+        '2011_us_debt_ceiling_crisis': 0.6
+    },
+    '2013_china_credit_crunch': {
+        '2008_financial_crisis': 0.5,
+        'covid_19_pandemic': 0.3,
+        '2015_china_market_crash': 0.7,
+        'circuit_breaker_2016': 0.6,
+        'thousand_stocks_limit_down': 0.75,
+        'currency_crisis': 0.3,
+        '1997_asian_financial_crisis': 0.25,
+        '2022_russia_ukraine_conflict': 0.2,
+        '2011_eurozone_debt_crisis': 0.4,
+        '2013_china_credit_crunch': 1.0,
+        '2011_us_debt_ceiling_crisis': 0.4
+    },
+    '2011_us_debt_ceiling_crisis': {
+        '2008_financial_crisis': 0.6,
+        'covid_19_pandemic': 0.3,
+        '2015_china_market_crash': 0.2,
+        'circuit_breaker_2016': 0.25,
+        'thousand_stocks_limit_down': 0.3,
+        'currency_crisis': 0.3,
+        '1997_asian_financial_crisis': 0.3,
+        '2022_russia_ukraine_conflict': 0.25,
+        '2011_eurozone_debt_crisis': 0.6,
+        '2013_china_credit_crunch': 0.4,
+        '2011_us_debt_ceiling_crisis': 1.0
     }
 }
 
@@ -134,7 +197,7 @@ class StressTester:
         self._load_custom_scenarios()    # 自定义
     
     def _load_builtin_scenarios(self):
-        """加载内置场景库（第5轮更新：新增1997亚洲金融危机、2022俄乌冲突）"""
+        """加载内置场景库（第6轮更新：补全至10个场景，覆盖率100%）"""
         scenarios = [
             # 全球市场事件
             {'scenario_id': '2008_financial_crisis', 'name': '2008金融危机',
@@ -169,12 +232,33 @@ class StressTester:
              'mitigation_strategies': ['避险资产配置', '商品对冲'],
              'parameters': {'type': 'geopolitical_risk', 'decline': -0.20, 'commodity_shock': 0.8, 
                            'sanction_impact': 0.6, 'flight_to_quality': 0.7, 'recovery_period': 12}},
+            # 第6轮新增：2011欧债危机
+            {'scenario_id': '2011_eurozone_debt_crisis', 'name': '2011欧债危机',
+             'description': '欧洲主权债务危机，全球股市平均跌25%', 'probability': 0.015, 'impact_level': 'high',
+             'duration': '18个月', 'triggers': ['主权债务违约风险', '银行业危机'], 
+             'mitigation_strategies': ['减少欧洲敞口', '增持避险资产'],
+             'parameters': {'type': 'sovereign_debt_crisis', 'decline': -0.25, 'credit_spread_widening': 3.0, 
+                           'contagion_risk': 0.7, 'recovery_period': 18, 'banking_sector_stress': 0.8}},
+            # 第6轮新增：2013钱荒
+            {'scenario_id': '2013_china_credit_crunch', 'name': '2013中国钱荒',
+             'description': '银行间市场流动性骤紧，隔夜利率飙升至13%', 'probability': 0.04, 'impact_level': 'moderate',
+             'duration': '2周', 'triggers': ['央行去杠杆', '流动性收紧'], 
+             'mitigation_strategies': ['增加现金储备', '缩短资金久期'],
+             'parameters': {'type': 'liquidity_crisis', 'decline': -0.08, 'interest_rate_spike': 6.5, 
+                           'interbank_freeze': 0.6, 'recovery_period': 0.5, 'margin_pressure': 0.5}},
+            # 第6轮新增：2011美国债务上限危机
+            {'scenario_id': '2011_us_debt_ceiling_crisis', 'name': '2011美国债务上限危机',
+             'description': '政策不确定性上升，全球指数跌幅约12-20%', 'probability': 0.03, 'impact_level': 'moderate',
+             'duration': '3个月', 'triggers': ['财政悬崖', '评级下调'], 
+             'mitigation_strategies': ['提升现金', '降低风险资产'],
+             'parameters': {'type': 'sovereign_debt_crisis', 'decline': -0.12, 'credit_spread_widening': 1.5, 
+                           'contagion_risk': 0.4, 'recovery_period': 6, 'banking_sector_stress': 0.4}},
             # A股特有事件
             {'scenario_id': '2015_china_market_crash', 'name': '2015A股大跌',
-             'description': '上证指数下跌35%', 'probability': 0.05, 'impact_level': 'high',
+             'description': '上证指数下跌43%', 'probability': 0.05, 'impact_level': 'high',
              'duration': '3个月', 'triggers': ['杠杆破裂', '流动性枯竭'], 
              'mitigation_strategies': ['减少杠杆', '提高现金比例'],
-             'parameters': {'type': 'market_crash', 'decline': -0.30, 'liquidity_dry_up': 0.8, 
+             'parameters': {'type': 'market_crash', 'decline': -0.43, 'liquidity_dry_up': 0.8, 
                            'limit_hit_frequency': 0.3}},
             {'scenario_id': 'circuit_breaker_2016', 'name': '2016A股熔断',
              'description': '市场熔断机制触发', 'probability': 0.08, 'impact_level': 'moderate',
@@ -244,7 +328,7 @@ class StressTester:
             return {'default_stress_test': -0.25}
     
     def _run_single_stress_test(self, scenario: StressTestScenario, portfolio_state, market_data: Dict[str, Any]) -> float:
-        """运行单个压力测试（第5轮更新：支持currency_crisis和geopolitical_risk类型）"""
+        """运行单个压力测试（第6轮更新：支持sovereign_debt_crisis类型）"""
         try:
             scenario_type = scenario.parameters.get('type', 'market_crash')
 
@@ -256,6 +340,8 @@ class StressTester:
                 return self._simulate_currency_crisis(scenario, portfolio_state, market_data)
             elif scenario_type == 'geopolitical_risk':  # 第5轮新增：2022俄乌冲突
                 return self._simulate_geopolitical_risk(scenario, portfolio_state, market_data)
+            elif scenario_type == 'sovereign_debt_crisis':  # 第6轮新增：2011欧债危机
+                return self._simulate_sovereign_debt_crisis(scenario, portfolio_state, market_data)
             elif scenario_type == 'interest_rate_shock':
                 return self._simulate_interest_rate_shock(scenario, portfolio_state, market_data)
             elif scenario_type == 'correlation_breakdown':
@@ -606,6 +692,66 @@ class StressTester:
             logger.error(f"地缘政治风险场景模拟失败: {e}")
             return -0.20
     
+    def _simulate_sovereign_debt_crisis(self, scenario: StressTestScenario, portfolio_state, market_data: Dict[str, Any]) -> float:
+        """
+        模拟主权债务危机（第6轮新增：2011欧债危机）
+        基于欧债危机实证研究
+        """
+        try:
+            params = scenario.parameters
+            total_impact = 0
+            total_exposure = sum(alloc.weight for alloc in portfolio_state.allocations.values())
+            
+            # 1. 直接损失（decline参数）
+            decline = params.get('decline', -0.25)
+            direct_loss = total_exposure * decline
+            total_impact += direct_loss
+            
+            # 2. 信用利差扩大（credit_spread_widening参数）
+            if 'credit_spread_widening' in params:
+                spread_multiplier = params['credit_spread_widening']
+                # 信用利差扩大导致债券资产价值下降
+                # 假设组合中20%为债券资产
+                bond_exposure = total_exposure * 0.2
+                # 利差扩大300bp，久期约7年，价格下降约21%
+                # spread_multiplier=3.0时，损失 = 7% * 3 = 21%
+                spread_impact = bond_exposure * 0.07 * spread_multiplier
+                total_impact -= spread_impact
+                logger.debug(f"信用利差冲击: spread_multiplier={spread_multiplier}, impact={spread_impact:.4f}")
+            
+            # 3. 传染风险（contagion_risk参数）
+            if 'contagion_risk' in params:
+                contagion_level = params['contagion_risk']
+                # 危机传染导致其他市场受影响
+                # 使用相关性衰减模型：影响 = 直接损失 × 传染系数 × 30%
+                contagion_impact = abs(direct_loss) * contagion_level * 0.3
+                total_impact -= contagion_impact
+                logger.debug(f"传染风险: contagion_level={contagion_level}, impact={contagion_impact:.4f}")
+            
+            # 4. 银行业压力（banking_sector_stress参数）
+            if 'banking_sector_stress' in params:
+                banking_stress = params['banking_sector_stress']
+                # 银行业压力导致信贷紧缩
+                # 假设对股票资产产生20%的额外下行压力
+                banking_impact = abs(direct_loss) * banking_stress * 0.2
+                total_impact -= banking_impact
+                logger.debug(f"银行业压力: banking_stress={banking_stress}, impact={banking_impact:.4f}")
+            
+            # 5. 恢复期影响（recovery_period参数）
+            if 'recovery_period' in params:
+                recovery_months = params['recovery_period']
+                risk_free_rate = self.config.get('risk_free_rate', 0.03)
+                t_years = recovery_months / 12
+                opportunity_cost = abs(direct_loss) * ((1 + risk_free_rate) ** t_years - 1)
+                total_impact -= opportunity_cost
+                logger.debug(f"恢复期影响: months={recovery_months}, opp_cost={opportunity_cost:.4f}")
+            
+            return float(total_impact)
+            
+        except Exception as e:
+            logger.error(f"主权债务危机场景模拟失败: {e}")
+            return -0.25
+    
     def _simulate_market_downturn(self, scenario_params: Dict, portfolio_state, market_data: Dict[str, Any]) -> float:
         """模拟市场下行"""
         growth_shock = scenario_params.get('growth_shock', -0.02)
@@ -767,10 +913,18 @@ class StressTester:
             corr_matrix = np.zeros((n, n))
             for i, s1 in enumerate(scenarios):
                 for j, s2 in enumerate(scenarios):
-                    if s1 in SCENARIO_CORRELATION_MATRIX and s2 in SCENARIO_CORRELATION_MATRIX[s1]:
-                        base_corr = SCENARIO_CORRELATION_MATRIX[s1][s2]
+                    # 自相关强制为1.0
+                    if i == j:
+                        base_corr = 1.0
                     else:
-                        base_corr = 0.5 if i != j else 1.0  # 默认相关性0.5
+                        # 先查s1->s2
+                        if s1 in SCENARIO_CORRELATION_MATRIX and s2 in SCENARIO_CORRELATION_MATRIX[s1]:
+                            base_corr = SCENARIO_CORRELATION_MATRIX[s1][s2]
+                        # 再查对称方向s2->s1
+                        elif s2 in SCENARIO_CORRELATION_MATRIX and s1 in SCENARIO_CORRELATION_MATRIX[s2]:
+                            base_corr = SCENARIO_CORRELATION_MATRIX[s2][s1]
+                        else:
+                            base_corr = 0.5  # 默认相关性0.5
                     # 根据市场波动率做微调（最高+0.3），不存在则不调整
                     market_vol = market_data.get('market_volatility')
                     if market_vol is not None:

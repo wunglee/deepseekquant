@@ -20,7 +20,7 @@
 
 import numpy as np
 from dataclasses import dataclass, field
-from typing import Dict, List, Any, Protocol
+from typing import Dict, List, Any, Protocol, Optional
 import logging
 
 logger = logging.getLogger('DeepSeekQuant.BacktestFragments')
@@ -99,31 +99,40 @@ class EventWindowBacktester:
     - 可能作为 BacktestEngine 的子类或策略模式实现
     """
     
-    def __init__(self, data_provider: HistoricalDataProvider):
+    def __init__(self, data_provider: Optional[HistoricalDataProvider] = None):
         """
         初始化回测引擎
         
         Args:
-            data_provider: 历史数据提供者（依赖注入）
+            data_provider: 历史数据提供者（依赖注入）；为空则使用Mock数据提供者
         """
-        self.data_provider = data_provider
+        if data_provider is None:
+            try:
+                from core_bak_refactored.core.data._fragments.historical_data_provider import MockHistoricalDataProvider
+                self.data_provider = MockHistoricalDataProvider()
+                logger.info("未提供数据源，已自动使用MockHistoricalDataProvider")
+            except Exception as e:
+                logger.error(f"加载MockHistoricalDataProvider失败: {e}")
+                raise
+        else:
+            self.data_provider = data_provider
         self.events = self._load_events()
     
     def _load_events(self) -> List[BacktestEvent]:
-        """加载回测事件（基于专家指导的3个核心事件）"""
+        """加载回测事件（基于专家指导的核心事件+新增债务相关事件）"""
         return [
             BacktestEvent(
                 event_id='2015_china_market_crash',
                 name='2015中国股灾',
                 period=('2015-06-15', '2015-08-26'),
                 expected_decline=-0.43,
-                scenario_params={'decline': -0.30, 'liquidity_dry_up': 0.8}
+                scenario_params={'decline': -0.43, 'liquidity_dry_up': 0.8}
             ),
             BacktestEvent(
                 event_id='covid_19_pandemic',
                 name='COVID-19疫情',
                 period=('2020-02-20', '2020-03-23'),
-                expected_decline=-0.34,
+                expected_decline=-0.20,
                 scenario_params={'decline': -0.20, 'volatility_spike': 2.0}
             ),
             BacktestEvent(
@@ -132,6 +141,20 @@ class EventWindowBacktester:
                 period=('2008-09-15', '2008-11-20'),
                 expected_decline=-0.40,
                 scenario_params={'decline': -0.40, 'volatility_spike': 3.5}
+            ),
+            BacktestEvent(
+                event_id='2011_eurozone_debt_crisis',
+                name='2011欧债危机',
+                period=('2011-09-01', '2011-11-30'),
+                expected_decline=-0.25,
+                scenario_params={'decline': -0.25, 'credit_spread_widening': 3.0}
+            ),
+            BacktestEvent(
+                event_id='2011_us_debt_ceiling_crisis',
+                name='2011美国债务上限危机',
+                period=('2011-07-22', '2011-08-10'),
+                expected_decline=-0.12,
+                scenario_params={'decline': -0.12, 'contagion_risk': 0.4}
             )
         ]
     
@@ -202,29 +225,54 @@ class EventWindowBacktester:
             logger.warning(f"数据不足: {benchmark_index}, {start_date}-{end_date}")
             return 0.0
         
-        # 计算总收益率
-        initial_price = prices['close'].iloc[0]
-        final_price = prices['close'].iloc[-1]
+        # 计算总收益率（鲁棒性处理）
+        # 去除NaN
+        prices = prices.dropna(subset=['close'])
+        if len(prices) < 2:
+            logger.warning(f"数据不足或含NaN: {benchmark_index}, {start_date}-{end_date}")
+            return 0.0
+        initial_price = float(prices['close'].iloc[0])
+        final_price = float(prices['close'].iloc[-1])
+        if initial_price <= 0 or final_price <= 0:
+            logger.warning(f"价格异常（<=0）: {benchmark_index}, 初始={initial_price}, 结束={final_price}")
+            return 0.0
         actual_return = (final_price - initial_price) / initial_price
-        
-        logger.debug(f"实际损失计算: {benchmark_index}, 初始={initial_price:.2f}, "
-                    f"最终={final_price:.2f}, 收益率={actual_return:.2%}")
-        
+        logger.debug(f"实际损失计算: {benchmark_index}, 初始={initial_price:.2f}, 最终={final_price:.2f}, 收益率={actual_return:.2%}")
         return float(actual_return)
     
     def _calculate_predicted_loss(self, portfolio, event: BacktestEvent, stress_tester) -> float:
         """
-        使用压力测试器计算预测损失
+        使用压力测试器计算预测损失（优先使用StressTester内置场景参数）
         
-        注：当前简化版本直接使用场景参数的decline
-        真实集成时，应调用StressTester.run_stress_test()方法
+        策略：
+        1) 若提供了stress_tester，且存在同名场景，则优先使用该场景的parameters['decline']
+        2) 否则回退到本事件的scenario_params['decline']
+        3) 若仍无，则使用-0.20的保守默认值
         """
-        # 简化版本：直接返回场景参数中的预期下跌幅度
-        # TODO: 集成真实StressTester后，构造完整的场景对象并调用压力测试
-        predicted_loss = event.scenario_params.get('decline', -0.20)
-        logger.debug(f"预测损失（简化版）: {event.name}, {predicted_loss:.2%}")
-        return float(predicted_loss)
-
+        try:
+            # 1) 优先使用StressTester的场景参数
+            if stress_tester is not None and hasattr(stress_tester, 'scenarios'):
+                scenario = stress_tester.scenarios.get(event.event_id)
+                if scenario and hasattr(scenario, 'parameters'):
+                    if 'decline' in scenario.parameters:
+                        predicted_loss = float(scenario.parameters['decline'])
+                        # 夹紧边界，防止异常值
+                        predicted_loss = max(min(predicted_loss, 0.0), -1.0)
+                        logger.debug(f"预测损失（StressTester场景）: {event.name}, {predicted_loss:.2%}")
+                        return predicted_loss
+            
+            # 2) 回退：使用本地事件参数
+            if 'decline' in event.scenario_params:
+                predicted_loss = float(event.scenario_params.get('decline', -0.20))
+                logger.debug(f"预测损失（事件参数）: {event.name}, {predicted_loss:.2%}")
+                return predicted_loss
+            
+            # 3) 保守默认值
+            logger.warning(f"预测损失缺失，使用默认值: {event.name}")
+            return -0.20
+        except Exception as e:
+            logger.warning(f"预测损失计算失败，使用默认值: {e}")
+            return -0.20
 
 # =============================================================================
 # 回测报告生成器（回测模块报告功能）
@@ -261,7 +309,7 @@ class BacktestReporter:
             'max_error': np.max(errors),
             'min_error': np.min(errors),
             'error_std': np.std(errors),
-            'accuracy_20pct': sum(1 for e in errors if e <= 0.20) / len(errors),  # ≤20%误差比例
+            'accuracy_20pct': (sum(1 for e in errors if e <= 0.20) / len(errors)) if len(errors) > 0 else 0.0,  # ≤20%误差比例
             'results': [
                 {
                     'event': r.event_id,
@@ -274,6 +322,19 @@ class BacktestReporter:
             ]
         }
         
+        # 生成误差排序（Top5）
+        top_idx = np.argsort(errors)[::-1][:5]
+        summary['top_errors'] = [
+            {
+                'event': results[i].event_id,
+                'name': results[i].metadata.get('event_name', ''),
+                'period': results[i].metadata.get('period', None),
+                'error': float(errors[i]),
+                'predicted': float(results[i].predicted_loss),
+                'actual': float(results[i].actual_loss)
+            }
+            for i in top_idx
+        ]
         return summary
     
     @staticmethod

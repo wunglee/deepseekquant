@@ -12,20 +12,14 @@ import time
 
 logger = logging.getLogger(__name__)
 
-try:
-    from common import RISK_MODEL_CONFIG as _RMC
-except Exception:
-    _RMC = {'parallel': {'min_tasks_for_parallel': 10, 'dynamic_chunking': True, 'memory_threshold_gb': 0.8}}
+# 默认并行配置（完全自包含，不依赖外部 common.py）
+_DEFAULT_PARALLEL_CFG = {
+    'min_tasks_for_parallel': 10,
+    'dynamic_chunking': True,
+    'memory_threshold_gb': 0.8
+}
 
-_DEFAULT_PARALLEL_CFG = _RMC.get('parallel', {})
 logger = logging.getLogger(__name__)
-
-try:
-    from common import RISK_MODEL_CONFIG as _RMC
-except Exception:
-    _RMC = {'parallel': {'min_tasks_for_parallel': 10, 'dynamic_chunking': True, 'memory_threshold_gb': 0.8}}
-
-_DEFAULT_PARALLEL_CFG = _RMC.get('parallel', {})
 
 
 @dataclass

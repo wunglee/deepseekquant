@@ -110,7 +110,7 @@ core/risk/stress_test_validator.py (单一职责 ✅)
 ## 📝 相关文档
 
 - [功能碎片整合指南](../core/_FRAGMENT_INTEGRATION_GUIDE.md)
-- [风险模块设计文档](../../../docs/design/core/risk/模块设计文档.md)
+- [风险模块设计文档](../../../docs/design/core_bak_refactored/core/risk/模块设计文档.md)
 - [StressTestValidator实现](./stress_test_validator.py)
 
 ---

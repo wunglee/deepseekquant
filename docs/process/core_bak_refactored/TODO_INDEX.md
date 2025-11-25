@@ -8,7 +8,7 @@
 ## 📍 TODO 文档位置索引
 
 ### 🔴 系统级TODO（根目录）
-**文件**：`/core_bak_refactored/TODO.md`  
+**文件**：`/docs/process/core_bak_refactored/TODO.md`  
 **内容**：跨模块任务、未确定位置的任务、架构级决策
 
 **包含**：
@@ -21,7 +21,7 @@
 ---
 
 ### 🏗️ 基础设施层TODO
-**文件**：`/core_bak_refactored/infrastructure/TODO.md`  
+**文件**：`/docs/process/core_bak_refactored/infrastructure/TODO.md`  
 **内容**：纯数学/统计计算相关改进
 
 **包含**：
@@ -35,7 +35,7 @@
 ### 🎯 核心层TODO
 
 #### 信号引擎模块
-**文件**：`/core_bak_refactored/core/signal/TODO.md`  
+**文件**：`/docs/process/core_bak_refactored/core/signal/TODO.md`  
 **内容**：技术指标、信号生成、信号评估
 
 **包含**：
@@ -46,7 +46,7 @@
 ---
 
 #### 风险管理模块
-**文件**：`/core_bak_refactored/core/risk/TODO.md`  
+**文件**：`/docs/process/core_bak_refactored/core/risk/TODO.md`  
 **内容**：风险指标、风险监控、压力测试
 
 **包含**：
@@ -65,7 +65,7 @@
 ---
 
 #### 策略模块
-**文件**：`/core_bak_refactored/core/strategy/TODO.md`  
+**文件**：`/docs/process/core_bak_refactored/core/strategy/TODO.md`  
 **内容**：交易策略实现
 
 **包含**：
@@ -85,7 +85,7 @@
 ### 下一步计划
 1. 准备 Risk 域 Phase 2 融合（接口/协议对齐、命名统一、契约检查）
 2. 启动 Signal/Exec/Portfolio/Data 域的 Phase 1 拆分规划与骨架搭建
-3. 更新模块状态矩阵并对齐 docs/PLAN.md
+3. 更新模块状态矩阵并对齐 docs/process/PLAN.md
 
 ---
 
