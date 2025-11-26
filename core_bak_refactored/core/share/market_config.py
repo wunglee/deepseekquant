@@ -9,6 +9,8 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime
 import logging
 
+from core_bak_refactored.core.share.market_enums import MarketCode
+
 logger = logging.getLogger(__name__)
 
 
@@ -21,7 +23,7 @@ class MarketConfigManager:
     def _initialize_market_registry(self) -> Dict[str, Dict]:
         """初始化市场基础参数"""
         return {
-            'CN': {
+            MarketCode.CN.value: {
                 'name': '中国A股',
                 'currency': 'CNY',
                 'timezone': 'Asia/Shanghai',
@@ -31,7 +33,7 @@ class MarketConfigManager:
                 'market_cap_category': 'emerging',
                 'default_trading_days': 245
             },
-            'US': {
+            MarketCode.US.value: {
                 'name': '美国股市',
                 'currency': 'USD', 
                 'timezone': 'America/New_York',
@@ -43,7 +45,7 @@ class MarketConfigManager:
                 'market_cap_category': 'developed',
                 'default_trading_days': 252
             },
-            'HK': {
+            MarketCode.HK.value: {
                 'name': '香港股市',
                 'currency': 'HKD',
                 'timezone': 'Asia/Hong_Kong', 
@@ -54,7 +56,7 @@ class MarketConfigManager:
                 'market_cap_category': 'developed',
                 'default_trading_days': 247
             },
-            'JP': {
+            MarketCode.JP.value: {
                 'name': '日本股市',
                 'currency': 'JPY',
                 'timezone': 'Asia/Tokyo',
@@ -64,7 +66,7 @@ class MarketConfigManager:
                 'market_cap_category': 'developed',
                 'default_trading_days': 245
             },
-            'EU': {
+            MarketCode.EU.value: {
                 'name': '欧洲股市',
                 'currency': 'EUR',
                 'timezone': 'Europe/Paris',
@@ -74,7 +76,7 @@ class MarketConfigManager:
                 'market_cap_category': 'developed',
                 'default_trading_days': 255
             },
-            'SG': {
+            MarketCode.SG.value: {
                 'name': '新加坡股市',
                 'currency': 'SGD',
                 'timezone': 'Asia/Singapore',
@@ -91,12 +93,13 @@ class MarketConfigManager:
         return self.market_registry.get(market_code, {})
     
     def validate_market_config(self, config: Dict) -> List[str]:
-        """验证市场配置有效性"""
+        """验证市场配置有效性（使用枚举）"""
         errors = []
-        market_type = config.get('market_type', 'CN')
+        market_type = config.get('market_type', MarketCode.CN.value)
         
-        if market_type not in self.market_registry:
-            errors.append(f"不支持的市场类型: {market_type}")
+        # 使用枚举验证市场代码
+        if not MarketCode.is_valid(market_type):
+            errors.append(f"不支持的市场类型: {market_type}, 支持: {MarketCode.get_all_codes()}")
         
         market_configs = config.get('market_configs', {})
         if market_type not in market_configs:
@@ -105,10 +108,11 @@ class MarketConfigManager:
         return errors
 
     def generate_config_template(self, market_type: str) -> Dict[str, Any]:
-        """生成配置模板"""
-        if market_type not in self.market_registry:
+        """生成配置模板（使用枚举验证）"""
+        # 验证市场类型
+        if not MarketCode.is_valid(market_type):
             logger.warning(f"不支持的市场类型{market_type}，回退到CN")
-            market_type = 'CN'
+            market_type = MarketCode.CN.value
         
         market_info = self.market_registry[market_type]
         
@@ -148,7 +152,7 @@ class MarketConfigManager:
         }
         
         # 市场特定机制配置
-        if market_type == 'CN':
+        if market_type == MarketCode.CN.value:
             config.update({
                 'has_limit_up_down': True,
                 'limit_thresholds': {
@@ -205,19 +209,19 @@ class MarketConfigManager:
                     'dynamic_bound_max_increment': 0.3,  # 最大增量
                     'dynamic_bound_cap': 0.8,        # 动态下限上限
                     'base_lower_bounds': {           # 各市场基础下限
-                        'CN': 0.6,
-                        'US': 0.4,
-                        'HK': 0.55,
-                        'JP': 0.5,
-                        'SG': 0.65,
-                        'EU': 0.45
+                        MarketCode.CN.value: 0.6,
+                        MarketCode.US.value: 0.4,
+                        MarketCode.HK.value: 0.55,
+                        MarketCode.JP.value: 0.5,
+                        MarketCode.SG.value: 0.65,
+                        MarketCode.EU.value: 0.45
                     },
                     'market_adjustments': {          # 市场类型调整系数
-                        'US': 0.95,
-                        'HK': 0.88,
-                        'JP': 0.92,
-                        'SG': 0.85,
-                        'EU': 0.94
+                        MarketCode.US.value: 0.95,
+                        MarketCode.HK.value: 0.88,
+                        MarketCode.JP.value: 0.92,
+                        MarketCode.SG.value: 0.85,
+                        MarketCode.EU.value: 0.94
                     },
                     'liquidity_adjustments': {       # 流动性调整系数
                         'top_20%': 0.96,
@@ -250,7 +254,7 @@ class MarketConfigManager:
                 'limit_hits': 0.4,
                 'major_event': 0.3
             }
-        elif market_type == 'US':
+        elif market_type == MarketCode.US.value:
             config.update({
                 'has_limit_up_down': False,
                 'circuit_breaker_levels': [0.07, 0.13, 0.20],
@@ -319,7 +323,7 @@ class MarketConfigManager:
                 'limit_hits': 0.2,
                 'major_event': 0.5
             }
-        elif market_type == 'HK':
+        elif market_type == MarketCode.HK.value:
             config.update({
                 'has_limit_up_down': False,
                 # 专家建议：港股风险参数优化 (第14轮微调)
@@ -375,7 +379,7 @@ class MarketConfigManager:
                 'HIGH': {'max': 0.10, 'cache_ttl': 600},
                 'EXTREME': {'max': float('inf'), 'cache_ttl': 60}
             }
-        elif market_type == 'JP':
+        elif market_type == MarketCode.JP.value:
             config.update({
                 'has_limit_up_down': False,
                 # 专家建议：日本市场参数配置 (第14轮补充)
@@ -432,7 +436,7 @@ class MarketConfigManager:
                 'HIGH': {'max': 0.10, 'cache_ttl': 600},
                 'EXTREME': {'max': float('inf'), 'cache_ttl': 60}
             }
-        elif market_type == 'EU':
+        elif market_type == MarketCode.EU.value:
             config.update({
                 'has_limit_up_down': False,
                 # 专家建议：欧洲市场参数配置 (第14轮补充 + 第15轮优化)
@@ -490,7 +494,7 @@ class MarketConfigManager:
                 'HIGH': {'max': 0.10, 'cache_ttl': 600},
                 'EXTREME': {'max': float('inf'), 'cache_ttl': 60}
             }
-        elif market_type == 'SG':
+        elif market_type == MarketCode.SG.value:
             config.update({
                 'has_limit_up_down': False,
                 # 专家建议：新加坡市场参数配置 (第14轮补充)
@@ -600,35 +604,35 @@ class MarketConfigManager:
     def _get_default_trading_hours(self, market_type: str) -> Dict[str, str]:
         """获取默认交易时间"""
         trading_hours_map = {
-            'CN': {'regular': '09:30-11:30,13:00-15:00', 'pre_market': '', 'after_hours': ''},
-            'US': {'regular': '09:30-16:00', 'pre_market': '04:00-09:30', 'after_hours': '16:00-20:00'},
-            'HK': {'regular': '09:30-12:00,13:00-16:00', 'pre_market': '09:00-09:30', 'after_hours': ''},
-            'JP': {'regular': '09:00-11:30,12:30-15:00', 'pre_market': '', 'after_hours': ''},
-            'EU': {'regular': '09:00-17:30', 'pre_market': '08:00-09:00', 'after_hours': ''},
-            'SG': {'regular': '09:00-12:00,13:00-17:00', 'pre_market': '', 'after_hours': ''}
+            MarketCode.CN.value: {'regular': '09:30-11:30,13:00-15:00', 'pre_market': '', 'after_hours': ''},
+            MarketCode.US.value: {'regular': '09:30-16:00', 'pre_market': '04:00-09:30', 'after_hours': '16:00-20:00'},
+            MarketCode.HK.value: {'regular': '09:30-12:00,13:00-16:00', 'pre_market': '09:00-09:30', 'after_hours': ''},
+            MarketCode.JP.value: {'regular': '09:00-11:30,12:30-15:00', 'pre_market': '', 'after_hours': ''},
+            MarketCode.EU.value: {'regular': '09:00-17:30', 'pre_market': '08:00-09:00', 'after_hours': ''},
+            MarketCode.SG.value: {'regular': '09:00-12:00,13:00-17:00', 'pre_market': '', 'after_hours': ''}
         }
         return trading_hours_map.get(market_type, {'regular': '09:30-16:00'})
 
     def _get_default_risk_premium(self, market_type: str) -> float:
         """获取默认风险溢价（业务参数 + 专家建议第14轮补充）"""
         premium_map = {
-            'CN': 0.015,  # 新兴市场溢价
-            'US': 0.010,  # 成熟市场基准
-            'HK': 0.020,  # 地缘政治溢价
-            'JP': 0.008,  # 通缩环境溢价较低
-            'EU': 0.012,  # 政治风险溢价（专家微调: 0.009→0.012）
-            'SG': 0.014   # 小型开放经济体溢价（专家微调: 0.012→0.014）
+            MarketCode.CN.value: 0.015,  # 新兴市场溢价
+            MarketCode.US.value: 0.010,  # 成熟市场基准
+            MarketCode.HK.value: 0.020,  # 地缘政治溢价
+            MarketCode.JP.value: 0.008,  # 通缩环境溢价较低
+            MarketCode.EU.value: 0.012,  # 政治风险溢价（专家微调: 0.009→0.012）
+            MarketCode.SG.value: 0.014   # 小型开放经济体溢价（专家微调: 0.012→0.014）
         }
         return premium_map.get(market_type, 0.01)
     
     def _get_default_risk_free_rate(self, market_type: str) -> float:
         """获取默认无风险利率（业务参数）"""
         rate_map = {
-            'CN': 0.03,
-            'US': 0.045,
-            'HK': 0.035,
-            'JP': 0.005,
-            'EU': 0.025,
-            'SG': 0.030
+            MarketCode.CN.value: 0.03,
+            MarketCode.US.value: 0.045,
+            MarketCode.HK.value: 0.035,
+            MarketCode.JP.value: 0.005,
+            MarketCode.EU.value: 0.025,
+            MarketCode.SG.value: 0.030
         }
         return rate_map.get(market_type, 0.03)
