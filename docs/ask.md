@@ -77,21 +77,25 @@
 
 ### 1) 组件级验收项（请给出口径确认或调整建议）
 - CrossMarketCalibrator（跨市场校准器）：
+  - 文件：`core_bak_refactored/core/risk/cross_market_calibrator.py`
   - USD标准化（事件窗口内日均中间价）
   - 流动性调整因子（US/EU=0.95，CN/HK=0.90，JP/SG=0.85）
   - 市场机制特殊处理（A股T+1清算折扣、港股LULD波动性系数1.2）
 - UATValidator（UAT验收框架）：
+  - 文件：`core_bak_refactored/core/backtest/_fragments/uat_validator.py`
   - 加权平均误差验收（总体≤15%，类型化阈值按第1轮答复）
   - 三级指标体系（MAPE≤15% + 方向准确率≥90% + 尾部误差≤25%且占比≤20%）
 - IndustryParameterAnalyzer（行业参数分析器）：
+  - 文件：`core_bak_refactored/core/risk/stress_testing.py`
   - GICS一级分类（金融/科技/周期/防御）
   - t检验显著性（p<0.05），样本量（≥1000/行业）
   - 参数范围（金融1.3-1.5、科技1.1-1.3、周期1.1-1.4、防御0.8-1.0）
 - DataUtils（数据处理工具）：
+  - 文件：`core_bak_refactored/core/data/_fragments/data_utils.py`
   - 收益率计算/事件数据安全获取/数据有效性校验等工具方法是否符合业务口径
 - 测试工具与委托架构：
-  - TestAssertions（通用断言阈值与错误信息格式）
-  - test_fixtures（纯委托：tests只编排，不承载业务逻辑）
+  - TestAssertions：文件：`core_bak_refactored/tests/common/test_assertions.py`（通用断言阈值与错误信息格式）
+  - test_fixtures：文件：`core_bak_refactored/tests/core/backtest/test_fixtures.py`（纯委托：tests只编排，不承载业务逻辑）
 
 ### 2) 验收断言清单（请确认是否作为迁移前评审标准）
 - 历史事件端到端流程完整性（5事件）
