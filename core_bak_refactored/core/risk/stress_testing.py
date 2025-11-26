@@ -1072,3 +1072,106 @@ class StressTester:
         except Exception as e:
             logger.warning(f"获取杠杆仓位失败: {e}，使用默认估计")
             return 0.0
+
+# =========================================================================
+# 阶段B：行业参数统计与显著性检验（纯技术实现，遵循专家口径）
+# =========================================================================
+
+class IndustryParameterAnalyzer:
+    """
+    行业参数统计与显著性检验（阶段B）
+    - 输入：行业 → 历史冲击系数样本（例如事件窗口中的损失率或冲击值）
+    - 输出：行业平均冲击参数、两两行业t检验p值（大样本近似正态）
+    - 验证：调用 UATValidator.validate_industry_parameter_difference() 进行业务口径断言
+    
+    说明：
+    - 不在此处新增任何业务参数值；仅提供统计计算能力。
+    - t检验p值采用Welch近似与正态近似（样本量≥1000时合理）。
+    """
+    
+    def __init__(self):
+        pass
+    
+    @staticmethod
+    def compute_industry_parameters(samples: Dict[str, List[float]]) -> Dict[str, float]:
+        """
+        计算各行业平均冲击参数
+        Args:
+            samples: {industry: [values...]}
+        Returns:
+            {industry: mean_value}
+        """
+        params: Dict[str, float] = {}
+        for industry, values in samples.items():
+            arr = np.array(values, dtype=float)
+            if arr.size == 0:
+                params[industry] = 0.0
+            else:
+                params[industry] = float(np.mean(arr))
+        return params
+    
+    @staticmethod
+    def _welch_t_stat(arr1: np.ndarray, arr2: np.ndarray) -> float:
+        """计算Welch t统计量（不返回df）"""
+        n1, n2 = arr1.size, arr2.size
+        m1, m2 = float(np.mean(arr1)), float(np.mean(arr2))
+        v1, v2 = float(np.var(arr1, ddof=1)), float(np.var(arr2, ddof=1))
+        denom = np.sqrt(v1 / n1 + v2 / n2)
+        if denom == 0:
+            return 0.0
+        return (m1 - m2) / denom
+    
+    @staticmethod
+    def _normal_approx_p_value(t_stat: float) -> float:
+        """
+        对于大样本（n>=1000）采用正态近似计算双侧p值
+        p = 2 * (1 - Phi(|t|)); Phi为标准正态CDF
+        采用误差函数erf近似：Phi(x) ≈ 0.5 * [1 + erf(x / sqrt(2))]
+        """
+        try:
+            from math import erf, sqrt
+            abs_t = abs(t_stat)
+            phi = 0.5 * (1.0 + erf(abs_t / sqrt(2.0)))
+            p = 2.0 * (1.0 - phi)
+            # 限制范围
+            p = max(0.0, min(1.0, p))
+            return p
+        except Exception:
+            # 回退：极端保守值
+            return 1.0
+    
+    def compute_t_tests(self, samples: Dict[str, List[float]]) -> Dict[tuple, float]:
+        """
+        计算两两行业t检验p值（Welch + 正态近似）
+        Args:
+            samples: {industry: [values...]}
+        Returns:
+            { (industry_a, industry_b): p_value }
+        """
+        industries = list(samples.keys())
+        p_values: Dict[tuple, float] = {}
+        for i in range(len(industries)):
+            for j in range(i + 1, len(industries)):
+                a, b = industries[i], industries[j]
+                arr1 = np.array(samples[a], dtype=float)
+                arr2 = np.array(samples[b], dtype=float)
+                # 为空回退
+                if arr1.size < 2 or arr2.size < 2:
+                    p_values[(a, b)] = 1.0
+                    continue
+                t_stat = self._welch_t_stat(arr1, arr2)
+                p_val = self._normal_approx_p_value(t_stat)
+                p_values[(a, b)] = float(p_val)
+        return p_values
+    
+    def analyze_and_validate(self, samples: Dict[str, List[float]]):
+        """
+        端到端：统计→t检验→UAT验证
+        Returns:
+            UATResult
+        """
+        from core_bak_refactored.core.backtest._fragments.uat_validator import UATValidator
+        params = self.compute_industry_parameters(samples)
+        t_tests = self.compute_t_tests(samples)
+        validator = UATValidator()
+        return validator.validate_industry_parameter_difference(params, t_tests)
