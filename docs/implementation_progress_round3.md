@@ -2,7 +2,169 @@
 
 ## Session Summary
 Date: 2025-11-26  
-Status: High-priority tasks from expert answer.md Round 3 completed
+Status: High-priority tasks from expert answer.md Round 3 completed + Design-level refactoring
+
+## Latest Update: Design-Level Refactoring (2025-11-26)
+
+### Refactoring Overview
+按照规范要求，对已实现代码进行了设计级别的优化重构，包括：
+- 职责边界划分
+- 职责归位
+- 消除冗余
+- 合理复用
+
+### 1. DataQualityChecker组件（新增）
+
+**文件**: `core_bak_refactored/core/data/_fragments/data_quality_checker.py`
+
+**职责定位**: 独立的数据质量检查组件
+- 单源数据质量检查（完整性/一致性/连续性/合理性）
+- 交叉验证（逐日差异30%/窗口统计3%/10%）
+- 历史追踪
+
+**设计原则**:
+- ✅ 单一职责：仅负责数据质量检查，不涉及数据获取
+- ✅ 可复用：供多个数据提供者共享使用
+- ✅ 可扩展：支持自定义检查规则
+
+**核心方法**:
+```python
+class DataQualityChecker:
+    def check_quality(data, index_id, expected_days) -> DataQualityReport
+    def cross_validate(data_a, data_b, source_a, source_b) -> CrossValidationResult
+    def get_check_history(limit=10) -> List[DataQualityReport]
+    def get_validation_history(limit=10) -> List[CrossValidationResult]
+```
+
+**质量检查维度**:
+1. 完整性 (Completeness): 实际天数 vs 期望天数
+2. 一致性 (Consistency): 字段类型、必需字段检查
+3. 连续性 (Continuity): 缺失值、时间间隔异常
+4. 合理性 (Reasonableness): 价格范围、波动率、成交量
+
+**交叉验证阈值**:
+- 逐日差异: 30%触发，允许10%日期超阈值
+- 均值差异: 3%阈值
+- 标准差差异: 10%阈值
+- 判定逻辑: 逐日通过 AND (均值通过 OR 标准差通过)
+
+### 2. HistoricalDataProvider职责简化
+
+**重构前问题**:
+- `_compare_two_sources()` 方法包含72行复杂质量检查逻辑
+- 数据获取和质量检查职责混杂
+- 违反单一职责原则
+
+**重构后**:
+- `cross_validate_sources()` 委托给 `DataQualityChecker`
+- 废弃 `_compare_two_sources()` 方法
+- Provider仅负责协调数据源获取
+
+**职责边界**:
+```python
+# 重构前
+Provider:
+  ├── 数据获取 ✓
+  └── 质量检查 ✗ (职责混杂)
+
+# 重构后
+Provider:
+  └── 数据获取 ✓ ──委托──> DataQualityChecker (质量检查)
+```
+
+### 3. UATValidator职责简化
+
+**重构前问题**:
+- 包含告警发送和升级逻辑 (`_escalate_alert`, `_send_alert`)
+- 与 `AlertManager` 职责重复
+- 违反单一职责原则
+
+**重构后**:
+- `check_system_health()` 仅负责检查判断，不发送告警
+- 废弃 `_escalate_alert()` 和 `_send_alert()` 方法
+- 告警功能统一委托给 `core.monitoring.AlertManager`
+
+**职责边界**:
+```python
+# 重构前
+UATValidator:
+  ├── 验收判断 ✓
+  └── 告警发送 ✗ (职责重复)
+
+# 重构后
+UATValidator:
+  └── 验收判断 ✓ ──委托──> AlertManager (告警发送)
+```
+
+**使用示例**:
+```python
+# UAT检查
+health_report = validator.check_system_health(
+    data_quality=0.85,
+    prediction_error=0.22
+)
+
+# 告警发送（由调用方委托给AlertManager）
+if health_report['status'] != 'HEALTHY':
+    for alert in health_report['alerts']:
+        alert_manager.send_alert(
+            severity=AlertSeverity.WARNING if alert['level'] == 'WARNING' else AlertSeverity.CRITICAL,
+            title=f"{alert['metric_name']}告警",
+            message=alert['message'],
+            metadata={'metric': alert['metric_name'], 'value': alert['actual_value']}
+        )
+```
+
+### 4. AlertManager职责明确
+
+**职责**: 生产级告警管理（专家第3轮5.4节）
+- 多通道告警：企业微信/短信/电话/邮件/Webhook
+- 自动升级路径：Level 2→30分钟→电话，Level 3→15分钟重复
+- 告警去重：dedup_key + 10分钟窗口
+- 频率控制：50次/小时限流
+
+**告警策略**:
+- Level 1 (WARNING): 企业微信
+- Level 2 (ERROR): 企业微信 + 短信 → 30分钟升级电话
+- Level 3 (CRITICAL): 企业微信 + 短信 + 电话 → 15分钟重复电话
+
+### Refactoring Test Coverage
+
+**新增测试文件**: `core_bak_refactored/tests/test_data_quality_checker.py`
+**测试结果**: 10/10 tests passing ✅
+
+#### Test Suite Breakdown
+1. ✅ `test_check_quality_perfect_data` - 完美数据质量检查
+2. ✅ `test_check_quality_incomplete_data` - 不完整数据检测
+3. ✅ `test_check_quality_missing_values` - 缺失值处理
+4. ✅ `test_check_quality_abnormal_volatility` - 异常波动检测
+5. ✅ `test_cross_validate_identical_data` - 相同数据交叉验证
+6. ✅ `test_cross_validate_daily_divergence_threshold` - 逐日差异30%阈值
+7. ✅ `test_cross_validate_mean_divergence_threshold` - 均值差异3%阈值
+8. ✅ `test_cross_validate_no_overlap` - 无重叠数据处理
+9. ✅ `test_validation_history_tracking` - 验证历史追踪
+10. ✅ `test_check_history_tracking` - 检查历史追踪
+
+### Refactoring Metrics
+
+**代码指标**:
+- 消除冗余: 72行重复逻辑移除
+- 新增组件: 323行独立DataQualityChecker
+- 职责清晰: 3个组件职责明确，无交叉
+
+**质量提升**:
+- 可复用性: DataQualityChecker可供多个Provider使用
+- 可测试性: 独立组件易于单元测试（10个测试用例）
+- 可维护性: 职责清晰，修改影响范围小
+
+**设计原则应用**:
+1. ✅ 单一职责原则 (SRP)
+2. ✅ 依赖倒置原则 (DIP)
+3. ✅ 开放封闭原则 (OCP)
+
+**Commit**: `8c76859` - refactor: design-level refactoring - responsibility realignment
+
+---
 
 ## Completed Tasks
 
