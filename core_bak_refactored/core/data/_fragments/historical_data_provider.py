@@ -261,6 +261,62 @@ class MockHistoricalDataProvider:
             'total_rows': report.details.get('total_rows', 0),
             'details': report.details
         }
+    
+    def get_event_window_data(self, 
+                              index_id: str, 
+                              event_date: str,
+                              window_days: int = 30,
+                              baseline_days: int = 252) -> Dict[str, pd.DataFrame]:
+        """
+        获取事件窗口数据（兼容RealHistoricalDataProvider接口）
+        
+        Args:
+            index_id: 指数代码
+            event_date: 事件发生日期 'YYYY-MM-DD'
+            window_days: 事件前后窗口天数
+            baseline_days: 基准期天数
+        
+        Returns:
+            字典包含:
+                'event_window': 事件窗口数据
+                'baseline': 基准期数据
+        """
+        event_dt = pd.to_datetime(event_date)
+        
+        # 计算日期范围
+        baseline_start = event_dt - pd.Timedelta(days=baseline_days + window_days + 100)
+        baseline_end = event_dt - pd.Timedelta(days=1)
+        
+        event_start = event_dt - pd.Timedelta(days=window_days + 30)
+        event_end = event_dt + pd.Timedelta(days=window_days + 30)
+        
+        # 获取基准期数据
+        baseline_data = self.get_index_prices(
+            index_id, 
+            baseline_start.strftime('%Y-%m-%d'),
+            baseline_end.strftime('%Y-%m-%d')
+        )
+        
+        # 获取事件窗口数据
+        event_data = self.get_index_prices(
+            index_id,
+            event_start.strftime('%Y-%m-%d'),
+            event_end.strftime('%Y-%m-%d')
+        )
+        
+        # 筛选出指定数量的交易日
+        baseline_filtered = baseline_data.tail(baseline_days)
+        
+        # 事件窗口：前后各window_days个交易日
+        event_filtered = event_data[
+            (event_data['date'] >= event_dt - pd.Timedelta(days=window_days)) &
+            (event_data['date'] <= event_dt + pd.Timedelta(days=window_days))
+        ]
+        
+        return {
+            'event_window': event_filtered,
+            'baseline': baseline_filtered
+        }
 
 # =============================================================================
 # 真实数据提供者（待实现）
@@ -333,16 +389,58 @@ class RealHistoricalDataProvider:
         except Exception as e:
             logger.warning(f"Yahoo Finance适配器加载失败: {e}")
         
-        # JoinQuant适配器（TODO: 待实现）
-        # adapters['joinquant'] = JoinQuantAdapter()  # Phase 5B-5+
+        # JoinQuant适配器（stub实现，备用数据源）
+        try:
+            adapters['joinquant'] = self._create_joinquant_stub()
+            logger.info("JoinQuant适配器（stub）已加载")
+        except Exception as e:
+            logger.warning(f"JoinQuant适配器加载失败: {e}")
         
-        # Wind适配器（TODO: 待实现）
-        # adapters['wind'] = WindAdapter()  # Phase 5B-5+
+        # Wind适配器（stub实现，备用数据源）
+        try:
+            adapters['wind'] = self._create_wind_stub()
+            logger.info("Wind适配器（stub）已加载")
+        except Exception as e:
+            logger.warning(f"Wind适配器加载失败: {e}")
         
         return adapters
     
+    def _create_joinquant_stub(self) -> Any:
+        """创建JoinQuant数据源stub（待实际API实现）"""
+        class JoinQuantStub:
+            """JoinQuant数据源stub - 专家第2轮5.1节：A股优先数据源"""
+            def __init__(self):
+                self.available = False  # TODO: 替换为实际API可用性检查
+                logger.info("JoinQuant stub初始化（待实际API集成）")
+            
+            def get_index_prices(self, index_id: str, start_date: str, end_date: str) -> pd.DataFrame:
+                # TODO: 实际实现调用JoinQuant API
+                # import jqdatasdk
+                # jqdatasdk.auth(username, password)
+                # data = jqdatasdk.get_price(index_id, start_date, end_date, fields=['close', 'volume'])
+                raise NotImplementedError("JoinQuant API未集成，请使用Yahoo或Mock")
+        
+        return JoinQuantStub()
+    
+    def _create_wind_stub(self) -> Any:
+        """创建Wind数据源stub（待实际API实现）"""
+        class WindStub:
+            """Wind数据源stub - 专家第2轮5.1节：港股优先数据源"""
+            def __init__(self):
+                self.available = False  # TODO: 替换为实际API可用性检查
+                logger.info("Wind stub初始化（待实际API集成）")
+            
+            def get_index_prices(self, index_id: str, start_date: str, end_date: str) -> pd.DataFrame:
+                # TODO: 实际实现调用Wind API
+                # from WindPy import w
+                # w.start()
+                # data = w.wsd(index_id, "close,volume", start_date, end_date)
+                raise NotImplementedError("Wind API未集成，请使用Yahoo或Mock")
+        
+        return WindStub()
+    
     def get_index_prices(self, index_id: str, start_date: str, end_date: str) -> pd.DataFrame:
-        """获取指数价格数据（含自动回退机制 + 区域化优先级）"""
+        """获取指数价格数据（含自动回退机制 + 区域化优先级 + 健康检查）"""
         # 优先使用缓存
         cache_key = f"prices:{index_id}:{start_date}:{end_date}:{self.primary_source}"
         if cache_key in self._cache:
@@ -354,11 +452,19 @@ class RealHistoricalDataProvider:
         sources_to_try = regional_sources if regional_sources else ([self.primary_source] + self.backup_sources)
         
         last_error = None
+        source_health_status = {}
         
         for source in sources_to_try:
             adapter = self._adapters.get(source)
             if adapter is None:
                 logger.warning(f"数据源 {source} 未配置，跳过")
+                source_health_status[source] = 'unconfigured'
+                continue
+            
+            # 健康检查（stub适配器）
+            if hasattr(adapter, 'available') and not adapter.available:
+                logger.warning(f"数据源 {source} 不可用（健康检查失败），跳过")
+                source_health_status[source] = 'unavailable'
                 continue
             
             try:
@@ -367,12 +473,14 @@ class RealHistoricalDataProvider:
                 
                 if data is None or data.empty:
                     logger.warning(f"{source} 返回空数据")
+                    source_health_status[source] = 'empty_data'
                     continue
                 
                 # 数据质量验证
                 quality_score = self._validate_data_quality(data, source)
                 if quality_score < 0.6:
                     logger.warning(f"{source} 数据质量不达标: {quality_score:.2f}")
+                    source_health_status[source] = f'low_quality_{quality_score:.2f}'
                     continue
                 
                 # 数据清洗（专家4.2节：异常值处理）
@@ -380,17 +488,24 @@ class RealHistoricalDataProvider:
                 
                 # 缓存结果
                 self._cache[cache_key] = cleaned_data
+                source_health_status[source] = f'success_quality_{quality_score:.2f}'
                 logger.info(f"成功获取数据: {source}, 行数={len(cleaned_data)}, 质量={quality_score:.2f}")
                 
                 return cleaned_data
                 
+            except NotImplementedError as e:
+                # stub未实现，继续下一个
+                logger.info(f"{source} 未实现，尝试下一数据源: {e}")
+                source_health_status[source] = 'not_implemented'
+                continue
             except Exception as e:
                 last_error = e
                 logger.warning(f"{source} 获取失败: {e}")
+                source_health_status[source] = f'error_{type(e).__name__}'
                 continue
         
         # 所有数据源失败
-        error_msg = f"所有数据源失败: {index_id} ({start_date} to {end_date})"
+        error_msg = f"所有数据源失败: {index_id} ({start_date} to {end_date}) | 健康状态={source_health_status}"
         if last_error:
             error_msg += f", 最后错误: {last_error}"
         logger.error(error_msg)
@@ -408,7 +523,7 @@ class RealHistoricalDataProvider:
             return self.REGIONAL_PRIORITY['CN']
         elif index_id.endswith('.US'):
             return self.REGIONAL_PRIORITY['US']
-        elif index_id.endswith('.HK'):
+        elif index_id.endswith('.HK') or index_id == 'HSI' or index_id == 'HSCEI':
             return self.REGIONAL_PRIORITY['HK']
         else:
             return self.REGIONAL_PRIORITY['default']

@@ -16,6 +16,9 @@ import pandas as pd
 import numpy as np
 from typing import Tuple, Optional
 from dataclasses import dataclass
+import logging
+
+logger = logging.getLogger('DeepSeekQuant.DataUtils')
 
 
 @dataclass
@@ -114,6 +117,7 @@ class DataUtils:
             )
             
             if window_data is None:
+                logger.warning(f"safe_get_event_data: no data returned | provider={type(data_provider).__name__} | event_id={event.event_id}")
                 return pd.DataFrame(), False
             
             # 支持两种返回格式
@@ -122,10 +126,12 @@ class DataUtils:
             elif isinstance(window_data, pd.DataFrame):
                 return window_data, True
             else:
+                logger.warning(f"safe_get_event_data: unexpected format | provider={type(data_provider).__name__} | event_id={event.event_id} | type={type(window_data).__name__}")
                 return pd.DataFrame(), False
                 
         except Exception as e:
-            # 静默失败，返回空数据和失败标志
+            # 降级日志（异常捕获）：记录事件/提供者/异常摘要
+            logger.error(f"safe_get_event_data failed: provider={type(data_provider).__name__} | event_id={event.event_id} | error={e}")
             return pd.DataFrame(), False
     
     @staticmethod
