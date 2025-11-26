@@ -74,8 +74,19 @@ class HistoricalDataProvider(Protocol):
     def get_index_returns(self, index_id: str, start_date: str, end_date: str):
         """获取指数收益率序列"""
         ...
-
-
+    
+    # 新增接口方法（Phase 4规划）
+    def get_stock_prices(self, symbol: str, start_date: str, end_date: str):
+        """获取个股价格数据"""
+        ...
+        
+    def get_volatility_index(self, index_id: str, start_date: str, end_date: str):
+        """获取波动率指数（如VIX）"""
+        ...
+        
+    def validate_data_quality(self, data) -> Dict[str, Any]:
+        """数据质量验证报告"""
+        ...
 # =============================================================================
 # 事件窗口回测引擎（回测模块业务逻辑）
 # =============================================================================
@@ -119,7 +130,7 @@ class EventWindowBacktester:
         self.events = self._load_events()
     
     def _load_events(self) -> List[BacktestEvent]:
-        """加载回测事件（基于专家指导的核心事件+新增债务相关事件）"""
+        """加载回测事件（扩展至7事件，含1997亚洲金融危机）"""
         return [
             BacktestEvent(
                 event_id='2015_china_market_crash',
@@ -155,6 +166,27 @@ class EventWindowBacktester:
                 period=('2011-07-22', '2011-08-10'),
                 expected_decline=-0.12,
                 scenario_params={'decline': -0.12, 'contagion_risk': 0.4}
+            ),
+            BacktestEvent(
+                event_id='2016_china_circuit_breaker',
+                name='2016中国熔断',
+                period=('2016-01-04', '2016-01-08'),
+                expected_decline=-0.18,
+                scenario_params={'decline': -0.18}
+            ),
+            BacktestEvent(
+                event_id='2022_russia_ukraine_conflict',
+                name='2022俄乌冲突',
+                period=('2022-02-24', '2022-03-15'),
+                expected_decline=-0.12,
+                scenario_params={'decline': -0.12}
+            ),
+            BacktestEvent(
+                event_id='1997_asian_financial_crisis',
+                name='1997亚洲金融危机',
+                period=('1997-07-02', '1998-08-28'),
+                expected_decline=-0.35,
+                scenario_params={'decline': -0.35, 'currency_volatility': 3.0}
             )
         ]
     

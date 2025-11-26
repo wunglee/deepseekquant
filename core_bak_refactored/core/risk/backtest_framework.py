@@ -22,7 +22,7 @@
 
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Optional, Any, Protocol
+from typing import Dict, List, Optional, Any, Protocol, Union
 from datetime import datetime, timedelta
 from dataclasses import dataclass, field
 import logging
@@ -44,28 +44,28 @@ class HistoricalDataProvider(Protocol):
     - 为core_bak_refactored/core/data模块集成预留标准接口
     """
     
-    def get_index_prices(self, index_id: str, start_date: str, end_date: str) -> pd.DataFrame:
+    def get_index_prices(self, index_id: str, start_date: Union[str, datetime], end_date: Union[str, datetime]) -> pd.DataFrame:
         """
         获取指数价格数据
         
         Args:
             index_id: 指数代码（如'000300.SH'沪深300）
-            start_date: 开始日期 'YYYY-MM-DD'
-            end_date: 结束日期 'YYYY-MM-DD'
+            start_date: 开始日期 'YYYY-MM-DD' 或 datetime 对象
+            end_date: 结束日期 'YYYY-MM-DD' 或 datetime 对象
         
         Returns:
             DataFrame with columns: ['date', 'close', 'volume']
         """
         ...
     
-    def get_index_returns(self, index_id: str, start_date: str, end_date: str) -> pd.Series:
+    def get_index_returns(self, index_id: str, start_date: Union[str, datetime], end_date: Union[str, datetime]) -> pd.Series:
         """
         获取指数收益率序列
         
         Args:
             index_id: 指数代码
-            start_date: 开始日期
-            end_date: 结束日期
+            start_date: 开始日期 'YYYY-MM-DD' 或 datetime 对象
+            end_date: 结束日期 'YYYY-MM-DD' 或 datetime 对象
         
         Returns:
             Series with date index and return values

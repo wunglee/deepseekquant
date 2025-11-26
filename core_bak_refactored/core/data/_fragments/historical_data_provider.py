@@ -524,58 +524,98 @@ class RealHistoricalDataProvider:
         """
         数据质量验证（专家answer.md第1轮5.1节：数据质量评分≥90%）
         
+        优化点:
+        - 数值稳定性：添加除零保护
+        - 性能优化：缓存键使用哈希避免长字符串
+        - 异常处理：捕获计算异常并降级
+        
         Returns:
             质量评分 (0-1)，≥0.6为及格
         """
         if data is None or data.empty:
             return 0.0
         
-        cache_key = f"quality:{source}:{len(data)}"
+        # 优化：使用数据指纹代替简单长度
+        data_fingerprint = hash((source, len(data), tuple(data.columns)))
+        cache_key = f"quality:{data_fingerprint}"
         if cache_key in self._quality_cache:
             return self._quality_cache[cache_key]
         
-        score = 0.0
-        
-        # 1. 完整性检查（30%权重）
-        completeness = 1.0 - (data.isnull().sum().sum() / (len(data) * len(data.columns)))
-        score += completeness * 0.3
-        
-        # 2. 一致性检查（30%权重）
-        consistency = 1.0
-        if 'close' in data.columns:
-            # 无负价格
-            negative_prices = (data['close'] < 0).sum()
-            if negative_prices > 0:
-                consistency -= 0.5
-            # 无异常大价格（超过均值10倍）
-            mean_price = data['close'].mean()
-            extreme_prices = (data['close'] > mean_price * 10).sum()
-            if extreme_prices > 0:
-                consistency -= 0.3
-        score += max(0, consistency) * 0.3
-        
-        # 3. 连续性检查（20%权重）
-        if 'date' in data.columns and len(data) > 1:
-            date_diffs = pd.to_datetime(data['date']).diff().dt.days
-            # 允许周末和节假日，但不允许超过10天的断档
-            long_gaps = (date_diffs > 10).sum()
-            continuity = 1.0 - (long_gaps / len(data))
-            score += continuity * 0.2
-        else:
-            score += 0.1  # 无法验证，给部分分
-        
-        # 4. 合理性检查（20%权重）
-        reasonableness = 1.0
-        if 'close' in data.columns and len(data) > 1:
-            returns = data['close'].pct_change().dropna()
-            # 日收益率应在-50%到+50%之间（极端但合理）
-            unreasonable = ((returns < -0.5) | (returns > 0.5)).sum()
-            if unreasonable > 0:
-                reasonableness -= 0.2 * (unreasonable / len(returns))
-        score += max(0, reasonableness) * 0.2
-        
-        self._quality_cache[cache_key] = score
-        return score
+        try:
+            score = 0.0
+            total_cells = len(data) * len(data.columns)
+            
+            # 1. 完整性检查（30%权重）- 数值稳定性优化
+            if total_cells > 0:
+                missing_count = data.isnull().sum().sum()
+                completeness = 1.0 - (missing_count / total_cells)
+                score += completeness * 0.3
+            else:
+                score += 0.0  # 空数据框
+            
+            # 2. 一致性检查（30%权重）- 添加边界保护
+            consistency = 1.0
+            if 'close' in data.columns and len(data) > 0:
+                close_prices = data['close'].dropna()
+                if len(close_prices) > 0:
+                    # 无负价格
+                    negative_prices = (close_prices < 0).sum()
+                    if negative_prices > 0:
+                        consistency -= min(0.5, 0.5 * (negative_prices / len(close_prices)))
+                    
+                    # 无异常大价格（超过均值10倍）- 添加除零保护
+                    mean_price = close_prices.mean()
+                    if mean_price > 0:
+                        extreme_prices = (close_prices > mean_price * 10).sum()
+                        if extreme_prices > 0:
+                            consistency -= min(0.3, 0.3 * (extreme_prices / len(close_prices)))
+            score += max(0.0, consistency) * 0.3
+            
+            # 3. 连续性检查（20%权重）- 异常处理优化
+            if 'date' in data.columns and len(data) > 1:
+                try:
+                    date_series = pd.to_datetime(data['date'])
+                    date_diffs = date_series.diff().dt.days
+                    # 过滤NaT和负值
+                    valid_diffs = date_diffs[date_diffs.notna() & (date_diffs > 0)]
+                    if len(valid_diffs) > 0:
+                        long_gaps = (valid_diffs > 10).sum()
+                        continuity = 1.0 - (long_gaps / len(valid_diffs))
+                        score += continuity * 0.2
+                    else:
+                        score += 0.1
+                except Exception as e:
+                    logger.warning(f"连续性检查失败: {e}")
+                    score += 0.1
+            else:
+                score += 0.1  # 无法验证，给部分分
+            
+            # 4. 合理性检查（20%权重）- 数值稳定性优化
+            reasonableness = 1.0
+            if 'close' in data.columns and len(data) > 1:
+                try:
+                    close_prices = data['close'].dropna()
+                    if len(close_prices) > 1:
+                        returns = close_prices.pct_change().dropna()
+                        if len(returns) > 0:
+                            # 日收益率应在-50%到+50%之间（极端但合理）
+                            unreasonable = ((returns < -0.5) | (returns > 0.5)).sum()
+                            if unreasonable > 0:
+                                penalty = min(0.2, 0.2 * (unreasonable / len(returns)))
+                                reasonableness -= penalty
+                except Exception as e:
+                    logger.warning(f"合理性检查失败: {e}")
+                    reasonableness = 0.8  # 降级评分
+            score += max(0.0, reasonableness) * 0.2
+            
+            # 确保评分在[0, 1]范围内
+            final_score = max(0.0, min(1.0, score))
+            self._quality_cache[cache_key] = final_score
+            return final_score
+            
+        except Exception as e:
+            logger.error(f"数据质量验证失败: {e}")
+            return 0.0  # 异常降级
     
     def get_index_returns(self, index_id: str, start_date: str, end_date: str) -> pd.Series:
         """获取指数收益率序列（排除异常日）"""

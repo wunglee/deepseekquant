@@ -166,13 +166,18 @@ class CrossMarketCalibrator:
         """
         获取日均中间价汇率（专家answer.md第1轮2.1节）
         
+        优化点:
+        - 数值稳定性：添加汇率合理性检查
+        - 异常处理：捕获计算异常并降级
+        - 性能优化：缓存机制
+        
         Args:
             from_currency: 源货币
             to_currency: 目标货币
             event_window_data: 事件窗口数据（包含汇率序列）
         
         Returns:
-            日均汇率
+            日均汇率（已限制在合理范围）
         """
         # 检查缓存
         cache_key = (from_currency, to_currency)
@@ -181,9 +186,19 @@ class CrossMarketCalibrator:
         
         # 如果提供了事件窗口数据，计算实际日均汇率
         if event_window_data is not None and 'exchange_rate' in event_window_data.columns:
-            avg_rate = event_window_data['exchange_rate'].mean()
-            self._exchange_rate_cache[cache_key] = avg_rate
-            return avg_rate
+            try:
+                exchange_rates = event_window_data['exchange_rate'].dropna()
+                if len(exchange_rates) > 0:
+                    avg_rate = float(exchange_rates.mean())
+                    # 数值稳定性：检查汇率合理性（0.0001到10000之间）
+                    if 0.0001 <= avg_rate <= 10000:
+                        self._exchange_rate_cache[cache_key] = avg_rate
+                        logger.debug(f"使用实际日均汇率: {from_currency}/{to_currency} = {avg_rate:.6f}")
+                        return avg_rate
+                    else:
+                        logger.warning(f"汇率异常: {avg_rate}，使用静态汇率")
+            except Exception as e:
+                logger.warning(f"汇率计算失败: {e}，使用静态汇率")
         
         # 否则使用静态汇率表（近似值，实际应从数据源获取）
         static_rates = {
@@ -207,6 +222,10 @@ class CrossMarketCalibrator:
         """
         应用流动性调整因子（专家answer.md第1轮2.1节和2.2节）
         
+        优化点:
+        - 数值稳定性：添加输入验证和边界检查
+        - 异常处理：捕获计算异常并降级
+        
         Args:
             raw_risk_metric: 原始风险指标
             market_id: 市场代码
@@ -215,31 +234,51 @@ class CrossMarketCalibrator:
         Returns:
             调整后的风险指标
         """
-        market_config = self.MARKET_CONFIGS.get(market_id)
-        if market_config is None:
-            logger.warning(f"未知市场 {market_id}，使用默认调整因子0.90")
-            discount_factor = 0.90
-        else:
-            discount_factor = market_config.discount_factor
+        # 输入验证
+        if days_required < 1:
+            logger.warning(f"无效的days_required={days_required}，使用默认1")
+            days_required = 1
         
-        # A股T+1特殊处理（专家answer.md第1轮2.2节）
-        if market_id == 'CN' and 't1_restriction' in (market_config.special_mechanisms if market_config else {}):
-            if days_required == 1:
-                # 单日清算：使用T+1单日折扣
-                discount_factor = market_config.special_mechanisms.get('t1_single_day_discount', 0.95)
+        if raw_risk_metric < 0:
+            logger.warning(f"负值风险指标={raw_risk_metric}，取绝对值")
+            raw_risk_metric = abs(raw_risk_metric)
+        
+        try:
+            market_config = self.MARKET_CONFIGS.get(market_id)
+            if market_config is None:
+                logger.warning(f"未知市场 {market_id}，使用默认调整因子0.90")
+                discount_factor = 0.90
             else:
-                # 多日清算：使用修正公式 1/sqrt(max(1, days-1))
-                multi_day_discount = 1.0 / np.sqrt(max(1, days_required - 1))
-                discount_factor = min(discount_factor, multi_day_discount)
-                logger.debug(f"A股T+1多日清算: days={days_required}, discount={discount_factor:.4f}")
-        
-        # 港股LULD波动性调整（专家answer.md第1轮2.2节）
-        # 注意：此处仅处理清算时间折扣，波动性调整由calculate_volatility_adjustment处理
-        
-        adjusted_metric = raw_risk_metric * discount_factor
-        logger.debug(f"流动性调整: {raw_risk_metric:.4f} -> {adjusted_metric:.4f} (market={market_id}, discount={discount_factor:.4f})")
-        
-        return adjusted_metric
+                discount_factor = market_config.discount_factor
+            
+            # A股T+1特殊处理（专家answer.md第1轮2.2节）
+            if market_id == 'CN' and market_config and 't1_restriction' in market_config.special_mechanisms:
+                if days_required == 1:
+                    # 单日清算：使用T+1单日折扣
+                    discount_factor = market_config.special_mechanisms.get('t1_single_day_discount', 0.95)
+                else:
+                    # 多日清算：使用修正公式 1/sqrt(max(1, days-1))
+                    # 数值稳定性：确保分母不为0
+                    divisor = max(1.0, float(days_required - 1))
+                    multi_day_discount = 1.0 / np.sqrt(divisor)
+                    discount_factor = min(discount_factor, multi_day_discount)
+                    logger.debug(f"A股T+1多日清算: days={days_required}, discount={discount_factor:.4f}")
+            
+            # 港股LULD波动性调整（专家answer.md第1轮2.2节）
+            # 注意：此处仅处理清算时间折扣，波动性调整由calculate_volatility_adjustment处理
+            
+            adjusted_metric = raw_risk_metric * discount_factor
+            
+            # 数值稳定性：确保结果非负
+            adjusted_metric = max(0.0, adjusted_metric)
+            
+            logger.debug(f"流动性调整: {raw_risk_metric:.4f} -> {adjusted_metric:.4f} (market={market_id}, discount={discount_factor:.4f})")
+            
+            return adjusted_metric
+            
+        except Exception as e:
+            logger.error(f"流动性调整失败: {e}，返回原值")
+            return raw_risk_metric  # 异常降级
     
     def calculate_volatility_adjustment(self, 
                                         raw_volatility: float,

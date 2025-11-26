@@ -12,11 +12,24 @@ Yahoo Finance数据提供者 - Phase 3B真实数据集成
 
 import pandas as pd
 import numpy as np
-from typing import Dict, Optional
+from typing import Dict, Optional, Union, Any
 from datetime import datetime, timedelta
 import logging
+from dataclasses import dataclass, field
 
 logger = logging.getLogger('DeepSeekQuant.YahooFinanceProvider')
+
+
+@dataclass
+class DataQualityReport:
+    """数据质量报告"""
+    completeness_score: float = 0.0  # 完整性评分 (0-1)
+    consistency_score: float = 0.0   # 一致性评分 (0-1)
+    accuracy_score: float = 0.0      # 准确性评分 (0-1)
+    outliers_detected: int = 0       # 检测到的异常值数量
+    total_rows: int = 0              # 总行数
+    missing_values: int = 0          # 缺失值数量
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
 
 class YahooFinanceDataProvider:
@@ -74,14 +87,14 @@ class YahooFinanceDataProvider:
             if not self.fallback:
                 raise RuntimeError("yfinance library not available and fallback disabled")
     
-    def get_index_prices(self, index_id: str, start_date: str, end_date: str) -> pd.DataFrame:
+    def get_index_prices(self, index_id: str, start_date: Union[str, datetime], end_date: Union[str, datetime]) -> pd.DataFrame:
         """
         获取指数价格数据
         
         Args:
             index_id: 指数代码（如'000300.SH'沪深300）
-            start_date: 开始日期 'YYYY-MM-DD'
-            end_date: 结束日期 'YYYY-MM-DD'
+            start_date: 开始日期 'YYYY-MM-DD' 或 datetime 对象
+            end_date: 结束日期 'YYYY-MM-DD' 或 datetime 对象
         
         Returns:
             DataFrame with columns: ['date', 'close', 'volume']
@@ -89,6 +102,12 @@ class YahooFinanceDataProvider:
         Raises:
             ValueError: 日期格式错误或数据不可用（fallback禁用时）
         """
+        # Convert datetime objects to string format if needed
+        if isinstance(start_date, datetime):
+            start_date = start_date.strftime('%Y-%m-%d')
+        if isinstance(end_date, datetime):
+            end_date = end_date.strftime('%Y-%m-%d')
+            
         try:
             # 1. 映射指数代码
             ticker = self._map_index_to_yahoo(index_id)
@@ -121,22 +140,136 @@ class YahooFinanceDataProvider:
             else:
                 raise ValueError(f"Failed to fetch data for {index_id}: {e}")
     
-    def get_index_returns(self, index_id: str, start_date: str, end_date: str) -> pd.Series:
+    def get_index_returns(self, index_id: str, start_date: Union[str, datetime], end_date: Union[str, datetime]) -> pd.Series:
         """
         获取指数收益率序列
         
         Args:
             index_id: 指数代码
-            start_date: 开始日期
-            end_date: 结束日期
+            start_date: 开始日期 'YYYY-MM-DD' 或 datetime 对象
+            end_date: 结束日期 'YYYY-MM-DD' 或 datetime 对象
         
         Returns:
             Series with date index and return values
         """
+        # Convert datetime objects to string format if needed
+        if isinstance(start_date, datetime):
+            start_date = start_date.strftime('%Y-%m-%d')
+        if isinstance(end_date, datetime):
+            end_date = end_date.strftime('%Y-%m-%d')
+            
         prices = self.get_index_prices(index_id, start_date, end_date)
         prices = prices.set_index('date')
         returns = prices['close'].pct_change().dropna()
         return returns
+    
+    def get_stock_prices(self, symbol: str, start_date: Union[str, datetime], end_date: Union[str, datetime]) -> pd.DataFrame:
+        """
+        获取个股价格数据
+        
+        Args:
+            symbol: 股票代码（如'600036.SS'招商银行）
+            start_date: 开始日期 'YYYY-MM-DD' 或 datetime 对象
+            end_date: 结束日期 'YYYY-MM-DD' 或 datetime 对象
+        
+        Returns:
+            DataFrame with columns: ['date', 'close', 'volume']
+            
+        Raises:
+            ValueError: 日期格式错误或数据不可用（fallback禁用时）
+        """
+        # Convert datetime objects to string format if needed
+        if isinstance(start_date, datetime):
+            start_date = start_date.strftime('%Y-%m-%d')
+        if isinstance(end_date, datetime):
+            end_date = end_date.strftime('%Y-%m-%d')
+            
+        try:
+            logger.info(f"Fetching stock data for {symbol} from {start_date} to {end_date}")
+            
+            # 1. 调用yfinance API
+            if self.yf is None:
+                raise RuntimeError("yfinance not available")
+            
+            data = self.yf.download(symbol, start=start_date, end=end_date, progress=False)
+            
+            # 2. 数据质量验证
+            if data.empty:
+                raise ValueError(f"No data returned for {symbol}")
+            
+            # 3. 标准化格式
+            standardized_data = self._standardize_format(data)
+            
+            logger.info(f"Successfully fetched {len(standardized_data)} rows for {symbol}")
+            return standardized_data
+            
+        except Exception as e:
+            logger.warning(f"Yahoo Finance failed for {symbol}: {e}")
+            
+            if self.fallback:
+                logger.info(f"Falling back to Mock data for {symbol}")
+                from core_bak_refactored.core.data._fragments.historical_data_provider import MockHistoricalDataProvider
+                mock_provider = MockHistoricalDataProvider()
+                return mock_provider.get_index_prices(symbol, start_date, end_date)
+            else:
+                raise ValueError(f"Failed to fetch data for {symbol}: {e}")
+    
+    def get_volatility_index(self, index_id: str, start_date: Union[str, datetime], end_date: Union[str, datetime]) -> pd.Series:
+        """
+        获取波动率指数（如VIX）
+        
+        Args:
+            index_id: 指数代码
+            start_date: 开始日期 'YYYY-MM-DD' 或 datetime 对象
+            end_date: 结束日期 'YYYY-MM-DD' 或 datetime 对象
+        
+        Returns:
+            Series with date index and volatility values
+        """
+        # Convert datetime objects to string format if needed
+        if isinstance(start_date, datetime):
+            start_date = start_date.strftime('%Y-%m-%d')
+        if isinstance(end_date, datetime):
+            end_date = end_date.strftime('%Y-%m-%d')
+            
+        # VIX指数在Yahoo Finance中的ticker
+        volatility_tickers = {
+            'VIX': '^VIX',      # CBOE波动率指数
+            'VXFXI': '^VXFXI',  # 中国波指
+        }
+        
+        ticker = volatility_tickers.get(index_id, index_id)
+        
+        try:
+            if self.yf is None:
+                raise RuntimeError("yfinance not available")
+            
+            data = self.yf.download(ticker, start=start_date, end=end_date, progress=False)
+            
+            if data.empty:
+                raise ValueError(f"No data returned for {ticker}")
+            
+            # 提取收盘价作为波动率数据
+            if 'Close' in data.columns:
+                volatility_data = data['Close']
+            elif 'close' in data.columns:
+                volatility_data = data['close']
+            else:
+                raise ValueError("No 'Close' column found in Yahoo Finance data")
+            
+            return volatility_data
+            
+        except Exception as e:
+            logger.warning(f"Failed to fetch volatility index {index_id}: {e}")
+            
+            if self.fallback:
+                logger.info(f"Falling back to Mock data for {index_id}")
+                from core_bak_refactored.core.data._fragments.historical_data_provider import MockHistoricalDataProvider
+                mock_provider = MockHistoricalDataProvider()
+                # 返回模拟的波动率数据
+                return mock_provider.get_index_returns(index_id, start_date, end_date)
+            else:
+                raise ValueError(f"Failed to fetch volatility data for {index_id}: {e}")
     
     def _map_index_to_yahoo(self, index_id: str) -> str:
         """
@@ -206,6 +339,125 @@ class YahooFinanceDataProvider:
             logger.warning(f"Removed {original_len - len(standardized)} rows with missing close prices")
         
         return standardized
+    
+    def validate_data_quality(self, data: pd.DataFrame) -> DataQualityReport:
+        """
+        数据质量验证报告
+        
+        Args:
+            data: 待验证的数据DataFrame
+            
+        Returns:
+            DataQualityReport: 数据质量报告
+        """
+        if data is None or data.empty:
+            return DataQualityReport(
+                completeness_score=0.0,
+                consistency_score=0.0,
+                accuracy_score=0.0,
+                outliers_detected=0,
+                total_rows=0,
+                missing_values=0
+            )
+        
+        total_rows = len(data)
+        
+        # 计算缺失值
+        missing_values = data.isnull().sum().sum()
+        
+        # 完整性评分 (基于缺失值比例)
+        completeness_score = 1.0 - (missing_values / (total_rows * len(data.columns))) if total_rows > 0 else 0.0
+        
+        # 一致性评分 (检查数据类型一致性)
+        consistency_score = self._calculate_consistency_score(data)
+        
+        # 准确性评分 (基于数据范围检查)
+        accuracy_score = self._calculate_accuracy_score(data)
+        
+        # 异常值检测
+        outliers_detected = self._detect_outliers(data)
+        
+        return DataQualityReport(
+            completeness_score=completeness_score,
+            consistency_score=consistency_score,
+            accuracy_score=accuracy_score,
+            outliers_detected=outliers_detected,
+            total_rows=total_rows,
+            missing_values=missing_values
+        )
+    
+    def _calculate_consistency_score(self, data: pd.DataFrame) -> float:
+        """计算数据一致性评分"""
+        if data.empty:
+            return 0.0
+            
+        # 检查数值列的数据类型一致性
+        numeric_columns = data.select_dtypes(include=[np.number]).columns
+        if len(numeric_columns) == 0:
+            return 0.5  # 如果没有数值列，给中等分数
+            
+        # 检查是否有混合类型的数据
+        consistency_issues = 0
+        for col in numeric_columns:
+            if data[col].dtype == 'object':
+                # 尝试转换为数值
+                try:
+                    pd.to_numeric(data[col], errors='raise')
+                except (ValueError, TypeError):
+                    consistency_issues += 1
+        
+        # 计算一致性评分
+        consistency_score = 1.0 - (consistency_issues / len(numeric_columns)) if len(numeric_columns) > 0 else 1.0
+        return max(0.0, consistency_score)  # 确保不为负数
+    
+    def _calculate_accuracy_score(self, data: pd.DataFrame) -> float:
+        """计算数据准确性评分"""
+        if data.empty:
+            return 0.0
+            
+        accuracy_score = 1.0
+        
+        # 检查价格数据是否合理
+        if 'close' in data.columns:
+            close_prices = data['close']
+            # 检查是否有负价格
+            negative_prices = (close_prices < 0).sum()
+            if negative_prices > 0:
+                accuracy_score -= 0.2 * (negative_prices / len(close_prices))
+            
+            # 检查是否有异常大的价格
+            if len(close_prices) > 0:
+                mean_price = close_prices.mean()
+                if mean_price > 0:
+                    # 检查超过均值10倍的价格
+                    extreme_prices = (close_prices > mean_price * 10).sum()
+                    if extreme_prices > 0:
+                        accuracy_score -= 0.1 * (extreme_prices / len(close_prices))
+        
+        # 确保评分在0-1范围内
+        return max(0.0, min(1.0, accuracy_score))
+    
+    def _detect_outliers(self, data: pd.DataFrame) -> int:
+        """检测异常值数量"""
+        if data.empty:
+            return 0
+            
+        outliers = 0
+        
+        # 对数值列进行异常值检测
+        numeric_columns = data.select_dtypes(include=[np.number]).columns
+        for col in numeric_columns:
+            series = data[col]
+            # 使用IQR方法检测异常值
+            Q1 = series.quantile(0.25)
+            Q3 = series.quantile(0.75)
+            IQR = Q3 - Q1
+            lower_bound = Q1 - 1.5 * IQR
+            upper_bound = Q3 + 1.5 * IQR
+            col_outliers = ((series < lower_bound) | (series > upper_bound)).sum()
+            outliers += col_outliers
+            
+        return outliers
     
     def test_connection(self, sample_index: str = '000300.SH') -> bool:
         """

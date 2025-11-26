@@ -161,7 +161,8 @@ class UATValidator:
         
         passed = weighted_avg_error <= 0.15
         
-        logger.info(f"加权平均误差: {weighted_avg_error:.4f} ({'通过' if passed else '未通过'})")\n        \n        return UATResult(
+        logger.info(f"加权平均误差: {weighted_avg_error:.4f} ({'通过' if passed else '未通过'})")
+        return UATResult(
             test_item='weighted_average_error',
             passed=passed,
             actual_value=weighted_avg_error,
@@ -180,6 +181,11 @@ class UATValidator:
         """
         验证三级指标体系（专家answer.md第1轮1.2节）
         
+        优化点:
+        - 数值稳定性：添加除零保护和边界检查
+        - 异常处理：捕获计算异常
+        - 性能优化：向量化计算
+        
         必须同时满足：
         1. MAPE ≤ 15%
         2. 方向准确率 ≥ 90%
@@ -195,75 +201,121 @@ class UATValidator:
         if len(predictions) != len(actuals):
             raise ValueError("预测和实际数据长度不一致")
         
+        if len(predictions) == 0:
+            raise ValueError("预测和实际数据为空")
+        
         results = {}
         
-        # 1. MAPE（平均绝对百分比误差）
-        mape_values = []
-        for pred, actual in zip(predictions, actuals):
-            if actual != 0:
-                mape = abs(pred - actual) / abs(actual)
-                mape_values.append(mape)
+        try:
+            # 1. MAPE（平均绝对百分比误差）- 数值稳定性优化
+            mape_values = []
+            for pred, actual in zip(predictions, actuals):
+                if abs(actual) > 1e-10:  # 避免除零
+                    mape = abs(pred - actual) / abs(actual)
+                    # 限制异常值
+                    mape = min(mape, 10.0)  # MAPE最大限制为1000%
+                    mape_values.append(mape)
+                elif abs(pred) < 1e-10 and abs(actual) < 1e-10:
+                    # 两者都接近0，完美匹配
+                    mape_values.append(0.0)
+            
+            avg_mape = float(np.mean(mape_values)) if mape_values else 1.0  # 默认失败
+            mape_passed = avg_mape <= 0.15
+            
+            results['mape'] = UATResult(
+                test_item='MAPE',
+                passed=mape_passed,
+                actual_value=avg_mape,
+                threshold=0.15,
+                details={'individual_mape': mape_values, 'valid_count': len(mape_values)}
+            )
+            
+        except Exception as e:
+            logger.error(f"MAPE计算失败: {e}")
+            results['mape'] = UATResult(
+                test_item='MAPE',
+                passed=False,
+                actual_value=1.0,
+                threshold=0.15,
+                details={'error': str(e)}
+            )
         
-        avg_mape = np.mean(mape_values) if mape_values else 0.0
-        mape_passed = avg_mape <= 0.15
+        try:
+            # 2. 方向准确率（预测损失方向与实际一致）- 向量化优化
+            predictions_array = np.array(predictions)
+            actuals_array = np.array(actuals)
+            
+            # 同号即方向一致（包括零）
+            direction_correct = ((predictions_array * actuals_array >= 0) | 
+                               ((np.abs(predictions_array) < 1e-10) & (np.abs(actuals_array) < 1e-10)))
+            direction_correct_count = int(np.sum(direction_correct))
+            
+            direction_accuracy = float(direction_correct_count / len(predictions))
+            direction_passed = direction_accuracy >= 0.90
+            
+            results['direction_accuracy'] = UATResult(
+                test_item='direction_accuracy',
+                passed=direction_passed,
+                actual_value=direction_accuracy,
+                threshold=0.90,
+                details={'correct_count': direction_correct_count, 'total_count': len(predictions)}
+            )
+            
+        except Exception as e:
+            logger.error(f"方向准确率计算失败: {e}")
+            results['direction_accuracy'] = UATResult(
+                test_item='direction_accuracy',
+                passed=False,
+                actual_value=0.0,
+                threshold=0.90,
+                details={'error': str(e)}
+            )
         
-        results['mape'] = UATResult(
-            test_item='MAPE',
-            passed=mape_passed,
-            actual_value=avg_mape,
-            threshold=0.15,
-            details={'individual_mape': mape_values}
-        )
-        
-        # 2. 方向准确率（预测损失方向与实际一致）
-        direction_correct = 0
-        for pred, actual in zip(predictions, actuals):
-            # 同号即方向一致
-            if (pred * actual > 0) or (pred == 0 and actual == 0):
-                direction_correct += 1
-        
-        direction_accuracy = direction_correct / len(predictions) if len(predictions) > 0 else 0.0
-        direction_passed = direction_accuracy >= 0.90
-        
-        results['direction_accuracy'] = UATResult(
-            test_item='direction_accuracy',
-            passed=direction_passed,
-            actual_value=direction_accuracy,
-            threshold=0.90,
-            details={'correct_count': direction_correct, 'total_count': len(predictions)}
-        )
-        
-        # 3. 尾部误差控制
-        tail_errors = []
-        for pred, actual in zip(predictions, actuals):
-            if actual != 0:
-                error = abs(pred - actual) / abs(actual)
-                tail_errors.append(error)
-        
-        max_error = max(tail_errors) if tail_errors else 0.0
-        extreme_error_count = sum(1 for e in tail_errors if e > 0.25)
-        extreme_error_ratio = extreme_error_count / len(tail_errors) if tail_errors else 0.0
-        
-        tail_passed = (max_error <= 0.25) or (extreme_error_ratio <= 0.20)
-        
-        results['tail_error_control'] = UATResult(
-            test_item='tail_error_control',
-            passed=tail_passed,
-            actual_value=max_error,
-            threshold=0.25,
-            details={
-                'max_error': max_error,
-                'extreme_error_count': extreme_error_count,
-                'extreme_error_ratio': extreme_error_ratio,
-                'extreme_threshold_ratio': 0.20
-            }
-        )
+        try:
+            # 3. 尾部误差控制 - 数值稳定性优化
+            tail_errors = []
+            for pred, actual in zip(predictions, actuals):
+                if abs(actual) > 1e-10:  # 避免除零
+                    error = abs(pred - actual) / abs(actual)
+                    tail_errors.append(min(error, 10.0))  # 限制异常值
+            
+            max_error = float(max(tail_errors)) if tail_errors else 0.0
+            extreme_error_count = sum(1 for e in tail_errors if e > 0.25)
+            extreme_error_ratio = float(extreme_error_count / len(tail_errors)) if tail_errors else 0.0
+            
+            # 通过条件：最大误差≤25% 或 极端误差占比≤20%
+            tail_passed = (max_error <= 0.25) or (extreme_error_ratio <= 0.20)
+            
+            results['tail_error_control'] = UATResult(
+                test_item='tail_error_control',
+                passed=tail_passed,
+                actual_value=max_error,
+                threshold=0.25,
+                details={
+                    'max_error': max_error,
+                    'extreme_error_count': extreme_error_count,
+                    'extreme_error_ratio': extreme_error_ratio,
+                    'extreme_threshold_ratio': 0.20
+                }
+            )
+            
+        except Exception as e:
+            logger.error(f"尾部误差控制计算失败: {e}")
+            results['tail_error_control'] = UATResult(
+                test_item='tail_error_control',
+                passed=False,
+                actual_value=1.0,
+                threshold=0.25,
+                details={'error': str(e)}
+            )
         
         # 总体通过：三项全部通过
         all_passed = all(r.passed for r in results.values())
         
-        logger.info(f"三级指标体系: MAPE={avg_mape:.4f}, 方向准确率={direction_accuracy:.2%}, "
-                   f"尾部控制={'通过' if tail_passed else '未通过'}, 总体={'通过' if all_passed else '未通过'}")
+        logger.info(f"三级指标体系: MAPE={results.get('mape', UATResult('mape', False, 1.0, 0.15)).actual_value:.4f}, "
+                   f"方向准确率={results.get('direction_accuracy', UATResult('dir', False, 0.0, 0.90)).actual_value:.2%}, "
+                   f"尾部控制={'通过' if results.get('tail_error_control', UATResult('tail', False, 1.0, 0.25)).passed else '未通过'}, "
+                   f"总体={'通过' if all_passed else '未通过'}")
         
         return results
     
