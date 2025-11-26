@@ -756,16 +756,37 @@ class ProductionMonitor:
                            system_availability: Optional[float] = None,
                            api_response_time: Optional[float] = None) -> Dict[str, Any]:
         """
-        系统健康度检查（专家第2轮5.4节问题13）
+        系统健康检查（职责简化：仅检查判断，告警委托给AlertManager）
+        
+        职责调整：
+        - UAT职责：验证指标是否超阈值，生成检查报告
+        - AlertManager职责：根据严重级别发送告警，处理升级路径
+        
+        使用示例：
+            # UAT检查
+            health_report = validator.check_system_health(
+                data_quality=0.85,
+                prediction_error=0.22
+            )
+            
+            # 告警发送（由调用方委托给AlertManager）
+            if health_report['status'] != 'HEALTHY':
+                for alert in health_report['alerts']:
+                    alert_manager.send_alert(
+                        severity=AlertSeverity.WARNING if alert['level'] == 'WARNING' else AlertSeverity.CRITICAL,
+                        title=f"{alert['metric_name']}告警",
+                        message=alert['message'],
+                        metadata={'metric': alert['metric_name'], 'value': alert['actual_value']}
+                    )
         
         Args:
-            data_quality: 数据质量评分（0-1）
-            prediction_error: 预测误差（0-1）
-            system_availability: 系统可用性（0-1）
-            api_response_time: API响应时间（秒）
+            data_quality: 数据质量得分 (0-1)
+            prediction_error: 预测误差
+            system_availability: 系统可用性 (0-1)
+            api_response_time: API响应时间 (秒)
         
         Returns:
-            健康度报告
+            健康检查报告（仅包含检查结果，不包含告警发送）
         """
         alerts = []
         status_details = {}
@@ -822,11 +843,7 @@ class ProductionMonitor:
                 'status': 'OK' if api_response_time <= self.MONITOR_THRESHOLDS['api_response_time']['warning'] else 'WARNING'
             }
         
-        # 触发告警升级
-        for alert in alerts:
-            self._escalate_alert(alert)
-        
-        # 记录告警
+        # 记录告警（仅记录，不发送）
         self._alert_log.extend(alerts)
         
         # 更新当前指标
@@ -868,50 +885,9 @@ class ProductionMonitor:
             'message': f"{metric_name}{level}告警: 当前值={actual_value:.4f}, 阈值={threshold:.4f}"
         }
     
-    def _escalate_alert(self, alert: Dict[str, Any],
-                       escalation_path: Optional[List[str]] = None,
-                       timeout_minutes: int = 30) -> bool:
-        """
-        告警升级处理（专家第2轮5.4节问题13：企业微信→短信→电话）
-        
-        Args:
-            alert: 告警字典
-            escalation_path: 升级路径（默认使用配置路径）
-            timeout_minutes: 每个渠道等待时间（分钟）
-        
-        Returns:
-            是否成功发送
-        """
-        if escalation_path is None:
-            escalation_path = self._alert_channels
-        
-        for channel in escalation_path:
-            success = self._send_alert(channel, alert)
-            if success:
-                logger.info(f"告警已通过{channel}渠道发送: {alert['message']}")
-                return True
-            else:
-                logger.warning(f"{channel}渠道发送失败，尝试下一渠道...")
-                # 实际生产中应等待timeout_minutes，这里简化处理
-        
-        logger.error(f"所有告警渠道发送失败: {alert['message']}")
-        return False
-    
-    def _send_alert(self, channel: str, alert: Dict[str, Any]) -> bool:
-        """
-        发送告警（模拟实现，实际需集成企业微信/短信/电话API）
-        
-        Args:
-            channel: 渠道（wechat/sms/phone）
-            alert: 告警字典
-        
-        Returns:
-            是否成功
-        """
-        # TODO: 集成实际告警渠道（企业微信API、短信API、电话API）
-        logger.info(f"[{channel}告警] {alert['message']}")
-        return True  # 模拟成功
-    
+    # _escalate_alert和_send_alert方法已废弃，告警功能委托给core.monitoring.AlertManager
+    # 调用方应使用AlertManager发送告警
+
     def get_current_metrics(self) -> Dict[str, Any]:
         """
         获取当前指标

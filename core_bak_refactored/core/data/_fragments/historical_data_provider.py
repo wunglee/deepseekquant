@@ -798,21 +798,31 @@ class RealHistoricalDataProvider:
                 'reason': 'insufficient_sources'
             }
         
-        # 比较所有数据源对
-        comparisons = []
+        # 委托DataQualityChecker进行交叉验证
+        quality_checker = DataQualityChecker()
         source_list = list(data_by_source.keys())
+        comparisons = []
         
         for i in range(len(source_list)):
             for j in range(i + 1, len(source_list)):
                 source_a = source_list[i]
                 source_b = source_list[j]
-                comparison = self._compare_two_sources(
+                result = quality_checker.cross_validate(
                     data_by_source[source_a],
                     data_by_source[source_b],
                     source_a,
                     source_b
                 )
-                comparisons.append(comparison)
+                # 转换为兼容格式
+                comparisons.append({
+                    'source_a': result.source_a,
+                    'source_b': result.source_b,
+                    'passed': result.passed,
+                    'overlap_days': result.overlap_days,
+                    'daily_divergence': result.daily_divergence,
+                    'mean_divergence': result.mean_divergence,
+                    'std_divergence': result.std_divergence
+                })
         
         # 汇总验证结果
         all_passed = all(c['passed'] for c in comparisons)
@@ -838,78 +848,7 @@ class RealHistoricalDataProvider:
         
         return report
     
-    def _compare_two_sources(self,
-                            data_a: pd.DataFrame,
-                            data_b: pd.DataFrame,
-                            source_a: str,
-                            source_b: str) -> Dict[str, Any]:
-        """
-        比较两个数据源（专家第3轮5.1节双维度验证）
-        
-        Returns:
-            比较报告
-        """
-        # 合并数据按日期
-        merged = pd.merge(
-            data_a[['date', 'close']],
-            data_b[['date', 'close']],
-            on='date',
-            how='inner',
-            suffixes=('_a', '_b')
-        )
-        
-        if len(merged) < 2:
-            return {
-                'source_a': source_a,
-                'source_b': source_b,
-                'passed': True,  # 无法比较时默认通过
-                'reason': 'insufficient_overlap',
-                'overlap_days': len(merged)
-            }
-        
-        # 1. 逐日差异检查：30%触发
-        daily_diff = abs(merged['close_a'] - merged['close_b']) / merged['close_a']
-        daily_divergence_count = (daily_diff > 0.30).sum()
-        daily_divergence_ratio = daily_divergence_count / len(merged)
-        
-        # 2. 窗口统计量检查
-        mean_a = merged['close_a'].mean()
-        mean_b = merged['close_b'].mean()
-        mean_diff_pct = abs(mean_a - mean_b) / mean_a if mean_a > 0 else 0
-        
-        std_a = merged['close_a'].std()
-        std_b = merged['close_b'].std()
-        std_diff_pct = abs(std_a - std_b) / std_a if std_a > 0 else 0
-        
-        # 判断是否通过
-        daily_passed = daily_divergence_ratio <= 0.10  # 允许10%日期超到30%差异
-        mean_passed = mean_diff_pct <= 0.03  # 均值差异≤3%
-        std_passed = std_diff_pct <= 0.10  # 标准差差异≤10%
-        
-        passed = daily_passed and (mean_passed or std_passed)  # OR逻辑
-        
-        return {
-            'source_a': source_a,
-            'source_b': source_b,
-            'passed': passed,
-            'overlap_days': len(merged),
-            'daily_divergence': {
-                'count': int(daily_divergence_count),
-                'ratio': float(daily_divergence_ratio),
-                'threshold': 0.30,
-                'passed': daily_passed
-            },
-            'mean_divergence': {
-                'diff_pct': float(mean_diff_pct),
-                'threshold': 0.03,
-                'passed': mean_passed
-            },
-            'std_divergence': {
-                'diff_pct': float(std_diff_pct),
-                'threshold': 0.10,
-                'passed': std_passed
-            }
-        }
+    # _compare_two_sources方法已废弃，交叉验证逻辑委托给DataQualityChecker
     
     def get_cross_validation_log(self) -> List[Dict[str, Any]]:
         """获取交叉验证历史记录"""
