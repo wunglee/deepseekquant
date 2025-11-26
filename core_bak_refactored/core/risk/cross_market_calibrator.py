@@ -116,9 +116,6 @@ class CrossMarketCalibrator:
         )
     }
     
-    # 汇率缓存（日均中间价）
-    _exchange_rate_cache: Dict[Tuple[str, str], float] = {}
-    
     def __init__(self, base_currency: str = 'USD'):
         """
         初始化跨市场校准器
@@ -128,6 +125,8 @@ class CrossMarketCalibrator:
         """
         self.base_currency = base_currency
         self._consistency_history = {}  # 一致性验证历史记录
+        # 修复：使用实例变量而非类变量，避免跨实例污染
+        self._exchange_rate_cache: Dict[Tuple[str, str], float] = {}
     
     def normalize_to_usd(self, 
                          value: float, 

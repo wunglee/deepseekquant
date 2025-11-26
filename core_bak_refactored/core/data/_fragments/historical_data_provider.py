@@ -18,9 +18,12 @@
 
 import numpy as np
 import pandas as pd
-from typing import Protocol, Dict, Any
+from typing import Protocol, Dict, Any, Optional, List
 from datetime import datetime
 import logging
+
+# 重构：引入独立的数据质量检查器
+from core_bak_refactored.core.data._fragments.data_quality_checker import DataQualityChecker, DataQualityReport
 
 logger = logging.getLogger('DeepSeekQuant.DataFragments')
 
@@ -238,53 +241,25 @@ class MockHistoricalDataProvider:
         return series
     
     def validate_data_quality(self, data) -> Dict[str, Any]:
-        """数据质量验证报告（模拟实现）"""
-        if data is None or data.empty:
-            return {
-                'completeness_score': 0.0,
-                'consistency_score': 0.0,
-                'accuracy_score': 0.0,
-                'outliers_detected': 0,
-                'total_rows': 0,
-                'missing_values': 0
-            }
+        """
+        数据质量验证报告（重构：使用DataQualityChecker）
         
-        total_rows = len(data)
-        missing_values = data.isnull().sum().sum()
-        completeness_score = 1.0 - (missing_values / (total_rows * len(data.columns))) if total_rows > 0 else 0.0
+        Returns:
+            质量报告字典，与RealHistoricalDataProvider保持一致
+        """
+        # 调用统一的质量检查器
+        report = DataQualityChecker.check_quality(data, source='mock')
         
-        # 简单的一致性检查
-        consistency_score = 1.0
-        if 'close' in data.columns:
-            # 检查是否有负价格
-            negative_prices = (data['close'] < 0).sum()
-            if negative_prices > 0:
-                consistency_score -= 0.2 * (negative_prices / len(data))
-        
-        # 简单的准确性检查
-        accuracy_score = 1.0
-        if 'close' in data.columns and len(data['close']) > 0:
-            mean_price = data['close'].mean()
-            if mean_price <= 0:
-                accuracy_score = 0.0
-        
-        # 简单的异常值检测
-        outliers_detected = 0
-        if 'close' in data.columns:
-            Q1 = data['close'].quantile(0.25)
-            Q3 = data['close'].quantile(0.75)
-            IQR = Q3 - Q1
-            lower_bound = Q1 - 1.5 * IQR
-            upper_bound = Q3 + 1.5 * IQR
-            outliers_detected = ((data['close'] < lower_bound) | (data['close'] > upper_bound)).sum()
-        
+        # 转换为兼容格式
         return {
-            'completeness_score': completeness_score,
-            'consistency_score': consistency_score,
-            'accuracy_score': accuracy_score,
-            'outliers_detected': int(outliers_detected),
-            'total_rows': int(total_rows),
-            'missing_values': int(missing_values)
+            'completeness_score': report.completeness_score,
+            'consistency_score': report.consistency_score,
+            'continuity_score': report.continuity_score,
+            'reasonableness_score': report.reasonableness_score,
+            'overall_score': report.overall_score,
+            'passed': report.passed,
+            'total_rows': report.details.get('total_rows', 0),
+            'details': report.details
         }
 
 # =============================================================================
@@ -522,100 +497,30 @@ class RealHistoricalDataProvider:
     
     def _validate_data_quality(self, data: pd.DataFrame, source: str) -> float:
         """
-        数据质量验证（专家answer.md第1轮5.1节：数据质量评分≥90%）
+        数据质量验证（重构：使用独立的DataQualityChecker）
         
         优化点:
-        - 数值稳定性：添加除零保护
-        - 性能优化：缓存键使用哈希避免长字符串
-        - 异常处理：捕获计算异常并降级
+        - 职责分离：质量检查逻辑提取到DataQualityChecker
+        - 代码复用：消除与MockHistoricalDataProvider的重复代码
+        - 可测试性：质量检查器可独立测试
         
         Returns:
             质量评分 (0-1)，≥0.6为及格
         """
-        if data is None or data.empty:
-            return 0.0
-        
-        # 优化：使用数据指纹代替简单长度
+        # 使用数据指纹作为缓存键
         data_fingerprint = hash((source, len(data), tuple(data.columns)))
         cache_key = f"quality:{data_fingerprint}"
+        
         if cache_key in self._quality_cache:
             return self._quality_cache[cache_key]
         
-        try:
-            score = 0.0
-            total_cells = len(data) * len(data.columns)
-            
-            # 1. 完整性检查（30%权重）- 数值稳定性优化
-            if total_cells > 0:
-                missing_count = data.isnull().sum().sum()
-                completeness = 1.0 - (missing_count / total_cells)
-                score += completeness * 0.3
-            else:
-                score += 0.0  # 空数据框
-            
-            # 2. 一致性检查（30%权重）- 添加边界保护
-            consistency = 1.0
-            if 'close' in data.columns and len(data) > 0:
-                close_prices = data['close'].dropna()
-                if len(close_prices) > 0:
-                    # 无负价格
-                    negative_prices = (close_prices < 0).sum()
-                    if negative_prices > 0:
-                        consistency -= min(0.5, 0.5 * (negative_prices / len(close_prices)))
-                    
-                    # 无异常大价格（超过均值10倍）- 添加除零保护
-                    mean_price = close_prices.mean()
-                    if mean_price > 0:
-                        extreme_prices = (close_prices > mean_price * 10).sum()
-                        if extreme_prices > 0:
-                            consistency -= min(0.3, 0.3 * (extreme_prices / len(close_prices)))
-            score += max(0.0, consistency) * 0.3
-            
-            # 3. 连续性检查（20%权重）- 异常处理优化
-            if 'date' in data.columns and len(data) > 1:
-                try:
-                    date_series = pd.to_datetime(data['date'])
-                    date_diffs = date_series.diff().dt.days
-                    # 过滤NaT和负值
-                    valid_diffs = date_diffs[date_diffs.notna() & (date_diffs > 0)]
-                    if len(valid_diffs) > 0:
-                        long_gaps = (valid_diffs > 10).sum()
-                        continuity = 1.0 - (long_gaps / len(valid_diffs))
-                        score += continuity * 0.2
-                    else:
-                        score += 0.1
-                except Exception as e:
-                    logger.warning(f"连续性检查失败: {e}")
-                    score += 0.1
-            else:
-                score += 0.1  # 无法验证，给部分分
-            
-            # 4. 合理性检查（20%权重）- 数值稳定性优化
-            reasonableness = 1.0
-            if 'close' in data.columns and len(data) > 1:
-                try:
-                    close_prices = data['close'].dropna()
-                    if len(close_prices) > 1:
-                        returns = close_prices.pct_change().dropna()
-                        if len(returns) > 0:
-                            # 日收益率应在-50%到+50%之间（极端但合理）
-                            unreasonable = ((returns < -0.5) | (returns > 0.5)).sum()
-                            if unreasonable > 0:
-                                penalty = min(0.2, 0.2 * (unreasonable / len(returns)))
-                                reasonableness -= penalty
-                except Exception as e:
-                    logger.warning(f"合理性检查失败: {e}")
-                    reasonableness = 0.8  # 降级评分
-            score += max(0.0, reasonableness) * 0.2
-            
-            # 确保评分在[0, 1]范围内
-            final_score = max(0.0, min(1.0, score))
-            self._quality_cache[cache_key] = final_score
-            return final_score
-            
-        except Exception as e:
-            logger.error(f"数据质量验证失败: {e}")
-            return 0.0  # 异常降级
+        # 调用独立的质量检查器
+        report = DataQualityChecker.check_quality(data, source, cache_key)
+        
+        # 缓存结果
+        self._quality_cache[cache_key] = report.overall_score
+        
+        return report.overall_score
     
     def get_index_returns(self, index_id: str, start_date: str, end_date: str) -> pd.Series:
         """获取指数收益率序列（排除异常日）"""
