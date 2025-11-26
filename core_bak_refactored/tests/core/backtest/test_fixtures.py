@@ -3,40 +3,32 @@
 
 职责：
 1. 提供标准化的测试事件配置
-2. 封装通用的数据生成逻辑
-3. 提供可复用的断言辅助方法
+2. 封装对业务模块的调用（委托模式）
+3. 向后兼容的便利性包装
 
 设计原则：
-- 单一职责：每个类只负责一类测试数据或工具
-- 可复用性：所有测试用例共享同一套配置
-- 可维护性：配置集中管理，易于调整
+- 单一职责：仅负责测试编排，不实现业务逻辑
+- 委托模式：所有业务逻辑调用业务模块接口
+- 向后兼容：保持原有API不变，内部委托给业务模块
 
 架构说明（重要）：
-本文件为测试辅助工具，部分功能是对业务模块能力的封装：
-- IndustrySampleGenerator: 调用 core.risk.IndustryParameterAnalyzer.generate_test_samples()
-- DataProcessingHelper: 封装 core.data 的数据处理能力（未来可迁移）
-- TestAssertionHelper: 纯测试断言逻辑，职责合理
+本文件为测试辅助工具，所有功能均委托给业务模块：
+- IndustrySampleGenerator: 委托 core.risk.IndustryParameterAnalyzer
+- DataProcessingHelper: 委托 core.data.DataUtils
+- TestAssertionHelper: 委托 tests.common.TestAssertions
 
-未来优化方向：
-当业务模块提供完整的辅助方法后，本文件应仅保留测试编排逻辑，
-删除业务逻辑的重复实现，改为直接调用业务模块接口。
+职责归位完成：
+✅ 业务逻辑已迁移到业务模块
+✅ 测试模块仅保留便利性包装
+✅ 符合ARCHITECTURE.md的模块边界
 """
 
 import numpy as np
 import pandas as pd
 from typing import Dict, List, Tuple
-from dataclasses import dataclass
 
-
-@dataclass
-class EventConfig:
-    """历史事件配置数据类"""
-    event_id: str
-    index_id: str
-    event_date: str
-    event_type: str
-    expected_decline: float
-    market_id: str
+# 从业务模块导入EventConfig（职责归位）
+from core_bak_refactored.core.data._fragments.data_utils import EventConfig
 
 
 class TestEventProvider:
@@ -133,24 +125,20 @@ class IndustrySampleGenerator:
 
 class DataProcessingHelper:
     """
-    数据处理辅助工具
+    数据处理辅助工具（委托给业务模块）
     
-    职责：提供通用的数据处理方法，消除重复代码
+    职责：提供向后兼容的API，委托给 core.data.DataUtils
     
     架构说明：
-    - 本类封装了data模块的数据处理能力
-    - 理想情况应直接调用 core.data 提供的工具方法
-    - 当前作为过渡方案，避免测试代码重复
-    
-    未来优化：
-    - 将这些方法迁移到 core.data._fragments.data_utils 模块
-    - 测试直接调用业务模块接口
+    - 业务逻辑已迁移到 core.data._fragments.data_utils.DataUtils
+    - 本类仅作为便利性包装层，保持向后兼容
+    - 所有方法直接委托给业务模块
     """
     
     @staticmethod
     def calculate_actual_return(event_window_df: pd.DataFrame) -> float:
         """
-        计算事件窗口实际收益率
+        计算事件窗口实际收益率（委托给DataUtils）
         
         Args:
             event_window_df: 事件窗口数据
@@ -158,17 +146,15 @@ class DataProcessingHelper:
         Returns:
             实际收益率（如果数据不足返回0.0）
         """
-        if len(event_window_df) >= 2:
-            return (event_window_df['close'].iloc[-1] / 
-                   event_window_df['close'].iloc[0] - 1)
-        return 0.0
+        from core_bak_refactored.core.data._fragments.data_utils import DataUtils
+        return DataUtils.calculate_actual_return(event_window_df)
     
     @staticmethod
     def safe_get_event_data(data_provider, event: EventConfig, 
                           window_days: int = 30, 
                           baseline_days: int = 252) -> Tuple[pd.DataFrame, bool]:
         """
-        安全获取事件数据（带异常处理）
+        安全获取事件数据（委托给DataUtils）
         
         Args:
             data_provider: 数据提供者
@@ -179,21 +165,13 @@ class DataProcessingHelper:
         Returns:
             (事件窗口数据, 是否成功)
         """
-        try:
-            window_data = data_provider.get_event_window_data(
-                index_id=event.index_id,
-                event_date=event.event_date,
-                window_days=window_days,
-                baseline_days=baseline_days
-            )
-            return window_data['event_window'], True
-        except Exception:
-            return pd.DataFrame(), False
+        from core_bak_refactored.core.data._fragments.data_utils import DataUtils
+        return DataUtils.safe_get_event_data(data_provider, event, window_days, baseline_days)
     
     @staticmethod
     def calculate_prediction_error(actual_return: float, expected_decline: float) -> float:
         """
-        计算预测误差
+        计算预测误差（委托给DataUtils）
         
         Args:
             actual_return: 实际收益率
@@ -202,20 +180,26 @@ class DataProcessingHelper:
         Returns:
             预测误差（绝对值）
         """
-        return abs(actual_return - expected_decline)
+        from core_bak_refactored.core.data._fragments.data_utils import DataUtils
+        return DataUtils.calculate_prediction_error(actual_return, expected_decline)
 
 
 class TestAssertionHelper:
     """
-    测试断言辅助工具
+    测试断言辅助工具（委托给通用测试工具）
     
-    职责：提供标准化的断言方法，增强错误信息可读性
+    职责：提供向后兼容的API，委托给 tests.common.TestAssertions
+    
+    架构说明：
+    - 断言逻辑已迁移到 tests.common.test_assertions.TestAssertions
+    - 本类仅作为便利性包装层，保持向后兼容
+    - 所有方法直接委托给通用测试工具
     """
     
     @staticmethod
     def assert_quality_score(test_case, quality_report, threshold: float = 0.60, use_real_data: bool = False):
         """
-        断言数据质量评分
+        断言数据质量评分（委托给TestAssertions）
         
         Args:
             test_case: unittest.TestCase实例
@@ -223,17 +207,13 @@ class TestAssertionHelper:
             threshold: 阈值（默认60%）
             use_real_data: 是否使用真实数据（影响阈值）
         """
-        actual_threshold = 0.90 if use_real_data else threshold
-        test_case.assertGreaterEqual(
-            quality_report.overall_score,
-            actual_threshold,
-            f"数据质量评分过低: {quality_report.overall_score:.2%} < {actual_threshold:.0%}"
-        )
+        from core_bak_refactored.tests.common.test_assertions import TestAssertions
+        TestAssertions.assert_quality_score(test_case, quality_report, threshold, use_real_data)
     
     @staticmethod
     def assert_error_within_threshold(test_case, error: float, threshold: float, context: str = ""):
         """
-        断言误差在阈值内
+        断言误差在阈值内（委托给TestAssertions）
         
         Args:
             test_case: unittest.TestCase实例
@@ -241,8 +221,5 @@ class TestAssertionHelper:
             threshold: 阈值
             context: 上下文信息
         """
-        test_case.assertLessEqual(
-            error,
-            threshold,
-            f"{context}误差超限: {error:.2%} > {threshold:.0%}"
-        )
+        from core_bak_refactored.tests.common.test_assertions import TestAssertions
+        TestAssertions.assert_error_within_threshold(test_case, error, threshold, context)
