@@ -363,14 +363,15 @@ class RealHistoricalDataProvider:
         Args:
             primary_source: 主数据源 ('yahoo', 'joinquant', 'wind', 'mock')
             backup_sources: 备用数据源列表（默认None = ['mock']）
-            enable_cross_validation: 是否启用数据交叉验证（默认False）
+            enable_cross_validation: 是否启用数据交叉验证（默认False，专家第3轮5.1节）
         """
         self.primary_source = primary_source
-        self.backup_sources = backup_sources or ['mock']
+        self.backup_sources = backup_sources or [DataSource.MOCK.value]
         self.enable_cross_validation = enable_cross_validation
         self._mock = MockHistoricalDataProvider()
         self._cache = {}
         self._quality_cache = {}  # 数据质量缓存
+        self._cross_validation_log = []  # 交叉验证日志
         
         # 加载数据源适配器
         self._adapters = self._initialize_adapters()
@@ -741,6 +742,171 @@ class RealHistoricalDataProvider:
             returns = df['close'].pct_change().dropna()
         
         return returns
+    
+    def cross_validate_sources(self,
+                               index_id: str,
+                               start_date: str,
+                               end_date: str,
+                               sources: Optional[List[str]] = None) -> Dict[str, Any]:
+        """
+        数据质量交叉验证（专家answer.md第3轮5.1节）
+        
+        验证维度：
+        1. 逐日差异：30%触发
+        2. 窗口统计量：均值3%/标准差10%触发
+        
+        Args:
+            index_id: 指数代码
+            start_date: 开始日期
+            end_date: 结束日期
+            sources: 待验证数据源列表（默认使用primary + mock）
+        
+        Returns:
+            交叉验证报告
+        """
+        if sources is None:
+            # 默认对比primary数据源与mock
+            sources = [self.primary_source, DataSource.MOCK.value]
+        
+        # 获取多个数据源的数据
+        data_by_source = {}
+        for source in sources:
+            adapter = self._adapters.get(source)
+            if adapter is None:
+                logger.warning(f"交叉验证跳过未配置源: {source}")
+                continue
+            
+            try:
+                data = adapter.get_index_prices(index_id, start_date, end_date)
+                if data is not None and not data.empty:
+                    data_by_source[source] = data
+            except Exception as e:
+                logger.warning(f"交叉验证获取{source}失败: {e}")
+        
+        if len(data_by_source) < 2:
+            logger.warning(f"交叉验证数据源不足: {len(data_by_source)}/2")
+            return {
+                'passed': True,  # 无法验证时默认通过
+                'sources_compared': list(data_by_source.keys()),
+                'reason': 'insufficient_sources'
+            }
+        
+        # 比较所有数据源对
+        comparisons = []
+        source_list = list(data_by_source.keys())
+        
+        for i in range(len(source_list)):
+            for j in range(i + 1, len(source_list)):
+                source_a = source_list[i]
+                source_b = source_list[j]
+                comparison = self._compare_two_sources(
+                    data_by_source[source_a],
+                    data_by_source[source_b],
+                    source_a,
+                    source_b
+                )
+                comparisons.append(comparison)
+        
+        # 汇总验证结果
+        all_passed = all(c['passed'] for c in comparisons)
+        
+        report = {
+            'passed': all_passed,
+            'sources_compared': source_list,
+            'comparisons': comparisons,
+            'timestamp': pd.Timestamp.now().isoformat()
+        }
+        
+        # 记录验证日志
+        self._cross_validation_log.append({
+            'index_id': index_id,
+            'date_range': f"{start_date} to {end_date}",
+            'result': report
+        })
+        
+        if not all_passed:
+            logger.warning(f"交叉验证发现差异: {index_id}, {comparisons}")
+        else:
+            logger.info(f"交叉验证通过: {index_id}")
+        
+        return report
+    
+    def _compare_two_sources(self,
+                            data_a: pd.DataFrame,
+                            data_b: pd.DataFrame,
+                            source_a: str,
+                            source_b: str) -> Dict[str, Any]:
+        """
+        比较两个数据源（专家第3轮5.1节双维度验证）
+        
+        Returns:
+            比较报告
+        """
+        # 合并数据按日期
+        merged = pd.merge(
+            data_a[['date', 'close']],
+            data_b[['date', 'close']],
+            on='date',
+            how='inner',
+            suffixes=('_a', '_b')
+        )
+        
+        if len(merged) < 2:
+            return {
+                'source_a': source_a,
+                'source_b': source_b,
+                'passed': True,  # 无法比较时默认通过
+                'reason': 'insufficient_overlap',
+                'overlap_days': len(merged)
+            }
+        
+        # 1. 逐日差异检查：30%触发
+        daily_diff = abs(merged['close_a'] - merged['close_b']) / merged['close_a']
+        daily_divergence_count = (daily_diff > 0.30).sum()
+        daily_divergence_ratio = daily_divergence_count / len(merged)
+        
+        # 2. 窗口统计量检查
+        mean_a = merged['close_a'].mean()
+        mean_b = merged['close_b'].mean()
+        mean_diff_pct = abs(mean_a - mean_b) / mean_a if mean_a > 0 else 0
+        
+        std_a = merged['close_a'].std()
+        std_b = merged['close_b'].std()
+        std_diff_pct = abs(std_a - std_b) / std_a if std_a > 0 else 0
+        
+        # 判断是否通过
+        daily_passed = daily_divergence_ratio <= 0.10  # 允许10%日期超到30%差异
+        mean_passed = mean_diff_pct <= 0.03  # 均值差异≤3%
+        std_passed = std_diff_pct <= 0.10  # 标准差差异≤10%
+        
+        passed = daily_passed and (mean_passed or std_passed)  # OR逻辑
+        
+        return {
+            'source_a': source_a,
+            'source_b': source_b,
+            'passed': passed,
+            'overlap_days': len(merged),
+            'daily_divergence': {
+                'count': int(daily_divergence_count),
+                'ratio': float(daily_divergence_ratio),
+                'threshold': 0.30,
+                'passed': daily_passed
+            },
+            'mean_divergence': {
+                'diff_pct': float(mean_diff_pct),
+                'threshold': 0.03,
+                'passed': mean_passed
+            },
+            'std_divergence': {
+                'diff_pct': float(std_diff_pct),
+                'threshold': 0.10,
+                'passed': std_passed
+            }
+        }
+    
+    def get_cross_validation_log(self) -> List[Dict[str, Any]]:
+        """获取交叉验证历史记录"""
+        return self._cross_validation_log.copy()
 
 
 # =============================================================================

@@ -352,3 +352,139 @@ class TestAbnormalHandlingAlerts:
         critical_alerts = validator.get_alert_history(level=AlertLevel.LEVEL_3)
         assert len(critical_alerts) == 1
         assert critical_alerts[0].metadata['event_id'] == 'event3'
+
+
+class TestCrossValidation:
+    """数据质量交叉验证测试（专家answer.md第3轮5.1节）"""
+    
+    def test_cross_validate_mock_vs_mock(self):
+        """测试Mock数据交叉验证基础功能"""
+        provider = RealHistoricalDataProvider(
+            primary_source=DataSource.MOCK.value,
+            enable_cross_validation=True
+        )
+        
+        # 获取两份数据进行比较（Mock数据有随机性）
+        mock_provider = provider._adapters[DataSource.MOCK.value]
+        data_a = mock_provider.get_index_prices('000300.SH', '2015-06-01', '2015-06-15')
+        data_b = mock_provider.get_index_prices('000300.SH', '2015-06-01', '2015-06-15')
+        
+        # 直接调用比较方法
+        comparison = provider._compare_two_sources(data_a, data_b, 'mock_a', 'mock_b')
+        
+        # 验证比较结构完整性
+        assert 'passed' in comparison
+        assert 'overlap_days' in comparison
+        assert comparison['overlap_days'] > 0
+        assert 'daily_divergence' in comparison
+        assert 'mean_divergence' in comparison
+        assert 'std_divergence' in comparison
+    
+    def test_daily_divergence_threshold(self):
+        """测试逐日差异30%阈值"""
+        provider = RealHistoricalDataProvider()
+        
+        # 构造测试数据：价格差异超过30%
+        data_a = pd.DataFrame({
+            'date': pd.date_range('2015-06-01', periods=10),
+            'close': [100] * 10,
+            'volume': [1000000] * 10
+        })
+        
+        data_b = pd.DataFrame({
+            'date': pd.date_range('2015-06-01', periods=10),
+            'close': [140] * 10,  # 40%差异
+            'volume': [1000000] * 10
+        })
+        
+        comparison = provider._compare_two_sources(data_a, data_b, 'source_a', 'source_b')
+        
+        # 所有日期都有40%差异，应该触发
+        assert comparison['daily_divergence']['ratio'] == 1.0
+        assert not comparison['daily_divergence']['passed']
+    
+    def test_window_statistics_threshold(self):
+        """测试窗口统计量阈值（均值3%，标准差10%）"""
+        provider = RealHistoricalDataProvider()
+        
+        # 构造测试数据：均值差异>3%但<30%逐日差异
+        data_a = pd.DataFrame({
+            'date': pd.date_range('2015-06-01', periods=10),
+            'close': [100 + i for i in range(10)],  # 100-109
+            'volume': [1000000] * 10
+        })
+        
+        data_b = pd.DataFrame({
+            'date': pd.date_range('2015-06-01', periods=10),
+            'close': [105 + i for i in range(10)],  # 105-114 (均值差异~4.8%)
+            'volume': [1000000] * 10
+        })
+        
+        comparison = provider._compare_two_sources(data_a, data_b, 'source_a', 'source_b')
+        
+        # 均值差异应>3%
+        assert comparison['mean_divergence']['diff_pct'] > 0.03
+        assert not comparison['mean_divergence']['passed']
+    
+    def test_cross_validation_log_tracking(self):
+        """测试交叉验证历史记录"""
+        provider = RealHistoricalDataProvider(
+            primary_source=DataSource.MOCK.value,
+            enable_cross_validation=True
+        )
+        
+        # 执行多次验证（使用Mock避免Yahoo限流）
+        mock_adapter = provider._adapters[DataSource.MOCK.value]
+        data1 = mock_adapter.get_index_prices('000300.SH', '2015-06-01', '2015-06-10')
+        data2 = mock_adapter.get_index_prices('000300.SH', '2015-06-01', '2015-06-10')
+        
+        comparison1 = provider._compare_two_sources(data1, data2, 'mock', 'mock')
+        provider._cross_validation_log.append({
+            'index_id': '000300.SH',
+            'date_range': '2015-06-01 to 2015-06-10',
+            'result': {'comparisons': [comparison1]}
+        })
+        
+        data3 = mock_adapter.get_index_prices('000001.SH', '2015-07-01', '2015-07-10')
+        data4 = mock_adapter.get_index_prices('000001.SH', '2015-07-01', '2015-07-10')
+        
+        comparison2 = provider._compare_two_sources(data3, data4, 'mock', 'mock')
+        provider._cross_validation_log.append({
+            'index_id': '000001.SH',
+            'date_range': '2015-07-01 to 2015-07-10',
+            'result': {'comparisons': [comparison2]}
+        })
+        
+        # 获取历史记录
+        log = provider.get_cross_validation_log()
+        
+        assert len(log) == 2
+        assert log[0]['index_id'] == '000300.SH'
+        assert log[1]['index_id'] == '000001.SH'
+        assert 'result' in log[0]
+    
+    def test_insufficient_sources_handling(self):
+        """测试数据源不足时的处理"""
+        provider = RealHistoricalDataProvider()
+        
+        # 只提供一个数据源
+        report = provider.cross_validate_sources(
+            '000300.SH',
+            '2015-06-01',
+            '2015-06-15',
+            sources=[DataSource.MOCK.value]
+        )
+        
+        # 数据源不足应默认通过
+        assert report['passed'] is True
+        assert report['reason'] == 'insufficient_sources'
+    
+    def test_cross_validation_with_enable_flag(self):
+        """测试enable_cross_validation标志控制"""
+        # 启用交叉验证
+        provider_enabled = RealHistoricalDataProvider(enable_cross_validation=True)
+        assert provider_enabled.enable_cross_validation is True
+        
+        # 禁用交叉验证（默认）
+        provider_disabled = RealHistoricalDataProvider(enable_cross_validation=False)
+        assert provider_disabled.enable_cross_validation is False
