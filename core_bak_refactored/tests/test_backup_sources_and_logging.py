@@ -488,3 +488,151 @@ class TestCrossValidation:
         # 禁用交叉验证（默认）
         provider_disabled = RealHistoricalDataProvider(enable_cross_validation=False)
         assert provider_disabled.enable_cross_validation is False
+
+
+class TestUATReportGeneration:
+    """UAT报告生成测试（专家answer.md第3轮5.2节）"""
+    
+    def test_generate_basic_uat_report(self):
+        """测试基础UAT报告生成"""
+        from core_bak_refactored.core.backtest._fragments.uat_validator import UATValidator, UATResult
+        
+        validator = UATValidator()
+        
+        # 模拟测试结果
+        test_results = {
+            'weighted_average_error': UATResult(
+                test_item='weighted_average_error',
+                passed=True,
+                actual_value=0.12,
+                threshold=0.15
+            ),
+            'cross_market_consistency': UATResult(
+                test_item='cross_market_consistency',
+                passed=True,
+                actual_value=0.87,
+                threshold=0.85
+            ),
+            'data_quality': UATResult(
+                test_item='data_quality',
+                passed=False,
+                actual_value=0.88,
+                threshold=0.90
+            )
+        }
+        
+        # 生成报告
+        report = validator.generate_uat_report(test_results)
+        
+        # 验证报告结构
+        assert 'uat_version' in report
+        assert 'overall_status' in report
+        assert 'core_metrics' in report
+        assert 'abnormal_handling' in report
+        assert 'cross_validation' in report
+        assert 'recommendations' in report
+        
+        # 验证核心指标
+        assert report['core_metrics']['total_tests'] == 3
+        assert report['core_metrics']['passed_tests'] == 2
+        assert report['core_metrics']['failed_tests'] == 1
+        assert abs(report['core_metrics']['pass_rate'] - 0.667) < 0.01
+        
+        # 验证总体状态（有失败测试）
+        assert report['overall_status']['passed'] == False
+        assert report['overall_status']['core_tests_passed'] == False
+    
+    def test_uat_report_with_abnormal_handling(self):
+        """测试包含异常处置记录的UAT报告"""
+        from core_bak_refactored.core.backtest._fragments.uat_validator import UATValidator, UATResult, AlertLevel
+        
+        validator = UATValidator()
+        
+        # 触发多个告警
+        validator.handle_exception(0.17, 'event1')  # Level 1
+        validator.handle_exception(0.22, 'event2')  # Level 2
+        validator.handle_exception(0.30, 'event3')  # Level 3
+        
+        test_results = {
+            'test1': UATResult('test1', True, 0.10, 0.15)
+        }
+        
+        # 生成报告
+        report = validator.generate_uat_report(test_results)
+        
+        # 验证异常处置记录
+        assert report['abnormal_handling']['total_alerts'] == 3
+        assert report['abnormal_handling']['level_breakdown']['LEVEL_1'] == 1
+        assert report['abnormal_handling']['level_breakdown']['LEVEL_2'] == 1
+        assert report['abnormal_handling']['level_breakdown']['LEVEL_3'] == 1
+        
+        # 验证告警详情
+        assert len(report['abnormal_handling']['alert_details']) == 3
+        assert report['abnormal_handling']['alert_details'][0]['level'] == 'LEVEL_1'
+        assert report['abnormal_handling']['alert_details'][1]['level'] == 'LEVEL_2'
+        assert report['abnormal_handling']['alert_details'][2]['level'] == 'LEVEL_3'
+        
+        # Level 3告警导致总体未通过
+        assert report['overall_status']['passed'] == False
+        assert report['overall_status']['no_critical_alerts'] == False
+    
+    def test_uat_report_with_cross_validation(self):
+        """测试包含交叉验证结果的UAT报告"""
+        from core_bak_refactored.core.backtest._fragments.uat_validator import UATValidator, UATResult
+        
+        validator = UATValidator()
+        
+        test_results = {
+            'test1': UATResult('test1', True, 0.10, 0.15)
+        }
+        
+        # 模拟交叉验证结果
+        cross_validation = {
+            'enabled': True,
+            'passed': True,
+            'sources_compared': ['yahoo', 'mock'],
+            'comparisons': [{
+                'source_a': 'yahoo',
+                'source_b': 'mock',
+                'passed': True,
+                'overlap_days': 100
+            }]
+        }
+        
+        # 生成报告
+        report = validator.generate_uat_report(test_results, cross_validation_results=cross_validation)
+        
+        # 验证交叉验证集成
+        assert report['cross_validation']['enabled'] == True
+        assert report['cross_validation']['passed'] == True
+        assert len(report['cross_validation']['sources_compared']) == 2
+        
+        # 交叉验证通过，总体应通过
+        assert report['overall_status']['cross_validation_passed'] == True
+    
+    def test_uat_report_recommendations(self):
+        """测试UAT报告建议生成"""
+        from core_bak_refactored.core.backtest._fragments.uat_validator import UATValidator, UATResult
+        
+        validator = UATValidator()
+        
+        # 场景1：所有测试通过
+        test_results_pass = {
+            'test1': UATResult('test1', True, 0.10, 0.15)
+        }
+        report = validator.generate_uat_report(test_results_pass)
+        assert any('正常' in rec for rec in report['recommendations'])
+        
+        # 场景2：有失败测试
+        validator2 = UATValidator()
+        test_results_fail = {
+            'data_quality': UATResult('data_quality', False, 0.88, 0.90)
+        }
+        report2 = validator2.generate_uat_report(test_results_fail)
+        assert any('data_quality' in rec for rec in report2['recommendations'])
+        
+        # 场景3：有Level 3告警
+        validator3 = UATValidator()
+        validator3.handle_exception(0.30, 'critical_event')
+        report3 = validator3.generate_uat_report(test_results_pass)
+        assert any('Level 3' in rec or '严重' in rec for rec in report3['recommendations'])

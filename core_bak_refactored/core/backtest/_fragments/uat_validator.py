@@ -581,6 +581,142 @@ class UATValidator:
             alerts = [a for a in alerts if a.timestamp >= since]
         
         return alerts
+    
+    def generate_uat_report(self,
+                           test_results: Dict[str, UATResult],
+                           cross_validation_results: Optional[Dict[str, Any]] = None,
+                           abnormal_handling_summary: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        生成UAT验收报告（专家answer.md第3轮5.2节增强）
+        
+        报告结构：
+        1. 核心验收指标（5项UAT标准）
+        2. 异常处置记录（三级告警明细）
+        3. 数据质量交叉验证结果
+        4. 总体通过状态
+        
+        Args:
+            test_results: UAT测试结果字典
+            cross_validation_results: 交叉验证结果（可选）
+            abnormal_handling_summary: 异常处理汇总（可选）
+        
+        Returns:
+            完整的UAT报告字典
+        """
+        # 1. 核心验收指标汇总
+        core_metrics = {
+            'total_tests': len(test_results),
+            'passed_tests': sum(1 for r in test_results.values() if r.passed),
+            'failed_tests': sum(1 for r in test_results.values() if not r.passed),
+            'pass_rate': sum(1 for r in test_results.values() if r.passed) / len(test_results) if test_results else 0.0,
+            'test_details': {
+                name: {
+                    'passed': result.passed,
+                    'actual_value': result.actual_value,
+                    'threshold': result.threshold,
+                    'test_item': result.test_item
+                }
+                for name, result in test_results.items()
+            }
+        }
+        
+        # 2. 异常处置记录（专家第3轮5.2节要求）
+        abnormal_handling = {
+            'total_alerts': len(self._alert_history),
+            'level_breakdown': {
+                'LEVEL_1': len([a for a in self._alert_history if a.level == AlertLevel.LEVEL_1]),
+                'LEVEL_2': len([a for a in self._alert_history if a.level == AlertLevel.LEVEL_2]),
+                'LEVEL_3': len([a for a in self._alert_history if a.level == AlertLevel.LEVEL_3])
+            },
+            'alert_details': [
+                {
+                    'level': alert.level.value,
+                    'error_range': alert.error_range,
+                    'action': alert.action,
+                    'report_deadline': alert.report_deadline,
+                    'timestamp': alert.timestamp.isoformat(),
+                    'event_id': alert.metadata.get('event_id', 'unknown'),
+                    'prediction_error': alert.metadata.get('prediction_error', 0.0)
+                }
+                for alert in self._alert_history
+            ] if self._alert_history else [],
+            'custom_summary': abnormal_handling_summary or {}
+        }
+        
+        # 3. 数据质量交叉验证（专家第3轮5.1节集成）
+        cross_validation = cross_validation_results or {
+            'enabled': False,
+            'message': '交叉验证未启用或未提供结果'
+        }
+        
+        # 4. 总体通过状态
+        all_core_passed = all(r.passed for r in test_results.values())
+        no_critical_alerts = len([a for a in self._alert_history if a.level == AlertLevel.LEVEL_3]) == 0
+        cross_validation_passed = cross_validation.get('passed', True) if cross_validation.get('enabled', False) else True
+        
+        overall_passed = all_core_passed and no_critical_alerts and cross_validation_passed
+        
+        # 生成完整报告
+        report = {
+            'uat_version': '1.0',
+            'generated_at': datetime.now().isoformat(),
+            'overall_status': {
+                'passed': overall_passed,
+                'core_tests_passed': all_core_passed,
+                'no_critical_alerts': no_critical_alerts,
+                'cross_validation_passed': cross_validation_passed
+            },
+            'core_metrics': core_metrics,
+            'abnormal_handling': abnormal_handling,
+            'cross_validation': cross_validation,
+            'recommendations': self._generate_recommendations(
+                test_results,
+                abnormal_handling,
+                cross_validation
+            )
+        }
+        
+        logger.info(f"UAT报告生成完成: 总体{'通过' if overall_passed else '未通过'}, "
+                   f"核心测试{core_metrics['passed_tests']}/{core_metrics['total_tests']}, "
+                   f"告警{abnormal_handling['total_alerts']}个")
+        
+        return report
+    
+    def _generate_recommendations(self,
+                                 test_results: Dict[str, UATResult],
+                                 abnormal_handling: Dict[str, Any],
+                                 cross_validation: Dict[str, Any]) -> List[str]:
+        """
+        生成改进建议
+        
+        Returns:
+            建议列表
+        """
+        recommendations = []
+        
+        # 检查失败的测试
+        failed_tests = [name for name, r in test_results.items() if not r.passed]
+        if failed_tests:
+            recommendations.append(f"以下测试未通过，需要调整: {', '.join(failed_tests)}")
+        
+        # 检查Level 2/3告警
+        level2_count = abnormal_handling['level_breakdown'].get('LEVEL_2', 0)
+        level3_count = abnormal_handling['level_breakdown'].get('LEVEL_3', 0)
+        
+        if level3_count > 0:
+            recommendations.append(f"发现{level3_count}个Level 3严重告警，必须立即处理")
+        
+        if level2_count > 0:
+            recommendations.append(f"发现{level2_count}个Level 2预警，建议24小时内复核")
+        
+        # 检查交叉验证
+        if cross_validation.get('enabled', False) and not cross_validation.get('passed', True):
+            recommendations.append("数据源交叉验证发现差异，建议检查数据质量")
+        
+        if not recommendations:
+            recommendations.append("所有验收指标通过，系统运行正常")
+        
+        return recommendations
 
 
 # =============================================================================
