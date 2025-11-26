@@ -623,7 +623,7 @@ alert = validator.handle_exception(
 - **复核流程**:数据工程师初步分析 → 风控团队复核 → 必要时人工数据修正
 
 **实施指导:**
-```python
+```
 # 在RealHistoricalDataProvider中增强交叉验证
 def _cross_validate_sources(self, primary_data, backup_data, source_name):
     """增强版交叉验证"""
@@ -810,7 +810,7 @@ def apply_liquidity_adjustment(self, raw_risk_metric, market_id, days_required=1
 - **动态调整**:根据LULD触发频率微调系数(基准1.2,频繁触发时上调至1.3)
 
 **实施指导:**
-```python
+```
 def calculate_volatility_adjustment(self, raw_volatility, market_id, luld_trigger_freq=None):
     """增强版波动率调整"""
     market_config = self.MARKET_CONFIGS.get(market_id)
@@ -949,7 +949,7 @@ def get_dynamic_event_weights(self, event_data_quality):
 - **UAT标准**:采用严格版(兼顾准确性和实用性)
 
 **实施指导:**
-```python
+```
 def validate_direction_accuracy_strict(self, predictions, actuals, error_threshold=0.5):
     """严格版方向准确率验证"""
     if len(predictions) != len(actuals):
@@ -1042,7 +1042,7 @@ def validate_tail_error_control_strict(self, predictions, actuals, production_ua
 - **工作流集成**:使用现有风控工作流系统(如已有)或实现简单审批流程
 
 **实施指导:**
-```python
+```
 class RiskExceptionWorkflow:
     """风险异常处置工作流"""
     
@@ -1196,7 +1196,7 @@ class ProductionMonitor:
 - **应急审批**:Level 3异常需风险委员会主席线上审批(15分钟内)
 
 **实施指导:**
-```python
+```
 class EmergencyResponsePlan:
     """应急预案执行器"""
     
@@ -1273,3 +1273,109 @@ class EmergencyResponsePlan:
 - 完成UAT全量测试(5项指标100%通过)
 - 生产环境部署和试运行
 
+
+---
+
+## 第3轮咨询追加 - 迁移准入标准与阶段边界声明（ASK + ANSWER）
+
+### ASK（提问）
+# 第3轮咨询 - 迁移准入标准与阶段边界声明（5B-5 / 临时系统）
+
+## 🔒 阶段边界与称谓统一（必须阅读）
+- 当前工作系统：`core_bak_refactored`（临时独立系统，用于整理 `core_bak` 的中间产物）。
+- 架构边界：所有开发/测试均仅限在 `core_bak_refactored/` 下进行；禁止修改根目录未来系统代码。
+- 生产部署限制：在未完成迁移至根目录未来系统且未通过专家验收之前，**禁止讨论任何生产部署或生产化准备**；“阶段C：生产部署准备”不适用于当前临时系统。
+- 轮次衔接：第1轮（目标口径确认）→ 第2轮（阶段A+B完成与职责归位）→ 第3轮（当前，仅咨询迁移准入标准与边界）。
+- 称谓统一：以下问题均以“您”为称谓。
+
+## 📁 相关文件清单（本次更新涉及）
+### 核心实现文件（本次修改）
+- 无（本轮仅生成/提交 `docs/ask.md`）
+
+### 测试文件（本次验证）
+- 无（本轮不改动测试）
+
+### 配置与文档
+- `docs/ask.md`（第3轮咨询，迁移准入标准）
+
+## 📌 上一轮核心结论（简要提炼）
+- 阶段A：5事件端到端流程验证完成；跨市场一致性≥0.85、数据质量评分≥90%达到框架验证。
+- 阶段B：GICS一级行业参数统计验证完成（样本量≥1000、t检验p<0.05、参数范围与经济合理性成立）。
+- 架构优化：业务逻辑职责归位（risk/data/tests），测试模块纯委托，无业务实现。
+- 真实数据依赖：Yahoo Finance存在限流与中国指数不可用问题，现采用自动降级至Mock（依赖缺失处理已实现）。
+- 临时系统边界：当前在 `core_bak_refactored`，不讨论生产部署，仅咨询迁移准入标准。
+
+## 📁 上一轮修改的代码清单与需评审的关键部分（含详细解释）
+- 组件一：`core_bak_refactored/core/risk/cross_market_calibrator.py`
+  - `normalize_to_usd`：USD统一计量；事件窗口期日均中间价。
+  - `apply_liquidity_adjustment`：流动性调整因子与机制修正。
+- 组件二：`core_bak_refactored/core/backtest/_fragments/uat_validator.py`
+  - `validate_weighted_average_error`：类型化阈值 + 总体≤15%。
+  - `validate_triple_indicator_system`：MAPE≤15% + 方向≥90% + 尾部≤25%/≤20%。
+- 组件三：`core_bak_refactored/core/risk/stress_testing.py`
+  - `IndustryParameterAnalyzer.analyze_and_validate`：GICS一级统计与t检验。
+  - `generate_test_samples`：样本参数范围与经济合理性。
+- 组件四：`core_bak_refactored/core/data/_fragments/data_utils.py`
+  - `safe_get_event_data`：安全取数与返回结构兼容。
+  - `calculate_actual_return`/`calculate_return`：收益与字段口径。
+- 测试与工具层：`tests/common/test_assertions.py`、`tests/core/backtest/test_fixtures.py`（纯委托）。
+
+## 🧩 背景说明（本轮仅咨询迁移准入标准）
+- 目标：明确从 `core_bak_refactored` 迁移到根目录未来系统的准入标准与边界口径。
+- 约束：接口契约稳定、职责清晰、文档与测试齐备；真实数据与降级策略口径需确认。
+
+## 🏗️ 我们的架构组织（职责边界澄清）
+- risk：压力测试与行业参数统计。
+- data：数据提供与通用处理。
+- tests：测试编排与断言（纯委托）。
+
+## ❓ 核心问题（请您逐项给出口径与阈值）
+1) 迁移准入标准（代码/测试/文档/审计）
+2) 迁移路径与流程（分批/整体、依赖稳定、记录要求）
+3) 数据源与降级策略（备源接入、健康检查、交叉验证）
+4) UAT评审版报告（最低内容清单）
+5) 阈值确认（行业≥10%、相关性≥0.85、市场权重分层）
+
+## 🔍 业务视角的代码实现评审要点
+- 方法/字段/返回/异常与业务口径一致性；错误静默与降级是否需日志化；计量口径一致性。
+
+## 📝 评审请求
+- 请对上述条目逐项答复；我们将按口径在 `core_bak_refactored/` 内推进迁移前对齐。
+
+**重要：请尽可能详尽和充分，不要遗漏和简化，谢谢！**
+
+### ANSWER（答复）
+# 第3轮咨询答复 - 迁移准入标准与阶段边界确认
+
+## 🔒 阶段边界与称谓统一确认
+- 当前系统：`core_bak_refactored`（临时独立系统）
+- 架构边界：仅限`core_bak_refactored/`开发
+- 生产部署限制：当前系统不讨论生产部署，阶段C暂不适用
+- 轮次衔接：1轮→2轮→3轮（迁移准入标准）
+- 称谓统一：使用"您"
+
+## 📌 迁移准入标准（逐项确认）
+1) 代码与测试：单测≥95%、关键业务100%、端到端5事件成功；覆盖维度新增异常处置流程测试（三级告警）。
+2) 迁移路径：按模块分批（risk→data→backtest）；依赖稳定性（Mock可接受、汇率/市场配置稳定）；记录要求（`docs/migration_log.md`、各模块`SPRINT.md`迁移确认、提交规范`[MIGRATION] module-name version`）。
+3) 数据源与降级：迁移前接入至少一个备源（JoinQuant/Wind/Tushare）；Mock可作为临时方案但UAT需标注；必须实现健康检查与数据质量交叉验证。
+4) UAT评审版报告：包含历史回测、相关性矩阵、行业统计、数据质量、性能指标、异常处置记录（固定清单）。
+5) 阈值确认：行业差异坚持≥10%（不接受6%过渡口径）；相关性坚持≥0.85；新增市场权重分层（US/EU 40%、CN/HK 35%、JP/SG 25%）。
+
+## 🔍 业务代码实现评审要点确认
+- 方法一致性：`normalize_to_usd`、`apply_liquidity_adjustment`、`validate_weighted_average_error`、`validate_triple_indicator_system`、`analyze_and_validate`、`safe_get_event_data`、`calculate_actual_return`均符合；`safe_get_event_data`需增加降级日志。
+- 返回结构与异常处理：DataFrame/字典兼容；错误静默策略需补充降级日志。
+- 字段与配置：`close`价格、日均中间价汇率、流动性调整、机制修正均确认。
+
+## 📋 迁移前必须完成的调整清单
+- 高优先级：备源接入；健康检查机制；异常处置流程测试（三级告警）；数据质量交叉验证。
+- 中优先级：数据流图文档；错误处理策略文档；降级日志增强；市场权重分层实现。
+- 低优先级：GICS二级行业细分；高级压力场景；实时监控仪表板。
+
+## 🎯 迁移准入检查表
+- 代码质量：通过率、关键业务、端到端、契约稳定
+- 数据源：备源、健康检查、交叉验证、降级日志
+- 文档：UAT评审版报告、数据流图、错误处理策略、迁移记录
+- 业务口径：行业≥10%、相关性≥0.85、权重分层、三级指标验收
+
+## 📝 最终确认
+- 请按此口径在`core_bak_refactored/`内完成对齐性修正；优先完成高优先级项，随后进入迁移评审。
