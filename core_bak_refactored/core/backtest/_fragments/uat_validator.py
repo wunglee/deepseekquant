@@ -177,23 +177,27 @@ class UATValidator:
     
     def validate_triple_indicator_system(self,
                                          predictions: List[float],
-                                         actuals: List[float]) -> Dict[str, UATResult]:
+                                         actuals: List[float],
+                                         strict_mode: bool = True,
+                                         production_uat: bool = False) -> Dict[str, UATResult]:
         """
-        验证三级指标体系（专家answer.md第1轮1.2节）
-        
-        优化点:
-        - 数值稳定性：添加除零保护和边界检查
-        - 异常处理：捕获计算异常
-        - 性能优化：向量化计算
+        验证三级指标体系（专家第2轮5.3节增强：严格版方向准确率+生产级尾部控制）
         
         必须同时满足：
         1. MAPE ≤ 15%
         2. 方向准确率 ≥ 90%
-        3. 尾部误差控制：最大单事件误差≤25%，且此类事件不超过总事件数的20%
+           - 宽松版：同号即正确
+           - 严格版：同号且误差幅度≤50%（专家第2轮5.3节）
+        3. 尾部误差控制：
+           - 开发级：最大误差≤25% 或 极端占比≤20%
+           - 生产级：最大误差≤25% 且 极端占比≤20%（专家第2轮5.3节）
+           - 极端误差阈值：15%（专家第2轮5.3节，原25%过于宽松）
         
         Args:
             predictions: 预测损失列表
             actuals: 实际损失列表
+            strict_mode: 是否启用严格版方向准确率（默认True）
+            production_uat: 是否为生产级UAT（默认False）
         
         Returns:
             Dict[str, UATResult]: 三项指标的验收结果
@@ -241,16 +245,31 @@ class UATValidator:
             )
         
         try:
-            # 2. 方向准确率（预测损失方向与实际一致）- 向量化优化
+            # 2. 方向准确率（专家第2轮5.3节：严格版）- 向量化优化
             predictions_array = np.array(predictions)
             actuals_array = np.array(actuals)
             
-            # 同号即方向一致（包括零）
-            direction_correct = ((predictions_array * actuals_array >= 0) | 
-                               ((np.abs(predictions_array) < 1e-10) & (np.abs(actuals_array) < 1e-10)))
-            direction_correct_count = int(np.sum(direction_correct))
+            correct_count = 0
+            for pred, actual in zip(predictions, actuals):
+                # 同号检查
+                same_direction = (pred * actual >= 0) or (abs(pred) < 1e-10 and abs(actual) < 1e-10)
+                
+                if same_direction:
+                    if strict_mode:
+                        # 严格版：同号且误差幅度≤50%（专家第2轮5.3节）
+                        if abs(actual) > 1e-10:
+                            error_ratio = abs(pred - actual) / abs(actual)
+                            if error_ratio <= 0.5:  # 误差≤50%
+                                correct_count += 1
+                        else:
+                            # 实际值为0时，预测值也接近0视为正确
+                            if abs(pred) < 1e-10:
+                                correct_count += 1
+                    else:
+                        # 宽松版：同号即正确
+                        correct_count += 1
             
-            direction_accuracy = float(direction_correct_count / len(predictions))
+            direction_accuracy = float(correct_count / len(predictions))
             direction_passed = direction_accuracy >= 0.90
             
             results['direction_accuracy'] = UATResult(
@@ -258,7 +277,12 @@ class UATValidator:
                 passed=direction_passed,
                 actual_value=direction_accuracy,
                 threshold=0.90,
-                details={'correct_count': direction_correct_count, 'total_count': len(predictions)}
+                details={
+                    'correct_count': correct_count, 
+                    'total_count': len(predictions),
+                    'strict_mode': strict_mode,
+                    'error_threshold': 0.5 if strict_mode else None
+                }
             )
             
         except Exception as e:
@@ -272,7 +296,7 @@ class UATValidator:
             )
         
         try:
-            # 3. 尾部误差控制 - 数值稳定性优化
+            # 3. 尾部误差控制（专家第2轮5.3节：生产级使用"且"条件+极端阈值15%）
             tail_errors = []
             for pred, actual in zip(predictions, actuals):
                 if abs(actual) > 1e-10:  # 避免除零
@@ -280,11 +304,17 @@ class UATValidator:
                     tail_errors.append(min(error, 10.0))  # 限制异常值
             
             max_error = float(max(tail_errors)) if tail_errors else 0.0
-            extreme_error_count = sum(1 for e in tail_errors if e > 0.25)
+            
+            # 极端误差阈值从25%降低到15%（专家第2轮5.3节）
+            extreme_error_threshold = 0.15
+            extreme_error_count = sum(1 for e in tail_errors if e > extreme_error_threshold)
             extreme_error_ratio = float(extreme_error_count / len(tail_errors)) if tail_errors else 0.0
             
-            # 通过条件：最大误差≤25% 或 极端误差占比≤20%
-            tail_passed = (max_error <= 0.25) or (extreme_error_ratio <= 0.20)
+            # 生产级UAT使用"且"条件，开发级使用"或"条件（专家第2轮5.3节）
+            if production_uat:
+                tail_passed = (max_error <= 0.25) and (extreme_error_ratio <= 0.20)
+            else:
+                tail_passed = (max_error <= 0.25) or (extreme_error_ratio <= 0.20)
             
             results['tail_error_control'] = UATResult(
                 test_item='tail_error_control',
@@ -295,7 +325,10 @@ class UATValidator:
                     'max_error': max_error,
                     'extreme_error_count': extreme_error_count,
                     'extreme_error_ratio': extreme_error_ratio,
-                    'extreme_threshold_ratio': 0.20
+                    'extreme_threshold': extreme_error_threshold,
+                    'extreme_threshold_ratio': 0.20,
+                    'production_uat': production_uat,
+                    'logic': 'AND' if production_uat else 'OR'
                 }
             )
             

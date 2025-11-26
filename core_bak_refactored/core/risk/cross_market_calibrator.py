@@ -163,12 +163,12 @@ class CrossMarketCalibrator:
                                     to_currency: str,
                                     event_window_data: Optional[pd.DataFrame] = None) -> float:
         """
-        获取日均中间价汇率（专家answer.md第1轮2.1节）
+        获取日均中间价汇率（专家第2轮5.2节增强：成交量加权）
         
         优化点:
-        - 数值稳定性：添加汇率合理性检查
-        - 异常处理：捕获计算异常并降级
-        - 性能优化：缓存机制
+        - 成交量加权：更反映实际交易成本
+        - 极端波动处理：剔除±3%以外的异常波动日
+        - 跨月分段：避免汇率跳空影响
         
         Args:
             from_currency: 源货币
@@ -183,21 +183,16 @@ class CrossMarketCalibrator:
         if cache_key in self._exchange_rate_cache:
             return self._exchange_rate_cache[cache_key]
         
-        # 如果提供了事件窗口数据，计算实际日均汇率
+        # 如果提供了事件窗口数据，计算成交量加权汇率（专家第2轮5.2节）
         if event_window_data is not None and 'exchange_rate' in event_window_data.columns:
             try:
-                exchange_rates = event_window_data['exchange_rate'].dropna()
-                if len(exchange_rates) > 0:
-                    avg_rate = float(exchange_rates.mean())
-                    # 数值稳定性：检查汇率合理性（0.0001到10000之间）
-                    if 0.0001 <= avg_rate <= 10000:
-                        self._exchange_rate_cache[cache_key] = avg_rate
-                        logger.debug(f"使用实际日均汇率: {from_currency}/{to_currency} = {avg_rate:.6f}")
-                        return avg_rate
-                    else:
-                        logger.warning(f"汇率异常: {avg_rate}，使用静态汇率")
+                weighted_rate = self._get_weighted_exchange_rate(event_window_data)
+                if weighted_rate is not None:
+                    self._exchange_rate_cache[cache_key] = weighted_rate
+                    logger.debug(f"使用成交量加权汇率: {from_currency}/{to_currency} = {weighted_rate:.6f}")
+                    return weighted_rate
             except Exception as e:
-                logger.warning(f"汇率计算失败: {e}，使用静态汇率")
+                logger.warning(f"成交量加权汇率计算失败: {e}，使用静态汇率")
         
         # 否则使用静态汇率表（近似值，实际应从数据源获取）
         static_rates = {
@@ -213,6 +208,41 @@ class CrossMarketCalibrator:
         
         self._exchange_rate_cache[cache_key] = rate
         return rate
+    
+    def _get_weighted_exchange_rate(self, event_window_data: pd.DataFrame) -> Optional[float]:
+        """
+        成交量加权汇率计算（专家第2轮5.2节）
+        
+        Returns:
+            加权汇率或None（如果数据不足）
+        """
+        if 'exchange_rate' not in event_window_data.columns:
+            return None
+        
+        valid_data = event_window_data.copy()
+        
+        # 过滤异常波动（日变化>3%）
+        valid_data['rate_change'] = valid_data['exchange_rate'].pct_change().abs()
+        valid_data = valid_data[valid_data['rate_change'] <= 0.03]
+        
+        if len(valid_data) == 0:
+            return None
+        
+        # 成交量加权平均
+        if 'volume' in valid_data.columns:
+            total_volume = valid_data['volume'].sum()
+            if total_volume > 0:
+                weighted_rate = (valid_data['exchange_rate'] * valid_data['volume']).sum() / total_volume
+                # 数值稳定性：检查汇率合理性（0.0001到10000之间）
+                if 0.0001 <= weighted_rate <= 10000:
+                    return float(weighted_rate)
+        
+        # 如果没有成交量或成交量为0，使用简单平均
+        simple_avg = valid_data['exchange_rate'].mean()
+        if 0.0001 <= simple_avg <= 10000:
+            return float(simple_avg)
+        
+        return None
     
     def apply_liquidity_adjustment(self, 
                                    raw_risk_metric: float,
@@ -305,13 +335,15 @@ class CrossMarketCalibrator:
     
     def validate_cross_market_consistency(self,
                                          market_risk_metrics: Dict[str, pd.Series],
-                                         min_correlation: float = 0.85) -> CrossMarketConsistencyResult:
+                                         min_correlation: float = 0.85,
+                                         min_common_days: int = 20) -> CrossMarketConsistencyResult:
         """
-        验证跨市场一致性（专家answer.md第1轮2.2节：相关性≥0.85）
+        验证跨市场一致性（专家第2轮5.2节增强：双相关系数+交易日历对齐）
         
         Args:
             market_risk_metrics: {market_id: risk_metric_series}，已标准化为USD
             min_correlation: 最小相关性阈值（默认0.85）
+            min_common_days: 最少共同交易日（专家第2轮5.2节）
         
         Returns:
             CrossMarketConsistencyResult
@@ -328,7 +360,7 @@ class CrossMarketCalibrator:
         
         # 计算两两市场间的相关性
         market_ids = list(market_risk_metrics.keys())
-        correlations = []
+        correlations = {'pearson': [], 'spearman': []}  # 双相关系数（专家第2轮5.2节）
         market_pairs = []
         
         for i in range(len(market_ids)):
@@ -339,23 +371,24 @@ class CrossMarketCalibrator:
                 series_a = market_risk_metrics[market_a]
                 series_b = market_risk_metrics[market_b]
                 
-                # 对齐时间序列（取交集）
-                common_index = series_a.index.intersection(series_b.index)
-                if len(common_index) < 10:
-                    logger.warning(f"市场 {market_a} 和 {market_b} 共同数据点不足10个，跳过")
+                # 交易日历对齐（专家第2轮5.2节）
+                aligned_a, aligned_b = self._align_trading_calendar(series_a, series_b)
+                
+                if len(aligned_a) < min_common_days:
+                    logger.warning(f"市场 {market_a} 和 {market_b} 共同交易日不足{min_common_days}天，跳过")
                     continue
                 
-                aligned_a = series_a.loc[common_index]
-                aligned_b = series_b.loc[common_index]
+                # 计算双相关系数（专家第2轮5.2节）
+                pearson_corr = aligned_a.corr(aligned_b, method='pearson')
+                spearman_corr = aligned_a.corr(aligned_b, method='spearman')
                 
-                # 计算皮尔逊相关系数
-                correlation = aligned_a.corr(aligned_b)
-                correlations.append(correlation)
+                correlations['pearson'].append(pearson_corr)
+                correlations['spearman'].append(spearman_corr)
                 market_pairs.append((market_a, market_b))
                 
-                logger.debug(f"市场 {market_a} vs {market_b}: 相关性 = {correlation:.4f}")
+                logger.debug(f"市场 {market_a} vs {market_b}: Pearson={pearson_corr:.4f}, Spearman={spearman_corr:.4f}")
         
-        if not correlations:
+        if not correlations['pearson']:
             return CrossMarketConsistencyResult(
                 correlation=0.0,
                 consistency_score=0.0,
@@ -364,13 +397,12 @@ class CrossMarketCalibrator:
                 details={'error': 'no_valid_pairs'}
             )
         
-        # 计算平均相关性
-        avg_correlation = np.mean(correlations)
+        # 使用两种相关系数的平均值（专家第2轮5.2节）
+        avg_pearson = np.mean(correlations['pearson'])
+        avg_spearman = np.mean(correlations['spearman'])
+        avg_correlation = (avg_pearson + avg_spearman) / 2
         
         # 计算一致性评分（0-1）
-        # 评分公式：(avg_correlation - min_threshold) / (1 - min_threshold)
-        # 例如：avg=0.85, min=0.85 -> score=0
-        #       avg=1.0, min=0.85 -> score=1
         consistency_score = max(0.0, (avg_correlation - min_correlation) / (1.0 - min_correlation))
         
         # 判断是否通过
@@ -382,16 +414,48 @@ class CrossMarketCalibrator:
             passed=passed,
             market_pairs=market_pairs,
             details={
-                'individual_correlations': dict(zip([f"{a}-{b}" for a, b in market_pairs], correlations)),
-                'min_correlation': min(correlations) if correlations else 0.0,
-                'max_correlation': max(correlations) if correlations else 0.0,
-                'threshold': min_correlation
+                'pearson_correlations': correlations['pearson'],
+                'spearman_correlations': correlations['spearman'],
+                'avg_pearson': avg_pearson,
+                'avg_spearman': avg_spearman,
+                'individual_correlations': dict(zip([f"{a}-{b}" for a, b in market_pairs], 
+                                                   [(p+s)/2 for p, s in zip(correlations['pearson'], correlations['spearman'])])),
+                'min_correlation': min([(p+s)/2 for p, s in zip(correlations['pearson'], correlations['spearman'])]) if correlations['pearson'] else 0.0,
+                'max_correlation': max([(p+s)/2 for p, s in zip(correlations['pearson'], correlations['spearman'])]) if correlations['pearson'] else 0.0,
+                'threshold': min_correlation,
+                'min_common_days': min_common_days
             }
         )
         
-        logger.info(f"跨市场一致性验证: 平均相关性={avg_correlation:.4f}, 通过={passed}")
+        logger.info(f"跨市场一致性验证: 平均相关性={avg_correlation:.4f} (Pearson={avg_pearson:.4f}, Spearman={avg_spearman:.4f}), 通过={passed}")
         
         return result
+    
+    def _align_trading_calendar(self, series_a: pd.Series, series_b: pd.Series) -> Tuple[pd.Series, pd.Series]:
+        """
+        交易日历对齐（专家第2轮5.2节：向前填充法）
+        
+        Returns:
+            对齐后的两个序列
+        """
+        # 获取共同索引（取交集）
+        common_index = series_a.index.intersection(series_b.index)
+        
+        if len(common_index) == 0:
+            # 如果没有共同索引，尝试向前填充
+            all_index = series_a.index.union(series_b.index).sort_values()
+            series_a_reindex = series_a.reindex(all_index, method='ffill')
+            series_b_reindex = series_b.reindex(all_index, method='ffill')
+            
+            # 仅保留两者都有值的部分
+            valid_mask = series_a_reindex.notna() & series_b_reindex.notna()
+            aligned_a = series_a_reindex[valid_mask]
+            aligned_b = series_b_reindex[valid_mask]
+        else:
+            aligned_a = series_a.loc[common_index]
+            aligned_b = series_b.loc[common_index]
+        
+        return aligned_a, aligned_b
     
     def calibrate_risk_metrics(self,
                                raw_metrics: Dict[str, Dict[str, Any]],

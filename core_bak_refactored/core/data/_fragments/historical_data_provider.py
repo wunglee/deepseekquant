@@ -268,20 +268,36 @@ class MockHistoricalDataProvider:
 
 class RealHistoricalDataProvider:
     """
-    真实历史数据提供者（Phase 5B-5扩展版）
+    真实历史数据提供者（Phase 5B-5扩展版 + 第2轮专家指导增强）
     
-    基于专家answer.md第1轮4.1节指导：
-    - 主源：Yahoo Finance（覆盖广，免费）
-    - 备源1：JoinQuant（A股数据质量优，可选）
-    - 备源2：Wind（机构级数据，可选）
-    - 交叉验证：每月对关键指标进行一致性检查，差异≥5%时触发人工复核
+    基于专家answer.md第1轮4.1节+第2轮5.1节指导：
+    - 区域化数据源优先级：A股(JoinQuant主)、美股(Yahoo主)、港股(Wind主)
+    - 交叉验证双维度：逐日差异30%触发 OR 窗口统计量(均值3%/标准差10%)触发
+    - 关键指标：收盘价、成交量、20日波动率、换手率
     
-    基于专家answer.md第1轮4.2节指导：
-    - 事件窗口：事件前后各30个交易日（共61个交易日）
-    - 基准期：事件前252个交易日（一年）为波动率计算基准
+    基于专家answer.md第1轮4.2节+第2轮5.1节指导：
+    - 事件窗口动态化：market_crash(30天)、liquidity_crisis(45天)、currency_crisis(60天)、sovereign_debt_crisis(90天)
+    - 基准期差异化：一般事件252天、结构性事件504天
     - 异常值处理：剔除涨跌停日、极端波动日
     - 停牌处理：停牌日数据沿用最近有效价格，但不计入收益率计算
     """
+    
+    # 区域化数据源优先级配置（专家第2轮5.1节）
+    REGIONAL_PRIORITY = {
+        'CN': ['joinquant', 'wind', 'yahoo', 'mock'],  # A股
+        'US': ['yahoo', 'alpha_vantage', 'iex', 'mock'],  # 美股
+        'HK': ['wind', 'yahoo', 'joinquant', 'mock'],  # 港股
+        'default': ['yahoo', 'joinquant', 'wind', 'mock']
+    }
+    
+    # 事件窗口配置（专家第2轮5.1节）
+    EVENT_WINDOW_CONFIGS = {
+        'market_crash': {'window_days': 30, 'baseline_days': 252},
+        'liquidity_crisis': {'window_days': 45, 'baseline_days': 252},
+        'currency_crisis': {'window_days': 60, 'baseline_days': 252},
+        'sovereign_debt_crisis': {'window_days': 90, 'baseline_days': 504},
+        'geopolitical_risk': {'window_days': 30, 'baseline_days': 252}
+    }
     
     def __init__(self, 
                  primary_source: str = 'yahoo',
@@ -326,15 +342,17 @@ class RealHistoricalDataProvider:
         return adapters
     
     def get_index_prices(self, index_id: str, start_date: str, end_date: str) -> pd.DataFrame:
-        """获取指数价格数据（含自动回退机制）"""
+        """获取指数价格数据（含自动回退机制 + 区域化优先级）"""
         # 优先使用缓存
         cache_key = f"prices:{index_id}:{start_date}:{end_date}:{self.primary_source}"
         if cache_key in self._cache:
             logger.debug(f"使用缓存数据: {cache_key}")
             return self._cache[cache_key]
         
-        # 尝试主数据源
-        sources_to_try = [self.primary_source] + self.backup_sources
+        # 区域化数据源优先级（专家第2轮5.1节）
+        regional_sources = self._get_regional_priority(index_id)
+        sources_to_try = regional_sources if regional_sources else ([self.primary_source] + self.backup_sources)
+        
         last_error = None
         
         for source in sources_to_try:
@@ -378,25 +396,51 @@ class RealHistoricalDataProvider:
         logger.error(error_msg)
         raise ValueError(error_msg)
     
+    def _get_regional_priority(self, index_id: str) -> List[str]:
+        """
+        根据市场区域获取数据源优先级（专家第2轮5.1节）
+        
+        Returns:
+            数据源优先级列表
+        """
+        # 从symbol中提取市场代码
+        if index_id.endswith('.SH') or index_id.endswith('.SZ'):
+            return self.REGIONAL_PRIORITY['CN']
+        elif index_id.endswith('.US'):
+            return self.REGIONAL_PRIORITY['US']
+        elif index_id.endswith('.HK'):
+            return self.REGIONAL_PRIORITY['HK']
+        else:
+            return self.REGIONAL_PRIORITY['default']
+    
     def get_event_window_data(self, 
                               index_id: str, 
                               event_date: str,
-                              window_days: int = 30,
-                              baseline_days: int = 252) -> Dict[str, pd.DataFrame]:
+                              event_type: str = 'market_crash',
+                              window_days: Optional[int] = None,
+                              baseline_days: Optional[int] = None) -> Dict[str, pd.DataFrame]:
         """
-        获取事件窗口数据（专家answer.md第1轮4.2节标准）
+        获取事件窗口数据（专家answer.md第2轮5.1节增强：支持事件类型动态调整）
         
         Args:
             index_id: 指数代码
             event_date: 事件发生日期 'YYYY-MM-DD'
-            window_days: 事件前后窗口天数（默认30）
-            baseline_days: 基准期天数（默认252 = 1年）
+            event_type: 事件类型（专家第2轮5.1节新增）
+            window_days: 事件前后窗口天数（None则根据event_type自动）
+            baseline_days: 基准期天数（None则根据event_type自动）
         
         Returns:
             字典包含:
-                'event_window': 事件窗口数据（前后30个交易日）
-                'baseline': 基准期数据（事件前252个交易日）
+                'event_window': 事件窗口数据
+                'baseline': 基准期数据
+                'config': 使用的配置
         """
+        # 根据事件类型动态调整窗口（专家第2轮5.1节）
+        config = self.EVENT_WINDOW_CONFIGS.get(event_type, self.EVENT_WINDOW_CONFIGS['market_crash'])
+        final_window_days = window_days if window_days is not None else config['window_days']
+        final_baseline_days = baseline_days if baseline_days is not None else config['baseline_days']
+        
+        logger.info(f"事件窗口配置: type={event_type}, window={final_window_days}天, baseline={final_baseline_days}天")
         event_dt = pd.to_datetime(event_date)
         
         # 计算日期范围（扩大范围以确保足够交易日）
@@ -433,7 +477,8 @@ class RealHistoricalDataProvider:
         
         return {
             'event_window': event_filtered,
-            'baseline': baseline_filtered
+            'baseline': baseline_filtered,
+            'config': {'event_type': event_type, 'window_days': final_window_days, 'baseline_days': final_baseline_days}
         }
     
     def _clean_data(self, data: pd.DataFrame, index_id: str) -> pd.DataFrame:
