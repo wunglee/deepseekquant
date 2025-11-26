@@ -21,14 +21,18 @@ import numpy as np
 import pandas as pd
 from typing import Dict, List
 
-from core_bak_refactored.core.data._fragments.historical_data_provider import (
-    RealHistoricalDataProvider,
-    MockHistoricalDataProvider
-)
+from core_bak_refactored.core.data._fragments.historical_data_provider import RealHistoricalDataProvider
 from core_bak_refactored.core.data._fragments.data_quality_checker import DataQualityChecker
 from core_bak_refactored.core.risk.cross_market_calibrator import CrossMarketCalibrator
 from core_bak_refactored.core.backtest._fragments.uat_validator import UATValidator
 from core_bak_refactored.core.backtest._fragments.event_window_backtester import EventWindowBacktester
+
+# 导入测试辅助工具（消除重复代码）
+from core_bak_refactored.tests.core.backtest.test_fixtures import (
+    TestEventProvider,
+    DataProcessingHelper,
+    TestAssertionHelper
+)
 
 
 class EndToEndIntegrationTest(unittest.TestCase):
@@ -55,49 +59,13 @@ class EndToEndIntegrationTest(unittest.TestCase):
         self.uat_validator = UATValidator()
         self.backtester = EventWindowBacktester(self.data_provider)
         
-        # 5个典型历史事件（专家第2轮5.4节）
-        self.test_events = [
-            {
-                'event_id': '2008_financial_crisis',
-                'index_id': '000300.SH',
-                'event_date': '2008-09-15',
-                'event_type': 'market_crash',
-                'expected_decline': -0.40,
-                'market_id': 'CN'
-            },
-            {
-                'event_id': '2015_china_market_crash',
-                'index_id': '000300.SH',
-                'event_date': '2015-06-15',
-                'event_type': 'market_crash',
-                'expected_decline': -0.43,
-                'market_id': 'CN'
-            },
-            {
-                'event_id': 'covid_19_pandemic',
-                'index_id': '000300.SH',
-                'event_date': '2020-02-20',
-                'event_type': 'market_crash',
-                'expected_decline': -0.20,
-                'market_id': 'CN'
-            },
-            {
-                'event_id': '2022_russia_ukraine_conflict',
-                'index_id': '000300.SH',
-                'event_date': '2022-02-24',
-                'event_type': 'geopolitical_risk',
-                'expected_decline': -0.12,
-                'market_id': 'CN'
-            },
-            {
-                'event_id': '2011_eurozone_debt_crisis',
-                'index_id': '000300.SH',
-                'event_date': '2011-09-01',
-                'event_type': 'sovereign_debt_crisis',
-                'expected_decline': -0.25,
-                'market_id': 'CN'
-            }
-        ]
+        # 辅助工具
+        self.event_provider = TestEventProvider()
+        self.data_helper = DataProcessingHelper()
+        self.assert_helper = TestAssertionHelper()
+        
+        # 5个典型历史事件（从fixture获取，消除硬编码）
+        self.test_events = self.event_provider.get_standard_events()
     
     def test_01_end_to_end_single_event(self):
         """
@@ -106,34 +74,29 @@ class EndToEndIntegrationTest(unittest.TestCase):
         """
         event = self.test_events[1]  # 2015股灾
         
-        # 步骤1：数据获取（事件窗口）
-        window_data = self.data_provider.get_event_window_data(
-            index_id=event['index_id'],
-            event_date=event['event_date'],
-            window_days=30,
-            baseline_days=252
+        # 步骤1：数据获取（使用辅助方法，消除重复代码）
+        event_window_df, success = self.data_helper.safe_get_event_data(
+            self.data_provider,
+            event,
+            window_days=TestEventProvider.DEFAULT_WINDOW_DAYS,
+            baseline_days=TestEventProvider.DEFAULT_BASELINE_DAYS
         )
         
-        self.assertIsNotNone(window_data, "事件窗口数据获取失败")
-        self.assertIn('event_window', window_data, "缺少event_window字段")
-        self.assertIn('baseline', window_data, "缺少baseline字段")
+        self.assertTrue(success, "事件窗口数据获取失败")
         
-        # 步骤2：数据质量检查（修复接口调用）
+        # 步骤2：数据质量检查
         quality_report = self.quality_checker.check_quality(
-            data=window_data['event_window'],
-            source=event['index_id']
+            data=event_window_df,
+            source=event.index_id
         )
         
-        self.assertGreaterEqual(quality_report.overall_score, 0.60,
-                                f"数据质量评分过低: {quality_report.overall_score:.2%}")
+        # 使用辅助方法断言（统一错误信息格式）
+        self.assert_helper.assert_quality_score(
+            self, quality_report, use_real_data=self.use_real_data
+        )
         
-        # 步骤3：计算实际收益率
-        event_window_df = window_data['event_window']
-        if len(event_window_df) >= 2:
-            actual_return = (event_window_df['close'].iloc[-1] / 
-                           event_window_df['close'].iloc[0] - 1)
-        else:
-            actual_return = 0.0
+        # 步骤3：计算实际收益率（使用辅助方法）
+        actual_return = self.data_helper.calculate_actual_return(event_window_df)
         
         # 步骤4：跨市场校准（USD标准化）
         usd_value = self.calibrator.normalize_to_usd(
@@ -144,12 +107,15 @@ class EndToEndIntegrationTest(unittest.TestCase):
         
         self.assertGreater(usd_value, 0, "USD标准化结果异常")
         
-        # 步骤5：误差计算
-        prediction_error = abs(actual_return - event['expected_decline'])
+        # 步骤5：误差计算（使用辅助方法）
+        prediction_error = self.data_helper.calculate_prediction_error(
+            actual_return, event.expected_decline
+        )
         
         # 步骤6：UAT验收（单事件误差≤25%）
-        self.assertLessEqual(prediction_error, 0.25,
-                           f"单事件误差超限: {prediction_error:.2%} > 25%")
+        self.assert_helper.assert_error_within_threshold(
+            self, prediction_error, 0.25, "单事件"
+        )
     
     def test_02_end_to_end_five_events_weighted_error(self):
         """
@@ -159,33 +125,25 @@ class EndToEndIntegrationTest(unittest.TestCase):
         errors_by_event = {}
         event_type_mapping = {}
         
+        # 使用辅助方法批量处理事件（消除重复代码）
         for event in self.test_events:
-            try:
-                # 获取事件窗口数据
-                window_data = self.data_provider.get_event_window_data(
-                    index_id=event['index_id'],
-                    event_date=event['event_date'],
-                    window_days=30,
-                    baseline_days=252
+            event_window_df, success = self.data_helper.safe_get_event_data(
+                self.data_provider, event,
+                window_days=TestEventProvider.DEFAULT_WINDOW_DAYS,
+                baseline_days=TestEventProvider.DEFAULT_BASELINE_DAYS
+            )
+            
+            if success:
+                actual_return = self.data_helper.calculate_actual_return(event_window_df)
+                prediction_error = self.data_helper.calculate_prediction_error(
+                    actual_return, event.expected_decline
                 )
-                
-                # 计算实际收益率
-                event_window_df = window_data['event_window']
-                if len(event_window_df) >= 2:
-                    actual_return = (event_window_df['close'].iloc[-1] / 
-                                   event_window_df['close'].iloc[0] - 1)
-                else:
-                    actual_return = event['expected_decline']
-                
-                # 计算误差
-                prediction_error = abs(actual_return - event['expected_decline'])
-                errors_by_event[event['event_id']] = prediction_error
-                event_type_mapping[event['event_id']] = event['event_type']
-                
-            except Exception as e:
+            else:
                 # 降级策略：假设0误差（专家第2轮依赖缺失处理）
-                errors_by_event[event['event_id']] = 0.0
-                event_type_mapping[event['event_id']] = event['event_type']
+                prediction_error = 0.0
+            
+            errors_by_event[event.event_id] = prediction_error
+            event_type_mapping[event.event_id] = event.event_type
         
         # UAT验收：加权平均误差
         result = self.uat_validator.validate_weighted_average_error(
@@ -233,37 +191,29 @@ class EndToEndIntegrationTest(unittest.TestCase):
         """
         quality_scores = []
         
+        # 使用辅助方法批量检查质量（消除重复代码）
         for event in self.test_events[:3]:  # 测试前3个事件
-            try:
-                window_data = self.data_provider.get_event_window_data(
-                    index_id=event['index_id'],
-                    event_date=event['event_date'],
-                    window_days=30,
-                    baseline_days=252
-                )
-                
+            event_window_df, success = self.data_helper.safe_get_event_data(
+                self.data_provider, event,
+                window_days=TestEventProvider.DEFAULT_WINDOW_DAYS,
+                baseline_days=TestEventProvider.DEFAULT_BASELINE_DAYS
+            )
+            
+            if success:
                 quality_report = self.quality_checker.check_quality(
-                    data=window_data['event_window'],
-                    source=event['index_id']
+                    data=event_window_df,
+                    source=event.index_id
                 )
-                
                 quality_scores.append(quality_report.overall_score)
-                
-            except Exception as e:
-                # 降级：跳过异常事件
-                continue
         
         if quality_scores:
             avg_quality = np.mean(quality_scores)
+            threshold = 0.90 if self.use_real_data else 0.60
             
-            # 内部使用阈值≥60%，生产UAT阈值≥90%（专家第2轮5.1节）
-            if self.use_real_data:
-                threshold = 0.90
-            else:
-                threshold = 0.60  # 模拟数据宽松阈值
-            
-            self.assertGreaterEqual(avg_quality, threshold,
-                                   f"平均数据质量评分过低: {avg_quality:.2%} < {threshold:.0%}")
+            self.assertGreaterEqual(
+                avg_quality, threshold,
+                f"平均数据质量评分过低: {avg_quality:.2%} < {threshold:.0%}"
+            )
     
     def test_05_system_response_time(self):
         """
@@ -274,44 +224,43 @@ class EndToEndIntegrationTest(unittest.TestCase):
         
         start_time = time.time()
         
-        # 端到端流程（包含所有步骤）
-        try:
-            # 数据获取
-            window_data = self.data_provider.get_event_window_data(
-                index_id=event['index_id'],
-                event_date=event['event_date'],
-                window_days=30,
-                baseline_days=252
-            )
-            
-            # 质量检查（修复接口调用）
-            quality_report = self.quality_checker.check_quality(
-                data=window_data['event_window'],
-                source=event['index_id']
-            )
-            
-            # USD标准化
-            usd_value = self.calibrator.normalize_to_usd(
-                value=100000.0,
-                source_currency='CNY',
-                event_window_data=window_data['event_window']
-            )
-            
-            # 流动性调整
-            adjusted_value = self.calibrator.apply_liquidity_adjustment(
-                raw_risk_metric=usd_value,
-                market_id=event['market_id'],
-                days_required=5
-            )
-            
-        except Exception as e:
-            # 降级：忽略错误，仅测试性能
-            pass
+        # 端到端流程（使用辅助方法）
+        event_window_df, success = self.data_helper.safe_get_event_data(
+            self.data_provider, event,
+            window_days=TestEventProvider.DEFAULT_WINDOW_DAYS,
+            baseline_days=TestEventProvider.DEFAULT_BASELINE_DAYS
+        )
+        
+        if success:
+            try:
+                # 质量检查
+                quality_report = self.quality_checker.check_quality(
+                    data=event_window_df,
+                    source=event.index_id
+                )
+                
+                # USD标准化
+                usd_value = self.calibrator.normalize_to_usd(
+                    value=100000.0,
+                    source_currency='CNY',
+                    event_window_data=event_window_df
+                )
+                
+                # 流动性调整
+                adjusted_value = self.calibrator.apply_liquidity_adjustment(
+                    raw_risk_metric=usd_value,
+                    market_id=event.market_id,
+                    days_required=5
+                )
+            except Exception:
+                pass  # 降级：忽略错误，仅测试性能
         
         elapsed_time = time.time() - start_time
         
-        self.assertLessEqual(elapsed_time, 5.0,
-                           f"系统响应时间超限: {elapsed_time:.2f}s > 5.0s")
+        self.assertLessEqual(
+            elapsed_time, 5.0,
+            f"系统响应时间超限: {elapsed_time:.2f}s > 5.0s"
+        )
     
     def test_06_triple_indicator_system(self):
         """
@@ -321,29 +270,22 @@ class EndToEndIntegrationTest(unittest.TestCase):
         predictions = []
         actuals = []
         
+        # 使用辅助方法批量处理（消除重复代码）
         for event in self.test_events:
-            try:
-                window_data = self.data_provider.get_event_window_data(
-                    index_id=event['index_id'],
-                    event_date=event['event_date'],
-                    window_days=30,
-                    baseline_days=252
-                )
-                
-                event_window_df = window_data['event_window']
-                if len(event_window_df) >= 2:
-                    actual_return = (event_window_df['close'].iloc[-1] / 
-                                   event_window_df['close'].iloc[0] - 1)
-                else:
-                    actual_return = event['expected_decline']
-                
-                predictions.append(event['expected_decline'])
-                actuals.append(actual_return)
-                
-            except Exception:
+            event_window_df, success = self.data_helper.safe_get_event_data(
+                self.data_provider, event,
+                window_days=TestEventProvider.DEFAULT_WINDOW_DAYS,
+                baseline_days=TestEventProvider.DEFAULT_BASELINE_DAYS
+            )
+            
+            if success:
+                actual_return = self.data_helper.calculate_actual_return(event_window_df)
+            else:
                 # 降级：使用预期值
-                predictions.append(event['expected_decline'])
-                actuals.append(event['expected_decline'])
+                actual_return = event.expected_decline
+            
+            predictions.append(event.expected_decline)
+            actuals.append(actual_return)
         
         # UAT验收：三级指标体系
         result = self.uat_validator.validate_triple_indicator_system(

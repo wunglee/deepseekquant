@@ -11,12 +11,14 @@
 
 import unittest
 import numpy as np
-import pandas as pd
 from typing import Dict, List
 from scipy import stats
 
 from core_bak_refactored.core.risk.stress_testing import IndustryParameterAnalyzer
 from core_bak_refactored.core.backtest._fragments.uat_validator import UATValidator
+
+# 导入测试辅助工具（消除重复代码）
+from core_bak_refactored.tests.core.backtest.test_fixtures import IndustrySampleGenerator
 
 
 class IndustryParameterValidationTest(unittest.TestCase):
@@ -35,49 +37,12 @@ class IndustryParameterValidationTest(unittest.TestCase):
         self.analyzer = IndustryParameterAnalyzer()
         self.uat_validator = UATValidator()
         
-        # 生成模拟行业样本数据（≥1000交易日）
-        # 基准值设定遵循专家第2轮答复范围
-        np.random.seed(42)
-        n_samples = 1200  # 满足≥1000要求
-        
-        # 专家第2轮参数范围（基准=1.0）
-        # 确保差异足够：金融15.0% vs 防御8.0% = 7.0%
-        self.industry_samples = {
-            'financial': self._generate_industry_samples(
-                mean=-0.150, std=0.020, n=n_samples,  # 金融：1.50x基准（15.0%）
-                rationale="系统性风险敏感度高"
-            ),
-            'technology': self._generate_industry_samples(
-                mean=-0.120, std=0.022, n=n_samples,  # 科技：1.20x基准（12.0%）
-                rationale="成长性高但波动性大"
-            ),
-            'cyclical': self._generate_industry_samples(
-                mean=-0.135, std=0.025, n=n_samples,  # 周期：1.35x基准（13.5%）
-                rationale="经济周期敏感性强"
-            ),
-            'defensive': self._generate_industry_samples(
-                mean=-0.085, std=0.015, n=n_samples,  # 防御：0.85x基准（8.5%）
-                rationale="风险抵御能力强"
-            )
-        }
-    
-    def _generate_industry_samples(self, mean: float, std: float, n: int, rationale: str) -> List[float]:
-        """
-        生成行业冲击样本数据
-        
-        Args:
-            mean: 平均冲击（负值表示下跌）
-            std: 标准差
-            n: 样本量
-            rationale: 业务理由
-        
-        Returns:
-            冲击系数样本列表
-        """
-        samples = np.random.normal(loc=mean, scale=std, size=n)
-        # 确保样本符合实际业务范围（限制在-50%至+20%）
-        samples = np.clip(samples, -0.5, 0.2)
-        return samples.tolist()
+        # 使用辅助工具生成样本数据（消除硬编码和重复代码）
+        self.sample_generator = IndustrySampleGenerator()
+        self.industry_samples = self.sample_generator.generate_all_industries(
+            n_samples=1200,  # 满足≥1000要求
+            seed=42
+        )
     
     def test_01_sample_size_requirement(self):
         """
