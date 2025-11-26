@@ -581,3 +581,221 @@ class UATValidator:
             alerts = [a for a in alerts if a.timestamp >= since]
         
         return alerts
+
+
+# =============================================================================
+# 生产环境监控告警系统（专家第2轮5.4节问题13）
+# =============================================================================
+
+class ProductionMonitor:
+    """
+    生产环境监控系统（专家第2轮5.4节问题13）
+    
+    监控指标体系：
+    - 数据质量：≥90%（低于85%告警）
+    - 预测误差：≤15%（超过18%告警）
+    - 系统可用性：≥99.5%（低于99%告警）
+    - API响应时间：≤5秒（超过8秒告警）
+    
+    告警升级路径：企业微信→短信→电话（30分钟未响应）
+    """
+    
+    # 监控阈值配置（专家第2轮5.4节问题13）
+    MONITOR_THRESHOLDS = {
+        'data_quality': {'warning': 0.85, 'critical': 0.80},
+        'prediction_error': {'warning': 0.18, 'critical': 0.22},
+        'system_availability': {'warning': 0.99, 'critical': 0.98},
+        'api_response_time': {'warning': 8.0, 'critical': 12.0}  # 秒
+    }
+    
+    def __init__(self):
+        """初始化生产监控器"""
+        self._alert_channels = ['wechat', 'sms', 'phone']
+        self._current_metrics = {}
+        self._alert_log = []
+    
+    def check_system_health(self,
+                           data_quality: Optional[float] = None,
+                           prediction_error: Optional[float] = None,
+                           system_availability: Optional[float] = None,
+                           api_response_time: Optional[float] = None) -> Dict[str, Any]:
+        """
+        系统健康度检查（专家第2轮5.4节问题13）
+        
+        Args:
+            data_quality: 数据质量评分（0-1）
+            prediction_error: 预测误差（0-1）
+            system_availability: 系统可用性（0-1）
+            api_response_time: API响应时间（秒）
+        
+        Returns:
+            健康度报告
+        """
+        alerts = []
+        status_details = {}
+        
+        # 检查数据质量
+        if data_quality is not None:
+            if data_quality < self.MONITOR_THRESHOLDS['data_quality']['critical']:
+                alerts.append(self._create_alert('CRITICAL', '数据质量', data_quality,
+                                                self.MONITOR_THRESHOLDS['data_quality']['critical']))
+            elif data_quality < self.MONITOR_THRESHOLDS['data_quality']['warning']:
+                alerts.append(self._create_alert('WARNING', '数据质量', data_quality,
+                                                self.MONITOR_THRESHOLDS['data_quality']['warning']))
+            status_details['data_quality'] = {
+                'value': data_quality,
+                'status': 'OK' if data_quality >= self.MONITOR_THRESHOLDS['data_quality']['warning'] else 'WARNING'
+            }
+        
+        # 检查预测误差
+        if prediction_error is not None:
+            if prediction_error > self.MONITOR_THRESHOLDS['prediction_error']['critical']:
+                alerts.append(self._create_alert('CRITICAL', '预测误差', prediction_error,
+                                                self.MONITOR_THRESHOLDS['prediction_error']['critical']))
+            elif prediction_error > self.MONITOR_THRESHOLDS['prediction_error']['warning']:
+                alerts.append(self._create_alert('WARNING', '预测误差', prediction_error,
+                                                self.MONITOR_THRESHOLDS['prediction_error']['warning']))
+            status_details['prediction_error'] = {
+                'value': prediction_error,
+                'status': 'OK' if prediction_error <= self.MONITOR_THRESHOLDS['prediction_error']['warning'] else 'WARNING'
+            }
+        
+        # 检查系统可用性
+        if system_availability is not None:
+            if system_availability < self.MONITOR_THRESHOLDS['system_availability']['critical']:
+                alerts.append(self._create_alert('CRITICAL', '系统可用性', system_availability,
+                                                self.MONITOR_THRESHOLDS['system_availability']['critical']))
+            elif system_availability < self.MONITOR_THRESHOLDS['system_availability']['warning']:
+                alerts.append(self._create_alert('WARNING', '系统可用性', system_availability,
+                                                self.MONITOR_THRESHOLDS['system_availability']['warning']))
+            status_details['system_availability'] = {
+                'value': system_availability,
+                'status': 'OK' if system_availability >= self.MONITOR_THRESHOLDS['system_availability']['warning'] else 'WARNING'
+            }
+        
+        # 检查API响应时间
+        if api_response_time is not None:
+            if api_response_time > self.MONITOR_THRESHOLDS['api_response_time']['critical']:
+                alerts.append(self._create_alert('CRITICAL', 'API响应时间', api_response_time,
+                                                self.MONITOR_THRESHOLDS['api_response_time']['critical']))
+            elif api_response_time > self.MONITOR_THRESHOLDS['api_response_time']['warning']:
+                alerts.append(self._create_alert('WARNING', 'API响应时间', api_response_time,
+                                                self.MONITOR_THRESHOLDS['api_response_time']['warning']))
+            status_details['api_response_time'] = {
+                'value': api_response_time,
+                'status': 'OK' if api_response_time <= self.MONITOR_THRESHOLDS['api_response_time']['warning'] else 'WARNING'
+            }
+        
+        # 触发告警升级
+        for alert in alerts:
+            self._escalate_alert(alert)
+        
+        # 记录告警
+        self._alert_log.extend(alerts)
+        
+        # 更新当前指标
+        self._current_metrics = {
+            'data_quality': data_quality,
+            'prediction_error': prediction_error,
+            'system_availability': system_availability,
+            'api_response_time': api_response_time,
+            'timestamp': datetime.now()
+        }
+        
+        return {
+            'status': 'HEALTHY' if not alerts else ('WARNING' if all(a['level'] == 'WARNING' for a in alerts) else 'CRITICAL'),
+            'alerts': alerts,
+            'status_details': status_details,
+            'alert_count': len(alerts),
+            'timestamp': datetime.now().isoformat()
+        }
+    
+    def _create_alert(self, level: str, metric_name: str, actual_value: float, threshold: float) -> Dict[str, Any]:
+        """
+        创建告警
+        
+        Args:
+            level: 告警级别（WARNING/CRITICAL）
+            metric_name: 指标名称
+            actual_value: 实际值
+            threshold: 阈值
+        
+        Returns:
+            告警字典
+        """
+        return {
+            'level': level,
+            'metric_name': metric_name,
+            'actual_value': actual_value,
+            'threshold': threshold,
+            'timestamp': datetime.now(),
+            'message': f"{metric_name}{level}告警: 当前值={actual_value:.4f}, 阈值={threshold:.4f}"
+        }
+    
+    def _escalate_alert(self, alert: Dict[str, Any],
+                       escalation_path: Optional[List[str]] = None,
+                       timeout_minutes: int = 30) -> bool:
+        """
+        告警升级处理（专家第2轮5.4节问题13：企业微信→短信→电话）
+        
+        Args:
+            alert: 告警字典
+            escalation_path: 升级路径（默认使用配置路径）
+            timeout_minutes: 每个渠道等待时间（分钟）
+        
+        Returns:
+            是否成功发送
+        """
+        if escalation_path is None:
+            escalation_path = self._alert_channels
+        
+        for channel in escalation_path:
+            success = self._send_alert(channel, alert)
+            if success:
+                logger.info(f"告警已通过{channel}渠道发送: {alert['message']}")
+                return True
+            else:
+                logger.warning(f"{channel}渠道发送失败，尝试下一渠道...")
+                # 实际生产中应等待timeout_minutes，这里简化处理
+        
+        logger.error(f"所有告警渠道发送失败: {alert['message']}")
+        return False
+    
+    def _send_alert(self, channel: str, alert: Dict[str, Any]) -> bool:
+        """
+        发送告警（模拟实现，实际需集成企业微信/短信/电话API）
+        
+        Args:
+            channel: 渠道（wechat/sms/phone）
+            alert: 告警字典
+        
+        Returns:
+            是否成功
+        """
+        # TODO: 集成实际告警渠道（企业微信API、短信API、电话API）
+        logger.info(f"[{channel}告警] {alert['message']}")
+        return True  # 模拟成功
+    
+    def get_current_metrics(self) -> Dict[str, Any]:
+        """
+        获取当前指标
+        
+        Returns:
+            当前指标字典
+        """
+        return self._current_metrics.copy()
+    
+    def get_alert_history(self, since: Optional[datetime] = None) -> List[Dict[str, Any]]:
+        """
+        获取告警历史
+        
+        Args:
+            since: 起始时间（None表示所有）
+        
+        Returns:
+            告警列表
+        """
+        if since is None:
+            return self._alert_log.copy()
+        else:
+            return [a for a in self._alert_log if a['timestamp'] >= since]
