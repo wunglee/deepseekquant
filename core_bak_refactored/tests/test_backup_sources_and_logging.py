@@ -4,8 +4,8 @@
 测试覆盖：
 1. 数据源健康检查机制
 2. 降级日志记录（DataUtils.safe_get_event_data异常处理）
-3. 备用数据源回退路径（JoinQuant/Wind stub → Yahoo → Mock）
-4. 区域化数据源优先级（A股/美股/港股）
+3. 备用数据源回退路径（JoinQuant/Wind/Tushare stub → Yahoo → Mock）
+4. 区域化数据源优先级（CN/US/HK/JP/EU/SG）
 
 验收标准：
 - 日志中包含event_id、provider、error摘要（专家第3轮要求）
@@ -24,6 +24,7 @@ from core_bak_refactored.core.data._fragments.historical_data_provider import (
     RealHistoricalDataProvider,
     MockHistoricalDataProvider
 )
+from core_bak_refactored.core.share.market_enums import MarketCode, DataSource
 
 
 class TestBackupSourcesAndLogging:
@@ -147,38 +148,41 @@ class TestBackupSourcesAndLogging:
     def test_regional_priority_cn_market(self):
         """测试区域化优先级：A股市场优先JoinQuant"""
         provider = RealHistoricalDataProvider(
-            primary_source='yahoo',
-            backup_sources=['joinquant', 'wind', 'mock']
+            primary_source=DataSource.YAHOO.value,
+            backup_sources=[DataSource.JOINQUANT.value, DataSource.WIND.value, DataSource.MOCK.value]
         )
         
         # A股指数应优先使用JoinQuant（即使primary是yahoo）
         priority = provider._get_regional_priority('000300.SH')
         
-        assert priority == ['joinquant', 'wind', 'yahoo', 'mock']
+        assert priority[0] == DataSource.JOINQUANT.value
+        assert priority[1] == DataSource.TUSHARE.value  # Tushare为A股备用
+        assert DataSource.MOCK.value in priority  # 确保有兴底
     
     def test_regional_priority_us_market(self):
         """测试区域化优先级：美股市场优先Yahoo"""
         provider = RealHistoricalDataProvider(
-            primary_source='joinquant',
-            backup_sources=['yahoo', 'wind', 'mock']
+            primary_source=DataSource.JOINQUANT.value,
+            backup_sources=[DataSource.YAHOO.value, DataSource.WIND.value, DataSource.MOCK.value]
         )
         
         # 美股指数应优先使用Yahoo
         priority = provider._get_regional_priority('SPX')
         
-        assert priority[0] == 'yahoo'
+        assert priority[0] == DataSource.YAHOO.value
     
     def test_regional_priority_hk_market(self):
         """测试区域化优先级：港股市场优先Wind"""
         provider = RealHistoricalDataProvider(
-            primary_source='yahoo',
-            backup_sources=['joinquant', 'wind', 'mock']
+            primary_source=DataSource.YAHOO.value,
+            backup_sources=[DataSource.JOINQUANT.value, DataSource.WIND.value, DataSource.MOCK.value]
         )
         
         # 港股指数应优先使用Wind
         priority = provider._get_regional_priority('HSI')
         
-        assert priority == ['wind', 'yahoo', 'joinquant', 'mock']
+        assert priority[0] == DataSource.WIND.value
+        assert priority[1] == DataSource.TUSHARE.value  # Tushare为港股备用
     
     def test_all_sources_fail_logs_health_summary(self, log_capture):
         """测试所有数据源失败时记录健康状态汇总"""
@@ -216,6 +220,46 @@ class TestBackupSourcesAndLogging:
         assert success is True
         assert not data.empty
         assert 'close' in data.columns
+    
+    def test_tushare_stub_in_cn_priority(self):
+        """测试Tushare在A股优先级中"""
+        provider = RealHistoricalDataProvider(
+            primary_source=DataSource.YAHOO.value,
+            backup_sources=[DataSource.JOINQUANT.value, DataSource.TUSHARE.value, DataSource.MOCK.value]
+        )
+        
+        priority = provider._get_regional_priority('000001.SH')
+        assert DataSource.TUSHARE.value in priority
+        assert priority.index(DataSource.TUSHARE.value) < priority.index(DataSource.YAHOO.value)
+    
+    def test_all_markets_covered(self):
+        """测试所有market_config.py中的市场都有对应优先级"""
+        from core_bak_refactored.core.share.market_enums import MarketCode, REGIONAL_DATA_SOURCE_PRIORITY
+        
+        # 所有市场代码都应在优先级映射中
+        for market in MarketCode:
+            assert market in REGIONAL_DATA_SOURCE_PRIORITY
+            priority = REGIONAL_DATA_SOURCE_PRIORITY[market]
+            assert len(priority) > 0
+            assert DataSource.MOCK in priority  # 每个市场都应有Mock兜底
+    
+    def test_jp_market_priority(self):
+        """测试日本市场优先级"""
+        provider = RealHistoricalDataProvider()
+        priority = provider._get_regional_priority('9984.T')  # Sony股票
+        assert priority[0] == DataSource.YAHOO.value
+    
+    def test_eu_market_priority(self):
+        """测试欧洲市场优先级"""
+        provider = RealHistoricalDataProvider()
+        priority = provider._get_regional_priority('BMW.DE')  # 宝马股票
+        assert priority[0] == DataSource.YAHOO.value
+    
+    def test_sg_market_priority(self):
+        """测试新加坡市场优先级"""
+        provider = RealHistoricalDataProvider()
+        priority = provider._get_regional_priority('STI.SI')  # 海峡时报指数
+        assert priority[0] == DataSource.YAHOO.value
 
 
 class TestAbnormalHandlingAlerts:

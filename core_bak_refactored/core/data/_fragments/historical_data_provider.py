@@ -24,6 +24,8 @@ import logging
 
 # 重构：引入独立的数据质量检查器
 from core_bak_refactored.core.data._fragments.data_quality_checker import DataQualityChecker, DataQualityReport
+# 引入市场枚举
+from core_bak_refactored.core.share.market_enums import MarketCode, DataSource, REGIONAL_DATA_SOURCE_PRIORITY
 
 logger = logging.getLogger('DeepSeekQuant.DataFragments')
 
@@ -338,13 +340,9 @@ class RealHistoricalDataProvider:
     - 停牌处理：停牌日数据沿用最近有效价格，但不计入收益率计算
     """
     
-    # 区域化数据源优先级配置（专家第2轮5.1节）
-    REGIONAL_PRIORITY = {
-        'CN': ['joinquant', 'wind', 'yahoo', 'mock'],  # A股
-        'US': ['yahoo', 'alpha_vantage', 'iex', 'mock'],  # 美股
-        'HK': ['wind', 'yahoo', 'joinquant', 'mock'],  # 港股
-        'default': ['yahoo', 'joinquant', 'wind', 'mock']
-    }
+    # 区域化数据源优先级配置（专家第2轮5.1节 + 统一market_config.py覆盖范围）
+    # 使用枚举替代字符串常量
+    REGIONAL_PRIORITY = REGIONAL_DATA_SOURCE_PRIORITY
     
     # 事件窗口配置（专家第2轮5.1节）
     EVENT_WINDOW_CONFIGS = {
@@ -379,29 +377,36 @@ class RealHistoricalDataProvider:
     
     def _initialize_adapters(self) -> Dict[str, Any]:
         """初始化数据源适配器"""
-        adapters = {'mock': self._mock}
+        adapters = {DataSource.MOCK.value: self._mock}
         
         # Yahoo Finance适配器
         try:
             from core_bak_refactored.core.data._fragments.yahoo_finance_provider import YahooFinanceDataProvider
-            adapters['yahoo'] = YahooFinanceDataProvider(fallback_to_mock=False)
+            adapters[DataSource.YAHOO.value] = YahooFinanceDataProvider(fallback_to_mock=False)
             logger.info("Yahoo Finance适配器已加载")
         except Exception as e:
             logger.warning(f"Yahoo Finance适配器加载失败: {e}")
         
         # JoinQuant适配器（stub实现，备用数据源）
         try:
-            adapters['joinquant'] = self._create_joinquant_stub()
+            adapters[DataSource.JOINQUANT.value] = self._create_joinquant_stub()
             logger.info("JoinQuant适配器（stub）已加载")
         except Exception as e:
             logger.warning(f"JoinQuant适配器加载失败: {e}")
         
         # Wind适配器（stub实现，备用数据源）
         try:
-            adapters['wind'] = self._create_wind_stub()
+            adapters[DataSource.WIND.value] = self._create_wind_stub()
             logger.info("Wind适配器（stub）已加载")
         except Exception as e:
             logger.warning(f"Wind适配器加载失败: {e}")
+        
+        # Tushare适配器（stub实现，A股/港股备用数据源）
+        try:
+            adapters[DataSource.TUSHARE.value] = self._create_tushare_stub()
+            logger.info("Tushare适配器（stub）已加载")
+        except Exception as e:
+            logger.warning(f"Tushare适配器加载失败: {e}")
         
         return adapters
     
@@ -438,6 +443,37 @@ class RealHistoricalDataProvider:
                 raise NotImplementedError("Wind API未集成，请使用Yahoo或Mock")
         
         return WindStub()
+    
+    def _create_tushare_stub(self) -> Any:
+        """创建Tushare数据源stub（待实际API实现）"""
+        class TushareStub:
+            """Tushare数据源stub - A股/港股备用数据源"""
+            def __init__(self):
+                self.available = False  # TODO: 替换为实际API可用性检查
+                logger.info("Tushare stub初始化（待实际API集成）")
+            
+            def get_index_prices(self, index_id: str, start_date: str, end_date: str) -> pd.DataFrame:
+                # TODO: 实际实现调用Tushare API
+                # import tushare as ts
+                # ts.set_token('your_token')
+                # pro = ts.pro_api()
+                # 
+                # # A股指数
+                # if index_id.endswith('.SH') or index_id.endswith('.SZ'):
+                #     data = pro.index_daily(ts_code=index_id, start_date=start_date, end_date=end_date)
+                # # 港股指数（部分支持）
+                # elif index_id in ['HSI', 'HSCEI']:
+                #     # Tushare港股数据较少，可能需要回退
+                #     data = pro.hk_index_daily(ts_code=index_id, start_date=start_date, end_date=end_date)
+                # 
+                # return pd.DataFrame({
+                #     'date': pd.to_datetime(data['trade_date']),
+                #     'close': data['close'],
+                #     'volume': data['vol']
+                # })
+                raise NotImplementedError("Tushare API未集成，请使用Yahoo或Mock")
+        
+        return TushareStub()
     
     def get_index_prices(self, index_id: str, start_date: str, end_date: str) -> pd.DataFrame:
         """获取指数价格数据（含自动回退机制 + 区域化优先级 + 健康检查）"""
@@ -513,20 +549,30 @@ class RealHistoricalDataProvider:
     
     def _get_regional_priority(self, index_id: str) -> List[str]:
         """
-        根据市场区域获取数据源优先级（专家第2轮5.1节）
+        根据市场区域获取数据源优先级（专家第2轮5.1节 + 统一market_config.py覆盖）
         
         Returns:
             数据源优先级列表
         """
         # 从symbol中提取市场代码
         if index_id.endswith('.SH') or index_id.endswith('.SZ'):
-            return self.REGIONAL_PRIORITY['CN']
+            market = MarketCode.CN
         elif index_id.endswith('.US'):
-            return self.REGIONAL_PRIORITY['US']
-        elif index_id.endswith('.HK') or index_id == 'HSI' or index_id == 'HSCEI':
-            return self.REGIONAL_PRIORITY['HK']
+            market = MarketCode.US
+        elif index_id.endswith('.HK') or index_id in ['HSI', 'HSCEI']:
+            market = MarketCode.HK
+        elif index_id.endswith('.T') or index_id.endswith('.JP'):  # 东京证券交易所
+            market = MarketCode.JP
+        elif index_id.endswith('.PA') or index_id.endswith('.L') or index_id.endswith('.DE'):  # 巴黎/伦敦/法兰克福
+            market = MarketCode.EU
+        elif index_id.endswith('.SI'):  # 新加坡
+            market = MarketCode.SG
         else:
-            return self.REGIONAL_PRIORITY['default']
+            market = 'default'
+        
+        # 获取优先级列表，转换为字符串
+        priority = self.REGIONAL_PRIORITY.get(market, self.REGIONAL_PRIORITY['default'])
+        return [source.value if isinstance(source, DataSource) else source for source in priority]
     
     def get_event_window_data(self, 
                               index_id: str, 
