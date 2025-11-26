@@ -402,10 +402,17 @@ class RealHistoricalDataProvider:
         except Exception as e:
             logger.warning(f"Wind适配器加载失败: {e}")
         
-        # Tushare适配器（stub实现，A股/港股备用数据源）
+        # Tushare适配器（实际API实现，A股/港股备用数据源）
         try:
-            adapters[DataSource.TUSHARE.value] = self._create_tushare_stub()
-            logger.info("Tushare适配器（stub）已加载")
+            from core_bak_refactored.core.data._fragments.tushare_provider import TushareDataProvider
+            tushare_adapter = TushareDataProvider(fallback_to_mock=False)
+            if tushare_adapter.available:
+                adapters[DataSource.TUSHARE.value] = tushare_adapter
+                logger.info("Tushare适配器已加载（实际API）")
+            else:
+                # API不可用，使用stub
+                adapters[DataSource.TUSHARE.value] = self._create_tushare_stub()
+                logger.info("Tushare适配器（stub）已加载（API未配置）")
         except Exception as e:
             logger.warning(f"Tushare适配器加载失败: {e}")
         
