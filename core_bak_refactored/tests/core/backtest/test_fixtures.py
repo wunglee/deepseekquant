@@ -10,6 +10,16 @@
 - 单一职责：每个类只负责一类测试数据或工具
 - 可复用性：所有测试用例共享同一套配置
 - 可维护性：配置集中管理，易于调整
+
+架构说明（重要）：
+本文件为测试辅助工具，部分功能是对业务模块能力的封装：
+- IndustrySampleGenerator: 调用 core.risk.IndustryParameterAnalyzer.generate_test_samples()
+- DataProcessingHelper: 封装 core.data 的数据处理能力（未来可迁移）
+- TestAssertionHelper: 纯测试断言逻辑，职责合理
+
+未来优化方向：
+当业务模块提供完整的辅助方法后，本文件应仅保留测试编排逻辑，
+删除业务逻辑的重复实现，改为直接调用业务模块接口。
 """
 
 import numpy as np
@@ -96,32 +106,13 @@ class IndustrySampleGenerator:
     """
     行业样本数据生成器
     
-    职责：生成符合专家第2轮答复的行业参数样本
-    """
+    职责：封装 core.risk.IndustryParameterAnalyzer.generate_test_samples() 方法
     
-    # 专家第2轮参数范围（基准=0.10）
-    INDUSTRY_CONFIGS = {
-        'financial': {
-            'mean': -0.150,
-            'std': 0.020,
-            'rationale': '系统性风险敏感度高'
-        },
-        'technology': {
-            'mean': -0.120,
-            'std': 0.022,
-            'rationale': '成长性高但波动性大'
-        },
-        'cyclical': {
-            'mean': -0.135,
-            'std': 0.025,
-            'rationale': '经济周期敏感性强'
-        },
-        'defensive': {
-            'mean': -0.085,
-            'std': 0.015,
-            'rationale': '风险抵御能力强'
-        }
-    }
+    架构说明：
+    - 业务逻辑已归位到 core.risk.IndustryParameterAnalyzer
+    - 本类为测试便利性包装，直接调用业务模块方法
+    - 避免测试模块承载业务逻辑
+    """
     
     @classmethod
     def generate_all_industries(cls, n_samples: int = 1200, seed: int = 42) -> Dict[str, List[float]]:
@@ -135,35 +126,9 @@ class IndustrySampleGenerator:
         Returns:
             行业样本字典 {industry_name: samples}
         """
-        np.random.seed(seed)
-        
-        industry_samples = {}
-        for industry, config in cls.INDUSTRY_CONFIGS.items():
-            industry_samples[industry] = cls._generate_samples(
-                mean=config['mean'],
-                std=config['std'],
-                n=n_samples
-            )
-        
-        return industry_samples
-    
-    @staticmethod
-    def _generate_samples(mean: float, std: float, n: int) -> List[float]:
-        """
-        生成单个行业的冲击样本
-        
-        Args:
-            mean: 平均冲击
-            std: 标准差
-            n: 样本量
-        
-        Returns:
-            冲击系数样本列表
-        """
-        samples = np.random.normal(loc=mean, scale=std, size=n)
-        # 限制在业务合理范围（-50%至+20%）
-        samples = np.clip(samples, -0.5, 0.2)
-        return samples.tolist()
+        # 调用业务模块方法（职责归位）
+        from core_bak_refactored.core.risk.stress_testing import IndustryParameterAnalyzer
+        return IndustryParameterAnalyzer.generate_test_samples(n_samples=n_samples, seed=seed)
 
 
 class DataProcessingHelper:
@@ -171,6 +136,15 @@ class DataProcessingHelper:
     数据处理辅助工具
     
     职责：提供通用的数据处理方法，消除重复代码
+    
+    架构说明：
+    - 本类封装了data模块的数据处理能力
+    - 理想情况应直接调用 core.data 提供的工具方法
+    - 当前作为过渡方案，避免测试代码重复
+    
+    未来优化：
+    - 将这些方法迁移到 core.data._fragments.data_utils 模块
+    - 测试直接调用业务模块接口
     """
     
     @staticmethod

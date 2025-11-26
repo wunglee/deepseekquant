@@ -1089,8 +1089,62 @@ class IndustryParameterAnalyzer:
     - t检验p值采用Welch近似与正态近似（样本量≥1000时合理）。
     """
     
+    # 专家第2轮参数范围（基准=0.10）
+    # 职责：在risk模块维护业务参数，不应放在测试中
+    INDUSTRY_CONFIGS = {
+        'financial': {
+            'mean': -0.150,
+            'std': 0.020,
+            'rationale': '系统性风险敏感度高'
+        },
+        'technology': {
+            'mean': -0.120,
+            'std': 0.022,
+            'rationale': '成长性高但波动性大'
+        },
+        'cyclical': {
+            'mean': -0.135,
+            'std': 0.025,
+            'rationale': '经济周期敏感性强'
+        },
+        'defensive': {
+            'mean': -0.085,
+            'std': 0.015,
+            'rationale': '风险抵御能力强'
+        }
+    }
+    
     def __init__(self):
         pass
+    
+    @classmethod
+    def generate_test_samples(cls, n_samples: int = 1200, seed: int = 42) -> Dict[str, List[float]]:
+        """
+        生成测试用行业样本数据
+        
+        职责：业务逻辑归位到risk模块，供测试调用
+        
+        Args:
+            n_samples: 样本量（默认1200，满足≥1000要求）
+            seed: 随机种子
+        
+        Returns:
+            行业样本字典 {industry_name: samples}
+        """
+        np.random.seed(seed)
+        
+        industry_samples = {}
+        for industry, config in cls.INDUSTRY_CONFIGS.items():
+            samples = np.random.normal(
+                loc=config['mean'],
+                scale=config['std'],
+                size=n_samples
+            )
+            # 限制在业务合理范围（-50%至+20%）
+            samples = np.clip(samples, -0.5, 0.2)
+            industry_samples[industry] = samples.tolist()
+        
+        return industry_samples
     
     @staticmethod
     def compute_industry_parameters(samples: Dict[str, List[float]]) -> Dict[str, float]:
