@@ -1,6 +1,8 @@
 """
-并行执行器测试
+并行执行器测试（旧版文件名，以 execution_algos_test.py 为主）
 """
+
+# Deleted: legacy duplicate, kept for backward compatibility; main tests live in execution_algos_test.py and core_bak_refactored/infrastructure/parallel_executor tests.
 
 import unittest
 import time

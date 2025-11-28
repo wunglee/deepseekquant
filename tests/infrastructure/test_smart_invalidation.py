@@ -1,6 +1,8 @@
 """
-智能失效策略测试
+智能失效策略测试（旧版，已由 smart_invalidation_test.py 替代）
 """
+
+# Deleted: legacy duplicate tests, see smart_invalidation_test.py for maintained suite.
 
 import unittest
 import sys

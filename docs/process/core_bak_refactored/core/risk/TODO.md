@@ -1,7 +1,7 @@
 # 风险管理模块 TODO（结构化清单）
 
 > **层级**：Core Layer - Risk Management  
-> **路径**：`core/risk/`  
+> **路径**：`core_bak_refactored/core/risk/`  
 > **职责**：风险指标计算、风险监控、压力测试
 > **生产状态**：模块生产就绪（专家复审通过）；全局发布取决于完成 Phase 2（core_bak_refactored → core 融合）与全局集成测试
 
@@ -40,7 +40,7 @@
     - 添加行业特性参数：金融股流动性溢价、科技股波动性调整、周期股系统性风险系数
     - 生产环境数据验证：与实际交易数据对比，建立持续校准机制
   - 相关文件：`core_bak_refactored/core/risk/position_risk.py`
-  - 迁移状态：待分配（需专家确认数据来源与业务规则）
+  - 迁移状态：已分配（SPRINT 5B-5，✅ ACCEPTED）
 
 ### 风险识别与响应
 - 标题：动态性能阈值优化
@@ -72,7 +72,7 @@
   - 依赖/前置：汇率适配器、币种字段覆盖
   - 实现方案：统一货币校验策略（组合维度），通过适配器进行汇率标准化与一致性检查，产生业务日志与告警；落地入口由SPRINT分配。
   - 相关文件：`core_bak_refactored/core/risk/risk_calculator.py`, `core_bak_refactored/core/share/exchange_rates.py`
-  - 迁移状态：未分配
+  - 迁移状态：已完成（见RiskCalculator._runtime_currency_check，✅ 15/15单测）
 
 - 标题：动态货币严格模式（基于组合特征）
   - 背景/价值：当前严格模式仅按市场静态配置，无法识别跨境组合、多币种组合，存在低估风险或过度限制的可能。
@@ -104,6 +104,7 @@
   - 实施方案：
     - 在 risk 域保留合规评分与事件封装，不直接做交易阻断；
     - 在 exec 域的风险门控逻辑中，根据合规事件字段决定是否阻断或转人工审批。
+  - 迁移状态：已转入exec模块TODO（风控门控专题），risk域仅保留合规评分与事件输出
 
 - 标题：多维度数据质量评估模型（DataQualityAssessment）
   - 背景/价值：当前数据质量评估仅基于货币字段覆盖率，难以全面反映数据完整性、准确性、及时性等维度，对风险评估支撑有限。
@@ -188,14 +189,14 @@
    - 更新使用示例（展示新数据类用法）
 
 **实施要点**：
-- [ ] 更新`docs/design/core/risk/模块设计文档.md`
-- [ ] 更新`docs/design/core/risk/接口设计文档.md`
+- [ ] 更新`docs/design/core_bak_refactored/core/risk/模块设计文档.md`
+- [ ] 更新`docs/design/core_bak_refactored/core/risk/接口设计文档.md`
 - [ ] 添加版本历史条目
 - [ ] 标记变更章节（如：`[v1.1 新增]`）
 
 相关文件：  
-- `docs/design/core/risk/模块设计文档.md`
-- `docs/design/core/risk/接口设计文档.md`
+- `docs/design/core_bak_refactored/core/risk/模块设计文档.md`
+- `docs/design/core_bak_refactored/core/risk/接口设计文档.md`
 
 状态评估：🔲 未实施（优先级P2，Phase 3完成后处理）
 

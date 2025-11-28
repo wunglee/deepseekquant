@@ -2035,3 +2035,2594 @@ class DataQualityAutoRepair:
 4. 进入下一阶段实施规划
 
 请针对上述确认清单提供明确的业务口径，以便我们进行相应调整和完善。
+
+
+第五轮咨询：
+
+# 第5轮咨询 — 准入准备
+
+## 📋 Phase边界声明（必须）
+- 当前阶段：风险模块协调器与前置检查，本轮进行专家确认；不讨论生产发布与跨域融合。
+- 系统范围：仅限`core_bak_refactored`；不修改根目录`core/`模块。
+
+## 背景说明
+- 本轮为业务评审咨询：聚焦业务口径与合规路径澄清；如需内部实现微调，不改变对外行为；现有单元测试保持通过（15/15）。
+
+#### 📚 依赖上下文与设计文档清单（必须）
+- 设计文档：
+  - `docs/design/core_bak_refactored/core/risk/模块设计文档.md`
+  - `docs/design/core_bak_refactored/core/risk/接口设计文档.md`
+  - `docs/design/core_bak_refactored/ARCHITECTURE.md`
+- 共享配置与基础设施：
+  - `core_bak_refactored/core/share/market_config.py`
+  - `core_bak_refactored/infrastructure/cache_service.py`
+
+## 🧩 代码评审
+
+### 上一轮答复摘要与本轮改进（必须)
+- 摘要回顾（上一轮 `docs/answer.md`）：
+  - 动态严格模式：配置驱动、分市场阈值、综合触发分数；缺失配置/数据返回None。
+  - 多维数据质量：Phase 1仅completeness，分级阈值A/B/C/D；report-only不影响计算。
+  - 高优先级改进建议：
+    - 4.1.1：在 RiskCalculator 初始化时验证必要配置项（仅记录告警，不阻断）。
+    - 4.1.2：支持市场差异化配置的读取（market_specific 回退默认）。
+- 代码清单汇总：
+  - 核心实现：`core_bak_refactored/core/risk/risk_calculator.py`
+  - 单元测试：`core_bak_refactored/tests/units/core/risk/risk_calculator_test.py`
+  - 配置与依赖：`core_bak_refactored/core/share/market_config.py`、`core_bak_refactored/infrastructure/cache_service.py`
+- 本轮改进映射：
+  - 已新增 `RiskCalculator._validate_required_fields()` 并在初始化后调用；对动态严格模式与数据质量评估的关键配置项进行告警校验。
+  - 已新增 `RiskCalculator._get_market_specific_config(config_key, default_config)`；当存在 `market_specific` 时读取当前市场配置，否则回退默认。
+  - 不改变既有指标计算与行为；单元测试 15/15 通过。
+- 改进考虑：
+  - 严格遵循“配置驱动、无默认值”，监管维度可选；缺失字段不替代估算，只记录告警。
+  - 校验仅提示问题，不阻断初始化；市场差异化读取保持向后兼容（默认回退）。
+
+### 业务视角的代码实现评审要点
+- 触发可靠性：综合评分的维度选择与加权完全由配置驱动；缺失维度不替代估算，避免误触发。
+- 市场差异化：跨境阈值按市场读取；测试覆盖体现差异化生效。
+- 数据质量治理：Phase 1仅报告不干预计算；分级标准清晰可验证。
+- 合规路径：US合规日志保留；监管维度可选占位，待规则与数据就绪后再参与评分。
+- 契约一致性：输入/输出/异常路径与业务口径一致；协调器不承载算法实现，仅委托与前置检查。
+
+### ✅ 本轮改进验收清单（专家确认）
+- 监管：规则Schema、评分公式、阻断阈值、动作映射、审计字段、exec集成点。
+- 跨境：数据来源与计算标准；缺失策略。
+- 数据质量：Phase 3维度、各市场权重/阈值、各等级动作策略。
+- 性能与审计：目标与留存；必需字段。
+
+### 本轮改进（清单与关键评审）（必须)
+- 文件：`core_bak_refactored/core/risk/risk_calculator.py`
+  - 关键方法：
+    - `_determine_dynamic_strict_mode(data)`：读取`dynamic_currency_strict_mode`配置（enabled/weights/thresholds），按可用维度计算综合评分；当配置或数据缺失时返回None（不覆盖静态）。
+    - `_calculate_multi_currency_score(allocations, market_data, cfg)`：基于`base_currency`计算非基准货币权重占比。
+    - `_calculate_cross_border_score(portfolio, cfg)`：读取`portfolio.cross_border_exposure`，字段缺失返回None。
+    - `_calculate_regulatory_overlay_score(allocations, cfg)`：占位实现；无规则/数据时返回None；保持监管维度可选。
+    - `_calculate_comprehensive_score(scores, cfg)`：仅对存在的维度按`component_weights`加权；权重与维度键名严格一致。
+    - `_assess_data_quality_multi(market_data, dq_cfg)`：Phase 1仅计算`completeness=currency_coverage×100`；`usage_scenarios.report_only=True`，不影响指标。
+    - `_convert_score_to_grade(score, thresholds)`：A≥90、B≥75、C≥60、D<60。
+    - `_calculate_currency_coverage(prices)`：返回(总标的数、有currency的标的数、覆盖率)。
+  - 字段/返回/异常与业务口径映射：
+    - 输入字段：`market_data.prices[*].currency`、`portfolio.allocations[*].weight`、`portfolio.cross_border_exposure`、配置项（阈值/权重/触发分）。
+    - 返回约定：布尔决策/评分浮点/数据质量字典；异常路径不抛未声明异常，记录日志后返回安全值（如None或{}）。
+    - 业务口径：严格遵循“配置驱动、无默认值”；监管维度可选；缺失字段导致维度不参与评分而非替代估算。
+- 文件：`core_bak_refactored/tests/units/core/risk/risk_calculator_test.py`
+  - 关键评审点：
+    - 分市场阈值验证（JP/SG/CN/EU）；
+    - 边界值（0.64不触发、0.66触发）；
+    - 数据质量分级（B/C/D）与阈值边界；
+    - 缺失字段容错（cross_border_exposure缺失返回None）。
+
+### 🧩 架构变更与影响（如果有）
+- 协调器保持不实现算法；动态严格决策与数据质量评估定位为“前置检查/报告”。
+- 监管维度在有规则/数据时参与评分；无则返回None；综合评分按可用维度加权。
+- `cross_border_exposure`由Portfolio模块提供；Risk不设默认值，不在缺失时自行估算。
+
+## 本轮业务问题（下一轮需解决，非本轮验收内容）
+
+### 领域知识
+- 请您确认监管维度的规则Schema与评分公式：权重结构、优先级因子与聚合；并按市场（US/HK/CN/JP/SG/EU）提供示例口径。
+- 请您确认Portfolio为`cross_border_exposure`唯一数据源；启用动态严格模式时该字段为必需；请说明计算口径（地域/货币/综合）与一致性示例。
+- 请您确认数据质量Phase 3维度定义与数据来源：accuracy/consistency/timeliness/reliability 的指标说明。
+- 请您确认审计留存口径与最小必需字段清单（内部≥90天、监管≥3年）。
+
+### 优化机会
+- 请您确认各市场的数据质量权重与阈值的差异化优化（如US更关注accuracy、HK更关注completeness）。
+- 请您确认阻断阈值与动作映射的优化方向，降低误触发并提升一致性。
+- 请您确认性能目标达成路径（100标的×63日窗口P95≤500ms、极端P99≤1500ms）。
+
+### 实施路径
+- 请您确认监管维度在Phase 2是否“必选”；如需“必选”，请提供最小可行规则集与数据源。
+- 请您确认exec域集成点：下单门控的调用位置与必需字段（风险分、监管标记、原因、时间戳）。
+- 请您确认缺失策略：当关键字段缺失时动态严格模式返回None（不覆盖静态）；不发明默认值。
+
+## 🔗 相关文件（参考）
+- `core_bak_refactored/core/risk/risk_calculator.py`
+- `core_bak_refactored/tests/units/core/risk/risk_calculator_test.py`
+
+## 📝 说明（必须）
+- 重要：请尽可能详尽和充分，不要遗漏和简化，谢谢！
+
+
+专家回复：
+
+# 风险模块（core/risk）- 接口设计文档
+
+## 文档元信息
+
+**文档版本**: v1.0  
+**创建日期**: 2025-11-24  
+**最后更新**: 2025-11-24  
+**维护责任**: DeepSeek量化风险团队  
+**API稳定性**: Beta（接口可能变更）
+
+**变更历史**:
+- v1.0 (2025-11-24): 基于逆向工程初始化，覆盖所有公开接口
+- v1.1 (2025-11-25): 无公开接口变更；将源码中的测试用Mock迁移至tests
+- v1.2 (2025-11-25): 无公开API变更；新增历史回测集成测试（8事件，误差≤25%）；数据提供者工厂 create_data_provider('auto') 与 YahooFinanceDataProvider 的使用示例补充；新增 StressTestResult 数据类、监管报告字段完整性测试、风险传导场景对验证、监管报告格式导出支持
+- v1.3 (2025-11-27): 5D Phase 1 验收；RiskCalculator 新增内部方法：_runtime_currency_check/_determine_dynamic_strict_mode/_assess_data_quality_multi/_us_compliance_logging/_validate_required_fields/_get_market_specific_config；无公开API签名变更；15/15单元测试通过
+
+---
+
+## 一、接口概述
+
+### 1.1 接口分类
+
+风险模块提供三类接口：
+
+| 接口类型 | 目标用户 | 示例 | 稳定性 |
+|---------|---------|------|-------|
+| **公开API** | 外部业务模块 | `RiskCalculator.calculate_all_metrics()` | ✅ 稳定 |
+| **内部服务接口** | 模块内其他组件 | `RiskMetricsService.calculate_value_at_risk()` | ⚠️ 半稳定 |
+| **数据模型** | 所有调用方 | `RiskAssessment`, `RiskLimit` | ✅ 稳定 |
+
+### 1.2 调用模式
+
+```python
+# 典型调用流程
+from core_bak_refactored.core.risk import RiskCalculator
+
+# 1. 初始化
+config = {
+    'market_type': 'CN',
+    'market_configs': {...}
+}
+calculator = RiskCalculator(config)
+
+# 2. 准备数据
+data = {
+    'portfolio_state': {...},
+    'market_data': {...}
+}
+
+# 3. 调用计算
+metrics = calculator.calculate_all_metrics(data)
+
+# 4. 解析结果
+var = metrics.get('var_historical')
+sharpe_ratio = metrics.get('sharpe_ratio')
+```
+
+---
+
+## 二、核心公开API
+
+### 2.1 RiskCalculator - 风险计算协调器
+
+#### 类定义
+
+```python
+class RiskCalculator:
+    """风险计算器 - 统一风险计算入口"""
+    
+    def __init__(self, config: Dict[str, Any]):
+        """
+        初始化风险计算器
+        
+        Args:
+            config: 配置字典
+                必需字段:
+                - market_type: str, 市场类型 ('CN'/'US'/'HK'/'JP'/'EU')
+                - market_configs: Dict, 市场配置字典
+                可选字段:
+                - min_data_points: int, 最小数据点阈值 (默认63)
+                - strict_currency_check: bool, 严格货币检查 (默认根据市场)
+                - monte_carlo_sims: int, 蒙特卡洛模拟次数 (默认1000)
+        
+        Raises:
+            ValueError: 配置验证失败
+        """
+```
+
+#### 核心方法
+
+##### calculate_all_metrics()
+
+```python
+def calculate_all_metrics(self, data: Dict[str, Any]) -> Dict[str, float]:
+    """
+    计算所有风险指标（一站式接口）
+    
+    Args:
+        data: 输入数据字典
+            必需字段:
+            - portfolio_state: Dict, 组合状态
+                - allocations: Dict[str, Dict]
+                    - {symbol: {'weight': float}}
+            - market_data: Dict, 市场数据
+                - prices: Dict[str, Dict]
+                    - {symbol: {
+                        'close': List[float],
+                        'high': List[float],
+                        'low': List[float],
+                        'volume': List[float],
+                        'currency': str (可选)
+                      }}
+                - risk_free_rate: float (可选)
+                - market_returns: List[float] (可选)
+    
+    Returns:
+        Dict[str, float]: 风险指标字典
+            {
+                'volatility': float,              # 波动率
+                'var_historical': float,          # 历史VaR (95%置信度)
+                'var_parametric': float,          # 参数法VaR
+                'expected_shortfall': float,      # 预期短缺 (CVaR)
+                'max_drawdown': float,            # 最大回撤
+                'sharpe_ratio': float,            # 夏普比率
+                'sortino_ratio': float,           # 索提诺比率
+                'beta': float,                    # Beta系数 (需market_returns)
+                'correlation_mean': float,        # 平均相关性
+                ... # 共30+指标
+            }
+    
+    Raises:
+        ValueError: 数据格式错误或货币检查失败 (strict_currency_check=True)
+        
+    Example:
+        >>> calculator = RiskCalculator({'market_type': 'CN'})
+        >>> data = {
+        ...     'portfolio_state': {
+        ...         'allocations': {
+        ...             '000001.SZ': {'weight': 0.6},
+        ...             '600000.SH': {'weight': 0.4}
+        ...         }
+        ...     },
+        ...     'market_data': {
+        ...         'prices': {
+        ...             '000001.SZ': {'close': [10.0, 10.2, ...], 'currency': 'CNY'},
+        ...             '600000.SH': {'close': [5.0, 5.1, ...], 'currency': 'CNY'}
+        ...         }
+        ...     }
+        ... }
+        >>> metrics = calculator.calculate_all_metrics(data)
+        >>> print(metrics['var_historical'])
+        -0.0235  # 负值表示损失
+    """
+```
+
+##### calculate_volatility()
+
+```python
+def calculate_volatility(
+    self, 
+    returns: pd.Series, 
+    window: Optional[int] = None, 
+    annualize: bool = True
+) -> float:
+    """
+    计算波动率
+    
+    Args:
+        returns: 收益率序列
+        window: 滚动窗口大小 (None表示全样本)
+        annualize: 是否年化 (默认True，使用√252)
+    
+    Returns:
+        float: 波动率数值
+    
+    Example:
+        >>> returns = pd.Series([0.01, -0.02, 0.015, ...])
+        >>> vol = calculator.calculate_volatility(returns)
+        >>> print(vol)
+        0.15  # 年化波动率15%
+    """
+```
+
+##### calculate_var_historical()
+
+```python
+def calculate_var_historical(
+    self, 
+    returns: pd.Series, 
+    confidence_level: float = 0.95
+) -> float:
+    """
+    历史模拟法VaR
+    
+    Args:
+        returns: 收益率序列
+        confidence_level: 置信水平 (0.90/0.95/0.99)
+    
+    Returns:
+        float: VaR数值 (负值表示损失)
+    
+    Example:
+        >>> var_95 = calculator.calculate_var_historical(returns, 0.95)
+        >>> var_99 = calculator.calculate_var_historical(returns, 0.99)
+        >>> print(f"95% VaR: {var_95:.2%}, 99% VaR: {var_99:.2%}")
+        95% VaR: -2.35%, 99% VaR: -4.12%
+    """
+```
+
+##### attach_exchange_rate_adapter()
+
+```python
+def attach_exchange_rate_adapter(self, adapter: ExchangeRateAdapter) -> None:
+    """
+    注入外部实时汇率适配器（可选，用于多币种组合）
+    
+    Args:
+        adapter: 实现ExchangeRateAdapter协议的对象
+            必需方法:
+            - get_rates(market_type: str) -> Dict[str, float]
+    
+    Example:
+        >>> from core_bak_refactored.share.exchange_rates import MyCustomAdapter
+        >>> adapter = MyCustomAdapter(api_key='xxx')
+        >>> calculator.attach_exchange_rate_adapter(adapter)
+    """
+```
+
+---
+
+### 2.2 PortfolioRiskAnalyzer - 组合风险分析器
+
+#### 类定义
+
+```python
+class PortfolioRiskAnalyzer:
+    """组合风险分析器 - 组合级风险计量"""
+    
+    def __init__(
+        self, 
+        config: Dict[str, Any],
+        enable_parallel: bool = True,
+        enable_incremental: bool = True
+    ):
+        """
+        初始化组合风险分析器
+        
+        Args:
+            config: 配置字典（同RiskCalculator）
+            enable_parallel: 启用并行计算 (默认True)
+            enable_incremental: 启用增量计算 (默认True)
+        """
+```
+
+#### 核心方法
+
+##### analyze()
+
+```python
+def analyze(
+    self, 
+    data: Dict[str, Any], 
+    options: Dict[str, Any]
+) -> Dict[str, Any]:
+    """
+    组合风险分析（综合报告）
+    
+    Args:
+        data: 输入数据（同RiskCalculator.calculate_all_metrics）
+        options: 分析选项
+            - risk_metrics: List[str], 指定计算的指标 (默认全部)
+            - include_contribution: bool, 包含风险贡献度分析 (默认False)
+            - include_factor_decomposition: bool, 因子分解 (默认False)
+    
+    Returns:
+        Dict[str, Any]: 分析结果
+            {
+                'metrics': Dict[str, float],         # 风险指标
+                'contribution': Dict[str, float],    # 各资产风险贡献度
+                'factor_decomposition': Dict,        # 因子分解结果
+                'analysis_metadata': {
+                    'analysis_timestamp': str,
+                    'data_quality': str,             # 'A'/'B'/'C'/'D'
+                    'parallel_enabled': bool
+                }
+            }
+    
+    Example:
+        >>> analyzer = PortfolioRiskAnalyzer(config)
+        >>> result = analyzer.analyze(data, {'include_contribution': True})
+        >>> print(result['contribution'])
+        {'000001.SZ': 0.65, '600000.SH': 0.35}  # 风险贡献度
+    """
+```
+
+##### calculate_risk_contribution()
+
+```python
+def calculate_risk_contribution(
+    self,
+    portfolio_state: Dict[str, Any],
+    market_data: Dict[str, Any]
+) -> Dict[str, float]:
+    """
+    计算各资产的边际风险贡献（Marginal VaR）
+    
+    Args:
+        portfolio_state: 组合状态
+        market_data: 市场数据
+    
+    Returns:
+        Dict[str, float]: {symbol: marginal_var}
+    
+    Example:
+        >>> contribution = analyzer.calculate_risk_contribution(
+        ...     portfolio_state, market_data
+        ... )
+        >>> print(contribution)
+        {'000001.SZ': 0.015, '600000.SH': 0.008}
+    """
+```
+
+---
+
+### 2.3 PositionRiskAnalyzer - 持仓风险分析器
+
+#### 类定义
+
+```python
+class PositionRiskAnalyzer:
+    """持仓风险分析器 - 单一持仓级风险计量"""
+    
+    def __init__(self, config: Dict[str, Any]):
+        """
+        初始化持仓风险分析器
+        
+        Args:
+            config: 配置字典
+                必需字段:
+                - market_type: str
+                - market_configs: Dict
+                    - {market_type}: {
+                        'price_impact_alpha': float,      # 冲击模型α (默认0.4)
+                        'price_impact_beta': float,       # 冲击模型β (默认0.6)
+                        'default_spread': float,          # 默认价差 (默认0.002)
+                        'liquidity_cost_discount': Dict   # 流动性成本折扣
+                      }
+        """
+```
+
+#### 核心方法
+
+##### analyze_position()
+
+```python
+def analyze_position(
+    self,
+    symbol: str,
+    position: Any,  # Position对象或字典
+    market_data: Dict[str, Any]
+) -> Dict[str, float]:
+    """
+    分析单一持仓风险
+    
+    Args:
+        symbol: 股票代码
+        position: 持仓对象
+            必需属性:
+            - current_value: float, 持仓市值
+            - weight: float, 组合权重
+        market_data: 市场数据
+            必需字段:
+            - prices: Dict[str, Dict]
+                - {symbol}: {'close': List[float]}
+            - volumes: Dict[str, Dict]
+                - {symbol}: {'volume': float, 'avg_volume': float}
+    
+    Returns:
+        Dict[str, float]: 持仓风险指标
+            {
+                'position_var': float,        # 持仓VaR
+                'liquidity_risk': float,      # 流动性风险 [0-1]
+                'concentration': float        # 集中度风险 (权重)
+            }
+    
+    Example:
+        >>> analyzer = PositionRiskAnalyzer(config)
+        >>> position = Position(current_value=100000, weight=0.2)
+        >>> risk = analyzer.analyze_position('000001.SZ', position, market_data)
+        >>> print(risk)
+        {'position_var': 2350.0, 'liquidity_risk': 0.15, 'concentration': 0.2}
+    """
+```
+
+##### estimate_liquidation_time()
+
+```python
+def estimate_liquidation_time(
+    self,
+    symbol: str,
+    position_size: float,
+    market_data: Dict[str, Any],
+    participation_rate: float = 0.1
+) -> Dict[str, Any]:
+    """
+    估算清算时间（Almgren-Chriss模型）
+    
+    Args:
+        symbol: 股票代码
+        position_size: 持仓数量 (股)
+        market_data: 市场数据
+            必需字段:
+            - volumes: Dict[str, Dict]
+                - {symbol}: {'avg_volume': float}
+            - prices: Dict[str, Dict]
+                - {symbol}: {'close': List[float]}
+        participation_rate: 参与率上限 (默认0.1，即10%)
+    
+    Returns:
+        Dict[str, Any]: 清算时间估算
+            {
+                'days': int,                    # 所需交易日数
+                'total_cost': float,            # 预估总成本
+                'avg_price_impact': float,      # 平均价格冲击
+                'is_feasible': bool,            # 是否可行 (A股T+1限制)
+                'warnings': List[str]           # 警告信息
+            }
+    
+    Example:
+        >>> result = analyzer.estimate_liquidation_time(
+        ...     '000001.SZ', 100000, market_data, participation_rate=0.05
+        ... )
+        >>> print(f"需要 {result['days']} 个交易日清算")
+        需要 5 个交易日清算
+    """
+```
+
+##### calculate_market_impact()
+
+```python
+def calculate_market_impact(
+    self,
+    symbol: str,
+    trade_size: float,
+    market_data: Dict[str, Any]
+) -> float:
+    """
+    计算市场冲击成本（基于Almgren-Chriss模型）
+    
+    Args:
+        symbol: 股票代码
+        trade_size: 交易量 (股)
+        market_data: 市场数据
+    
+    Returns:
+        float: 市场冲击百分比 (正值表示成本)
+    
+    Formula:
+        impact = α * (trade_size / avg_volume) ^ β
+        其中 α, β 从market_configs读取
+    
+    Example:
+        >>> impact = analyzer.calculate_market_impact(
+        ...     '000001.SZ', 50000, market_data
+        ... )
+        >>> print(f"市场冲击: {impact:.2%}")
+        市场冲击: 0.35%
+    """
+```
+
+##### classify_market_state()
+
+```python
+def classify_market_state(
+    self,
+    symbol: str,
+    market_data: Dict[str, Any],
+    use_hysteresis: bool = True
+) -> str:
+    """
+    分类市场流动性状态（高/中/低）
+    
+    Args:
+        symbol: 股票代码
+        market_data: 市场数据
+            必需字段:
+            - volumes: Dict[str, Dict]
+                - {symbol}: {'volume': float, 'volumes_history': List[float]}
+        use_hysteresis: 使用滞后机制 (避免状态抖动)
+    
+    Returns:
+        str: 'high'/'mid'/'low'
+    
+    Example:
+        >>> state = analyzer.classify_market_state('000001.SZ', market_data)
+        >>> print(state)
+        'high'
+    """
+```
+
+---
+
+### 2.4 StressTester - 压力测试器
+
+#### 类定义
+
+```python
+class StressTester:
+    """压力测试器 - 极端场景模拟"""
+    
+    def __init__(self, config: Dict[str, Any]):
+        """
+        初始化压力测试器
+        
+        Args:
+            config: 配置字典
+                可选字段:
+                - scenario_correlation_matrix: Dict, 自定义场景相关性矩阵
+        """
+```
+
+#### 核心方法
+
+##### run_stress_test()
+
+```python
+def run_stress_test(
+    self,
+    scenario_id: str,
+    portfolio_state: Dict[str, Any],
+    market_data: Dict[str, Any]
+) -> float:
+    """
+    运行单一压力测试场景
+    
+    Args:
+        scenario_id: 场景ID
+            内置场景:
+            - '2008_financial_crisis': 2008金融危机
+            - 'covid_19_pandemic': COVID-19疫情
+            - '2015_china_market_crash': 2015中国股市暴跌
+            - 'circuit_breaker_2016': 2016熔断机制
+            - 'thousand_stocks_limit_down': 千股跌停
+            - 'currency_crisis': 货币危机 (专家新增)
+        portfolio_state: 组合状态
+        market_data: 市场数据
+    
+    Returns:
+        float: 压力场景下的组合损失 (负值，如-0.35表示35%损失)
+    
+    Example:
+        >>> tester = StressTester(config)
+        >>> loss = tester.run_stress_test(
+        ...     '2008_financial_crisis', portfolio_state, market_data
+        ... )
+        >>> print(f"2008危机场景损失: {loss:.2%}")
+        2008危机场景损失: -40.00%
+    """
+```
+
+##### run_combined_stress_tests()
+
+```python
+def run_combined_stress_tests(
+    self,
+    scenario_ids: List[str],
+    portfolio_state: Dict[str, Any],
+    market_data: Dict[str, Any],
+    test_type: str = 'sequential'
+) -> Dict[str, Any]:
+    """
+    运行组合场景压力测试
+    
+    Args:
+        scenario_ids: 场景ID列表
+        portfolio_state: 组合状态
+        market_data: 市场数据
+        test_type: 测试类型
+            - 'sequential': 顺序冲击 (危机传导，30%传导因子)
+            - 'concurrent': 并发冲击 (系统性风险，20%系统性溢价)
+            - 'feedback_loop': 反馈循环 (恐慌抛售，25%反馈因子)
+    
+    Returns:
+        Dict[str, Any]: 测试结果
+            {
+                'combined_loss': float,               # 组合损失
+                'individual_losses': List[float],     # 各场景损失
+                'transmission_factor': float,         # 传导因子 (sequential)
+                'systemic_premium': float,            # 系统性溢价 (concurrent)
+                'feedback_iterations': int,           # 反馈迭代次数 (feedback_loop)
+                'analysis': {
+                    'worst_scenario': str,
+                    'contagion_path': List[str]       # 传导路径
+                }
+            }
+    
+    Example:
+        >>> result = tester.run_combined_stress_tests(
+        ...     ['2008_financial_crisis', 'covid_19_pandemic'],
+        ...     portfolio_state, market_data, test_type='sequential'
+        ... )
+        >>> print(result['combined_loss'])
+        -0.52  # 52%损失（含传导放大效应）
+    """
+```
+
+##### add_custom_scenario()
+
+```python
+def add_custom_scenario(
+    self,
+    scenario: StressTestScenario
+) -> None:
+    """
+    添加自定义压力测试场景
+    
+    Args:
+        scenario: 场景对象
+            必需字段:
+            - scenario_id: str
+            - name: str
+            - scenario_type: str ('market_crash'/'liquidity_crisis'/'interest_rate_shock')
+            - parameters: Dict
+                market_crash参数:
+                - decline: float, 市场下跌幅度 (如-0.30)
+                - volatility_spike: float, 波动率倍数 (如3.5)
+                - correlation_break: float, 相关性崩溃程度 [0-1]
+                - recovery_period: int, 恢复周期 (月)
+                
+                liquidity_crisis参数:
+                - liquidity_dry_up: float, 流动性枯竭程度 [0-1]
+                - limit_hit_frequency: float, 涨跌停频率 [0-1]
+                - margin_call_cascade: float, 保证金追缴级联强度 [0-1]
+    
+    Example:
+        >>> from core_bak_refactored.core.risk.risk_models import StressTestScenario
+        >>> custom_scenario = StressTestScenario(
+        ...     scenario_id='custom_2022_russia_ukraine',
+        ...     name='2022俄乌冲突',
+        ...     scenario_type='market_crash',
+        ...     parameters={
+        ...         'decline': -0.15,
+        ...         'volatility_spike': 2.0,
+        ...         'correlation_break': 0.3,
+        ...         'recovery_period': 6
+        ...     }
+        ... )
+        >>> tester.add_custom_scenario(custom_scenario)
+        >>> loss = tester.run_stress_test('custom_2022_russia_ukraine', ...)
+    """
+```
+
+---
+
+## 三、数据模型接口
+
+### 3.1 RiskAssessment - 风险评估结果
+
+```python
+@dataclass
+class RiskAssessment:
+    """风险评估结果数据类"""
+    
+    # 核心字段
+    assessment_id: str              # 评估ID (UUID)
+    portfolio_id: str               # 组合ID
+    timestamp: datetime             # 评估时间（支持字符串自动转换）
+    risk_level: RiskLevel           # 风险等级枚举
+    risk_score: float               # 风险评分 [0-100]
+    
+    # 风险指标
+    metrics: Dict[RiskMetric, float]  # 风险指标字典
+    
+    # 风险分解
+    risk_breakdown: Dict[RiskType, float]  # 各类风险占比
+    position_risks: Dict[str, float]       # 各资产风险值
+    
+    # 评估元数据
+    methodology: str = 'VaR_Historical'    # 主要方法论
+    confidence_level: float = 0.95         # 置信水平
+    time_horizon: TimeHorizon = TimeHorizon.DAILY  # 时间范围
+    data_quality: Optional[str] = None     # 数据质量评级 ('A'/'B'/'C'/'D')
+    
+    # 建议
+    recommendations: List['Recommendation'] = field(default_factory=list)
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """转换为字典"""
+        return asdict(self)
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'RiskAssessment':
+        """从字典创建"""
+        # ... 实现省略
+```
+
+**使用示例**:
+
+```python
+from core_bak_refactored.core.risk.risk_models import (
+    RiskAssessment, RiskLevel, RiskMetric, RiskType
+)
+
+assessment = RiskAssessment(
+    assessment_id='uuid-xxx',
+    portfolio_id='portfolio_001',
+    timestamp=datetime.now(),
+    risk_level=RiskLevel.HIGH,
+    risk_score=72.5,
+    metrics={
+        RiskMetric.VALUE_AT_RISK: -0.0235,
+        RiskMetric.VOLATILITY: 0.15
+    },
+    risk_breakdown={
+        RiskType.MARKET_RISK: 0.65,
+        RiskType.LIQUIDITY_RISK: 0.25,
+        RiskType.CONCENTRATION_RISK: 0.10
+    },
+    position_risks={
+        '000001.SZ': 0.015,
+        '600000.SH': 0.008
+    },
+    data_quality='A'
+)
+
+# 导出为字典
+result_dict = assessment.to_dict()
+```
+
+---
+
+### 3.2 RiskLimit - 风险限额配置
+
+```python
+@dataclass
+class RiskLimit:
+    """风险限额配置"""
+    
+    limit_id: str                   # 限额ID
+    portfolio_id: Optional[str]     # 组合ID（None表示全局）
+    limit_type: RiskType            # 限额类型
+    metric: RiskMetric              # 监控指标
+    
+    # 限额阈值
+    warning_threshold: float        # 警告阈值
+    hard_limit: float               # 硬限额
+    
+    # 控制动作
+    action_on_warning: RiskControlAction = RiskControlAction.WARN
+    action_on_breach: RiskControlAction = RiskControlAction.REJECT
+    
+    # 时间范围
+    time_horizon: TimeHorizon = TimeHorizon.DAILY
+    
+    # 元数据
+    created_at: datetime = field(default_factory=datetime.now)
+    updated_at: datetime = field(default_factory=datetime.now)
+    is_active: bool = True
+    
+    def check_breach(self, current_value: float) -> Optional['LimitBreach']:
+        """
+        检查是否突破限额
+        
+        Args:
+            current_value: 当前指标值
+        
+        Returns:
+            LimitBreach对象（如果突破）或None
+        """
+        # ... 实现省略
+```
+
+**使用示例**:
+
+```python
+from core_bak_refactored.core.risk.risk_models import (
+    RiskLimit, RiskType, RiskMetric, RiskControlAction
+)
+
+# 创建VaR限额
+var_limit = RiskLimit(
+    limit_id='limit_var_001',
+    portfolio_id='portfolio_001',
+    limit_type=RiskType.MARKET_RISK,
+    metric=RiskMetric.VALUE_AT_RISK,
+    warning_threshold=-0.02,      # -2%时警告
+    hard_limit=-0.05,             # -5%时拒绝
+    action_on_warning=RiskControlAction.WARN,
+    action_on_breach=RiskControlAction.REJECT
+)
+
+# 检查突破
+current_var = -0.035
+breach = var_limit.check_breach(current_var)
+if breach:
+    print(f"VaR突破警告线！当前值: {current_var:.2%}")
+```
+
+---
+
+### 3.3 StressTestScenario - 压力测试场景
+
+```python
+@dataclass
+class StressTestScenario:
+    """压力测试场景数据类"""
+    
+    scenario_id: str                # 场景ID
+    name: str                       # 场景名称
+    scenario_type: str              # 场景类型
+                                    # 'market_crash' | 'liquidity_crisis' | 
+                                    # 'interest_rate_shock' | 'currency_crisis'
+    
+    parameters: Dict[str, Any]      # 场景参数
+                                    # market_crash: decline, volatility_spike, 
+                                    #               correlation_break, recovery_period
+                                    # liquidity_crisis: liquidity_dry_up, 
+                                    #                   limit_hit_frequency, 
+                                    #                   margin_call_cascade
+    
+    description: Optional[str] = None       # 场景描述
+    historical_event: Optional[str] = None  # 历史事件参考
+    severity: str = 'medium'                # 严重程度 ('low'/'medium'/'high'/'extreme')
+    
+    created_at: datetime = field(default_factory=datetime.now)
+    is_builtin: bool = False                # 是否内置场景
+```
+
+**使用示例**:
+
+```python
+from core_bak_refactored.core.risk.risk_models import StressTestScenario
+
+# 查看内置场景
+tester = StressTester(config)
+builtin_scenarios = tester.get_builtin_scenarios()
+for scenario in builtin_scenarios:
+    print(f"{scenario.scenario_id}: {scenario.name}")
+    print(f"  参数: {scenario.parameters}")
+
+# 创建自定义场景
+custom_scenario = StressTestScenario(
+    scenario_id='custom_inflation_shock',
+    name='通胀冲击场景',
+    scenario_type='interest_rate_shock',
+    parameters={
+        'rate_increase': 0.03,        # 利率上升3%
+        'duration_months': 12,        # 持续12个月
+        'equity_impact': -0.10        # 股市下跌10%
+    },
+    description='模拟央行大幅加息应对通胀',
+    severity='high'
+)
+
+tester.add_custom_scenario(custom_scenario)
+```
+
+---
+
+## 四、异常处理
+
+### 4.1 异常类型
+
+```python
+# 风险模块定义的异常
+class RiskCalculationError(Exception):
+    """风险计算错误"""
+    pass
+
+class InsufficientDataError(RiskCalculationError):
+    """数据不足错误"""
+    pass
+
+class ConfigurationError(Exception):
+    """配置错误"""
+    pass
+
+class CurrencyMismatchError(ValueError):
+    """货币不匹配错误（strict_currency_check=True时）"""
+    pass
+```
+
+### 4.2 异常处理示例
+
+```python
+from core_bak_refactored.core.risk import RiskCalculator
+from core_bak_refactored.core.risk.risk_models import InsufficientDataError
+
+try:
+    calculator = RiskCalculator(config)
+    metrics = calculator.calculate_all_metrics(data)
+except InsufficientDataError as e:
+    logger.warning(f"数据不足，返回部分指标: {e}")
+    # 降级处理：使用简化方法
+    metrics = calculator.calculate_simple_metrics(data)
+except CurrencyMismatchError as e:
+    logger.error(f"货币不匹配: {e}")
+    # 货币转换或拒绝交易
+    raise
+except Exception as e:
+    logger.error(f"风险计算异常: {e}")
+    # 回退到默认值
+    metrics = {}
+```
+
+---
+
+## 五、性能优化建议
+
+### 5.1 缓存策略
+
+```python
+# 1. 启用缓存（CacheManager）
+from core_bak_refactored.core.risk.cache_manager import CacheManager
+
+cache_manager = CacheManager(config)
+
+# 获取或计算
+var_result = cache_manager.get_or_compute(
+    key=f"var_{portfolio_id}_{timestamp}",
+    compute_func=lambda: calculator.calculate_var_historical(returns)
+)
+
+# 2. 增量计算（IncrementalCalculator）
+from core_bak_refactored.core.risk.incremental_calculator import (
+    IncrementalCovarianceCalculator
+)
+
+incremental_calc = IncrementalCovarianceCalculator()
+
+# 初次计算
+cov_matrix = incremental_calc.compute_initial(returns_df)
+
+# 增量更新（仅重算变化部分）
+updated_cov = incremental_calc.incremental_update(
+    changed_assets=['AAPL', 'GOOGL'],
+    new_returns={'AAPL': [0.01, 0.02], 'GOOGL': [-0.01, 0.015]}
+)
+```
+
+### 5.2 并行计算
+
+```python
+# 启用并行计算（大规模组合）
+analyzer = PortfolioRiskAnalyzer(
+    config,
+    enable_parallel=True  # 默认启用
+)
+
+# 批量计算多个组合
+portfolios = {
+    'portfolio_001': {...},
+    'portfolio_002': {...},
+    ...
+}
+
+# 自动并行计算
+results = analyzer.batch_analyze(portfolios, market_data)
+```
+
+### 5.3 数据预处理
+
+```python
+# 使用预处理器优化数据提取
+from core_bak_refactored.infrastructure.data_preprocessor import (
+    RiskDataPreprocessor
+)
+
+preprocessor = RiskDataPreprocessor()
+
+# 批量提取收益率
+returns_dict = preprocessor.batch_extract_returns(market_data['prices'])
+
+# 验证数据质量
+is_valid = preprocessor.validate_returns_data(
+    returns_dict,
+    min_length=63  # 至少3个月数据
+)
+```
+
+---
+
+## 六、版本兼容性
+
+### 6.1 API稳定性承诺
+
+| 接口层级 | 稳定性 | 变更通知 |
+|---------|-------|---------|
+| `RiskCalculator.*` | ✅ 稳定 | 重大变更提前2个版本通知 |
+| `RiskModels.*` | ✅ 稳定 | 仅新增字段，不删除 |
+| `PortfolioRiskAnalyzer.*` | ⚠️ 半稳定 | 提前1个版本通知 |
+| `_internal.*` | ❌ 不稳定 | 无通知，随时可变 |
+
+### 6.2 废弃接口
+
+```python
+# 废弃方法（v1.0 → v2.0）
+@deprecated(version='2.0', alternative='calculate_all_metrics')
+def calculate_metrics(self, ...):
+    """已废弃，请使用 calculate_all_metrics"""
+    warnings.warn(
+        "calculate_metrics is deprecated, use calculate_all_metrics",
+        DeprecationWarning
+    )
+    return self.calculate_all_metrics(...)
+```
+
+---
+
+## 七、测试与验证
+
+### 7.1 单元测试示例
+
+```python
+import unittest
+from core_bak_refactored.core.risk import RiskCalculator
+
+class TestRiskCalculator(unittest.TestCase):
+    def setUp(self):
+        self.config = {
+            'market_type': 'CN',
+            'market_configs': {...}
+        }
+        self.calculator = RiskCalculator(self.config)
+    
+    def test_calculate_volatility(self):
+        """测试波动率计算"""
+        returns = pd.Series([0.01, -0.02, 0.015, -0.01, 0.02])
+        vol = self.calculator.calculate_volatility(returns)
+        
+        self.assertIsInstance(vol, float)
+        self.assertGreater(vol, 0)
+        self.assertLess(vol, 1)  # 年化波动率应<100%
+    
+    def test_currency_check_strict_mode(self):
+        """测试严格货币检查"""
+        self.calculator.strict_currency_check = True
+        
+        data = {
+            'portfolio_state': {...},
+            'market_data': {
+                'prices': {
+                    'AAPL': {'close': [...], 'currency': 'USD'},
+                    '000001.SZ': {'close': [...], 'currency': 'CNY'}
+                }
+            }
+        }
+        
+        # 应抛出CurrencyMismatchError
+        with self.assertRaises(CurrencyMismatchError):
+            self.calculator.calculate_all_metrics(data)
+```
+
+### 7.2 集成测试示例
+
+```python
+def test_end_to_end_risk_calculation():
+    """端到端风险计算测试"""
+    # 1. 初始化
+    config = load_config('config/risk_config_cn.yaml')
+    calculator = RiskCalculator(config)
+    
+    # 2. 准备真实数据
+    data = load_market_data('2024-01-01', '2024-11-24')
+    
+    # 3. 执行计算
+    metrics = calculator.calculate_all_metrics(data)
+    
+    # 4. 验证结果
+    assert 'var_historical' in metrics
+    assert 'sharpe_ratio' in metrics
+    assert -1 < metrics['var_historical'] < 0  # VaR为负值
+    
+    # 5. 性能验证
+    assert metrics['_metadata']['elapsed_time'] < 5.0  # <5秒
+```
+
+---
+
+## 八、FAQ
+
+### Q1: 如何选择VaR计算方法？
+
+**A**: 根据数据质量和业务需求选择：
+
+| 方法 | 适用场景 | 优点 | 缺点 |
+|------|---------|------|------|
+| Historical | 数据充足（>252个点） | 无分布假设 | 尾部风险估计偏保守 |
+| Parametric | 数据有限（63-252个点） | 计算快速 | 依赖正态假设 |
+| Monte Carlo | 复杂衍生品组合 | 灵活性高 | 计算耗时 |
+| EVT | 关注极端风险 | 尾部精确 | 需大量数据 |
+
+**推荐配置**:
+```python
+config = {
+    'default_var_method': 'historical',  # 默认方法
+    'fallback_var_method': 'parametric', # 数据不足时回退
+    'min_data_points': 63,               # 最少3个月
+    'evt_threshold_percentile': 0.95     # EVT阈值
+}
+```
+
+### Q2: 多币种组合如何处理？
+
+**A**: 三种处理方式：
+
+```python
+# 方式1: 严格检查（拒绝不一致货币）
+config = {'strict_currency_check': True}  # US/HK/SG/JP默认
+
+# 方式2: 注入汇率适配器（自动转换）
+from core_bak_refactored.share.exchange_rates import YahooFinanceAdapter
+adapter = YahooFinanceAdapter()
+calculator.attach_exchange_rate_adapter(adapter)
+
+# 方式3: 仅警告（不阻断计算）
+config = {'strict_currency_check': False}  # CN/EU默认
+```
+
+### Q3: 如何自定义风险限额？
+
+**A**: 使用`RiskLimit`配置：
+
+```python
+from core_bak_refactored.core.risk import RiskMonitor
+from core_bak_refactored.core.risk.risk_models import (
+    RiskLimit, RiskMetric, RiskType, RiskControlAction
+)
+
+# 创建限额
+limits = [
+    RiskLimit(
+        limit_id='var_limit',
+        metric=RiskMetric.VALUE_AT_RISK,
+        warning_threshold=-0.02,
+        hard_limit=-0.05,
+        action_on_breach=RiskControlAction.LIQUIDATE
+    ),
+    RiskLimit(
+        limit_id='leverage_limit',
+        metric=RiskMetric.LEVERAGE_RATIO,
+        warning_threshold=2.0,
+        hard_limit=3.0,
+        action_on_breach=RiskControlAction.REDUCE
+    )
+]
+
+# 初始化监控器
+monitor = RiskMonitor(config, limits)
+
+# 检查限额
+events = monitor.check_limits(current_metrics)
+for event in events:
+    if event.severity == 'critical':
+        execute_action(event.recommended_action)
+```
+
+---
+
+## 附录A：完整配置示例
+
+### A.1 中国A股市场配置
+
+```yaml
+market_type: CN
+market_configs:
+  CN:
+    # 交易日参数
+    trading_days: 250
+    risk_free_rate: 0.025
+    
+    # 涨跌停配置
+    limit_thresholds:
+      main_board: 0.10
+      gem: 0.20
+      st: 0.05
+      kcb: 0.20
+    
+    # 流动性参数
+    price_impact_alpha: 0.4
+    price_impact_beta: 0.6
+    default_spread: 0.002
+    
+    # 货币检查
+    base_currency: CNY
+    strict_currency_check: false
+    
+    # 数据要求
+    min_data_points: 63
+    covariance_lookback: 252
+    
+    # 分层置信度
+    confidence_levels:
+      daily_monitoring: 0.95
+      risk_limit: 0.99
+      regulatory_reporting: 0.99
+```
+
+### A.2 美国股市配置
+
+```yaml
+market_type: US
+market_configs:
+  US:
+    trading_days: 252
+    risk_free_rate: 0.04
+    
+    # 熔断机制
+    circuit_breaker_levels: [0.07, 0.13, 0.20]
+    luld_threshold: 0.05
+    luld_window: 5
+    
+    # 流动性参数
+    price_impact_alpha: 0.3
+    price_impact_beta: 0.5
+    default_spread: 0.001
+    
+    # 货币检查（严格模式）
+    base_currency: USD
+    strict_currency_check: true
+    
+    # 合规日志
+    compliance_logging: true
+    sec_reporting: true
+```
+
+---
+
+## 附录B：文档同步规范（CRITICAL）
+
+### B.1 强制同步规则
+
+⚠️ **核心规范**: 任何代码变更后，**必须立即**同步本文档和模块设计文档。
+
+**违反后果**:
+- ⛔ 专家咨询基于过时信息，导致错误建议
+- ⛔ 外部用户使用错误接口，引发生产事故
+- ⛔ 团队成员误解API行为，增加Bug风险
+- ⛔ Code Review无法验证设计一致性
+
+### B.2 同步触发条件
+
+| 代码变更类型 | 是否必须同步 | 同步内容 |
+|----------------|--------------|----------|
+| 新增公开API方法 | ✅ 必须 | 添加完整方法文档：签名+参数+返回值+异常+示例 |
+| API参数变更 | ✅ 必须 | 更新参数说明+示例，标记版本号 |
+| API返回值变更 | ✅ 必须 | 更新返回值说明+示例 |
+| API行为变更 | ✅ 必须 | 更新方法描述+注意事项 |
+| 废弃API | ✅ 必须 | 标记@deprecated+添加替代方案+更新版本兼容性说明 |
+| 新增数据模型类 | ✅ 必须 | 添加数据模型文档+字段说明+示例 |
+| 数据模型字段变更 | ✅ 必须 | 更新字段说明+示例 |
+| 异常类型变更 | ✅ 必须 | 更新异常处理章节 |
+| 性能优化 | ✅ 必须 | 更新性能优化建议章节 |
+| 配置参数变更 | ✅ 必须 | 更新配置示例+参数说明 |
+| 内部实现优化 | ⚪ 可选 | 仅当影响API性能/行为时更新 |
+| Bug修复 | ⚪ 可选 | 仅当修改API行为时更新 |
+
+### B.3 同步模板
+
+#### 示例1：新增API方法
+
+**代码变更**:
+```python
+class RiskCalculator:
+    def calculate_conditional_var(
+        self, 
+        returns: pd.Series, 
+        confidence_level: float = 0.95
+    ) -> float:
+        """Calculate Conditional VaR (CVaR/ES)"""
+        var = self.calculate_var_historical(returns, confidence_level)
+        tail_returns = returns[returns <= var]
+        return float(tail_returns.mean())
+```
+
+**文档同步**:
+
+```markdown
+## 文档元信息
+
+**变更历史**:
+- v1.1 (2025-11-25): 新增 calculate_conditional_var() API
+
+---
+
+## 二、核心公开API
+
+### 2.1 RiskCalculator - 风险计算协调器
+
+##### calculate_conditional_var() [v1.1 新增]
+
+\`\`\`python
+def calculate_conditional_var(
+    self, 
+    returns: pd.Series, 
+    confidence_level: float = 0.95
+) -> float:
+    """
+    计算条件VaR（CVaR/Expected Shortfall）
+    
+    Args:
+        returns: 收益率序列
+        confidence_level: 置信水平 (0.90/0.95/0.99)
+    
+    Returns:
+        float: CVaR数值（超出VaR后的平均损失）
+    
+    Raises:
+        InsufficientDataError: 数据点数少于最小要求
+    
+    Example:
+        >>> calculator = RiskCalculator(config)
+        >>> returns = pd.Series([0.01, -0.02, 0.015, ...])
+        >>> cvar = calculator.calculate_conditional_var(returns, 0.95)
+        >>> print(f"CVaR: {cvar:.2%}")
+        CVaR: -3.12%
+    
+    Note:
+        CVaR总是大于VaR（更保守），因为它计算的是尾部平均而非分位数。
+    """
+\`\`\`
+```
+
+#### 示例2：修改API参数
+
+**代码变更**:
+```python
+# 原签名
+def calculate_var(self, returns: pd.Series, confidence_level: float = 0.95) -> float:
+    return self.calculate_var_historical(returns, confidence_level)
+
+# 新签名（新增 method 参数）
+def calculate_var(
+    self, 
+    returns: pd.Series, 
+    confidence_level: float = 0.95,
+    method: str = 'historical'  # 新增
+) -> float:
+    if method == 'historical':
+        return self.calculate_var_historical(returns, confidence_level)
+    elif method == 'parametric':
+        return self.calculate_var_parametric(returns, confidence_level)
+    elif method == 'monte_carlo':
+        return self.calculate_var_monte_carlo(returns, confidence_level)
+    else:
+        raise ValueError(f"Unknown method: {method}")
+```
+
+**文档同步**:
+
+```markdown
+## 文档元信息
+
+**变更历史**:
+- v1.1 (2025-11-25): calculate_var() 新增 method 参数，支持 historical/parametric/monte_carlo
+
+---
+
+##### calculate_var() [v1.1 更新]
+
+\`\`\`python
+def calculate_var(
+    self, 
+    returns: pd.Series, 
+    confidence_level: float = 0.95,
+    method: str = 'historical'  # [v1.1 新增]
+) -> float:
+    """
+    计算VaR
+    
+    Args:
+        returns: 收益率序列
+        confidence_level: 置信水平
+        method: [v1.1 新增] 计算方法
+            - 'historical': 历史模拟法
+            - 'parametric': 参数法（假设正态分布）
+            - 'monte_carlo': 蒙特卡洛模拟
+    
+    Returns:
+        float: VaR数值
+    
+    Raises:
+        ValueError: method 参数无效
+        InsufficientDataError: 数据不足
+    
+    Example:
+        >>> # [v1.1 新增] 指定计算方法
+        >>> var_hist = calculator.calculate_var(returns, method='historical')
+        >>> var_para = calculator.calculate_var(returns, method='parametric')
+        >>> var_mc = calculator.calculate_var(returns, method='monte_carlo')
+        
+        >>> # 向后兼容：默认使用历史法
+        >>> var = calculator.calculate_var(returns)  # 等同于 method='historical'
+    
+    Note:
+        - historical: 适用于数据充足场景，无分布假设
+        - parametric: 计算快速，但依赖正态假设
+        - monte_carlo: 灵活性高，但计算耗时
+    """
+\`\`\`
+```
+
+#### 示例3：废弃API
+
+**代码变更**:
+```python
+import warnings
+
+class RiskCalculator:
+    @deprecated(version='2.0', alternative='calculate_all_metrics')
+    def calculate_metrics(self, data: Dict) -> Dict:
+        """Deprecated: Use calculate_all_metrics instead"""
+        warnings.warn(
+            "calculate_metrics is deprecated since v2.0, use calculate_all_metrics",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        return self.calculate_all_metrics(data)
+```
+
+**文档同步**:
+
+```markdown
+## 文档元信息
+
+**变更历史**:
+- v2.0 (2025-11-25): 废弃 calculate_metrics()，使用 calculate_all_metrics() 替代
+
+---
+
+## 六、版本兼容性
+
+### 6.2 废弃接口
+
+##### calculate_metrics() [@deprecated since v2.0]
+
+```python
+@deprecated(version='2.0', alternative='calculate_all_metrics')
+def calculate_metrics(self, data: Dict) -> Dict:
+    """
+    已废弃，请使用 calculate_all_metrics
+    
+    Deprecated Since: v2.0
+    Will Be Removed In: v3.0
+    Alternative: calculate_all_metrics()
+    
+    Reason: 命名不明确，calculate_all_metrics 更清晰表达计算所有指标
+    
+    Migration Guide:
+        # 旧代码
+        metrics = calculator.calculate_metrics(data)
+        
+        # 新代码（完全等价）
+        metrics = calculator.calculate_all_metrics(data)
+    """
+```
+
+**迁移时间线**:
+- v2.0 (2025-11-25): 标记为废弃，但仍可用
+- v2.5 (计划): 开始显示警告日志
+- v3.0 (计划): 完全移除
+```
+
+### B.4 质量检查清单
+
+在提交PR前，自检以下项目：
+
+#### API文档检查
+
+- [ ] 每个公开API方法都有完整文档
+- [ ] API签名与实际代码完全一致（参数名/类型/默认值）
+- [ ] 所有参数都有详细说明（类型、含义、取值范围、默认值）
+- [ ] 返回值说明清晰（类型、结构、可能值）
+- [ ] 所有可能抛出的异常都已文档化
+- [ ] 每个API都有可运行的示例代码
+
+#### 示例代码检查
+
+- [ ] 示例代码与实际API一致
+- [ ] 示例可以实际运行（已验证）
+- [ ] 示例覆盖常见用例
+- [ ] 示例包含输出结果说明
+
+#### 数据模型检查
+
+- [ ] 所有数据类字段都有说明
+- [ ] 必选/可选字段标记清晰
+- [ ] 字段类型准确
+- [ ] 有使用示例
+
+#### 版本信息检查
+
+- [ ] 变更历史已更新（版本号+日期+变更描述）
+- [ ] 新增/修改内容已标记版本号（如：`[v1.1 新增]`）
+- [ ] 废弃API已标记`@deprecated`并指明版本
+- [ ] 废弃API有明确的替代方案
+- [ ] 废弃API有迁移指南
+
+#### 一致性检查
+
+- [ ] 模块设计文档与接口设计文档内容一致
+- [ ] 文档与实际代码实现一致
+- [ ] 文档与单元测试一致
+- [ ] 配置示例与实际配置文件一致
+
+### B.5 自动化工具
+
+#### Pre-commit Hook
+
+```bash
+#!/bin/bash
+# .git/hooks/pre-commit
+
+# 检查是否有 core_bak_refactored/core/risk/ 下的代码变更
+RISK_CHANGED=$(git diff --cached --name-only | grep "core_bak_refactored/core/risk/")
+
+if [ -n "$RISK_CHANGED" ]; then
+    # 检查文档是否也被修改
+    DOC1_CHANGED=$(git diff --cached --name-only | grep "docs/design/core/risk/模块设计文档.md")
+    DOC2_CHANGED=$(git diff --cached --name-only | grep "docs/design/core/risk/接口设计文档.md")
+    
+    if [ -z "$DOC1_CHANGED" ] && [ -z "$DOC2_CHANGED" ]; then
+        echo ""
+        echo "⚠️  错误：代码变更但文档未同步！"
+        echo ""
+        echo "您修改了 core/risk 下的代码，但未更新设计文档。"
+        echo "请更新以下文档之一："
+        echo "  - docs/design/core/risk/模块设计文档.md"
+        echo "  - docs/design/core/risk/接口设计文档.md"
+        echo ""
+        echo "参考：附录B - 文档同步规范"
+        echo ""
+        exit 1
+    fi
+fi
+
+echo "✅ 文档同步检查通过"
+```
+
+#### CI/CD验证
+
+```yaml
+# .github/workflows/doc-validation.yml
+name: Documentation Validation
+
+on: [pull_request]
+
+jobs:
+  check-doc-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 0  # 需要完整历史
+      
+      - name: Check if risk module changed
+        id: check
+        run: |
+          FILES=$(git diff --name-only origin/main...HEAD)
+          RISK_CHANGED=$(echo "$FILES" | grep "core_bak_refactored/core/risk/" || true)
+          echo "::set-output name=risk_changed::$RISK_CHANGED"
+      
+      - name: Verify documentation sync
+        if: steps.check.outputs.risk_changed != ''
+        run: |
+          FILES=$(git diff --name-only origin/main...HEAD)
+          DOC_CHANGED=$(echo "$FILES" | grep "docs/design/core/risk/" || true)
+          
+          if [ -z "$DOC_CHANGED" ]; then
+            echo "⚠️  Error: Code changed but documentation not updated!"
+            exit 1
+          fi
+```
+
+### B.6 Code Review Checklist
+
+Reviewer必须验证的项目：
+
+```markdown
+## PR Review - 文档同步检查
+
+### 基本检查
+- [ ] 代码变更类型已识别
+- [ ] 确认是否需要同步文档（参考B.2表格）
+- [ ] 如需同步，确认文档已更新
+
+### 文档质量检查
+- [ ] 变更历史已更新（版本号+日期）
+- [ ] API签名与代码一致
+- [ ] 示例代码已验证可运行
+- [ ] 所有参数和返回值有详细说明
+- [ ] 异常处理已文档化
+
+### 一致性检查
+- [ ] 模块设计文档与接口设计文档一致
+- [ ] 文档与单元测试一致
+- [ ] 文档与实际代码一致
+
+### 特殊情况检查
+- [ ] 如废弃API，已标记@deprecated并有替代方案
+- [ ] 如新增数据模型，有完整字段说明
+- [ ] 如修改配置，配置示例已更新
+
+**拒绝标准**: 以上任何项未通过→直接拒绝 PR
+```
+
+---
+
+**文档维护说明**:
+- ⚠️ **CRITICAL**: 任何代码变更后必须立即同步本文档和模块设计文档
+- 本文档每次API变更需同步更新
+- 新增接口需添加使用示例
+- 所有公开API需有单元测试覆盖
+- 代码与文档不一致视为严重质量问题
+
+**同步规范（MANDATORY）**:
+1. **API签名变更**: 更新方法定义、参数说明、返回值说明
+2. **行为变更**: 更新方法描述、使用示例、注意事项
+3. **新增API**: 添加完整的接口文档（定义+参数+返回值+示例）
+4. **废弃API**: 标记为`@deprecated`，添加替代方案
+5. **版本记录**: 在文档开头变更历史中添加条目
+
+**质量检查清单**:
+- [ ] 代码签名与文档签名一致
+- [ ] 使用示例可以实际运行
+- [ ] 参数说明覆盖所有参数
+- [ ] 异常说明覆盖所有可能异常
+- [ ] 变更历史已更新
+
+**联系方式**:
+- 技术支持: risk-support@deepseekquant.com
+- 文档反馈: docs-feedback@deepseekquant.com
+
+第六轮咨询：
+
+# 第6轮咨询 — Phase 1 验收与下一轮业务口径澄清
+
+## 📋 Phase边界声明
+
+- ✅ 当前阶段为 **5D 风险计算协调器 Phase 1 验收评审**，范围界定如下：
+  - **系统边界**：仅限 `core_bak_refactored` 临时系统；不涉及生产部署与核心系统融合。
+  - **Phase 1 范围**：货币一致性检查（静态+动态严格模式）、数据质量评估（completeness 维度）、US 合规日志、智能缓存失效上下文集成、分市场阈值与回退链路一致性。
+  - **本轮状态**：Phase 1 代码已实施；15/15 单元测试通过；业务行为"仅报告、不阻断"（usage_scenarios.reporting_only=True, affect_calculation=False）。
+  - **Phase 2/3 规划**：合规阻断门控（exec 域）、多维度数据质量评估（accuracy/consistency/timeliness/reliability）已转入 TODO，不纳入本轮 Phase 1 验收。
+
+---
+
+## 背景说明
+
+- 本轮为 **5D 风险计算协调器 Phase 1** 的业务评审，聚焦业务口径与合规路径澄清；本轮已完成货币检查、数据质量 completeness 维度、US 合规日志与智能缓存上下文集成的实现，保持"仅报告、不影响计算"原则；15/15 单元测试全部通过。
+- 本轮评审目标：请您确认 Phase 1 实现的业务正确性与完整性；并为下一轮（Phase 2/3 或其他业务增强）提供业务口径与路径指导。
+
+### 📚 依赖上下文与设计文档清单
+
+**核心设计文档**：
+- `docs/design/core_bak_refactored/core/risk/模块设计文档.md`（v1.3，2025-11-27 更新）
+- `docs/design/core_bak_refactored/core/risk/接口设计文档.md`（v1.3，2025-11-27 更新）
+- `docs/process/core_bak_refactored/core/risk/SPRINT.md`（5D 迭代目标与进展）
+
+**基础配置与共享模块**：
+- `core_bak_refactored/core/share/market_config.py`：6 市场配置管理（US/HK/CN/JP/EU/SG）
+- `core_bak_refactored/core/share/exchange_rates.py`：货币转换与汇率适配器
+- `core_bak_refactored/infrastructure/cache_service.py`：智能缓存失效管理器
+
+---
+
+## 🧩 代码评审
+
+### 上一轮答复摘要与本轮改进
+
+#### 上一轮专家答复关键点回顾
+
+**第 5 轮答复（合并版 `docs/answer.md`）的核心确认**：
+1. **触发可靠性**：综合评分完全由配置驱动；缺失维度不参与计算；无配置时返回 None 保持静态模式。
+2. **市场差异化**：US/HK/JP/SG/CN/EU 各市场阈值与权重已确认；US 跨境敞口 25%、HK 40%、JP 20%、SG 35%、CN 50%、EU 30%。
+3. **数据质量治理 Phase 1**：仅 completeness 维度（基于 currency_coverage），reporting_only 不影响计算；A≥90、B≥75、C≥60、D<60。
+4. **合规路径（US）**：SEC/FINRA 结构化合规事件记录；当前 automated_action='LOG_ONLY'（不阻断）。
+5. **协调器职责边界**：仅委托与前置检查，不实现算法；配置驱动、无默认值。
+
+#### 本轮代码清单汇总
+
+**核心实现文件（本轮改进）**：
+- `core_bak_refactored/core/risk/risk_calculator.py`
+  - 新增方法：`_validate_required_fields()`、`_get_market_specific_config()`、`_runtime_currency_check()`、`_determine_dynamic_strict_mode()`、`_assess_data_quality_multi()`、`_us_compliance_logging()`
+  - 集成智能缓存失效上下文：`calculate_all_metrics()` 中调用 `get_smart_invalidation_manager().check_and_invalidate(context)`
+
+**测试文件（本轮验证）**：
+- `core_bak_refactored/tests/units/core/risk/risk_calculator_test.py`
+  - 15 个单元测试用例（US/HK/JP/SG/CN/EU 市场阈值、边界条件 0.64 vs 0.65、B/C/D 级数据质量）
+
+**配置与基础设施依赖**：
+- `core_bak_refactored/core/share/market_config.py`：6 市场基准货币与阈值
+- `core_bak_refactored/infrastructure/cache_service.py`：智能缓存失效管理器
+
+#### 本轮改进映射（对应上一轮答复）
+
+| 上一轮答复条目 | 本轮改进实施 | 改进考虑 |
+|--------------|------------|---------|
+| **配置项验证**（4.1.1） | ✅ `_validate_required_fields()`：动态严格模式与数据质量评估的关键配置项验证（仅告警，不阻断） | 配置驱动；缺失时告警而非发明默认值 |
+| **市场差异化配置读取**（4.1.2） | ✅ `_get_market_specific_config()`：`market_specific → fallback default` 模式 | 保证市场差异化配置的读取行为稳定；无配置时回退到默认 |
+| **触发可靠性 — 配置驱动**（实现符合性 1） | ✅ `_determine_dynamic_strict_mode()` 与四个辅助方法：缺失维度返回 None；无配置不覆盖静态模式 | 配置驱动；不发明默认值；维度缺失时综合评分返回 None |
+| **市场差异化 — 跨市场阈值**（实现符合性 2） | ✅ 测试覆盖 US/HK/JP/SG/CN/EU 市场阈值差异化（15 个用例） | 6 市场阈值生效；边界条件（0.64 vs 0.65）精确验证 |
+| **数据质量治理 Phase 1**（实现符合性 3） | ✅ `_assess_data_quality_multi()`：completeness 维度（currency_coverage × 100），reporting_only=True, affect_calculation=False | Phase 1 仅报告；A/B/C/D 分级；不影响风险计算 |
+| **US 合规日志**（实现符合性 4） | ✅ `_us_compliance_logging()`：SEC/FINRA 结构化事件记录；automated_action='LOG_ONLY' | 仅 US 市场触发；不阻断交易；结构化日志 |
+| **协调器职责边界**（实现符合性 5） | ✅ `calculate_all_metrics()` 委托模式：前置检查 → 委托 `RiskMetricsService` | 协调器仅委托与前置检查；不实现算法 |
+
+---
+
+### 业务视角的代码实现评审要点
+
+#### 1. 货币一致性检查与动态严格模式
+
+**业务契约**：
+- **静态严格模式**：US/HK/SG/JP 默认严格（基于监管要求）；CN/EU 默认非严格（市场特征）。
+- **动态严格模式**：根据组合特征（多币种占比、跨境敞口）动态决策是否启用严格模式；无配置或数据不足时返回 None，保持静态模式。
+
+**业务口径一致性**：
+- `_runtime_currency_check()`：检测多币种、货币缺失、基准货币不一致、组合货币不一致；仅日志告警，不阻断。
+- `_determine_dynamic_strict_mode()`：
+  - 多币种评分 = 非基准货币权重比例；
+  - 跨境敞口评分 = portfolio['cross_border_exposure']（由 Portfolio 模块提供）；
+  - 监管叠加评分 = 当前返回 None（规则/数据缺失时不计算）；
+  - 综合评分 = 加权平均（仅当配置要求的维度都有分数时计算）；
+  - 决策：综合评分 ≥ comprehensive_trigger_score 时启用严格模式。
+
+**触发可靠性**：
+- **边界条件验证**：0.64 < 0.65（不触发）、0.66 ≥ 0.65（触发），确保阈值精确生效。
+- **跨市场阈值差异化**：US 25%、HK 40%、JP 20%、SG 35%、CN 50%、EU 30%；测试覆盖 6 市场。
+
+#### 2. 数据质量评估（Phase 1：completeness）
+
+**业务契约**：
+- **Phase 1 范围**：仅实现 completeness 维度（基于 currency_coverage）；其他维度（accuracy/consistency/timeliness/reliability）留待 Phase 3。
+- **usage_scenarios**：reporting_only=True, affect_calculation=False（仅报告，不影响风险计算）。
+
+**业务口径一致性**：
+- `_assess_data_quality_multi()`：
+  - 维度得分：completeness = currency_coverage × 100（0-100）；
+  - 综合评分：当前 Phase 1 仅有 completeness 一个维度，overall_score = completeness；
+  - 等级映射：A≥90、B≥75、C≥60、D<60（可配置阈值）。
+
+**分级准确性**：
+- **测试覆盖**：A 级（100%）、B 级（80%）、C 级（60%）、D 级（20%）；4 个等级均验证通过。
+
+#### 3. US 合规日志与审计留存
+
+**业务契约**：
+- **触发条件**：仅 US 市场 + 存在货币警告时触发。
+- **事件结构**：event_id（UUID）、event_type（CURRENCY_INCONSISTENCY）、message、timestamp（ISO8601）、market、severity（MEDIUM/HIGH）、automated_action（LOG_ONLY）。
+
+**合规路径**：
+- 当前 Phase 1：仅结构化日志记录，不阻断交易（automated_action='LOG_ONLY'）。
+- Phase 2 规划：根据 severity 与 block_thresholds 触发阻断或人工审批（exec 域门控，非 risk 域职责）。
+
+#### 4. 智能缓存失效上下文集成
+
+**业务契约**：
+- **触发条件**：波动率超阈值、熔断机制触发、极端相关性崩溃、涨跌停比例超阈值、重大市场事件。
+- **上下文字段**：time_window、param_version、market_data_updated、volatility、market_type、portfolio_size、data_quality_rating、volatility_tier（NORMAL/MEDIUM/HIGH/EXTREME）、market_status、circuit_breaker_triggered、extreme_correlation_breakdown、limit_hit_ratio、major_market_event、trigger_score、affected_symbols_count。
+
+**触发可靠性**：
+- **评分机制**：trigger_score = (returns_std / threshold) + 事件权重加权（circuit_breaker/extreme_correlation/limit_hits/major_event）。
+- **影响范围估算**：affected_symbols_count = 组合标的数量（根据 portfolio_state）。
+
+---
+
+### ✅ 本轮改进验收清单（专家确认）
+
+请您逐条确认以下 Phase 1 实现的业务正确性：
+
+#### A. 货币一致性与动态严格模式
+- [ ] **静态严格模式口径**：US/HK/SG/JP 默认严格、CN/EU 默认非严格，是否符合监管要求与市场特征？
+- [ ] **跨市场阈值差异化**：US 25%、HK 40%、JP 20%、SG 35%、CN 50%、EU 30%，是否符合各市场跨境投资监管边界？
+- [ ] **综合评分触发阈值**：0.65（默认）是否为合理的严格模式启用边界？
+- [ ] **cross_border_exposure 数据来源**：由 Portfolio 模块提供；缺失时返回 None 不参与综合评分，是否符合业务口径？
+- [ ] **regulatory_overlay_rules 可选性**：监管叠加规则当前为可选维度（无数据时返回 None），是否符合 Phase 1 范围定位？
+
+#### B. 数据质量评估（Phase 1：completeness）
+- [ ] **Phase 1 范围界定**：仅 completeness 维度（currency_coverage），reporting_only 不影响计算，是否符合 Phase 1 目标？
+- [ ] **分级阈值口径**：A≥90、B≥75、C≥60、D<60，是否符合数据质量监控标准？
+- [ ] **usage_scenarios 定位**：reporting_only=True, affect_calculation=False，是否为合理的 Phase 1 → Phase 2 过渡策略？
+
+#### C. US 合规日志与审计留存
+- [ ] **触发范围**：仅 US 市场 + 货币警告，是否符合 SEC/FINRA 合规要求？
+- [ ] **事件 severity 分级**：多币种=MEDIUM、货币不一致=HIGH，是否符合合规风险等级定义？
+- [ ] **automated_action 口径**：当前仅 LOG_ONLY（不阻断），是否为合理的 Phase 1 策略？Phase 2 需在何种条件下启用阻断？
+
+#### D. 智能缓存失效与触发可靠性
+- [ ] **波动率触发阈值**：默认 0.05（可配置），是否为合理的市场波动敏感度边界？
+- [ ] **涨跌停比例阈值**：默认 0.3（可配置），是否符合 A 股/港股等市场的极端行情判断标准？
+- [ ] **事件权重配置**：circuit_breaker、extreme_correlation、limit_hits、major_event 各自权重，是否需要按市场差异化？
+
+---
+
+### 本轮改进（清单与关键评审）
+
+#### 文件 1：`core_bak_refactored/core/risk/risk_calculator.py`
+
+**关键方法 1**：`_validate_required_fields()`
+
+**业务口径**：
+- **职责**：验证动态严格模式与数据质量评估的关键配置项（component_weights、comprehensive_trigger_score、base_weights、grade_thresholds）。
+- **行为**：仅记录告警，不阻断初始化；配置驱动，不发明默认值。
+
+**方法签名**：
+```python
+def _validate_required_fields(self) -> None
+```
+
+**输入**：无（读取 `self.config`）  
+**输出**：无（仅日志告警）  
+**异常**：不抛出异常（仅 logger.warning）
+
+**业务评审点**：
+- 配置项验证是否覆盖关键字段？
+- 告警级别（warning）是否符合配置缺失的业务影响？
+
+---
+
+**关键方法 2**：`_get_market_specific_config(config_key: str, default_config: Dict[str, Any])`
+
+**业务口径**：
+- **职责**：获取市场特定配置，支持 `market_specific[market_type] → default` 回退链路。
+- **行为**：优先读取 market_specific；缺失时回退到 default_config；异常时也回退（不阻断）。
+
+**方法签名**：
+```python
+def _get_market_specific_config(self, config_key: str, default_config: Dict[str, Any]) -> Dict[str, Any]
+```
+
+**输入**：
+- `config_key`：配置键名（例：'data_quality_assessment'）
+- `default_config`：默认配置字典
+
+**输出**：市场特定配置字典（Dict[str, Any]）  
+**异常**：不抛出异常（异常时返回 default_config）
+
+**业务评审点**：
+- 回退链路是否符合市场差异化配置的容错要求？
+- 默认配置的优先级是否低于市场特定配置？
+
+---
+
+**关键方法 3**：`_runtime_currency_check(data: Dict[str, Any])`
+
+**业务口径**：
+- **职责**：运行时货币一致性检查（仅日志，不阻断）。
+- **检测项**：多币种、货币字段缺失、基准货币不在检测货币中、组合货币≠基准货币。
+
+**方法签名**：
+```python
+def _runtime_currency_check(self, data: Dict[str, Any]) -> List[str]
+```
+
+**输入**：`data`（包含 market_data/portfolio）  
+**输出**：警告列表（List[str]）  
+**异常**：不抛出异常
+
+**业务评审点**：
+- 检测项是否覆盖主要货币不一致场景？
+- 警告列表是否足够支撑后续分级处理（info/warning/error）？
+
+---
+
+**关键方法 4**：`_determine_dynamic_strict_mode(data: Dict[str, Any])`
+
+**业务口径**：
+- **职责**：动态严格模式决策器（仅按配置阈值判断；无配置则不覆盖静态模式）。
+- **评分逻辑**：
+  - 多币种评分 = 非基准货币权重比例；
+  - 跨境敞口评分 = portfolio['cross_border_exposure']（Portfolio 模块提供）；
+  - 监管叠加评分 = 当前返回 None（规则/数据缺失）；
+  - 综合评分 = 加权平均（仅当配置要求的维度都有分数时计算）。
+- **决策规则**：综合评分 ≥ comprehensive_trigger_score 时返回 True；否则返回 False；无配置/数据不足时返回 None。
+
+**方法签名**：
+```python
+def _determine_dynamic_strict_mode(self, data: Dict[str, Any]) -> Optional[bool]
+```
+
+**输入**：`data`（包含 portfolio/market_data）  
+**输出**：True（启用严格）、False（禁用严格）、None（保持静态模式）  
+**异常**：不抛出异常（异常时返回 None）
+
+**业务评审点**：
+- 综合评分的加权逻辑是否符合多维度风险叠加的业务规则？
+- 维度缺失时返回 None（不参与综合评分）是否为合理的容错策略？
+- cross_border_exposure 由 Portfolio 模块提供的口径是否明确？
+
+---
+
+**关键方法 5**：`_assess_data_quality_multi(market_data: Dict[str, Any], dq_cfg: Dict[str, Any])`
+
+**业务口径**：
+- **职责**：多维度数据质量评估（Phase 1 仅 completeness 维度）。
+- **评分逻辑**：
+  - completeness = currency_coverage × 100（0-100）；
+  - overall_score = completeness（Phase 1 仅一个维度）；
+  - quality_grade = 根据 grade_thresholds 映射（A≥90、B≥75、C≥60、D<60）。
+- **usage_scenarios**：reporting_only=True, affect_calculation=False（不影响风险计算）。
+
+**方法签名**：
+```python
+def _assess_data_quality_multi(self, market_data: Dict[str, Any], dq_cfg: Dict[str, Any]) -> Optional[Dict[str, Any]]
+```
+
+**输入**：
+- `market_data`：市场数据（包含 prices）
+- `dq_cfg`：数据质量评估配置（enabled、base_weights、grade_thresholds）
+
+**输出**：
+- 成功：`{'overall_score': float, 'dimension_scores': {...}, 'quality_grade': str}`
+- 失败：None（配置未启用或不完整）
+
+**异常**：不抛出异常（异常时返回 None）
+
+**业务评审点**：
+- Phase 1 仅 completeness 维度是否足够支撑"仅报告"的业务目标？
+- A/B/C/D 分级阈值是否符合数据质量监控标准？
+- Phase 3 补充 accuracy/consistency/timeliness/reliability 时，是否需要重新校准权重与阈值？
+
+---
+
+**关键方法 6**：`_us_compliance_logging(currency_warnings: List[str], data_quality: Optional[Dict[str, Any]])`
+
+**业务口径**：
+- **职责**：US 市场合规日志记录（SEC/FINRA）。
+- **触发条件**：market_type='US' + 存在货币警告。
+- **事件结构**：event_id（UUID）、event_type（CURRENCY_INCONSISTENCY）、message、timestamp（ISO8601）、market、severity（MEDIUM/HIGH）、automated_action（LOG_ONLY）。
+
+**方法签名**：
+```python
+def _us_compliance_logging(self, currency_warnings: List[str], data_quality: Optional[Dict[str, Any]] = None) -> None
+```
+
+**输入**：
+- `currency_warnings`：货币警告列表
+- `data_quality`：数据质量评估结果（可选）
+
+**输出**：无（仅日志）  
+**异常**：不抛出异常
+
+**业务评审点**：
+- severity 分级（多币种=MEDIUM、货币不一致=HIGH）是否符合 SEC/FINRA 合规风险定义？
+- automated_action='LOG_ONLY'（不阻断）是否为 Phase 1 的合理策略？
+- Phase 2 在何种条件下应启用阻断或人工审批？
+
+---
+
+#### 文件 2：`core_bak_refactored/tests/units/core/risk/risk_calculator_test.py`
+
+**测试覆盖关键点**：
+1. **动态严格模式触发**：US 市场多币种+跨境敞口 → 综合评分 0.7 ≥ 0.65 → 触发严格模式（test_dynamic_strict_enabled_triggers）。
+2. **跨市场阈值差异化**：HK 40%、JP 20%、SG 35%、CN 50%、EU 30%（6 个测试用例）。
+3. **边界条件精确验证**：0.64 < 0.65（不触发）、0.66 ≥ 0.65（触发）（test_dynamic_strict_boundary_64/65）。
+4. **数据质量分级**：A 级（100%）、B 级（80%）、C 级（60%）、D 级（20%）（4 个测试用例）。
+5. **配置缺失回退**：dynamic_currency_strict_mode.enabled=False → 返回 None（test_dynamic_strict_disabled_returns_none）。
+
+**业务验收断言**：
+- 15/15 单元测试全部通过，覆盖率 100%。
+- 跨市场阈值、边界条件、数据质量分级均验证通过。
+
+---
+
+### 🧩 架构变更与影响
+
+**本轮无重大架构变更**，仅在现有协调器基础上增强：
+- **职责边界保持**：RiskCalculator 仍为纯协调器（委托给 RiskMetricsService）。
+- **配置驱动原则**：无默认值；配置缺失时返回 None 或回退到静态模式。
+- **向后兼容**：新增方法均为内部方法（`_` 前缀），不影响公开 API。
+
+---
+
+## 本轮业务问题（下一轮需解决，非本轮验收内容）
+
+### 领域知识
+
+- **请您确认 Phase 3 数据质量维度定义与权重**：
+  - accuracy（价格离群值检测）：数据来源与计算方法？各市场权重差异（US 更关注 accuracy，CN 更关注 completeness）？
+  - consistency（时间序列连续性）：检测口径与容忍度？
+  - timeliness（数据延迟统计）：阈值定义（实时/T+1/T+N）？
+  - reliability（历史质量记录）：评分依据与衰减机制？
+
+- **请您确认监管维度 regulatory_overlay_rules 的业务 Schema**：
+  - 各市场监管规则的优先级与权重分配（US：SEC/FINRA 规则、HK：SFC 规则、CN：证监会规则）？
+  - 规则评分方法（continuous/binary）与 violation_penalty 定义？
+  - 监管维度在 Phase 2 是否"必选"，还是可选维度？
+
+- **请您确认审计留存口径与字段最小集**：
+  - 内部审计（≥90 天）与监管审计（≥3 年）的字段差异？
+  - 必须留存的数据质量字段（data_quality_grade、currency_coverage）是否足够？
+  - 争议追溯（≥1 年）需要保留哪些中间结果？
+
+### 优化机会
+
+- **请您确认各市场数据质量权重与阈值的业务价值提升点**：
+  - 是否需要根据市场特征动态调整权重（US 更关注 accuracy、HK 更关注 completeness、CN 更关注 consistency）？
+  - A/B/C/D 分级阈值是否需要按市场差异化（US：A≥95、CN：A≥85）？
+  - 动态权重调整机制（根据市场波动、监管事件）的业务触发条件？
+
+- **请您确认阻断阈值与动作映射的业务价值优化方向**：
+  - 数据质量 C/D 级时，是否需要触发"限制自动交易"或"人工审批"？
+  - US 合规事件 severity=HIGH 时，是否需要在 exec 域触发阻断？
+  - 不同风险等级（LOW/MEDIUM/HIGH/CRITICAL）对应的动作映射（LOG_ONLY/WARN/REQUIRE_MANUAL_REVIEW/BLOCK_AUTO_TRADING/HALT_TRADING）？
+
+- **请您确认性能目标达成路径**：
+  - 组合规模（≤100 标的）重算 P95 时延≤500ms，是否为合理的 SLA 边界？
+  - 智能缓存失效触发频率（波动率>阈值、熔断、涨跌停）是否会导致缓存命中率下降？
+  - 是否需要按组合规模分级 SLA（≤100→500ms、≤500→1000ms、>500→3000ms）？
+
+### 实施路径
+
+- **请您确认 exec 域集成点与风控门控设计**：
+  - risk 域输出的合规事件字段（event_id、severity、automated_action）是否足够支撑 exec 域门控决策？
+  - exec 域门控应在"下单前"还是"风险计算后"统一入口？
+  - 阻断/审批场景边界（估值影响>2%、监管货币违规、数据质量 D 级）是否需要业务确认？
+
+- **请您确认缺失策略的业务处理路径**：
+  - 当 cross_border_exposure 缺失时，动态严格模式返回 None（保持静态模式），是否为合理的降级策略？
+  - 当 regulatory_overlay_rules 缺失时，监管维度不参与综合评分，是否符合业务口径？
+  - 当数据质量配置未启用时，仅使用货币覆盖度评级（A/B/C/D），是否足够支撑审计要求？
+
+---
+
+## 🔗 相关文件
+
+**核心实现文件（本轮改进）**：
+- `core_bak_refactored/core/risk/risk_calculator.py`
+
+**测试文件（本轮验证）**：
+- `core_bak_refactored/tests/units/core/risk/risk_calculator_test.py`
+
+**基础配置与共享模块**：
+- `core_bak_refactored/core/share/market_config.py`
+- `core_bak_refactored/core/share/exchange_rates.py`
+- `core_bak_refactored/infrastructure/cache_service.py`
+
+**设计文档**：
+- `docs/design/core_bak_refactored/core/risk/模块设计文档.md`（v1.3）
+- `docs/design/core_bak_refactored/core/risk/接口设计文档.md`（v1.3）
+
+---
+
+## 📝 说明（必须）
+
+- 重要：请尽可能详尽和充分，不要遗漏和简化，谢谢！
+
+专家回复：
+
+## 第6轮咨询 — Phase 1 验收确认与下一轮业务口径澄清
+
+### ✅ Phase 1 验收确认
+
+经过详细评审您的代码实现和设计文档，我对Phase 1的实现质量表示高度认可。以下是逐条确认结果：
+
+#### A. 货币一致性与动态严格模式 ✅
+
+**静态严格模式口径**：
+- ✅ **确认**：US/HK/SG/JP默认严格、CN/EU默认非严格，完全符合各市场监管要求与市场特征
+- ✅ **依据**：US的SEC/FINRA监管严格，HK/SG作为国际金融中心要求高，JP作为重要国际货币市场；CN/EU相对灵活
+
+**跨市场阈值差异化**：
+- ✅ **确认**：US 25%/HK 40%/JP 20%/SG 35%/CN 50%/EU 30%的阈值设置合理
+- ✅ **业务逻辑**：阈值反映了各市场对跨境投资的监管边界（CN管制严→阈值高，JP开放度高→阈值低）
+
+**综合评分触发阈值**：
+- ✅ **确认**：0.65是合理的平衡点，既能捕捉显著风险又避免过度敏感
+- ✅ **建议**：后续可根据历史回测数据微调，但当前0.65作为默认值完全可接受
+
+**cross_border_exposure数据来源**：
+- ✅ **确认**：由Portfolio模块提供，缺失时返回None是合理的降级策略
+- ✅ **业务依据**：跨境敞口是组合级属性，应由组合管理模块计算和维护
+
+**regulatory_overlay_rules可选性**：
+- ✅ **确认**：Phase 1作为可选维度符合渐进式实施策略
+- ✅ **后续规划**：Phase 3可将关键市场监管规则设为必选维度
+
+#### B. 数据质量评估（Phase 1：completeness） ✅
+
+**Phase 1范围界定**：
+- ✅ **确认**：仅completeness维度（currency_coverage）符合Phase 1目标
+- ✅ **策略合理性**：reporting_only=True, affect_calculation=False是合理的过渡策略
+
+**分级阈值口径**：
+- ✅ **确认**：A≥90/B≥75/C≥60/D<60符合行业数据质量监控标准
+- ✅ **依据**：ISO 8000数据质量标准中，≥90%为优秀，≥75%为良好，≥60%为合格
+
+**usage_scenarios定位**：
+- ✅ **确认**：当前仅报告不影响计算的定位正确
+- ✅ **演进路径**：Phase 2可考虑对D级数据触发人工复核，Phase 3可影响计算权重
+
+#### C. US合规日志与审计留存 ✅
+
+**触发范围**：
+- ✅ **确认**：仅US市场+货币警告符合SEC/FINRA合规要求
+- ✅ **依据**：其他市场暂未要求如此严格的货币一致性审计
+
+**事件severity分级**：
+- ✅ **确认**：多币种=MEDIUM、货币不一致=HIGH的分级合理
+- ✅ **业务逻辑**：货币不一致直接影响估值准确性，风险更高
+
+**automated_action口径**：
+- ✅ **确认**：LOG_ONLY是Phase 1的合理策略
+- ✅ **Phase 2建议**：当数据质量D级+货币不一致HIGH时，可考虑REQUIRE_MANUAL_REVIEW
+
+#### D. 智能缓存失效与触发可靠性 ✅
+
+**波动率触发阈值**：
+- ✅ **确认**：默认0.05是合理的市场波动敏感度边界
+- ✅ **市场差异化建议**：CN市场可考虑0.06（波动性较高），US市场可保持0.05
+
+**涨跌停比例阈值**：
+- ✅ **确认**：默认0.3符合A股/港股等市场的极端行情判断标准
+- ✅ **依据**：超过30%的标的触及涨跌停通常意味着市场异常
+
+**事件权重配置**：
+- ✅ **确认**：当前权重分配合理（熔断0.4>重大事件0.3>极端相关性0.3>涨跌停0.2）
+- ✅ **优化建议**：后续可根据各市场历史事件影响程度进行校准
+
+### 🎯 Phase 1 验收结论
+
+**总体评价**：Phase 1实现质量优秀，业务口径准确，设计合理，完全达到验收标准。
+
+**验收通过**：✅ **Phase 1 正式通过业务验收**
+
+**下一步建议**：可立即进入Phase 2开发，重点关注exec域集成与风控门控设计。
+
+---
+
+## 🔜 下一轮业务口径澄清（Phase 2/3规划）
+
+### 1. 数据质量维度扩展（Phase 3）
+
+**accuracy维度（价格离群值检测）**：
+```python
+# 业务口径建议
+accuracy_metrics = {
+    'price_deviation': {
+        'method': 'z_score',  # 或 IQR（对偏态分布更稳健）
+        'threshold': 3.0,     # 超出3倍标准差视为离群
+        'window_size': 20     # 滚动窗口20个交易日
+    },
+    'cross_source_validation': {
+        'enabled': True,      # 多数据源交叉验证
+        'sources': ['primary', 'backup'],  # 主备数据源
+        'tolerance': 0.01     # 1%的价格差异容忍度
+    }
+}
+
+# 市场差异化权重建议
+accuracy_weights = {
+    'US': 0.35,    # 美股数据质量高，更关注accuracy
+    'HK': 0.30,    # 港股国际化程度高
+    'CN': 0.25,    # A股数据源相对统一
+    'JP': 0.30,    # 日股数据质量良好
+    'EU': 0.28,    # 欧股多交易所，需要验证
+    'SG': 0.27     # 新加坡市场
+}
+```
+
+**consistency维度（时间序列连续性）**：
+```python
+# 检测口径建议
+consistency_checks = {
+    'trading_day_gaps': {
+        'max_allowed_gap': 3,     # 最多允许3个交易日缺失
+        'fill_method': 'linear',  # 缺失值填充方法
+        'penalty_per_gap': 5      # 每个缺失日扣5分
+    },
+    'volume_spikes': {
+        'threshold': 10.0,        # 成交量突增10倍以上需验证
+        'validation_required': True
+    },
+    'price_jumps': {
+        'intraday_threshold': 0.15,    # 日内涨跌幅15%需验证
+        'overnight_threshold': 0.20    # 隔夜涨跌幅20%需验证
+    }
+}
+```
+
+**timeliness维度（数据延迟统计）**：
+```python
+# 阈值定义建议
+timeliness_thresholds = {
+    'real_time': {
+        'max_delay_minutes': 1,    # 实时数据最大延迟1分钟
+        'target_availability': 0.999  # 可用性99.9%
+    },
+    't+1': {
+        'max_delay_hours': 24,     # T+1数据24小时内
+        'target_availability': 0.995
+    },
+    'end_of_day': {
+        'max_delay_hours': 4,     # 日终数据4小时内
+        'cutoff_time': '18:00'    # 截止时间18:00
+    }
+}
+```
+
+**reliability维度（历史质量记录）**：
+```python
+# 评分依据与衰减机制
+reliability_scoring = {
+    'historical_accuracy_rate': {
+        'lookback_period': 90,     # 回溯90天
+        'min_samples': 50,         # 最少50个样本
+        'decay_factor': 0.95       # 衰减因子（指数衰减）
+    },
+    'outage_incidents': {
+        'severity_weight': {       # 事件严重程度权重
+            'major': 0.6,
+            'minor': 0.3,
+            'maintenance': 0.1
+        },
+        'recovery_time_penalty': { # 恢复时间惩罚
+            '<1h': 0.1,
+            '1-4h': 0.3,
+            '>4h': 0.6
+        }
+    }
+}
+```
+
+### 2. 监管维度业务Schema（Phase 3）
+
+**各市场监管规则优先级**：
+```python
+regulatory_priority = {
+    'US': {
+        'SEC': {
+            'priority': 1.0,
+            'rules': ['rule_15c3-5', 'regulation_ats', 'regulation_nms'],
+            'automated_checks': True
+        },
+        'FINRA': {
+            'priority': 0.9,
+            'rules': ['rule_2210', 'rule_4511', 'rule_11870'],
+            'automated_checks': True
+        }
+    },
+    'HK': {
+        'SFC': {
+            'priority': 0.8,
+            'rules': ['sfo_part_xv', 'code_conduct', 'margin_requirements'],
+            'automated_checks': False
+        }
+    },
+    'CN': {
+        'CSRC': {
+            'priority': 0.7,
+            'rules': ['trading_suspension', 'disclosure', 'insider_trading'],
+            'automated_checks': True
+        }
+    },
+    'JP': {
+        'FSA': {
+            'priority': 0.75,
+            'rules': ['fi_act', 'securities_exchange_act', 'investment_trust_act'],
+            'automated_checks': True
+        },
+        'JPX': {
+            'priority': 0.6,
+            'rules': ['listing_rules', 'trading_rules', 'surveillance_rules'],
+            'automated_checks': True
+        }
+    },
+    'EU': {
+        'ESMA': {
+            'priority': 0.8,
+            'rules': ['mifid_ii', 'mifir', 'emir', 'sfdr'],
+            'automated_checks': True
+        },
+        'National_Regulators': {
+            'priority': 0.7,
+            'rules': ['local_market_abuse', 'transparency_directive'],
+            'automated_checks': False
+        }
+    },
+    'SG': {
+        'MAS': {
+            'priority': 0.7,
+            'rules': ['securities_futures_act', 'financial_advisers_act'],
+            'automated_checks': True
+        },
+        'SGX': {
+            'priority': 0.6,
+            'rules': ['listing_manual', 'trading_rules'],
+            'automated_checks': True
+        }
+    }
+}
+```
+
+**规则评分方法**：
+```python
+regulatory_scoring = {
+    'binary_rules': {
+        'method': 'binary',
+        'examples': ['license_valid', 'reporting_compliant'],
+        'weight': 0.6  # 合规性规则多为二值
+    },
+    'continuous_rules': {
+        'method': 'continuous',
+        'examples': ['capital_adequacy_ratio', 'liquidity_coverage'],
+        'weight': 0.4,
+        'normalization': 'min_max'  # 最小-最大归一化
+    },
+    'violation_penalty': {
+        'major': -0.8,    # 重大违规
+        'moderate': -0.4,  # 中度违规
+        'minor': -0.1     # 轻微违规
+    }
+}
+```
+
+### 3. 审计留存口径
+
+**字段最小集建议**：
+```python
+audit_retention_schema = {
+    'internal_audit_90d': {
+        'required_fields': [
+            'timestamp', 'portfolio_id', 'market_type',
+            'data_quality_grade', 'currency_coverage',
+            'risk_metrics', 'currency_warnings'
+        ],
+        'retention_days': 90
+    },
+    'regulatory_audit_3y': {
+        'required_fields': [
+            'timestamp', 'portfolio_id', 'market_type',
+            'data_quality_grade', 'currency_coverage',
+            'risk_metrics', 'currency_warnings',
+            'compliance_events', 'risk_limit_checks',
+            'calculation_parameters'  # 争议追溯需要
+        ],
+        'retention_days': 1095  # 3年
+    },
+    'dispute_resolution_1y': {
+        'required_fields': [
+            'input_data_snapshot', 'intermediate_calculations',
+            'model_parameters', 'validation_results'
+        ],
+        'retention_days': 365
+    }
+}
+```
+
+### 4. 阻断阈值与动作映射（Phase 2）
+
+**动作分级建议**：
+```python
+action_mapping = {
+    'LOG_ONLY': {
+        'trigger_conditions': ['data_quality_B', 'currency_warning_MEDIUM'],
+        'phase': 1
+    },
+    'WARN': {
+        'trigger_conditions': ['data_quality_C', 'currency_warning_HIGH'],
+        'phase': 2,
+        'notification': 'RISK_TEAM_ALERT'
+    },
+    'REQUIRE_MANUAL_REVIEW': {
+        'trigger_conditions': [
+            'data_quality_D', 
+            'regulatory_violation_MINOR',
+            'cross_border_exposure > threshold'
+        ],
+        'phase': 2,
+        'approval_required': 'SENIOR_RISK_OFFICER'
+    },
+    'BLOCK_AUTO_TRADING': {
+        'trigger_conditions': [
+            'data_quality_D + currency_inconsistency',
+            'regulatory_violation_MODERATE'
+        ],
+        'phase': 3,
+        'fallback': 'MANUAL_TRADING_ONLY'
+    },
+    'HALT_TRADING': {
+        'trigger_conditions': [
+            'regulatory_violation_MAJOR',
+            'extreme_market_conditions'
+        ],
+        'phase': 3,
+        'approval_required': 'CHIEF_RISK_OFFICER'
+    }
+}
+```
+
+### 5. 性能目标达成路径
+
+**SLA分级建议**：
+```python
+performance_sla = {
+    'portfolio_size_tier_1': {  # ≤100标的
+        'target_p95_latency_ms': 500,
+        'cache_hit_rate_target': 0.85,
+        'concurrent_requests': 50
+    },
+    'portfolio_size_tier_2': {  # ≤500标的
+        'target_p95_latency_ms': 1000,
+        'cache_hit_rate_target': 0.75,
+        'concurrent_requests': 20
+    },
+    'portfolio_size_tier_3': {  # >500标的
+        'target_p95_latency_ms': 3000,
+        'cache_hit_rate_target': 0.60,
+        'concurrent_requests': 10
+    },
+    'cache_invalidation_optimization': {
+        'volatility_spike_cooldown': 300,  # 5分钟内不重复失效
+        'event_grouping_window': 60,       # 60秒内事件合并
+        'partial_recalculation': True     # 支持部分重算
+    }
+}
+```
+
+### 6. exec域集成点设计（Phase 2）
+
+**风控门控接口**：
+```python
+exec_integration_schema = {
+    'pre_trade_validation': {
+        'trigger_point': 'ORDER_PLACEMENT',
+        'required_checks': [
+            'currency_consistency',
+            'data_quality_grade >= C',
+            'risk_limits_compliance',
+            'regulatory_compliance'
+        ],
+        'timeout_ms': 100,  # 下单前风检超时时间
+        'fallback_action': 'REJECT_ORDER'
+    },
+    'risk_event_notification': {
+        'event_types': [
+            'CURRENCY_INCONSISTENCY',
+            'DATA_QUALITY_DEGRADATION', 
+            'RISK_LIMIT_BREACH'
+        ],
+        'severity_filter': ['HIGH', 'CRITICAL'],
+        'notification_channels': ['API', 'EMAIL', 'SMS']
+    },
+    'trading_circuit_breaker': {
+        'activation_conditions': [
+            'market_volatility > threshold',
+            'multiple_limit_hits',
+            'systemic_risk_event'
+        ],
+        'deactivation_conditions': [
+            'market_stabilization',
+            'manual_override',
+            'time_based_expiry'
+        ]
+    }
+}
+```
+
+## 🎯 下一轮实施建议
+
+### Phase 2 重点任务（建议优先级）
+1. **exec域风控门控集成** - 高优先级（业务价值显著）
+2. **阻断动作映射实现** - 高优先级（风险控制核心）
+3. **监管规则基础框架** - 中优先级（合规需求）
+
+### Phase 3 扩展规划
+1. **数据质量多维度完善** - 提升风险评估准确性
+2. **监管规则全面覆盖** - 满足各市场合规要求  
+3. **性能优化与SLA保障** - 支撑大规模生产使用
+
+### 风险控制演进路径
+```
+Phase 1 (当前) → 仅报告、不阻断
+    ↓
+Phase 2 (下一轮) → 人工审批、限制自动交易
+    ↓  
+Phase 3 (未来) → 智能阻断、动态风控调整
+```
+
+您对Phase 1的验收确认和下一轮的业务口径建议有何反馈？是否需要调整任何业务规则或实施优先级？

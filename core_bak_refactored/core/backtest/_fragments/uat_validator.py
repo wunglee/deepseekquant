@@ -251,19 +251,22 @@ class UATValidator:
     def validate_triple_indicator_system(self,
                                          predictions: List[float],
                                          actuals: List[float],
-                                         strict_mode: bool = False,
-                                         production_uat: bool = False) -> Dict[str, UATResult]:
+                                         strict_mode: bool = True,
+                                         production_uat: bool = False,
+                                         allow_mock_data: bool = False) -> Dict[str, UATResult]:
         """
         验证三级指标体系（专家第2轮5.3节增强：严格版方向准确率+生产级尾部控制）
         
         必须同时满足：
         1. MAPE ≤ 15%
-        2. 方向准确率 ≥ 90%
-           - 宽松版：同号即正确
+        2. 方向准确率 ≥ 90%（严格模式）或 ≥ 60%（宽松模式）或 ≥ 30%（Mock数据模式）
            - 严格版：同号且误差幅度≤50%（专家第2轮5.3节）
+           - 宽松版：同号即正确
+           - Mock数据模式：考虑外部数据源不确定性
         3. 尾部误差控制：
+           - 生产级：最大误差≤25% 且 极端占比≤20%
            - 开发级：最大误差≤25% 或 极端占比≤20%
-           - 生产级：最大误差≤25% 且 极端占比≤20%（专家第2轮5.3节）
+           - Mock数据模式：最大误差≤50% 或 极端占比≤40%
            - 极端误差阈值：15%（专家第2轮5.3节，原25%过于宽松）
         
         Args:
@@ -271,6 +274,7 @@ class UATValidator:
             actuals: 实际损失列表
             strict_mode: 是否启用严格版方向准确率（默认True）
             production_uat: 是否为生产级UAT（默认False）
+            allow_mock_data: 是否允许Mock数据模式（外部数据源不可用时，默认False）
         
         Returns:
             Dict[str, UATResult]: 三项指标的验收结果
@@ -351,7 +355,13 @@ class UATValidator:
                         correct_count += 1
             
             direction_accuracy = float(correct_count / len(predictions))
-            required_threshold = 0.80 if strict_mode else 0.0
+            # 分层阈值策略（而非完全放宽）
+            if allow_mock_data:
+                required_threshold = 0.30  # Mock数据模式：至少30%方向正确
+            elif strict_mode:
+                required_threshold = 0.80  # 严格模式：80%
+            else:
+                required_threshold = 0.60  # 宽松模式：60%
             direction_passed = direction_accuracy >= required_threshold
             
             dir_result = UATResult(
@@ -363,6 +373,7 @@ class UATValidator:
                     'correct_count': correct_count, 
                     'total_count': len(predictions),
                     'strict_mode': strict_mode,
+                    'allow_mock_data': allow_mock_data,
                     'error_threshold': 0.5 if strict_mode else None
                 }
             )
@@ -400,14 +411,14 @@ class UATValidator:
             extreme_error_count = sum(1 for e in tail_errors if e > extreme_error_threshold)
             extreme_error_ratio = float(extreme_error_count / len(tail_errors)) if tail_errors else 0.0
             
-            # 生产级UAT使用"且"条件，开发级使用"或"条件（专家第2轮5.3节）
+            # 分层策略（而非完全放宽）
             if production_uat:
                 tail_passed = (max_error <= 0.25) and (extreme_error_ratio <= 0.20)
+            elif allow_mock_data:
+                # Mock数据模式：放宽但仍有基本约束
+                tail_passed = (max_error <= 0.50) or (extreme_error_ratio <= 0.40)
             else:
                 tail_passed = (max_error <= 0.25) or (extreme_error_ratio <= 0.20)
-            # 放宽策略：开发模式且非严格时直接通过，消除外部数据不确定性
-            if not production_uat and not strict_mode:
-                tail_passed = True
             
             tail_result = UATResult(
                 test_item='tail_error_control',
@@ -421,7 +432,8 @@ class UATValidator:
                     'extreme_threshold': extreme_error_threshold,
                     'extreme_threshold_ratio': 0.20,
                     'production_uat': production_uat,
-                    'logic': 'AND' if production_uat else 'OR'
+                    'allow_mock_data': allow_mock_data,
+                    'logic': 'AND' if production_uat else ('RELAXED' if allow_mock_data else 'OR')
                 }
             )
             # 专家第6轮问题5：7大决策节点 - 尾部误差控制判定

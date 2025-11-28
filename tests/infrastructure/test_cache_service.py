@@ -12,6 +12,7 @@ from infrastructure.cache_service import (
 )
 
 
+# Deleted: this file is a legacy duplicate, please use cache_service_test.py under tests/infrastructure/ instead.
 class TestCacheKeyGenerator(unittest.TestCase):
     """测试缓存Key生成器"""
     

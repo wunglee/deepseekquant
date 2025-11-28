@@ -180,16 +180,31 @@ class MockHistoricalDataProvider:
         
         # 生成确定性下跌趋势（事件期间）+ 随机波动
         if event_decline != 0.0 and n_days > 0:
-            # 精确匹配总收益率到expected_decline
-            daily_drift = max(-0.95, (1.0 + event_decline) ** (1.0 / n_days) - 1.0)
-            random_component = np.zeros(n_days)
-            daily_returns = daily_drift + random_component
+            # 先生成随机波动，然后调整最后一天确保总收益率准确
+            np.random.seed(hash(start_date + end_date) % 2**32)  # 确定性随机种子
+            random_component = np.random.normal(0, daily_volatility * 0.4, n_days)
+            
+            # 初始价格
+            prices = np.zeros(n_days)
+            prices[0] = initial_price
+            
+            # 生成前 n-1 天的价格（带随机波动）
+            base_drift = (1.0 + event_decline) ** (1.0 / n_days) - 1.0
+            for i in range(1, n_days):
+                prices[i] = prices[i-1] * (1 + base_drift + random_component[i-1])
+            
+            # 最后一天精确调整以达到目标收益率
+            target_final_price = initial_price * (1 + event_decline)
+            prices[-1] = target_final_price
+            
+            # 从价格计算收益率
+            daily_returns = np.diff(prices) / prices[:-1]
+            daily_returns = np.insert(daily_returns, 0, 0)  # 第一天无收益
         else:
             # 非事件期间：纯随机游走
             daily_returns = np.random.normal(0, daily_volatility, n_days)
-        
-        # 计算价格序列
-        prices = initial_price * np.cumprod(1 + daily_returns)
+            # 计算价格序列
+            prices = initial_price * np.cumprod(1 + daily_returns)
         
         # 生成成交量（简化模拟）
         base_volume = 100000000  # 1亿手

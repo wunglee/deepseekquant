@@ -14,6 +14,7 @@ import random
 
 from .risk_models import StressTestScenario, RiskLevel
 from .risk_metrics_service import RiskMetricsService
+from . import calculate_hhi
 
 logger = logging.getLogger('DeepSeekQuant.StressTesting')
 
@@ -432,7 +433,7 @@ class StressTester:
             
             # 1. 直接损失（decline参数）
             decline = params.get('decline', -0.30)
-            total_exposure = sum(alloc.weight for alloc in portfolio_state.allocations.values())
+            total_exposure = self._calculate_total_exposure(portfolio_state)
             direct_loss = total_exposure * decline
             total_impact += direct_loss
             
@@ -441,9 +442,9 @@ class StressTester:
                 vol_multiplier = params['volatility_spike']
                 # 使用方法1：直接放大VaR（专家推荐，answer.md 13-26行）
                 base_var = abs(direct_loss * 0.1)  # 估计基础VaR为损失的10%
-                var_impact = base_var * (vol_multiplier - 1)
+                var_impact = self._calculate_var_amplification(base_var, vol_multiplier)
                 total_impact -= var_impact  # 额外损失
-                logger.debug(f"波动率冲击: vol_multiplier={vol_multiplier}, var_impact={var_impact:.4f}")
+                logger.info(f"波动率冲击: vol_multiplier={vol_multiplier}, var_impact={var_impact:.4f}")
             
             # 3. 相关性崩溃（correlation_break参数）
             if 'correlation_break' in params:
@@ -453,22 +454,19 @@ class StressTester:
                 diversification_loss_factor = corr_level * 0.15  # 相关性0.8时，多元化失效增加12%风险
                 diversification_loss = abs(direct_loss) * diversification_loss_factor
                 total_impact -= diversification_loss
-                logger.debug(f"相关性崩溃: corr_level={corr_level}, div_loss={diversification_loss:.4f}")
+                logger.info(f"相关性崩溃: corr_level={corr_level}, div_loss={diversification_loss:.4f}")
             
             # 4. 恢复期影响（recovery_period参数）
             if 'recovery_period' in params:
                 recovery_months = params['recovery_period']
-                # 机会成本 = 初始损失 × ((1 + r_f)^t - 1)（answer.md 134-144行）
-                risk_free_rate = self.config.get('risk_free_rate', 0.03)  # 默认3%无风险利率
-                t_years = recovery_months / 12
-                opportunity_cost = abs(direct_loss) * ((1 + risk_free_rate) ** t_years - 1)
+                opportunity_cost = self._calculate_recovery_opportunity_cost(direct_loss, recovery_months)
                 total_impact -= opportunity_cost
-                logger.debug(f"恢复期影响: months={recovery_months}, opp_cost={opportunity_cost:.4f}")
+                logger.info(f"恢复期影响: months={recovery_months}, opp_cost={opportunity_cost:.4f}")
             
             return float(total_impact)
             
         except Exception as e:
-            logger.error(f"市场崩盘场景模拟失败: {e}")
+            logger.error(f"市场崩盘场景模拟失败: {e}", exc_info=True)
             return -0.30
     
     def _simulate_liquidity_crisis(self, scenario: StressTestScenario, portfolio_state, market_data: Dict[str, Any]) -> float:
@@ -482,7 +480,7 @@ class StressTester:
             
             # 1. 基础流动性成本
             liquidity_cost_multiplier = params.get('liquidity_cost_multiplier', 3.0)
-            total_position_value = sum(alloc.weight for alloc in portfolio_state.allocations.values())
+            total_position_value = self._calculate_total_exposure(portfolio_state)
             base_var = 0.02
             liquidity_loss = total_position_value * base_var * liquidity_cost_multiplier
             total_impact -= liquidity_loss
@@ -544,7 +542,7 @@ class StressTester:
             return float(total_impact)
             
         except Exception as e:
-            logger.error(f"流动性危机场景模拟失败: {e}")
+            logger.error(f"流动性危机场景模拍失败: {e}", exc_info=True)
             return -0.15
     
     def _simulate_interest_rate_shock(self, scenario: StressTestScenario, portfolio_state, market_data: Dict[str, Any]) -> float:
@@ -592,7 +590,7 @@ class StressTester:
         try:
             params = scenario.parameters
             total_impact = 0
-            total_exposure = sum(alloc.weight for alloc in portfolio_state.allocations.values())
+            total_exposure = self._calculate_total_exposure(portfolio_state)
             
             # 1. 直接损失（decline参数）
             decline = params.get('decline', -0.35)
@@ -604,38 +602,36 @@ class StressTester:
                 currency_vol = params['currency_volatility']
                 # 汇率波动导致额外VaR
                 base_var = abs(direct_loss * 0.1)
-                currency_var_impact = base_var * (currency_vol - 1)
+                currency_var_impact = self._calculate_var_amplification(base_var, currency_vol)
                 total_impact -= currency_var_impact
-                logger.debug(f"汇率波动: currency_vol={currency_vol}, var_impact={currency_var_impact:.4f}")
+                logger.info(f"汇率波动: currency_vol={currency_vol}, var_impact={currency_var_impact:.4f}")
             
             # 3. 区域传导（regional_contagion参数）
             if 'regional_contagion' in params:
                 contagion_factor = params['regional_contagion']
                 # 区域传导导致额外损失
-                contagion_loss = abs(direct_loss) * contagion_factor * 0.3
+                contagion_loss = self._calculate_proportional_impact(direct_loss, contagion_factor, 0.3)
                 total_impact -= contagion_loss
-                logger.debug(f"区域传导: contagion_factor={contagion_factor}, loss={contagion_loss:.4f}")
+                logger.info(f"区域传导: contagion_factor={contagion_factor}, loss={contagion_loss:.4f}")
             
             # 4. 流动性枯竭（liquidity_dry_up参数）
             if 'liquidity_dry_up' in params:
                 liquidity_ratio = params['liquidity_dry_up']
-                liquidity_impact = abs(direct_loss) * liquidity_ratio * 0.2
+                liquidity_impact = self._calculate_proportional_impact(direct_loss, liquidity_ratio, 0.2)
                 total_impact -= liquidity_impact
-                logger.debug(f"流动性枯竭: liquidity_ratio={liquidity_ratio}, impact={liquidity_impact:.4f}")
+                logger.info(f"流动性枯竭: liquidity_ratio={liquidity_ratio}, impact={liquidity_impact:.4f}")
             
             # 5. 恢复期影响（recovery_period参数）
             if 'recovery_period' in params:
                 recovery_months = params['recovery_period']
-                risk_free_rate = self.config.get('risk_free_rate', 0.03)
-                t_years = recovery_months / 12
-                opportunity_cost = abs(direct_loss) * ((1 + risk_free_rate) ** t_years - 1)
+                opportunity_cost = self._calculate_recovery_opportunity_cost(direct_loss, recovery_months)
                 total_impact -= opportunity_cost
-                logger.debug(f"恢复期影响: months={recovery_months}, opp_cost={opportunity_cost:.4f}")
+                logger.info(f"恢复期影响: months={recovery_months}, opp_cost={opportunity_cost:.4f}")
             
             return float(total_impact)
             
         except Exception as e:
-            logger.error(f"货币危机场景模拟失败: {e}")
+            logger.error(f"货币危机场景模拟失败: {e}", exc_info=True)
             return -0.35
     
     def _simulate_geopolitical_risk(self, scenario: StressTestScenario, portfolio_state, market_data: Dict[str, Any]) -> float:
@@ -646,7 +642,7 @@ class StressTester:
         try:
             params = scenario.parameters
             total_impact = 0
-            total_exposure = sum(alloc.weight for alloc in portfolio_state.allocations.values())
+            total_exposure = self._calculate_total_exposure(portfolio_state)
             
             # 1. 直接损失（decline参数）
             decline = params.get('decline', -0.20)
@@ -657,39 +653,37 @@ class StressTester:
             if 'commodity_shock' in params:
                 commodity_shock = params['commodity_shock']
                 # 商品价格冲击导致成本上升
-                commodity_impact = abs(direct_loss) * commodity_shock * 0.15
+                commodity_impact = self._calculate_proportional_impact(direct_loss, commodity_shock, 0.15)
                 total_impact -= commodity_impact
-                logger.debug(f"商品冲击: commodity_shock={commodity_shock}, impact={commodity_impact:.4f}")
+                logger.info(f"商品冲击: commodity_shock={commodity_shock}, impact={commodity_impact:.4f}")
             
             # 3. 制裁影响（sanction_impact参数）
             if 'sanction_impact' in params:
                 sanction_level = params['sanction_impact']
                 # 制裁导致贸易受限
-                sanction_loss = abs(direct_loss) * sanction_level * 0.1
+                sanction_loss = self._calculate_proportional_impact(direct_loss, sanction_level, 0.1)
                 total_impact -= sanction_loss
-                logger.debug(f"制裁影响: sanction_level={sanction_level}, loss={sanction_loss:.4f}")
+                logger.info(f"制裁影响: sanction_level={sanction_level}, loss={sanction_loss:.4f}")
             
             # 4. 避险情绪（flight_to_quality参数）
             if 'flight_to_quality' in params:
                 flight_intensity = params['flight_to_quality']
                 # 避险情绪导致流动性枯竭
-                flight_impact = abs(direct_loss) * flight_intensity * 0.12
+                flight_impact = self._calculate_proportional_impact(direct_loss, flight_intensity, 0.12)
                 total_impact -= flight_impact
-                logger.debug(f"避险情绪: flight_intensity={flight_intensity}, impact={flight_impact:.4f}")
+                logger.info(f"避险情绪: flight_intensity={flight_intensity}, impact={flight_impact:.4f}")
             
             # 5. 恢复期影响（recovery_period参数）
             if 'recovery_period' in params:
                 recovery_months = params['recovery_period']
-                risk_free_rate = self.config.get('risk_free_rate', 0.03)
-                t_years = recovery_months / 12
-                opportunity_cost = abs(direct_loss) * ((1 + risk_free_rate) ** t_years - 1)
+                opportunity_cost = self._calculate_recovery_opportunity_cost(direct_loss, recovery_months)
                 total_impact -= opportunity_cost
-                logger.debug(f"恢复期影响: months={recovery_months}, opp_cost={opportunity_cost:.4f}")
+                logger.info(f"恢复期影响: months={recovery_months}, opp_cost={opportunity_cost:.4f}")
             
             return float(total_impact)
             
         except Exception as e:
-            logger.error(f"地缘政治风险场景模拟失败: {e}")
+            logger.error(f"地缘政治风险场景模拟失败: {e}", exc_info=True)
             return -0.20
     
     def _simulate_sovereign_debt_crisis(self, scenario: StressTestScenario, portfolio_state, market_data: Dict[str, Any]) -> float:
@@ -700,7 +694,7 @@ class StressTester:
         try:
             params = scenario.parameters
             total_impact = 0
-            total_exposure = sum(alloc.weight for alloc in portfolio_state.allocations.values())
+            total_exposure = self._calculate_total_exposure(portfolio_state)
             
             # 1. 直接损失（decline参数）
             decline = params.get('decline', -0.25)
@@ -717,39 +711,37 @@ class StressTester:
                 # spread_multiplier=3.0时，损失 = 7% * 3 = 21%
                 spread_impact = bond_exposure * 0.07 * spread_multiplier
                 total_impact -= spread_impact
-                logger.debug(f"信用利差冲击: spread_multiplier={spread_multiplier}, impact={spread_impact:.4f}")
+                logger.info(f"信用利差冲击: spread_multiplier={spread_multiplier}, impact={spread_impact:.4f}")
             
             # 3. 传染风险（contagion_risk参数）
             if 'contagion_risk' in params:
                 contagion_level = params['contagion_risk']
                 # 危机传染导致其他市场受影响
                 # 使用相关性衰减模型：影响 = 直接损失 × 传染系数 × 30%
-                contagion_impact = abs(direct_loss) * contagion_level * 0.3
+                contagion_impact = self._calculate_proportional_impact(direct_loss, contagion_level, 0.3)
                 total_impact -= contagion_impact
-                logger.debug(f"传染风险: contagion_level={contagion_level}, impact={contagion_impact:.4f}")
+                logger.info(f"传染风险: contagion_level={contagion_level}, impact={contagion_impact:.4f}")
             
             # 4. 银行业压力（banking_sector_stress参数）
             if 'banking_sector_stress' in params:
                 banking_stress = params['banking_sector_stress']
                 # 银行业压力导致信贷紧缩
                 # 假设对股票资产产生20%的额外下行压力
-                banking_impact = abs(direct_loss) * banking_stress * 0.2
+                banking_impact = self._calculate_proportional_impact(direct_loss, banking_stress, 0.2)
                 total_impact -= banking_impact
-                logger.debug(f"银行业压力: banking_stress={banking_stress}, impact={banking_impact:.4f}")
+                logger.info(f"银行业压力: banking_stress={banking_stress}, impact={banking_impact:.4f}")
             
             # 5. 恢复期影响（recovery_period参数）
             if 'recovery_period' in params:
                 recovery_months = params['recovery_period']
-                risk_free_rate = self.config.get('risk_free_rate', 0.03)
-                t_years = recovery_months / 12
-                opportunity_cost = abs(direct_loss) * ((1 + risk_free_rate) ** t_years - 1)
+                opportunity_cost = self._calculate_recovery_opportunity_cost(direct_loss, recovery_months)
                 total_impact -= opportunity_cost
-                logger.debug(f"恢复期影响: months={recovery_months}, opp_cost={opportunity_cost:.4f}")
+                logger.info(f"恢复期影响: months={recovery_months}, opp_cost={opportunity_cost:.4f}")
             
             return float(total_impact)
             
         except Exception as e:
-            logger.error(f"主权债务危机场景模拟失败: {e}")
+            logger.error(f"主权债务危机场景模拟失败: {e}", exc_info=True)
             return -0.25
     
     def _simulate_market_downturn(self, scenario_params: Dict, portfolio_state, market_data: Dict[str, Any]) -> float:
@@ -758,7 +750,7 @@ class StressTester:
         volatility_shock = scenario_params.get('volatility_shock', 0.5)
         
         # 组合直接损失
-        total_exposure = sum(alloc.weight for alloc in portfolio_state.allocations.values())
+        total_exposure = self._calculate_total_exposure(portfolio_state)
         direct_loss = total_exposure * growth_shock
         
         # 波动率增加导致风险增加
@@ -773,7 +765,7 @@ class StressTester:
         
         # 如果组合集中在下跌板块，损失更大
         # 这里使用集中度来估计
-        concentration = sum(w**2 for w in [alloc.weight for alloc in portfolio_state.allocations.values()])
+        concentration = calculate_hhi([alloc.weight for alloc in portfolio_state.allocations.values()])
         
         loss = -rotation_magnitude * concentration
         return float(loss)
@@ -784,8 +776,7 @@ class StressTester:
         
         # 波动率飙升导致VaR增加
         base_var = 0.02
-        stressed_var = base_var * volatility_multiplier
-        additional_risk = stressed_var - base_var
+        additional_risk = self._calculate_var_amplification(base_var, volatility_multiplier)
         
         return float(-additional_risk)
     
@@ -804,6 +795,127 @@ class StressTester:
         """计算组合ES（简化版）"""
         return 0.025
     
+    def _calculate_total_exposure(self, portfolio_state) -> float:
+        """
+        计算组合总敞口（公共方法，消除重复代码）
+        
+        Args:
+            portfolio_state: 组合状态
+        
+        Returns:
+            float: 组合总敞口（所有持仓权重之和）
+        
+        说明：
+            - 统一的敞口计算逻辑，避免多处重复
+            - 如果未来需要调整计算方式（如考虑杠杆、净值等），只需修改此处
+            - 出现位置：6个场景模拟方法中
+        
+        示例：
+            >>> exposure = self._calculate_total_exposure(portfolio_state)
+            >>> # 返回所有持仓权重之和，如 1.0（满仓）或 0.8（80%仓位）
+        """
+        return sum(alloc.weight for alloc in portfolio_state.allocations.values())
+    
+    def _calculate_proportional_impact(
+        self, 
+        base_loss: float, 
+        impact_factor: float, 
+        coefficient: float = 1.0
+    ) -> float:
+        """
+        计算基于基础损失的比例影响（公共方法，消除重复代码）
+        
+        Args:
+            base_loss: 基础损失金额（可正可负，内部会取绝对值）
+            impact_factor: 影响因子（如传导因子、流动性比率等）
+            coefficient: 影响系数（默认1.0）
+        
+        Returns:
+            float: 额外影响金额（始终为正值）
+        
+        说明：
+            - 统一的比例影响计算逻辑
+            - 适用于区域传导、流动性冲击、商品价格冲击等场景
+            - 计算公式：abs(base_loss) × impact_factor × coefficient
+        
+        示例：
+            >>> # 区域传导：30%系数
+            >>> impact = self._calculate_proportional_impact(direct_loss, 0.8, 0.3)
+            >>> # 等价于：abs(direct_loss) * 0.8 * 0.3
+            
+            >>> # 流动性冲击：20%系数
+            >>> impact = self._calculate_proportional_impact(direct_loss, 0.7, 0.2)
+        """
+        return abs(base_loss) * impact_factor * coefficient
+    
+    def _calculate_recovery_opportunity_cost(self, direct_loss: float, recovery_months: int) -> float:
+        """
+        计算恢复期机会成本（公共方法，消除重复代码）
+        
+        Args:
+            direct_loss: 直接损失金额（可正可负，内部会取绝对值）
+            recovery_months: 恢复期（月数）
+        
+        Returns:
+            float: 恢复期机会成本（始终为正值）
+        
+        边界保护：
+            - recovery_months限制在0-120月（0-10年），避免指数爆炸
+            - 对于极端值自动截断并记录警告日志
+        
+        示例：
+            >>> cost = self._calculate_recovery_opportunity_cost(-0.30, 36)
+            >>> # 恢复期3年，机会成本 = 0.30 * ((1+0.03)^3 - 1) ≈ 0.0278
+        """
+        # 数值稳定性：限制恢复期范围在0-120月（0-10年）
+        original_months = recovery_months
+        recovery_months = max(0, min(recovery_months, 120))
+        
+        # 边界值警告
+        if original_months != recovery_months:
+            logger.warning(
+                f"恢复期超出合理范围: 原值={original_months}月, 已截断为={recovery_months}月 (最大120月)"
+            )
+        
+        # 获取无风险利率（默认3%）
+        risk_free_rate = self.config.get('risk_free_rate', 0.03)
+        
+        # 计算机会成本
+        t_years = recovery_months / 12.0
+        try:
+            opportunity_cost = abs(direct_loss) * ((1 + risk_free_rate) ** t_years - 1)
+        except OverflowError:
+            # 极端情况下的数值溢出保护
+            logger.error(
+                f"恢复期机会成本计算溢出: direct_loss={direct_loss}, months={recovery_months}, rate={risk_free_rate}"
+            )
+            # 使用线性近似：cost ≈ abs(direct_loss) * rate * t_years
+            opportunity_cost = abs(direct_loss) * risk_free_rate * t_years
+        
+        return float(opportunity_cost)
+    
+    def _calculate_var_amplification(self, base_var: float, multiplier: float) -> float:
+        """
+        计算VaR放大后的额外风险
+        
+        Args:
+            base_var: 基础VaR水平（正值）
+            multiplier: 放大倍数（>=1）
+        
+        Returns:
+            float: 额外风险增量（始终为正值）
+        
+        说明：
+            - 统一VaR放大计算逻辑，避免在各处使用 base_var * (multiplier - 1)
+            - 技术性统一，不改变业务口径；若各场景需不同系数，可通过base_var来源或multiplier配置体现
+        """
+        try:
+            multiplier = float(multiplier)
+            if multiplier <= 1:
+                return 0.0
+            return float(base_var * (multiplier - 1))
+        except Exception:
+            return 0.0    
     # =========================================================================
     # P1增强：组合场景测试方法（基于专家answer.md 295-396行指导）
     # =========================================================================
@@ -1000,7 +1112,7 @@ class StressTester:
         基于专家answer.md 266-285行指导
         """
         try:
-            total_value = sum(alloc.weight for alloc in portfolio_state.allocations.values())
+            total_value = self._calculate_total_exposure(portfolio_state)
             if total_value <= 0:
                 return portfolio_state
             
@@ -1066,7 +1178,7 @@ class StressTester:
                 return float(portfolio_state.leveraged_position)
             
             # 否则，估计为总风险暴露（保守估计）
-            total_exposure = sum(alloc.weight for alloc in portfolio_state.allocations.values())
+            total_exposure = self._calculate_total_exposure(portfolio_state)
             return float(total_exposure)
             
         except Exception as e:
