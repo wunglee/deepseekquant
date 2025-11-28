@@ -391,34 +391,29 @@
       - 可量化目标1：动态性能SLA达成率≥95%（分组合规模）
       - 可量化目标2：数据质量预警准确率≥97%（误报率≤3%）
     - 进展跟踪
-      - [ ] 动态性能阈值优化（P1 - 性能稳定性保障）
-        - 业务目标：按组合规模分级SLA，避免"一刀切"导致的性能抖动与资源浪费
+      - [ ] 动态性能阈值优化（风险模块埋点 + 基础设施支撑）
+        - 业务目标：分级SLA，避免“一刀切”导致性能抖动
         - 可量化指标：
-          - SLA达成率≥95%（≤100标的组合 P95≤500ms；≤500标的 P95≤1000ms；>500标的 P95≤3000ms）
+          - SLA达成率≥95%（≤100标的 P95≤500ms；≤500标的 P95≤1000ms；>500标的 P95≤3000ms）
           - 性能采集覆盖率100%（所有 `calculate_portfolio_risk` 调用点）
         - 实施方案：
-          - 在 `portfolio_risk.py` 的 `calculate_portfolio_risk` 中增加性能采集点（记录耗时）
-          - 新增 `PerformanceSLAConfig` 配置类（定义分级阈值）
-          - 新增 `_check_performance_sla` 方法（检查是否超出SLA并记录告警）
+          - 在 `portfolio_risk.py` 增加耗时采集埋点
+          - 在 `infrastructure` 提供 `PerformanceSLAConfig` 与 `PerformanceMonitor.check_sla()`
         - 验收标准：
-          - 单元测试覆盖3种规模组合的SLA检查逻辑（≤100、≤500、>500）
-          - 性能采集数据可导出为监控报表（CSV/JSON格式）
-          - SLA策略配置化（不硬编码在代码中）
-        - 相关文件：`core_bak_refactored/core/risk/portfolio_risk.py`
-      - [ ] 数据质量监控增强（P1 - 风险数据治理）
+          - 单元测试覆盖3种规模组合的SLA检查逻辑
+          - 指标导出支持CSV/JSON
+        - 相关文件：`core_bak_refactored/core/risk/portfolio_risk.py`；`core_bak_refactored/infrastructure/...`- [ ] 数据质量监控增强（P1 - 风险数据治理）
         - 业务目标：建立数据质量预警机制，提前发现数据异常，降低风险计算误差
         - 可量化指标：
           - 关键字段完整性检查覆盖率100%（prices/returns/market_data必填字段）
           - 数据质量预警准确率≥97%（DATA_QUALITY_WARNING触发率≤3%且误报率≤1%）
         - 实施方案：
-          - 在 `portfolio_risk.py` 的 `calculate_portfolio_risk` 门面入口增加数据质量前置检查
-          - 新增 `DataQualityPolicy` 配置类（定义完整性/一致性规则集）
-          - 新增 `_validate_data_quality` 方法（执行规则检查并生成合规标识）
+          - 在 `core_bak_refactored/core/data` 提供 `DataQualityPolicy` 与 `DataQualityMonitor.validate(data)`
+          - `portfolio_risk.py` 调用质量评估接口，外部化 `quality_flags` 至 `report_snapshot`
         - 验收标准：
-          - 单元测试覆盖完整性检查（缺失字段）、一致性检查（字段类型/范围）
-          - 合规标识外部化到 `report_snapshot`（不影响风险计算）
-          - 告警触发阈值可配置（如：缺失率>5%触发WARNING）
-        - 相关文件：`core_bak_refactored/core/risk/portfolio_risk.py`
+          - 单元测试覆盖完整性/一致性/时效性检查
+          - 告警触发阈值配置化（专家配置驱动）
+        - 相关文件：`core_bak_refactored/core/data/...`（服务提供）；`core_bak_refactored/core/risk/portfolio_risk.py`（消费）
     - 状态：🔄 规划中（等待技术债务清理完成后开始）
     - 预计周期：3-5天（含测试与文档同步）
 
