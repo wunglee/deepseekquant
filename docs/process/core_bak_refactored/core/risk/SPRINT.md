@@ -385,11 +385,9 @@
 
   - 迭代6：性能与数据质量监控（规划中）
     - 迭代目标（业务价值导向 + 周期≤1周）
-      - **业务价值**：提升风险计算性能稳定性与数据质量监控能力，降低生产环境风险
-      - **职责单一**：聚焦性能监控与数据质量治理，不涉及新的风险计算逻辑
-      - **不受外部阻塞**：所有特性均可在 risk 模块内独立实施，无需等待 exec/data/portfolio 模块
-      - 可量化目标1：动态性能SLA达成率≥95%（分组合规模）
-      - 可量化目标2：数据质量预警准确率≥97%（误报率≤3%）
+      - **业务价值**：提升风险计算性能稳定性；数据质量仅接入外部标识
+      - **职责单一**：风险模块仅进行性能埋点与质量标识消费，不实现质量规则
+      - 可量化目标：动态性能SLA达成率≥95%（分组合规模）
     - 进展跟踪
       - [ ] 动态性能阈值优化（风险模块埋点 + 基础设施支撑）
         - 业务目标：分级SLA，避免“一刀切”导致性能抖动
@@ -402,17 +400,11 @@
         - 验收标准：
           - 单元测试覆盖3种规模组合的SLA检查逻辑
           - 指标导出支持CSV/JSON
-        - 相关文件：`core_bak_refactored/core/risk/portfolio_risk.py`；`core_bak_refactored/infrastructure/...`- [ ] 数据质量监控增强（P1 - 风险数据治理）
-        - 业务目标：建立数据质量预警机制，提前发现数据异常，降低风险计算误差
-        - 可量化指标：
-          - 关键字段完整性检查覆盖率100%（prices/returns/market_data必填字段）
-          - 数据质量预警准确率≥97%（DATA_QUALITY_WARNING触发率≤3%且误报率≤1%）
-        - 实施方案：
-          - 在 `core_bak_refactored/core/data` 提供 `DataQualityPolicy` 与 `DataQualityMonitor.validate(data)`
-          - `portfolio_risk.py` 调用质量评估接口，外部化 `quality_flags` 至 `report_snapshot`
-        - 验收标准：
-          - 单元测试覆盖完整性/一致性/时效性检查
-          - 告警触发阈值配置化（专家配置驱动）
+        - 相关文件：`core_bak_refactored/core/risk/portfolio_risk.py`；`core_bak_refactored/infrastructure/...`
+      - [ ] 质量标识接入（消费自 core/data）
+        - 业务目标：在风险入口接入 quality_flags，不实现检查逻辑
+        - 实施方案：调用 `core/data` 的 `DataQualityMonitor` 输出 `quality_flags`，写入 `report_snapshot`
+        - 验收标准：质量标识成功外部化；无内置规则或默认阈值
         - 相关文件：`core_bak_refactored/core/data/...`（服务提供）；`core_bak_refactored/core/risk/portfolio_risk.py`（消费）
     - 状态：🔄 规划中（等待技术债务清理完成后开始）
     - 预计周期：3-5天（含测试与文档同步）
