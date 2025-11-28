@@ -111,7 +111,7 @@ class RiskDataPreprocessor:
         Returns:
             对数收益率序列
         """
-        from core_bak_refactored.infrastructure.risk_metrics import StatisticalCalculator
+        from core_bak_refactored.infrastructure.statistical_calculators import StatisticalCalculator
         return StatisticalCalculator.calculate_log_returns(prices)
     
     @staticmethod

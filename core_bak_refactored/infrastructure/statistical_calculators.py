@@ -309,3 +309,18 @@ class StatisticalCalculator:
         
         # numpy 1.22+ 使用method参数
         return float(np.percentile(values, percentile, method=method))
+    
+    @staticmethod
+    def calculate_tail_risk(values: np.ndarray, threshold: float) -> float:
+        """
+        计算尾部风险概率（纯数学）：values低于阈值的比例
+        Args:
+            values: 数值序列
+            threshold: 阈值（例如收益率的-0.05）
+        Returns:
+            尾部事件发生的概率（0-1）
+        """
+        if values is None or len(values) == 0:
+            return 0.0
+        tail_events = values < threshold
+        return float(np.sum(tail_events) / len(values))

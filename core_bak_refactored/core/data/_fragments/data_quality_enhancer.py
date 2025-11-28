@@ -18,17 +18,7 @@ from dataclasses import dataclass, field
 logger = logging.getLogger('DeepSeekQuant.DataQualityEnhancer')
 
 
-@dataclass
-class DataQualityReport:
-    """数据质量报告"""
-    completeness_score: float = 0.0  # 完整性评分 (0-1)
-    consistency_score: float = 0.0   # 一致性评分 (0-1)
-    accuracy_score: float = 0.0      # 准确性评分 (0-1)
-    outliers_detected: int = 0       # 检测到的异常值数量
-    total_rows: int = 0              # 总行数
-    missing_values: int = 0          # 缺失值数量
-    overall_score: float = 0.0       # 综合评分 (0-1)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+from .quality_types import DataQualityReport
 
 
 class DataQualityEnhancer:

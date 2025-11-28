@@ -23,21 +23,7 @@ from core_bak_refactored.core.share.market_enums import MarketCode
 logger = logging.getLogger('DeepSeekQuant.DataQuality')
 
 
-@dataclass
-class DataQualityReport:
-    """数据质量报告"""
-    overall_score: float  # 总分 0-1
-    completeness: float  # 完整性得分
-    consistency: float  # 一致性得分
-    continuity: float  # 连续性得分
-    reasonableness: float  # 合理性得分
-    issues: List[str] = field(default_factory=list)  # 问题列表
-    metadata: Dict[str, Any] = field(default_factory=dict)  # 元数据
-    
-    @property
-    def passed(self) -> bool:
-        """是否通过（总分≥0.9）"""
-        return self.overall_score >= 0.9
+from .quality_types import DataQualityReport
 
 
 @dataclass
