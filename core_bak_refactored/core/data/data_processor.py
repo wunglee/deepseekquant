@@ -10,7 +10,7 @@ import logging
 
 from .data_fetcher import DataFetcher
 from .data_validator import DataValidator
-from .data_quality_monitor import DataQualityMonitor
+from ._fragments.data_quality_monitor import DataQualityMonitor
 
 logger = logging.getLogger('DeepSeekQuant.DataProcessor')
 
