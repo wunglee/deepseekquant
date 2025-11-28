@@ -158,16 +158,17 @@ class MockHistoricalDataProvider:
         end = pd.to_datetime(end_date)
         dates = pd.date_range(start, end, freq='B')  # 交易日
         
-        # 检查是否在已知事件窗口内
+        # 检查是否与已知事件窗口有交集（修复：判断交集而非完全包含）
         event_decline = 0.0
         event_vol = 1.0
         for event_id, params in self.event_params.items():
             event_start = pd.to_datetime(params['period'][0])
             event_end = pd.to_datetime(params['period'][1])
-            if start >= event_start and end <= event_end:
+            # 判断请求范围与事件期是否有交集
+            if not (end < event_start or start > event_end):
                 event_decline = params['expected_decline']
                 event_vol = params['volatility_multiplier']
-                logger.info(f"检测到事件窗口: {event_id}, decline={event_decline}, vol={event_vol}")
+                logger.info(f"检测到事件窗口交集: {event_id}, decline={event_decline}, vol={event_vol}")
                 break
         
         # 生成模拟价格序列（确定性趋势 + 随机波动）
