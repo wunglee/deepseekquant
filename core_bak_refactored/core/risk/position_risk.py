@@ -9,7 +9,8 @@ from typing import Dict, Optional, Any
 import pandas as pd
 import logging
 
-from core_bak_refactored.infrastructure.risk_metrics import StatisticalCalculator
+from core_bak_refactored.infrastructure.statistical_calculators import StatisticalCalculator
+from . import calculate_historical_var
 
 logger = logging.getLogger('DeepSeekQuant.PositionRisk')
 
@@ -170,8 +171,7 @@ class PositionRiskAnalyzer:
                             var_value = var_results[var_keys[0]] if var_keys else 0.0
                     else:
                         # 使用简单历史分位方法
-                        var_5pct = np.percentile(returns, 5)
-                        var_value = abs(var_5pct)
+                        var_value = abs(StatisticalCalculator.calculate_percentile(returns, 5))
                     
                     position_value = getattr(position, 'current_value', 0)
                     result['position_var'] = float(var_value * position_value)
@@ -199,8 +199,11 @@ class PositionRiskAnalyzer:
         """计算单一持仓的VaR"""
         if returns is None or len(returns) == 0:
             return 0.0
-        var = np.percentile(returns.values, (1 - confidence_level) * 100)
-        return float(abs(var))
+        return calculate_historical_var(
+            returns,
+            confidence_level=confidence_level,
+            absolute=True
+        )
     
     def calculate_advanced_position_var(self, symbol: str, returns: pd.Series, 
                                         method: str = 'evt', confidence_level: float = 0.99) -> Dict[str, float]:
@@ -233,8 +236,11 @@ class PositionRiskAnalyzer:
             elif method == 'evt':
                 results['var_evt'] = self._calculate_evt_var(returns, confidence_level)
             elif method == 'historical_simulation':
-                var_hs = np.percentile(returns.values, (1 - confidence_level) * 100)
-                results['var_hs'] = abs(var_hs)
+                results['var_hs'] = calculate_historical_var(
+                    returns,
+                    confidence_level=confidence_level,
+                    absolute=True
+                )
                 results['var_stress'] = self._calculate_stress_var(returns, confidence_level)
             else:
                 results['var_simple'] = self.calculate_single_position_var(symbol, returns, 0.95)
@@ -263,7 +269,11 @@ class PositionRiskAnalyzer:
             exceedances = returns[returns > threshold] - threshold
             if len(exceedances) < 10:
                 logger.debug(f"EVT超额样本不足({len(exceedances)}), 回退到历史分位法")
-                return abs(np.percentile(returns.values, (1 - confidence_level) * 100))
+                return calculate_historical_var(
+                    returns,
+                    confidence_level=confidence_level,
+                    absolute=True
+                )
                 
             shape, loc, scale = genpareto.fit(exceedances.values)
             n = len(returns)
@@ -274,7 +284,11 @@ class PositionRiskAnalyzer:
             return float(abs(var_evt))
         except Exception as e:
             logger.warning(f"EVT VaR计算失败: {e}, 回退到历史分位")
-            return float(abs(np.percentile(returns.values, (1 - confidence_level) * 100)))
+            return calculate_historical_var(
+                returns,
+                confidence_level=confidence_level,
+                absolute=True
+            )
         
     def _calculate_dynamic_evt_threshold(self, returns: pd.Series, min_exceedances: int = 15) -> float:
         """
@@ -308,12 +322,20 @@ class PositionRiskAnalyzer:
         try:
             window = min(20, len(returns))
             if window <= 1:
-                return float(abs(np.percentile(returns.values, (1 - confidence_level) * 100)))
+                return calculate_historical_var(
+                    returns,
+                    confidence_level=confidence_level,
+                    absolute=True
+                )
             rolling = returns.rolling(window).sum().dropna()
             worst = rolling.nsmallest(1).values[0] if len(rolling) > 0 else returns.min()
             return float(abs(worst))
         except Exception:
-            return float(abs(np.percentile(returns.values, (1 - confidence_level) * 100)))
+            return calculate_historical_var(
+                returns,
+                confidence_level=confidence_level,
+                absolute=True
+            )
     
     def _estimate_jump_risk(self, symbol: str, returns: pd.Series) -> float:
         """

@@ -50,7 +50,7 @@ class RiskDataPreprocessor:
                 prices = data['prices']
                 if isinstance(prices, (list, np.ndarray)) and len(prices) > 1:
                     # 委托给 StatisticalCalculator 计算对数收益
-                    from core_bak_refactored.infrastructure.risk_metrics import StatisticalCalculator
+                    from core_bak_refactored.infrastructure.statistical_calculators import StatisticalCalculator
                     log_returns = StatisticalCalculator.calculate_log_returns(np.array(prices))
                     return pd.Series(log_returns)
             
@@ -89,7 +89,7 @@ class RiskDataPreprocessor:
             if 'benchmark_prices' in data:
                 prices = data['benchmark_prices']
                 if isinstance(prices, (list, np.ndarray)) and len(prices) > 1:
-                    from core_bak_refactored.infrastructure.risk_metrics import StatisticalCalculator
+                    from core_bak_refactored.infrastructure.statistical_calculators import StatisticalCalculator
                     log_returns = StatisticalCalculator.calculate_log_returns(np.array(prices))
                     return pd.Series(log_returns)
             
@@ -111,7 +111,7 @@ class RiskDataPreprocessor:
         Returns:
             对数收益率序列
         """
-        from infrastructure.risk_metrics import StatisticalCalculator
+        from core_bak_refactored.infrastructure.risk_metrics import StatisticalCalculator
         return StatisticalCalculator.calculate_log_returns(prices)
     
     @staticmethod

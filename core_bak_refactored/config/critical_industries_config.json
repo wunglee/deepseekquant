@@ -1,0 +1,49 @@
+{
+  "version": "2024Q4",
+  "maintainer": "风险管理委员会",
+  "last_updated": "2025-11-26",
+  "critical_industries": [
+    {
+      "code": "semiconductor",
+      "name": "半导体",
+      "flexible_threshold": 0.15,
+      "min_sample_days": 400,
+      "bootstrap_required": true,
+      "approval_document": "风险政策2024-001号",
+      "rationale": "新兴战略行业，市场波动率高，允许参数柔性标准"
+    },
+    {
+      "code": "new_energy",
+      "name": "新能源",
+      "flexible_threshold": 0.15,
+      "min_sample_days": 400,
+      "bootstrap_required": false,
+      "approval_document": "风险政策2024-002号",
+      "rationale": "国家政策支持行业，发展阶段参数差异显著"
+    },
+    {
+      "code": "ai_tech",
+      "name": "AI科技",
+      "flexible_threshold": 0.15,
+      "min_sample_days": 400,
+      "bootstrap_required": true,
+      "approval_document": "风险政策2024-003号",
+      "rationale": "技术革命引领行业，模型适用性需特殊处理"
+    }
+  ],
+  "approval_process": {
+    "new_industry_requirements": [
+      "业务部门提交《行业重要性评估报告》",
+      "风险管理委员会季度评审",
+      "技术团队按更新后的配置自动生效"
+    ],
+    "update_frequency": "季度",
+    "approval_authority": "风险管理委员会",
+    "technical_implementation": "禁止技术侧直接新增，必须按配置文件执行"
+  },
+  "usage_notes": [
+    "关键行业白名单由业务侧通过本配置文件维护",
+    "新增行业必须经过业务审批流程，严格的业务先行原则",
+    "技术团队仅按配置文件执行，不得自行新增行业"
+  ]
+}

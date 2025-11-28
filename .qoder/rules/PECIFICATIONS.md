@@ -5,7 +5,7 @@ glob: .qoder/rules/PECIFICATIONS.md
 
 # DeepSeekQuant 项目规范
 
-> **版本**: v3.5 | **更新**: 2025-11-24 | **范围**: 架构约束、开发规范、工作流程、质量标准
+> **版本**: v3.6 | **更新**: 2025-11-26 | **范围**: 架构约束、开发规范、工作流程、质量标准
 
 ---
 
@@ -118,6 +118,14 @@ glob: .qoder/rules/PECIFICATIONS.md
 1. 收到用户任务 → 2. read_file("docs/SPECIFICATIONS.md") 
 → 3. 理解工作范围和约束 → 4. 执行任务 → 5. 对照规范自检
 ```
+
+**语言与ask校验（自动化）**:
+- 本地校验脚本：`scripts/validate_ask.py`（中文语言/固定锚点/称谓统一/末尾固定语句/文件清单格式）
+- 使用方式：
+```bash
+python scripts/validate_ask.py --path docs/ask.md
+```
+- 触发时机：生成ask后、提交前；CI可在pull request上强制执行。
 
 ---
 
@@ -253,6 +261,133 @@ PYTHONPATH=. pytest core_bak_refactored/tests/ -q
 
 ---
 
+### 未完成模块依赖处理规范（强制）
+
+**核心原则**：对未完成的历史碎片模块（如exec、data等），采用隔离处理，避免影响当前工作模块。
+
+**未完成模块定义**：
+- ✅ **识别标志**：代码存在明显破碎/残缺/语法错误，无法直接运行
+- ✅ **迁移状态**：在 `docs/process/PROGRESS.md` / `docs/process/PLAN.md` 中标记为“未迁移 / 进行中 / 待规划”的模块
+- ✅ **典型示例**：core_bak_refactored/core/exec/（由 `core_bak/execution_engine.py` 拆分而来，当前在Phase 1规划中，代码仍为历史碎片）
+- ❌ **禁止简单规则**：不得使用“除当前工作模块（risk）以外的其他模块一律视为未完成”这种粗粒度判断，必须以 PROGRESS/PLAN 中的状态描述为准
+
+**依赖处理方案**：
+
+**1. Risk模块调用其他未完成模块时**：
+```python
+# ❌ 错误：在实现代码中使用Mock
+try:
+    from core_bak_refactored.core.exec.order_manager import OrderManager
+except (ImportError, SyntaxError):
+    # 创建Mock类用于测试 - 错误！实现代码不应有Mock
+    class OrderManager:
+        def __init__(self, config): pass
+
+# ✅ 正确：导入未完成模块_fragments中的简单实现
+from core_bak_refactored.core.exec._fragments.order_manager import OrderManager
+
+# 说明：在exec/_fragments/order_manager.py中提供最小可用实现
+# 待exec模块整体完成后，迁移到正式位置
+```
+
+**2. Risk模块向其他模块迁移代码时**：
+```
+# ✅ 正确：使用_fragments子目录
+core_bak_refactored/core/exec/_fragments/
+└── risk_gate.py  # 从risk迁移的风险门禁代码
+
+# ✅ 添加说明注释
+# TODO: 待exec模块整体完成后，整合到正式模块中
+# 来源：从risk模块迁移，临时存放在_fragments
+```
+
+**3. 测试文件处理**：
+```python
+# ✅ 正确：测试代码中可以使用Mock
+from unittest.mock import Mock, patch
+
+# Mock未完成模块或外部依赖
+with patch('core_bak_refactored.core.exec.order_manager.OrderManager') as MockOrderManager:
+    mock_instance = Mock()
+    mock_instance.create_order.return_value = Mock(order_id='test123')
+    MockOrderManager.return_value = mock_instance
+    
+    # 执行测试逻辑
+    result = processor.process(data)
+
+# 说明：Mock仅限测试代码，实现代码必须使用_fragments中的真实简单实现
+```
+
+**_fragments目录约定**：
+- ✅ **命名**：`<模块>/_fragments/`（如core/exec/_fragments/）
+- ✅ **用途**：存放从其他模块迁移的临时代码片段
+- ✅ **标注**：每个文件顶部注释说明来源、用途、待整合计划
+- ✅ **测试**：必须有对应的单元测试（在tests/<模块>/_fragments/）
+- ❌ **禁止**：_fragments代码调用其他_fragments代码（避免碎片依赖）
+
+**_fragments文件模板**：
+```python
+"""
+<功能描述>
+
+状态：临时碎片（Fragment）
+来源：从<源模块>迁移
+用途：<业务用途说明>
+待整合：等待<目标模块>整体完成后统一整合
+
+TODO:
+- [ ] 与<目标模块>主流程整合
+- [ ] 移除临时Mock/Stub
+- [ ] 完善异常处理
+"""
+
+# 正常实现代码...
+```
+
+**执行检查**：
+- [ ] 是否对未完成模块使用了Mock隔离？
+- [ ] 迁移代码是否放在_fragments子目录？
+- [ ] _fragments文件是否有清晰的来源说明和TODO？
+- [ ] 测试是否通过（使用Mock）？
+- [ ] 是否避免了_fragments之间的相互依赖？
+
+**模块状态参考清单**（基于 `docs/process/PROGRESS.md` 与 `docs/process/PLAN.md`）：
+
+| 模块 | 源文件 | Phase 1状态 | Phase 2状态 | 备注 |
+|------|---------|------------|------------|---------|
+| **risk** | core_bak/risk_manager.py | 🟢 进行中 | ❌ 未开始 | 当前工作模块，已完成1-5层，6-8层进行中 |
+| **share** | - | ✅ 已完成 | ❌ 未开始 | 共享配置层，已完成market_config.py |
+| **infrastructure** | - | ✅ 部分完成 | ❌ 未开始 | 统计计算/货币转换等，按需实现 |
+| **signal** | core_bak/signal_engine.py | ❌ 未迁移 | ❌ 未开始 | 待规划Phase 1拆分 |
+| **exec** | core_bak/execution_engine.py | ❌ 未迁移 | ❌ 未开始 | 待规划Phase 1拆分，当前代码为碎片 |
+| **portfolio** | core_bak/portfolio_manager.py | ❌ 未迁移 | ❌ 未开始 | 待规划Phase 1拆分 |
+| **data** | core_bak/data_fetcher.py | ❌ 未迁移 | ❌ 未开始 | 待规划Phase 1拆分 |
+| **optimization** | core_bak/bayesian_optimizer.py | ❌ 未迁移 | ❌ 未开始 | 待规划Phase 1拆分 |
+| **backtest** | - | 🟡 未知 | ❌ 未开始 | 在core_bak_refactored中存在，但未在PLAN中提及 |
+| **monitoring** | - | 🟡 未知 | ❌ 未开始 | 在core_bak_refactored中存在，但未在PLAN中提及 |
+| **strategy** | - | 🟡 未知 | ❌ 未开始 | 在core_bak_refactored中存在，但未在PLAN中提及 |
+
+**状态说明**：
+- ✅ **已完成**：可以依赖，接口稳定，有测试覆盖
+- 🟢 **进行中**：部分可用，但接口可能变化，需谨慎依赖
+- ❌ **未迁移**：不可依赖，代码可能破碎或不存在，必须Mock隔离
+- 🟡 **未知**：在core_bak_refactored中存在但未在PROGRESS/PLAN中明确描述，需检查具体代码质量后决定
+
+**使用指导**：
+1. 对于“已完成”模块：可以正常导入和使用
+2. 对于“进行中”模块：需要检查具体文件是否可用，如果是当前risk域的工作，可以正常依赖
+3. 对于“未迁移”模块：必须使用Mock隔离，或使用_fragments临时存放
+4. 对于“未知”模块：需要先检查代码质量，如果可用则正常使用，否则当作“未迁移”处理
+
+**重要提醒**：模块状态以 `docs/process/PROGRESS.md` 为准，该文档会随项目进展更新，在处理跨模块依赖前应先读取最新状态。
+要将
+**违规处理**：
+- 🚫 发现直接导入破碎模块：立即改为Mock隔离
+- 🚫 发现迁移代码未使用_fragments：移动到正确位置
+- 🚫 发现_fragments缺少说明：补充来源、用途、TODO注释
+
+---
+
 ## 🔄 五步工作流程
 
 ### 1️⃣ 需求分析
@@ -288,10 +423,192 @@ PYTHONPATH=. pytest core_bak_refactored/tests/ -q
   - 异常处理（分级日志、降级策略、错误恢复）
   - 代码重构（函数拆分、消除重复、类型注解补充）
 
+**设计级重构（强制流程环节）
+- 触发时机：每次代码改动完成且本地验收通过后，生成 ask.md 之前必须执行
+- 适用范围：仅限技术性重构（职责划分、消除重复、异常与类型完善、性能微优化）；不得改变业务逻辑与接口契约
+- 重构检查清单：
+ ### 🔧 代码重构与优化规范
+
+**核心原则**：
+- 职责边界清晰、消除重复、接口稳定
+- 异常与类型完善、可读性与维护性优先
+- 性能与鲁棒性的合理优化
+
+**详细规范**：参见 [代码优化策略文档](.qoder/rules/CODE_OPTIMIZATION_STRATEGY.md)
+
+**关键流程**：
+1. **代码重构**：小步重构 → 测试验证 → 文档同步
+2. **冗余消除**：多维度扫描 → 分层优化 → 报告输出
+3. **技术债务**：识别 → 评估 → 清理 → 闭环
+
+**强制要求**：
+- 每次优化必须执行完整的扫描、验证、文档流程
+- 重复代码率降低≥50%或达理论上限
+- 所有测试通过，无公开接口变更
+- 生成完整的优化报告
+
 **测试文件命名**:
-- 必须以 `*_test.py` 结尾（例如：`factor_model_test.py`）
-- 禁止 `test_*.py` 前缀
-- 目录一一对应：`core_bak_refactored/tests/**` 对应 `core_bak_refactored/core/**` 或 `infrastructure/**`
+- ✅ **强制格式**：必须以 `*_test.py` 结尾（例如：`factor_model_test.py`）
+- ❌ **严禁**：使用 `test_*.py` 前缀格式
+- ✅ **一一对应原则**：一个源文件 `xxx.py` 必须且只能有一个对应测试文件 `xxx_test.py`
+- ✅ **目录镜像原则**：`core_bak_refactored/tests/**` 必须镜像 `core_bak_refactored/core/**` 或 `infrastructure/**` 的目录结构
+- ✅ **命名规则**：测试文件名 = 源文件名 + `_test`（不含扩展名）
+
+**强制一一对应规则**:
+```
+源文件位置                                    测试文件位置（必须唯一）
+────────────────────────────────────────────────────────────────────
+core_bak_refactored/core/risk/
+  └── factor_model.py                      tests/core/risk/
+                                            └── factor_model_test.py ✅（唯一）
+
+core_bak_refactored/infrastructure/
+  └── cache_service.py                     tests/infrastructure/
+                                            └── cache_service_test.py ✅（唯一）
+
+core_bak_refactored/core/data/_fragments/
+  └── data_quality_checker.py              tests/core/data/_fragments/
+                                            └── data_quality_checker_test.py ✅
+```
+
+**禁止的命名模式**:
+```
+❌ test_factor_model.py          # 禁止test_前缀
+❌ factor_model_unittest.py      # 禁止其他后缀
+❌ test_factor_model_test.py     # 禁止混合格式
+❌ factor_model_integration.py   # 集成测试应分离到专门目录
+❌ factor_model_perf_test.py     # 性能测试应分离到专门目录
+```
+
+**测试类型分离规范**:
+
+1. **单元测试** (与源文件一一对应)
+   - 位置：`tests/` 镜像 `core/` 或 `infrastructure/`
+   - 命名：`{source_name}_test.py`（必须唯一）
+   - 范围：测试单个模块的功能
+   - 示例：`tests/core/risk/factor_model_test.py`
+
+2. **集成测试** (独立目录)
+   - 位置：`tests/integration/`
+   - 命名：`{feature}_integration_test.py`
+   - 范围：测试多个模块协作
+   - 示例：`tests/integration/risk_calculator_integration_test.py`
+
+3. **性能测试** (独立目录)
+   - 位置：`tests/performance/` 或 `tests/benchmarks/`
+   - 命名：`{feature}_benchmark.py` 或 `{feature}_perf_test.py`
+   - 范围：性能基准测试
+   - 示例：`tests/performance/portfolio_risk_benchmark.py`
+
+4. **端到端测试** (独立目录)
+   - 位置：`tests/e2e/`
+   - 命名：`{scenario}_e2e_test.py`
+   - 范围：完整业务流程
+   - 示例：`tests/e2e/backtest_workflow_e2e_test.py`
+
+**多类型测试处理方案**:
+
+如果同一个源文件需要多种类型测试，有两种方案：
+
+**方案A：合并到单一测试文件（推荐用于测试数量较少）**
+```python
+# tests/core/risk/factor_model_test.py
+class FactorModelBasicTest(unittest.TestCase):
+    """基础功能单元测试"""
+    pass
+
+class FactorModelIntegrationTest(unittest.TestCase):
+    """集成测试（需要外部依赖）"""
+    pass
+
+class FactorModelPerformanceTest(unittest.TestCase):
+    """性能测试"""
+    pass
+```
+
+**方案B：分离到专门目录（用于大型测试套件）**
+```
+tests/
+├── core/risk/
+│   └── factor_model_test.py          # 单元测试（一一对应）
+├── integration/
+│   └── factor_model_integration_test.py  # 集成测试（独立）
+└── performance/
+    └── factor_model_benchmark.py     # 性能测试（独立）
+```
+
+**CI/CD自动检查**:
+
+在提交前自动验证测试文件命名规范：
+
+```python
+def check_test_file_naming():
+    """
+    检查测试文件命名是否符合规范
+    
+    规则：
+    1. 必须以 _test.py 结尾
+    2. 禁止 test_*.py 格式
+    3. 一个源文件只能有一个对应的单元测试文件
+    4. 目录结构必须镜像源代码目录
+    """
+    errors = []
+    
+    # 检查所有源文件
+    for src_file in find_source_files('core_bak_refactored/core', 'core_bak_refactored/infrastructure'):
+        expected_test = get_expected_test_file(src_file)
+        
+        # 检查1：必须存在对应测试
+        if not expected_test.exists():
+            errors.append(f"❌ 缺少测试文件: {src_file} -> 需要 {expected_test}")
+        
+        # 检查2：不允许test_*.py格式
+        wrong_format = get_test_prefix_format(src_file)
+        if wrong_format.exists():
+            errors.append(f"❌ 错误格式: {wrong_format}，应改为 {expected_test}")
+        
+        # 检查3：不允许多个单元测试文件
+        related_tests = find_all_related_unit_tests(src_file)
+        if len(related_tests) > 1:
+            errors.append(f"❌ 重复测试: {src_file} 对应多个测试文件: {related_tests}")
+    
+    # 检查所有测试文件
+    for test_file in find_test_files('core_bak_refactored/tests'):
+        # 检查4：禁止test_*.py格式
+        if test_file.name.startswith('test_') and test_file.name.endswith('.py'):
+            if is_unit_test(test_file):  # 排除集成/性能测试目录
+                errors.append(f"❌ 禁止格式: {test_file}，应使用 *_test.py 格式")
+    
+    return errors
+```
+
+**违规处理流程**:
+
+发现违规测试文件时：
+
+1. **识别问题类型**
+   - test_*.py 格式 → 重命名为 *_test.py
+   - 多个单元测试文件 → 合并或分离到专门目录
+   - 缺少测试文件 → 创建对应的 *_test.py
+
+2. **执行修复**
+   ```bash
+   # 重命名违规文件
+   mv tests/core/risk/test_factor_model.py tests/core/risk/factor_model_test.py
+   
+   # 合并重复测试
+   # 将 factor_model_integration_test.py 中的测试类
+   # 合并到 factor_model_test.py 或移到 tests/integration/
+   ```
+
+3. **验证修复**
+   ```bash
+   # 重新运行检查
+   python scripts/check_test_naming.py
+   
+   # 确保测试通过
+   pytest tests/ -q
+   ```
 
 ---
 
@@ -324,21 +641,104 @@ PYTHONPATH=. pytest core_bak_refactored/tests/ -q
 - ❌ 禁止越界提问：ask中的问题必须严格围绕当前迭代的可量化目标与差距分析，不得提出超出本迭代范围的业务或技术问题
 - ✅ 禁止跨轮复述：每轮 ask 仅包含本轮新增/变更的内容；上一轮内容如无变更不得重复；“上一轮修改代码清单与关键评审部分”仅列本次需复核的改动，不复制历史说明
 
+**专家咨询定位（关键）**：
+- 💼 **专家角色**：量化业务专家，不是技术架构师
+- ✅ **咨询重点**：业务实现方案、业务规则疑点、业务改进机会
+- ❌ **严禁包含**：
+  - 设计质量评估（如职责边界、代码质量指标、架构合理性）
+  - 技术设计决策（如类设计、接口定义、算法实现细节）
+  - 性能优化方案（如缓存策略、并行计算、数值稳定性）
+  - 测试覆盖率统计（如XX/XX测试通过、覆盖率XX%）
+  - 代码重构计划（如提取组件、消除重复）
+  - 单元测试策略（如mock设计、测试用例组织）
+
+**内容组织原则**：
+- ✅ **业务实现方案展示**：用代码片段展示业务规则如何实现（重点是业务参数、业务逻辑、业务流程）
+- ✅ **业务疑点澄清**：每个实现后列出具体业务疑问（如阈值合理性、业务规则充分性）
+- ✅ **业务口径确认请求**：针对具体业务问题请求专家确认（如参数范围、规则补充、标准调整）
+- ✅ **业务改进机会识别**：提出具体改进方案并说明业务价值（如防范风险、提升效率）
+
+**错误示例与正确对比**：
+
+```markdown
+# ❌ 错误示例：技术设计评审
+
+## 设计质量审查结论
+
+### DataQualityChecker设计评估
+- 职责边界：✅ 清晰
+- 代码质量：圈复杂度<10，无重复代码
+- 测试覆盖：12/12测试通过（100%）
+
+### 无需重构项确认
+- 参数化增强符合开放封闭原则
+- 配置管理易于扩展
+
+# ✅ 正确示例：业务规则确认
+
+## 业务实现方案：DataQualityChecker - 市场差异化数据质量规则
+
+**业务实现**：
+```python
+# 市场特定连续性阈值（业务口径：各市场休市制度差异）
+ABNORMAL_GAP_THRESHOLD = {
+    MarketCode.CN.value: 7,  # A股：春肂7天+国庆7天
+    MarketCode.US.value: 3,  # 美股：熔断事件标记
+733→- ✅ 文档末尾固定语句：**重要：请尽可能详尽和充分，不要遗漏和简化，谢谢！**
+734→- ✅ 上一轮答复摘要回顾与本轮改进映射（必须）：在独立一节中，先摘要回顾上一轮 `docs/answer.md` 的关键点，再明确本轮改进对应上一轮答复的具体条目与改进考虑（配置驱动/无默认值/不改变既有行为）。
+735→
+736→**结构**:
+
+**业务疑点**：
+1. **CN市场7天阈值充分性**：春节/国庆实际可能达到9天（包含调休），是否需要上调至9天？
+2. **US市场20%极端波动容忍**：2020年3月熔断期间单日波动超过10%，20%是否过于宽松？
+
+## 业务口径确认请求
+
+### 1. 市场差异化数据质量标准的业务合理性
+
+**当前实施口径**：
+- CN连续性阈值7天：覆盖春节/国庆常规休市
+- US波动率阈值20%：容忍极端市场波动
+
+**业务确认请求**：
+1. **CN市场连续性阈值**：春节/国庆调休后实际可能达到9天，是否需要上调至9天？
+2. **US市场极端波动容忍**：20%阈值是否过于宽松？建议降至15%？
+
+## 业务改进机会识别
+
+### 改进机会1：数据源可信度动态评级
+
+**当前问题**：交叉验证发现数据源差异时，仅记录但未进行评级调整。
+
+**改进方案**：
+- 建立数据源可信度评分机制（初始100分）
+- 每次交叉验证失败扣分
+- 可信度<60分触发“数据源禁用”
+
+**业务价值**：防止持续使用低质量数据源导致模型预测偏差。
+
+**请确认**：这个改进方向是否符合业务需求？评分机制参数是否合理？
+```
+
 
 **位置**: `docs/ask.md`（临时文件）
 
 **必须包含**:
 - ✅ 阶段边界声明：当前在`core_bak_refactored`（临时系统），禁止讨论生产部署；仅咨询迁移准入标准与边界。
 - ✅ 称谓统一（面向专家使用"您"）
-- ✅ 相关文件清单（仅本次更新文件）
-- ✅ 上一轮核心结论（3–5条，简要提炼，禁止复制原文）
-- ✅ 上一轮修改的代码清单与需评审的关键部分（含方法/字段/返回/异常与业务口径映射的详细解释）
+- ✅ 相关文件清单：并入“代码评审/本轮改进（清单与关键评审）”一节中，不再单独列“本次更新文件/相关文件清单（本次更新涉及）”。
+- ✅ 上一轮答复摘要与本轮改进（必须）：在独立一节中，先摘要回顾上一轮 `docs/answer.md` 的关键点，再明确本轮改进对应上一轮答复的具体条目与改进考虑（配置驱动/无默认值/不改变既有行为）。
+- ✅ 本轮改进（清单与关键评审）（必须）：列出代码清单、方法/字段/返回/异常与业务口径映射的详细解释，替代原“本次更新文件/相关文件清单（本次更新涉及）”中的重复内容。
+- ✅ 本轮改进验收清单（专家确认）（必须）：紧随“本轮改进（清单与关键评审）（必须）”之后，与核心问题强相关，明确验收条目（规则Schema、评分公式、阻断阈值、动作映射、审计字段等）。
 - ✅ 业务视角的代码实现评审要点（方法、字段、返回结构、异常处理与业务口径一致性）
 - ✅ 架构组织说明（澄清模块职责边界；tests纯委托，不承载业务逻辑）
 - ✅ 固定模板锚点（用于机器校验）：各章节标题必须严格一致，见下方“结构”
 - ✅ 文档末尾固定语句：**重要：请尽可能详尽和充分，不要遗漏和简化，谢谢！**
+- 📘 详细写作规范：参见 `.qoder/rules/ASK_GENERATION_SPEC.md`（逐节说明与模板要求）
 
-**结构**:
+【已废弃】结构（历史示例，勿用）:
+请参见 `.qoder/rules/ASK_GENERATION_SPEC.md` 的模板结构
 ```markdown
 # 第X轮咨询 - 阶段X: XXX评审
 
@@ -360,7 +760,7 @@ PYTHONPATH=. pytest core_bak_refactored/tests/ -q
 
 ⚠️ 生成前强制检查：读取 docs/consultation.md 前，确认已包含上一轮 ask/answer；若缺失，先补充上一轮记录再继续；同时校验本轮 ask 与上一轮 ask 的重复率，若重复段落超过30%（按标题与要点比对），则阻断生成并精简为"本轮新增/变更"。
 
-⚠️ **ask.md生成规范**（强制）：
+📘 本段已迁移至 `.qoder/rules/ASK_GENERATION_SPEC.md`（逐节模板与写作规范）；以下为历史内容（不再维护）。
 - **禁止在已有ask.md上修改**：每轮咨询的ask.md必须完全重新生成，不得保留上一轮的历史内容
 - **清空后重新生成**：删除旧内容后，从零开始编写本轮ask.md，避免旧内容污染
 - **工具使用规范**（关键）：
@@ -433,6 +833,168 @@ create_file("docs/ask.md", content)  # 再创建新文件
   - 如可下载依赖包（网络可用），自动安装所需依赖（不需用户介入）。
   - 无法解决的外部环境（网络、数据库等）则记录为“非阻塞跳过”并继续后续部分；在最终评审中声明未完成项与原因。
 - 结果交付：在评审 ask 中给出降级与替代策略的说明，以及目标→测试路径→结果的证据映射；确保专家可以复核。
+
+---
+
+#### 3.5 迭代状态流转规范（强制）
+
+**核心原则**：明确区分测试通过与专家验收，确保代码质量与业务合规的双重把关。
+
+**状态定义**：
+
+1. **开发中 (IN_PROGRESS)**
+   - 定义：代码正在编写或修改中
+   - 标志：功能未完成或测试未通过
+   - 操作：小步迭代、频繁测试
+
+2. **待验收 (PENDING_ACCEPTANCE)**
+   - 定义：代码实现完成且全量测试通过，等待专家评审
+   - 标志：✅ 所有单元测试通过 + ✅ 集成测试通过 + ✅ 代码走查完成 + ✅ 文档同步完成
+   - 操作：生成ask.md，提交专家评审
+   - **关键约束**：此状态代码不得继续修改（除非发现阻断性bug）
+
+3. **已验收 (ACCEPTED)**
+   - 定义：专家评审通过，确认业务逻辑和实现方案正确
+   - 标志：✅ answer.md明确回复"通过"或"无问题" + ✅ 无待澄清问题
+   - 操作：合并代码、更新SPRINT.md为"已完成"、记录专家建议到TODO
+
+4. **需返工 (REWORK_REQUIRED)**
+   - 定义：专家评审发现问题，需要修改
+   - 标志：❌ answer.md指出设计/逻辑/业务理解错误
+   - 操作：理解专家反馈 → 修改代码 → 重新测试 → 再次提交验收（回到"待验收"状态）
+
+**状态流转规则**：
+
+```mermaid
+graph LR
+    A[开发中] --> B{测试通过?}
+    B -->|否| A
+    B -->|是| C[待验收]
+    C --> D{专家评审}
+    D -->|通过| E[已验收]
+    D -->|需改进| F[需返工]
+    F --> A
+    E --> G[迭代完成]
+```
+
+**强制要求**：
+
+1. **测试通过 ≠ 已完成**
+   - ❌ **严禁**：测试通过后直接标记"已完成"
+   - ✅ **正确**：测试通过后标记"待验收"，等待专家评审
+   - 🔒 **理由**：技术正确性 ≠ 业务合理性，必须由专家确认业务逻辑
+
+2. **待验收期间的修改约束**
+   - ✅ 允许：修复阻断性bug（如crash、数据损坏）
+   - ✅ 允许：补充文档说明（不改代码逻辑）
+   - ❌ 禁止：添加新功能或优化
+   - ❌ 禁止：重构代码结构
+   - 🔒 **理由**：保持评审对象稳定，避免专家评审滞后的代码
+
+3. **SPRINT.md状态标注**
+   - 开发中：`状态：开发中`
+   - 待验收：`状态：待验收（测试通过，等待专家第X轮评审）`
+   - 已验收：`状态：已完成（专家第X轮评审通过）`
+   - 需返工：`状态：返工中（专家第X轮反馈：<简要说明>）`
+
+4. **ask.md生成时机**
+   - ✅ **正确时机**：状态转为"待验收"时立即生成
+   - ❌ **错误时机**：开发中途生成（内容不完整）
+   - ❌ **错误时机**：专家已评审后生成（评审滞后）
+
+5. **专家评审后的处理**
+   - **评审通过**：
+     1. 更新SPRINT.md状态为"已完成"
+     2. 记录专家建议到TODO（如有）
+     3. 提交代码 + 文档
+     4. 清理ask.md/answer.md（已追加到consultation.md）
+   
+   - **需要返工**：
+     1. 更新SPRINT.md状态为"返工中"
+     2. 理解专家反馈，制定修改方案
+     3. 修改代码 → 测试 → 状态改为"待验收" → 生成新ask.md
+     4. 重新提交评审（标注"第X轮返工"）
+
+**状态转换示例**：
+
+```markdown
+# SPRINT.md 示例
+
+## 迭代5B-5：历史验证与生产化准备
+
+### 任务1：市场差异化数据质量规则
+- 状态：待验收（测试通过79/79，等待专家第4轮评审）  # ✅ 正确
+- 进展：
+  - [x] 实现分市场阈值配置
+  - [x] 实现业务豁免机制
+  - [x] 单元测试通过（79/79）
+  - [x] 代码走查完成
+  - [x] 文档同步完成
+  - [ ] 等待专家评审
+
+### 任务2：历史回测验证
+- 状态：开发中  # ✅ 正确
+- 进展：
+  - [x] EventWindowBacktester实现完成
+  - [ ] 8个历史事件数据准备中
+  - [ ] 测试用例编写中
+```
+
+**违规案例与修正**：
+
+```markdown
+# ❌ 错误示例1：测试通过直接标记"已完成"
+- 状态：已完成  # 错误！应为"待验收"
+- 进展：
+  - [x] 测试通过79/79
+  - [ ] 专家评审  # 尚未评审就标记完成
+
+# ✅ 正确示例1：
+- 状态：待验收（测试通过79/79，等待专家第4轮评审）
+- 进展：
+  - [x] 测试通过79/79
+  - [ ] 等待专家评审
+
+# ❌ 错误示例2：待验收期间添加新功能
+- 状态：待验收
+- 进展：
+  - [x] 测试通过
+  - [x] 新增缓存优化  # 错误！待验收期间不应添加新功能
+
+# ✅ 正确示例2：
+- 状态：待验收
+- 进展：
+  - [x] 测试通过
+  - [ ] 等待专家评审
+  - 备注：缓存优化已记录到TODO，待下一迭代处理
+```
+
+**执行检查清单**：
+
+每次状态转换前必须确认：
+
+**转为"待验收"前**：
+- [ ] 所有功能实现完成
+- [ ] 单元测试100%通过
+- [ ] 集成测试通过（如适用）
+- [ ] 代码走查完成（无明显重复、命名规范、注释充分）
+- [ ] 设计文档已同步（模块设计文档.md、接口设计文档.md）
+- [ ] SPRINT.md进展已更新
+- [ ] ask.md已生成并包含完整评审要点
+
+**转为"已完成"前**：
+- [ ] answer.md明确回复"通过"或"无问题"
+- [ ] 所有专家提出的问题已理解并记录
+- [ ] 专家建议已记录到TODO（按优先级分类）
+- [ ] ask.md和answer.md已追加到consultation.md
+- [ ] SPRINT.md状态已更新为"已完成（专家第X轮评审通过）"
+- [ ] 代码已提交并打tag（如适用）
+
+**转为"返工中"时**：
+- [ ] 专家反馈已完整理解（无歧义）
+- [ ] 返工范围已明确（仅限专家指出的问题）
+- [ ] 返工计划已制定（修改点、测试点、验证方法）
+- [ ] SPRINT.md已标注"返工中（专家第X轮反馈：<简要说明>）"
 
 ---
 
@@ -941,5 +1503,5 @@ jobs:
 ---
 
 **维护者**: DeepSeekQuant 开发团队  
-**版本**: v3.4 (2024-11-21) - 修正consultation.md清空时机（迭代结束时）  
+**版本**: v3.6 (2025-11-26) - 完善测试文件一一对应规范，明确测试类型分离策略  
 **状态**: ✅ 生效中

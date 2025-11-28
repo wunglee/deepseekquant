@@ -14,7 +14,7 @@
 
 import pandas as pd
 from typing import Tuple, Dict, Any
-from core_bak_refactored.infrastructure.technical_indicators import TimeSeriesCalculator
+from core_bak_refactored.infrastructure.timeseries_calculator import TimeSeriesCalculator
 
 
 # 市场参数配置（业务概念）

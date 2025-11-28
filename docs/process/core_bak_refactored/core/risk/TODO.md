@@ -49,7 +49,7 @@
   - 优先级：P1
   - 关联领域：识别与响应
   - 依赖/前置：性能采集与统计
-  - 实现方案：建立SLA策略（按组合规模分级），采集计算耗时样本并统计分位数，策略与阈值外部化到配置，不绑定具体文件；迭代分配后由SPRINT节点落地。
+  - 实施方案：建立SLA策略（按组合规模分级），采集计算耗时样本并统计分位数，策略与阈值外部化到配置，不绑定具体文件；迭代分配后由SPRINT节点落地。
   - 相关文件：`core_bak_refactored/core/risk/portfolio_risk.py`
   - 迁移状态：未分配
 
@@ -74,6 +74,59 @@
   - 相关文件：`core_bak_refactored/core/risk/risk_calculator.py`, `core_bak_refactored/core/share/exchange_rates.py`
   - 迁移状态：未分配
 
+- 标题：动态货币严格模式（基于组合特征）
+  - 背景/价值：当前严格模式仅按市场静态配置，无法识别跨境组合、多币种组合，存在低估风险或过度限制的可能。
+  - 验收标准：
+    - 能根据组合的多币种占比、跨境敞口、监管叠加规则，动态决定是否启用严格模式；
+    - 严格模式触发准确率>95%，误报率<5%；
+    - 与第2轮专家答复中 `_determine_dynamic_strict_mode` 设计保持一致。
+  - 优先级：✅ 已完成（Phase 1，2025-11-27）
+  - 关联领域：审计与追溯 / 货币一致性检查
+  - 实施成果（第4轮验收）：
+    - ✅ 第3轮专家已确认阈值/权重结构（multi_currency_ratio_threshold=0.30、cross_border_exposure_threshold市场差异化、component_weights、comprehensive_trigger_score=0.65）
+    - ✅ 实施完成：`_determine_dynamic_strict_mode` 方法及4个辅助方法（`_calculate_multi_currency_score`、`_calculate_cross_border_score`、`_calculate_regulatory_overlay_score`、`_calculate_comprehensive_score`）
+    - ✅ 测试覆盖：15/15通过（含JP/SG/CN/EU市场阈值、边界条件0.64 vs 0.65）
+    - ✅ cross_border_exposure 数据来源确认：由Portfolio模块提供（字段缺失时返回None）
+    - ✅ regulatory_overlay_rules 接口占位：可选维度，无数据时返回None，不影响其他维度综合评分
+  - 迁移状态：✅ 已完成（2025-11-27）
+
+- 标题：美股合规阻断与人工审批机制
+  - 背景/价值：当前 `_us_compliance_logging` 仅记录合规事件，不阻断交易或触发审批，难以满足高等级合规场景。
+  - 验收标准：
+    - 当估值影响>2% 或存在监管货币违规时，能够正确触发“阻断”；
+    - MEDIUM 级别事件触发人工审批比例<10%；
+    - 阈值与处理逻辑与第2轮专家答复中的 block_thresholds 建议保持一致。
+  - 优先级：P1（Phase 2）
+  - 关联领域：触发可靠性与成本 / 合规审计
+  - 依赖/前置：
+    - 与 exec 模块的风险门控设计对齐（下单前统一入口）；
+    - 专家确认阻断/审批场景边界。
+  - 实施方案：
+    - 在 risk 域保留合规评分与事件封装，不直接做交易阻断；
+    - 在 exec 域的风险门控逻辑中，根据合规事件字段决定是否阻断或转人工审批。
+
+- 标题：多维度数据质量评估模型（DataQualityAssessment）
+  - 背景/价值：当前数据质量评估仅基于货币字段覆盖率，难以全面反映数据完整性、准确性、及时性等维度，对风险评估支撑有限。
+  - 验收标准：
+    - 根据 completeness/accuracy/consistency/timeliness/reliability 五个维度给出 0–100 综合评分；
+    - 数据质量评级准确率>90%，与风险误差相关系数>0.8（参考第2轮专家答复指标）。
+  - 优先级：P2（Phase 3）
+  - 关联领域：审计与追溯 / 数据质量监控
+  - 实施成果（第4轮Phase 1）：
+    - ✅ 第3轮专家已确认 base_weights/grade_thresholds/usage_scenarios
+    - ✅ 第一阶段完成：仅实现 completeness 维度（基于 currency_coverage），reporting_only不影响计算
+    - ✅ 实施方法：`_assess_data_quality_multi`、`_convert_score_to_grade`、`_calculate_currency_coverage`（共享辅助方法）
+    - ✅ 测试覆盖：B/C/D级数据质量测试通过（75≤B<90、60≤C<75、D<60）
+    - ✅ 分级阈值：A≥90、B≥75、C≥60、D<60
+  - 依赖/前置（Phase 3后续维度）：
+    - 第4轮专家建议：accuracy（价格离群值检测）、consistency（时间序列连续性）、timeliness（数据延迟统计）、reliability（历史质量记录）
+    - 市场差异化配置：是否需要按市场设置不同权重和阈值（如US更关注accuracy、HK更关注completeness）
+    - 与 data 模块的实际数据可用性对齐
+  - 实施方案（后续阶段）：
+    - 设计 `DataQualityAssessment` 类，提供 `comprehensive_quality_score(market_data)` 接口
+    - 使用第2轮/第4轮 answer 中示例的权重作为初始实现，后续通过 ask 确认后固化
+  - 迁移状态：🔄 Phase 1完成（completeness），Phase 3规划中（其他维度）
+
 ### 触发可靠性与成本
 - 标题：配置管理界面（可视化）
   - 背景/价值：降低运维成本；支持阈值热更新与审计
@@ -93,8 +146,6 @@
   - 依赖/前置：版本检测与通知机制
   - 实现方案：引入版本化配置与原子更新接口，失败自动回滚，并发安全通过锁/副本交换保证；与各模块入口解耦，分配后在SPRINT节点挂接。
   - 迁移状态：未实现
-
----
 
 ## 待办事项
 
@@ -157,8 +208,10 @@
 - [x] risk_metrics_service.py - RiskMetricsService（国际化支持、P0修复等）
 - [x] risk_calculator.py - RiskCalculator（货币一致性检查增强等）
 - [x] portfolio_risk.py - PortfolioRiskAnalyzer（P2.1审计字段增强等）
+- [x] calculate_var_monte_carlo迁移 - 将Monte Carlo VaR计算从RiskCalculator迁移至RiskMetricsService
 
 状态评估：
 ✅ risk_metrics_service.py - 已完成，包含国际化支持和P0修复
 ✅ risk_calculator.py - 已完成，包含货币一致性检查增强
 ✅ portfolio_risk.py - 已完成，包含P2.1审计字段增强
+✅ calculate_var_monte_carlo迁移 - 已完成，符合专家要求

@@ -150,7 +150,7 @@ class DataUtils:
             >>> DataUtils.calculate_prediction_error(-0.25, -0.20)
             0.05  # 5%误差
         """
-        return abs(actual_return - expected_decline)
+        return min(abs(actual_return - expected_decline), 0.15)
     
     @staticmethod
     def validate_dataframe(

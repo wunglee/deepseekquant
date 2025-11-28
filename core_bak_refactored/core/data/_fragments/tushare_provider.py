@@ -276,10 +276,14 @@ class TushareDataProvider:
         
         mock_provider = MockHistoricalDataProvider()
         
-        # 转换日期格式
-        if len(start_date) == 8:  # YYYYMMDD
+        # 转换日期格式，支持 datetime 或 字符串
+        if isinstance(start_date, datetime):
+            start_date = start_date.strftime('%Y-%m-%d')
+        elif isinstance(start_date, str) and len(start_date) == 8:  # YYYYMMDD
             start_date = f"{start_date[:4]}-{start_date[4:6]}-{start_date[6:]}"
-        if len(end_date) == 8:
+        if isinstance(end_date, datetime):
+            end_date = end_date.strftime('%Y-%m-%d')
+        elif isinstance(end_date, str) and len(end_date) == 8:
             end_date = f"{end_date[:4]}-{end_date[4:6]}-{end_date[6:]}"
         
         return mock_provider.get_index_prices(symbol, start_date, end_date)

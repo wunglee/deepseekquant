@@ -249,19 +249,26 @@ class MockHistoricalDataProvider:
         Returns:
             质量报告字典，与RealHistoricalDataProvider保持一致
         """
-        # 调用统一的质量检查器
-        report = DataQualityChecker.check_quality(data, source='mock')
+        # 使用实例化的质量检查器，并按新签名调用
+        checker = DataQualityChecker()
+        report = checker.check_quality(data, index_id='mock')
         
-        # 转换为兼容格式
+        # 兼容期望的字典键
+        total_rows = len(data)
+        missing_values = int(data.isna().sum().sum())
+        # 简单启发式：将包含“异常/零成交量/极值”的问题计为异常点
+        outliers_detected = sum(
+            1 for issue in (report.issues or [])
+            if ('异常' in issue) or ('零成交量' in issue) or ('极值' in issue)
+        )
+        
         return {
-            'completeness_score': report.completeness_score,
-            'consistency_score': report.consistency_score,
-            'continuity_score': report.continuity_score,
-            'reasonableness_score': report.reasonableness_score,
-            'overall_score': report.overall_score,
-            'passed': report.passed,
-            'total_rows': report.details.get('total_rows', 0),
-            'details': report.details
+            'completeness_score': report.completeness,
+            'consistency_score': report.consistency,
+            'accuracy_score': report.reasonableness,
+            'outliers_detected': outliers_detected,
+            'total_rows': total_rows,
+            'missing_values': missing_values,
         }
     
     def get_event_window_data(self, 
@@ -729,7 +736,8 @@ class RealHistoricalDataProvider:
             return self._quality_cache[cache_key]
         
         # 调用独立的质量检查器
-        report = DataQualityChecker.check_quality(data, source, cache_key)
+        checker = DataQualityChecker()
+        report = checker.check_quality(data, index_id=source)
         
         # 缓存结果
         self._quality_cache[cache_key] = report.overall_score

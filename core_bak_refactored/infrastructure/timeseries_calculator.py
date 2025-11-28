@@ -416,3 +416,8 @@ class TimeSeriesCalculator:
         cci = (typical_price - sma) / (constant * mad.replace(0, np.nan))
         
         return cci
+
+
+class TechnicalIndicators(TimeSeriesCalculator):
+    """兼容旧测试别名：继承通用技术指标计算器"""
+    pass

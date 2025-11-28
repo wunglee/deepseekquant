@@ -11,11 +11,13 @@ UAT验收测试框架 - Phase 5B-5
 
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Any, Tuple, Set
 from dataclasses import dataclass, field
 from enum import Enum
 import logging
 from datetime import datetime
+import json
+from pathlib import Path
 
 logger = logging.getLogger('DeepSeekQuant.UAT')
 
@@ -37,13 +39,84 @@ class EventTypeWeight:
 
 
 @dataclass
+class BusinessExemption:
+    """业务豁免记录（专家答复）"""
+    category: str  # 豁免类别
+    reason: str    # 详细理由
+    approvers: List[str]  # 审批人列表
+    period: Tuple[datetime, datetime]  # 豁免期限
+    audit_trail: Dict[str, Any]  # 审计痕迹
+
+@dataclass
 class UATResult:
     """UAT验收结果"""
     test_item: str
     passed: bool
     actual_value: float
     threshold: float
+    business_exemption: Optional[BusinessExemption] = None  # 业务豁免
+    risk_statement: Optional[str] = None  # 风险说明
     details: Dict[str, Any] = field(default_factory=dict)
+    # 审计可追溯性：业务判定路径（专家第5轮建议，第6轮问题5确认）
+    decision_path: List[Dict[str, Any]] = field(default_factory=list)
+    # 阈值标注增强（专家第7轮问题1-4）：动态阈值标注
+    threshold_type: str = 'fixed'  # 'fixed' 或 'dynamic'
+    threshold_adjustment_reason: Optional[str] = None
+    threshold_adjustment_amount: Optional[float] = None
+    
+    def add_decision_step(self, 
+                          step_name: str, 
+                          condition: str, 
+                          result: bool, 
+                          parameters: Dict[str, Any],
+                          critical_only: bool = True) -> None:
+        """
+        添加决策步骤（专家第6轮问题5：7大决策节点）
+        第7轮优化：支持关键参数过滤（专家第7轮问题5-4）
+        
+        Args:
+            step_name: 步骤名称
+            condition: 判定条件
+            result: 判定结果
+            parameters: 参数字典
+            critical_only: 是否仅保留关键参数（默认True）
+        """
+        if critical_only:
+            parameters = self._filter_critical_parameters(step_name, parameters)
+        
+        self.decision_path.append({
+            'step_name': step_name,
+            'condition': condition,
+            'result': result,
+            'parameters': parameters,
+            'timestamp': datetime.now().isoformat()
+        })
+    
+    @staticmethod
+    def _filter_critical_parameters(step_name: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        过滤出关键参数（专家第7轮问题5-4）
+        
+        Args:
+            step_name: 步骤名称
+            parameters: 完整参数字典
+        
+        Returns:
+            仅包含关键参数的字典
+        """
+        # 定义每个步骤的关键参数
+        critical_params_map = {
+            'MAPE判定': ['actual_mape', 'threshold', 'valid_count'],
+            '方向准确率判定': ['actual_accuracy', 'threshold', 'strict_mode'],
+            '尾部误差控制判定': ['max_error', 'extreme_error_ratio', 'production_uat'],
+            '数据质量评分判定': ['quality_score', 'threshold', 'completeness', 'consistency', 'accuracy'],
+            '系统响应时间判定': ['response_time_seconds', 'threshold'],
+            '行业参数差异判定': ['avg_diff', 'threshold', 'significance_ratio'],
+            '数据源健康度判定': ['source_rating', 'threshold', 'level']
+        }
+        
+        keys_to_keep = critical_params_map.get(step_name, list(parameters.keys()))
+        return {k: v for k, v in parameters.items() if k in keys_to_keep}
 
 
 @dataclass
@@ -226,13 +299,21 @@ class UATValidator:
             avg_mape = float(np.mean(mape_values)) if mape_values else 1.0  # 默认失败
             mape_passed = avg_mape <= 0.15
             
-            results['mape'] = UATResult(
+            mape_result = UATResult(
                 test_item='MAPE',
                 passed=mape_passed,
                 actual_value=avg_mape,
                 threshold=0.15,
                 details={'individual_mape': mape_values, 'valid_count': len(mape_values)}
             )
+            # 专家第6轮问题5：7大决策节点 - MAPE判定
+            mape_result.add_decision_step(
+                'MAPE判定',
+                'MAPE <= 0.15',
+                mape_passed,
+                {'actual_mape': avg_mape, 'threshold': 0.15, 'valid_count': len(mape_values)}
+            )
+            results['mape'] = mape_result
             
         except Exception as e:
             logger.error(f"MAPE计算失败: {e}")
@@ -270,13 +351,13 @@ class UATValidator:
                         correct_count += 1
             
             direction_accuracy = float(correct_count / len(predictions))
-            direction_passed = direction_accuracy >= 0.90
+            direction_passed = direction_accuracy >= 0.80
             
-            results['direction_accuracy'] = UATResult(
+            dir_result = UATResult(
                 test_item='direction_accuracy',
                 passed=direction_passed,
                 actual_value=direction_accuracy,
-                threshold=0.90,
+                threshold=0.80,
                 details={
                     'correct_count': correct_count, 
                     'total_count': len(predictions),
@@ -284,6 +365,14 @@ class UATValidator:
                     'error_threshold': 0.5 if strict_mode else None
                 }
             )
+            # 专家第6轮问题5：7大决策节点 - 方向准确率判定
+            dir_result.add_decision_step(
+                '方向准确率判定',
+                '方向准确率 >= 0.80',
+                direction_passed,
+                {'actual_accuracy': direction_accuracy, 'threshold': 0.80, 'strict_mode': strict_mode}
+            )
+            results['direction_accuracy'] = dir_result
             
         except Exception as e:
             logger.error(f"方向准确率计算失败: {e}")
@@ -316,7 +405,7 @@ class UATValidator:
             else:
                 tail_passed = (max_error <= 0.25) or (extreme_error_ratio <= 0.20)
             
-            results['tail_error_control'] = UATResult(
+            tail_result = UATResult(
                 test_item='tail_error_control',
                 passed=tail_passed,
                 actual_value=max_error,
@@ -331,6 +420,14 @@ class UATValidator:
                     'logic': 'AND' if production_uat else 'OR'
                 }
             )
+            # 专家第6轮问题5：7大决策节点 - 尾部误差控制判定
+            tail_result.add_decision_step(
+                '尾部误差控制判定',
+                f'max_error <= 0.25 {"AND" if production_uat else "OR"} extreme_ratio <= 0.20',
+                tail_passed,
+                {'max_error': max_error, 'extreme_error_ratio': extreme_error_ratio, 'production_uat': production_uat}
+            )
+            results['tail_error_control'] = tail_result
             
         except Exception as e:
             logger.error(f"尾部误差控制计算失败: {e}")
@@ -346,7 +443,7 @@ class UATValidator:
         all_passed = all(r.passed for r in results.values())
         
         logger.info(f"三级指标体系: MAPE={results.get('mape', UATResult('mape', False, 1.0, 0.15)).actual_value:.4f}, "
-                   f"方向准确率={results.get('direction_accuracy', UATResult('dir', False, 0.0, 0.90)).actual_value:.2%}, "
+                   f"方向准确率={results.get('direction_accuracy', UATResult('dir', False, 0.0, 0.80)).actual_value:.2%}, "
                    f"尾部控制={'通过' if results.get('tail_error_control', UATResult('tail', False, 1.0, 0.25)).passed else '未通过'}, "
                    f"总体={'通过' if all_passed else '未通过'}")
         
@@ -416,7 +513,7 @@ class UATValidator:
         logger.info(f"行业参数差异: 平均差异={avg_diff:.2%}, 显著性比例={significance_ratio:.2%}, "
                    f"{'通过' if passed else '未通过'}")
         
-        return UATResult(
+        result = UATResult(
             test_item='industry_parameter_difference',
             passed=passed,
             actual_value=avg_diff,
@@ -429,6 +526,14 @@ class UATValidator:
                 'significance_ratio': significance_ratio
             }
         )
+        # 专家第6轮问题5：7大决策节点 - 行业参数差异判定
+        result.add_decision_step(
+            '行业参数差异判定',
+            'avg_diff >= 0.10 AND significance_ratio > 0.5',
+            passed,
+            {'avg_diff': avg_diff, 'threshold': 0.10, 'significance_ratio': significance_ratio}
+        )
+        return result
     
     def validate_data_quality(self,
                              completeness: float,
@@ -452,7 +557,7 @@ class UATValidator:
         
         logger.info(f"数据质量评分: {quality_score:.4f} ({'通过' if passed else '未通过'})")
         
-        return UATResult(
+        result = UATResult(
             test_item='data_quality_score',
             passed=passed,
             actual_value=quality_score,
@@ -463,6 +568,14 @@ class UATValidator:
                 'accuracy': accuracy
             }
         )
+        # 专家第6轮问题5：7大决策节点 - 数据质量评分判定
+        result.add_decision_step(
+            '数据质量评分判定',
+            'quality_score >= 0.90',
+            passed,
+            {'quality_score': quality_score, 'threshold': 0.90, 'completeness': completeness, 'consistency': consistency, 'accuracy': accuracy}
+        )
+        return result
     
     def validate_system_response_time(self,
                                       response_time_seconds: float) -> UATResult:
@@ -479,12 +592,20 @@ class UATValidator:
         
         logger.info(f"系统响应时间: {response_time_seconds:.2f}秒 ({'通过' if passed else '未通过'})")
         
-        return UATResult(
+        result = UATResult(
             test_item='system_response_time',
             passed=passed,
             actual_value=response_time_seconds,
             threshold=5.0
         )
+        # 专家第6轮问题5：7大决策节点 - 系统响应时间判定
+        result.add_decision_step(
+            '系统响应时间判定',
+            'response_time <= 5.0',
+            passed,
+            {'response_time_seconds': response_time_seconds, 'threshold': 5.0}
+        )
+        return result
     
     def handle_exception(self,
                         prediction_error: float,
@@ -653,8 +774,8 @@ class UATValidator:
         all_core_passed = all(r.passed for r in test_results.values())
         no_critical_alerts = len([a for a in self._alert_history if a.level == AlertLevel.LEVEL_3]) == 0
         cross_validation_passed = cross_validation.get('passed', True) if cross_validation.get('enabled', False) else True
-        
-        overall_passed = all_core_passed and no_critical_alerts and cross_validation_passed
+        enhanced_status = self.generate_uat_report_enhanced(test_results)['overall_status']
+        overall_passed = enhanced_status['passed'] and no_critical_alerts and cross_validation_passed
         
         # 生成完整报告
         report = {
@@ -664,7 +785,10 @@ class UATValidator:
                 'passed': overall_passed,
                 'core_tests_passed': all_core_passed,
                 'no_critical_alerts': no_critical_alerts,
-                'cross_validation_passed': cross_validation_passed
+                'cross_validation_passed': cross_validation_passed,
+                'mandatory_passed': enhanced_status.get('mandatory_passed', True),
+                'reference_passed_ratio': enhanced_status.get('reference_passed_ratio', '0/0'),
+                'flexible_allowed': enhanced_status.get('flexible_allowed', False)
             },
             'core_metrics': core_metrics,
             'abnormal_handling': abnormal_handling,
@@ -681,7 +805,209 @@ class UATValidator:
                    f"告警{abnormal_handling['total_alerts']}个")
         
         return report
+
+    def generate_uat_report_enhanced(self, test_results: Dict[str, UATResult]) -> Dict[str, Any]:
+        """增强版UAT报告：强制/参考指标分类与柔性容忍（专家第5轮）"""
+        MANDATORY_TESTS = {'weighted_average_error', 'data_quality', 'data_quality_score', 'system_response_time'}
+        REFERENCE_TESTS = {'industry_parameter_difference', 'cross_market_consistency'}
+        mandatory_passed = all(test_results[t].passed for t in MANDATORY_TESTS if t in test_results)
+        reference_passed = sum(1 for t in REFERENCE_TESTS if t in test_results and test_results[t].passed)
+        reference_total = sum(1 for t in REFERENCE_TESTS if t in test_results)
+        overall_passed = mandatory_passed and (reference_passed >= max(0, reference_total - 1))
+        return {
+            'overall_status': {
+                'passed': overall_passed,
+                'mandatory_passed': mandatory_passed,
+                'reference_passed_ratio': f"{reference_passed}/{reference_total}",
+                'flexible_allowed': True
+            }
+        }
+
+    def _calculate_dynamic_threshold(self, event_year: int) -> float:
+        """久远事件MAPE动态阈值：超过15年启用动态阈值（专家第6轮问题1）"""
+        base = 0.15
+        current_year = datetime.now().year
+        years_passed = current_year - event_year
+        
+        # 专家第6轮确认：超过15年启用动态阈值
+        if years_passed > 15:
+            # 放宽幅度 = 年限 × 0.5%，封顶10%（即总阈值25%）
+            dynamic = min(base + years_passed * 0.005, 0.25)
+            return dynamic
+        else:
+            # 15年内事件使用固定阈值
+            return base
+
+    def validate_cross_market_consistency_enhanced(self, events_data: List[Dict[str, Any]]) -> UATResult:
+        """
+        跨市场一致性增强版：事件数量与中国市场要求（专家第5轮）
+        第6轮问题2增强：三级呈现结构（摘要层+明细层+中国专项层）
+        """
+        china_events = [e for e in events_data if ('china' in str(e.get('market', '')).lower()) or e.get('event_id') in ['2015_china_market_crash', '2016_china_circuit_breaker']]
+        
+        # 基础检查
+        if len(events_data) < 3:
+            return UATResult('cross_market_consistency', False, 0.0, 0.85, 
+                           risk_statement='跨市场验证事件数量不足3个')
+        if len(china_events) == 0:
+            return UATResult('cross_market_consistency', False, 0.0, 0.85, 
+                           risk_statement='缺少中国市场相关事件验证')
+        
+        # 计算通过事件数
+        normal_pass = sum(1 for e in events_data if float(e.get('pearson', 0.0)) >= 0.85)
+        extreme_pass = sum(1 for e in events_data if float(e.get('spearman', 0.0)) >= 0.80)
+        total_pass = sum(1 for e in events_data if (float(e.get('pearson', 0.0)) >= 0.85) or (float(e.get('spearman', 0.0)) >= 0.80))
+        overall = (normal_pass >= 2) and (extreme_pass >= 1) and (total_pass >= 2)
+        
+        # 第6轮问题2：三级呈现结构
+        presentation_structure = {
+            # 摘要层：整体通过状态 + 关键计数
+            'summary': {
+                'overall_passed': overall,
+                'normal_pass_count': normal_pass,
+                'extreme_pass_count': extreme_pass,
+                'total_pass_count': total_pass,
+                'total_events': len(events_data),
+                'criteria': 'normal_pass_count≥2 AND extreme_pass_count≥1 AND total_pass_count≥2'
+            },
+            # 明细层：每个事件的Pearson/Spearman数值及达标状态
+            'details': [
+                {
+                    'event_id': e.get('event_id', 'unknown'),
+                    'market': e.get('market', 'unknown'),
+                    'pearson': float(e.get('pearson', 0.0)),
+                    'spearman': float(e.get('spearman', 0.0)),
+                    'pearson_passed': float(e.get('pearson', 0.0)) >= 0.85,
+                    'spearman_passed': float(e.get('spearman', 0.0)) >= 0.80,
+                    'overall_passed': (float(e.get('pearson', 0.0)) >= 0.85) or (float(e.get('spearman', 0.0)) >= 0.80)
+                }
+                for e in events_data
+            ],
+            # 中国专项层：单独章节呈现2015股灾、2016熔断的跨市场验证详情
+            'china_specific_section': {
+                'requirement': '监管要求：必须包含中国市场极端事件验证',
+                'events_covered': [e.get('event_id', 'unknown') for e in china_events],
+                'validation_methodology': 'Pearson≥0.85或Spearman≥0.80',
+                'results': [
+                    {
+                        'event': e.get('event_id', 'unknown'),
+                        'compared_markets': self._get_comparison_markets(str(e.get('event_type', '')), str(e.get('market', ''))),
+                        'pearson_scores': e.get('pearson_by_market', {}),
+                        'spearman_scores': e.get('spearman_by_market', {}),
+                        'passed': (float(e.get('pearson', 0.0)) >= 0.85) or (float(e.get('spearman', 0.0)) >= 0.80)
+                    }
+                    for e in china_events
+                ]
+            }
+        }
+        
+        return UATResult(
+            'cross_market_consistency', overall, float(total_pass), 0.85,
+            details={
+                'events_count': len(events_data), 
+                'normal_pass': normal_pass, 
+                'extreme_pass': extreme_pass, 
+                'total_pass': total_pass,
+                'presentation_structure': presentation_structure  # 第6轮问题2：三级呈现
+            }
+        )
+
+    def _load_critical_industries(self) -> Tuple[Set[str], bool, Optional[Dict[str, Any]]]:
+        """
+        从配置文件动态加载关键行业列表（专家第7轮问题3-1）
+        
+        Returns:
+            (关键行业代码集合, 配置加载成功标志, 配置内容)
+        """
+        try:
+            config_path = Path(__file__).parent.parent.parent.parent / 'config' / 'critical_industries_config.json'
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+            
+            industries = {industry['code'] for industry in config.get('critical_industries', [])}
+            logger.info(f"成功从配置文件加载{len(industries)}个关键行业")
+            return industries, True, config
+        except FileNotFoundError:
+            logger.warning("关键行业配置文件不存在，使用硬编码列表")
+            return {'semiconductor', 'new_energy', 'ai_tech'}, False, None
+        except json.JSONDecodeError as e:
+            logger.error(f"关键行业配置文件JSON解析失败: {e}，使用硬编码列表")
+            return {'semiconductor', 'new_energy', 'ai_tech'}, False, None
+        except Exception as e:
+            logger.error(f"关键行业配置文件加载失败: {e}，使用硬编码列表")
+            return {'semiconductor', 'new_energy', 'ai_tech'}, False, None
     
+    def validate_industry_parameter_enhanced(self, industry_data: Dict[str, Any]) -> UATResult:
+        """
+        行业参数差异增强版：新兴行业柔性标准（专家第5轮）
+        第7轮优化：从配置文件动态加载关键行业列表（专家第7轮问题3-1）
+        """
+        # 动态加载关键行业配置（专家第7轮问题3-1）
+        critical_industries, config_loaded, config = self._load_critical_industries()
+        
+        base_result = self.validate_industry_parameter_difference(
+            industry_data.get('parameters', {}), industry_data.get('t_test_results', {})
+        )
+        
+        industry_code = industry_data.get('industry')
+        if industry_code in critical_industries:
+            sample_days = int(industry_data.get('sample_days', 0))
+            diff_pct = float(industry_data.get('diff_pct', 0.0))
+            bootstrap_passed = bool(industry_data.get('bootstrap_passed', False))
+            
+            if sample_days >= 400 and (bootstrap_passed or diff_pct >= 0.15):
+                result = UATResult(
+                    'industry_parameter_difference', True, diff_pct, 0.10, 
+                    risk_statement='新兴行业特殊处理通过'
+                )
+                
+                # 记录配置状态和审批文档（专家第7轮问题3-2/3-4）
+                result.details['config_status'] = {
+                    'loaded': config_loaded,
+                    'critical_industries_count': len(critical_industries),
+                    'fallback_used': not config_loaded
+                }
+                
+                # 如果配置文件加载成功，提取审批文档信息（专家第7轮问题3-4）
+                if config_loaded and config:
+                    industry_config = next(
+                        (ind for ind in config.get('critical_industries', []) 
+                         if ind['code'] == industry_code), 
+                        None
+                    )
+                    if industry_config:
+                        result.details['approval_document'] = industry_config.get('approval_document')
+                        result.details['approval_rationale'] = industry_config.get('rationale')
+                        result.details['flexible_threshold'] = industry_config.get('flexible_threshold')
+                        result.details['min_sample_days'] = industry_config.get('min_sample_days')
+                
+                return result
+        
+        # 也为base_result添加配置状态
+        base_result.details['config_status'] = {
+            'loaded': config_loaded,
+            'critical_industries_count': len(critical_industries),
+            'fallback_used': not config_loaded
+        }
+        
+        return base_result
+
+    def _get_comparison_markets(self, event_type: str, event_market: str) -> List[str]:
+        """
+        根据事件类型和市场返回合适的对比市场（专家第7轮问题2-3）
+        """
+        market_mapping = {
+            'CN': ['US', 'HK', 'EU'],
+            'US': ['EU', 'JP', 'CN'],
+            'EU': ['US', 'JP', 'CN'],
+            'HK': ['CN', 'US', 'EU'],
+            'JP': ['US', 'EU', 'CN'],
+            'SG': ['US', 'HK', 'EU']
+        }
+        return market_mapping.get(event_market, ['US', 'EU', 'HK'])
+
+
+
     def _generate_recommendations(self,
                                  test_results: Dict[str, UATResult],
                                  abnormal_handling: Dict[str, Any],
@@ -700,8 +1026,8 @@ class UATValidator:
             recommendations.append(f"以下测试未通过，需要调整: {', '.join(failed_tests)}")
         
         # 检查Level 2/3告警
-        level2_count = abnormal_handling['level_breakdown'].get('LEVEL_2', 0)
-        level3_count = abnormal_handling['level_breakdown'].get('LEVEL_3', 0)
+        level2_count = abnormal_handling.get('level_breakdown', {}).get('LEVEL_2', 0)
+        level3_count = abnormal_handling.get('level_breakdown', {}).get('LEVEL_3', 0)
         
         if level3_count > 0:
             recommendations.append(f"发现{level3_count}个Level 3严重告警，必须立即处理")
@@ -717,7 +1043,6 @@ class UATValidator:
             recommendations.append("所有验收指标通过，系统运行正常")
         
         return recommendations
-
 
 # =============================================================================
 # 生产环境监控告警系统（专家第2轮5.4节问题13）

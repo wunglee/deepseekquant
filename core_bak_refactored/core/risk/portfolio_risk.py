@@ -16,7 +16,7 @@ import time
 import uuid
 
 from .risk_metrics_service import RiskMetricsService
-from core_bak_refactored.infrastructure.risk_metrics import StatisticalCalculator
+from core_bak_refactored.infrastructure.statistical_calculators import StatisticalCalculator
 
 logger = logging.getLogger('DeepSeekQuant.PortfolioRisk')
 

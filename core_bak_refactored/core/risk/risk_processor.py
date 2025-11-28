@@ -16,6 +16,8 @@ from .risk_limits import RiskLimitsManager
 from .stress_testing import StressTester
 from .portfolio_risk import PortfolioRiskAnalyzer
 from .position_risk import PositionRiskAnalyzer
+import hashlib
+import json
 
 logger = logging.getLogger('DeepSeekQuant.RiskProcessor')
 
@@ -33,6 +35,10 @@ class RiskProcessor:
         self.portfolio_analyzer = PortfolioRiskAnalyzer(config)
         self.position_analyzer = PositionRiskAnalyzer(config)
         
+        # 审计跟踪配置
+        self.enable_audit_trail = config.get('enable_audit_trail', True)
+        self.audit_trail: List[Dict[str, Any]] = []
+        
         logger.info("风险处理器初始化完成")
     
     def process(self, data: Dict[str, Any]) -> Dict[str, Any]:
@@ -46,24 +52,41 @@ class RiskProcessor:
             风险评估结果
         """
         try:
+            # 重置审计跟踪
+            if self.enable_audit_trail:
+                self.audit_trail = []
+            
             # 1. 计算核心风险指标
+            self._audit_step('calculator_start', data, None)
             risk_metrics = self.calculator.calculate_all_metrics(data)
+            self._audit_step('calculator_complete', {'metrics_count': len(risk_metrics)}, risk_metrics)
             
             # 提取组合状态与市场数据
             portfolio_state = data.get('portfolio_state')
             market_data = data.get('market_data') or {}
             
             # 2. 检查限额
+            self._audit_step('limits_check_start', None, None)
             limit_breaches = self.limits_manager.check_limits(portfolio_state, risk_metrics)
+            self._audit_step('limits_check_complete', {'breaches_count': len(limit_breaches)}, limit_breaches)
             
             # 3. 运行压力测试
+            self._audit_step('stress_test_start', None, None)
             stress_results = self.stress_tester.run_stress_tests(portfolio_state, market_data)
             scenario_results = self.stress_tester.run_scenario_analysis(portfolio_state, market_data)
+            self._audit_step('stress_test_complete', 
+                           {'stress_scenarios': len(stress_results), 'scenario_count': len(scenario_results)},
+                           {'stress': stress_results, 'scenario': scenario_results})
             
             # 4. 分析组合风险
+            self._audit_step('portfolio_analysis_start', None, None)
             portfolio_risk = self.portfolio_analyzer.analyze(data, risk_metrics)
+            self._audit_step('portfolio_analysis_complete', 
+                           {'contributions_count': len(portfolio_risk.get('risk_contributions', {}))},
+                           portfolio_risk)
             
             # 5. 生成风险评估报告
+            self._audit_step('assessment_generation_start', None, None)
             assessment = self._create_risk_assessment(
                 risk_metrics,
                 limit_breaches,
@@ -71,18 +94,24 @@ class RiskProcessor:
                 portfolio_risk,
                 scenario_results
             )
+            self._audit_step('assessment_generation_complete', 
+                           {'risk_level': assessment.overall_risk_level.name, 'risk_score': assessment.risk_score},
+                           None)  # 不在此处存储完整assessment避免冲突
             
             return {
                 'success': True,
                 'assessment': assessment,
-                'timestamp': datetime.now().isoformat()
+                'timestamp': datetime.now().isoformat(),
+                'audit_trail': self.audit_trail if self.enable_audit_trail else []
             }
             
         except Exception as e:
             logger.error(f"风险处理失败: {e}")
+            self._audit_step('error', {'error': str(e)}, None, status='ERROR')
             return {
                 'success': False,
-                'error': str(e)
+                'error': str(e),
+                'audit_trail': self.audit_trail if self.enable_audit_trail else []
             }
     
     def _create_risk_assessment(self,
@@ -177,3 +206,68 @@ class RiskProcessor:
             })
         
         return recommendations
+    
+    def _audit_step(self, 
+                   step_name: str, 
+                   input_params: Optional[Dict[str, Any]], 
+                   output_data: Any,
+                   status: str = 'SUCCESS') -> None:
+        """
+        记录审计跟踪步骤
+        
+        Args:
+            step_name: 步骤名称
+            input_params: 输入参数(关键字段)
+            output_data: 输出数据(摘要)
+            status: 执行状态 (SUCCESS/ERROR/SKIP)
+        """
+        if not self.enable_audit_trail:
+            return
+        
+        timestamp = datetime.now().isoformat()
+        
+        # 计算输入hash(仅针对非空输入)
+        input_hash = None
+        if input_params:
+            try:
+                input_str = json.dumps(input_params, sort_keys=True, default=str)
+                input_hash = hashlib.sha256(input_str.encode()).hexdigest()[:16]
+            except Exception:
+                input_hash = 'hash_failed'
+        
+        audit_entry = {
+            'step': step_name,
+            'timestamp': timestamp,
+            'status': status,
+            'input_hash': input_hash,
+            'input_params': input_params,
+            'output_summary': self._summarize_output(output_data) if output_data is not None else None
+        }
+        
+        self.audit_trail.append(audit_entry)
+        logger.debug(f"审计跟踪: {step_name} - {status} @ {timestamp}")
+    
+    def _summarize_output(self, output_data: Any) -> Dict[str, Any]:
+        """
+        生成输出数据摘要(避免存储大量数据)
+        """
+        try:
+            if isinstance(output_data, dict):
+                return {
+                    'type': 'dict',
+                    'keys': list(output_data.keys()),
+                    'size': len(output_data)
+                }
+            elif isinstance(output_data, list):
+                return {
+                    'type': 'list',
+                    'length': len(output_data),
+                    'sample': output_data[:3] if len(output_data) <= 3 else f"{len(output_data)} items"
+                }
+            else:
+                return {
+                    'type': type(output_data).__name__,
+                    'value': str(output_data)[:100]  # 截断过长字符串
+                }
+        except Exception:
+            return {'type': 'unknown', 'error': 'summary_failed'}

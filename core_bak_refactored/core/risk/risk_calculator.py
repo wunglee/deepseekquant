@@ -93,6 +93,7 @@ class RiskCalculator:
         current_market_cfg = market_configs.get(self.market_type, {})
         if 'base_currency' in current_market_cfg:
             self.base_currency = current_market_cfg['base_currency']
+        self.current_market_cfg = current_market_cfg
         default_strict = self._get_default_strict_mode(self.market_type)
         self.strict_currency_check = bool(self.config.get('strict_currency_check', default_strict))
 
@@ -100,10 +101,16 @@ class RiskCalculator:
             f"风险计算器初始化完成 - 市场: {self.market_type}, "
             f"配置验证: {'有警告' if config_errors else '通过'}, 基准货币: {self.base_currency}"
         )
+        self._validate_required_fields()
     
     def _get_min_data_points(self) -> int:
-        """读取配置中的最小数据点阈值，默认63（约3个月交易日）"""
+        """读取配置中的最小数据点阈值（支持分市场覆盖），默认63（约3个月交易日）"""
         try:
+            # 优先使用分市场配置
+            market_cfg = (getattr(self, 'current_market_cfg', None)
+                          or self.config.get('market_configs', {}).get(self.market_type, {}))
+            if isinstance(market_cfg, dict) and 'min_data_points' in market_cfg:
+                return int(market_cfg.get('min_data_points', 63))
             return int(self.config.get('min_data_points', 63))
         except Exception:
             return 63
@@ -129,49 +136,25 @@ class RiskCalculator:
 
     def calculate_var_monte_carlo(self, portfolio_state: 'PortfolioState', market_data: 'MarketData', confidence_level: float) -> float:
         """
-        蒙特卡洛法VaR（简化实现）
+        蒙特卡洛法VaR（委托给服务层）
         
-        注：此方法待移至 RiskMetricsService，当前保留兼容性
+        @deprecated: 迁移至 RiskMetricsService.calculate_var_monte_carlo
+        此处保留兼容性调用，建议直接使用服务层方法
         """
-        logger.warning("蒙特卡洛 VaR 计算待优化，当前使用简化实现")
-        try:
-            start_time = time.time()
-            n_simulations = int(self.config.get('monte_carlo_sims', 1000))
-            if n_simulations < 1000:
-                n_simulations = 1000
-            symbols = list(portfolio_state.allocations.keys())
-            returns_data = {}
-            for symbol in symbols:
-                prices = market_data['prices'][symbol].get('close', [])
-                min_points = self._get_min_data_points()
-                if len(prices) >= min_points:
-                    # 使用预处理器计算收益
-                    returns_data[symbol] = self.preprocessor.extract_returns_from_prices(np.array(prices))
-            if not returns_data:
-                logger.warning(
-                    f"calculate_var_monte_carlo: 价格数据不足, 市场{self.market_type}, 返回NaN"
-                )
-                return float('nan')
-            min_len = min(len(v) for v in returns_data.values())
-            aligned = np.column_stack([v[-min_len:] for v in returns_data.values()])
-            mean_vec = aligned.mean(axis=0)
-            cov_mat = np.cov(aligned.T)
-            # 从配置获取随机种子，支持可重现性
-            random_seed = self.config.get('monte_carlo_seed', 42)
-            np.random.seed(random_seed)
-            sims = np.random.multivariate_normal(mean_vec, cov_mat, n_simulations)
-            weights = np.array([alloc.get('weight', 0.0) for alloc in portfolio_state.allocations.values()])
-            portfolio_sims = sims @ weights
-            var = np.percentile(portfolio_sims, (1 - confidence_level) * 100)
-            elapsed = time.time() - start_time
-            logger.info(
-                f"calculate_var_monte_carlo: 完成, 市场{self.market_type}, "
-                f"耗时{elapsed:.3f}s, 模拟{n_simulations}次"
-            )
-            return float(var)
-        except Exception as e:
-            logger.error(f"calculate_var_monte_carlo: 计算异常, 市场{self.market_type}: {e}")
-            return float('nan')
+        import warnings
+        warnings.warn(
+            "RiskCalculator.calculate_var_monte_carlo 已迁移至 RiskMetricsService，请直接调用服务层方法",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        logger.info(f"委托蒙特卡洛VaR至服务层，市场{self.market_type}")
+        
+        # 委托给服务层
+        return self.risk_metrics_service.calculate_var_monte_carlo(
+            portfolio_state=portfolio_state,
+            market_data=market_data,
+            confidence_level=confidence_level
+        )
 
 
     def calculate_max_drawdown(self, returns: pd.Series) -> float:
@@ -279,11 +262,164 @@ class RiskCalculator:
         }
         return market_strict_defaults.get(market_type, False)
 
-    def _assess_data_source_quality(self, prices: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
-        """评估数据源货币信息完整性，且C/D级时记录告警提示自动处理"""
+    def _determine_dynamic_strict_mode(self, data: Dict[str, Any]) -> Optional[bool]:
+        """
+        动态严格模式决策器（仅按配置阈值判断；无配置则不覆盖）
+        
+        Args:
+            data: 包含 portfolio 和 market_data 的数据字典
+            
+        Returns:
+            True/False（需覆盖静态严格模式），或 None（无配置/数据不足，保持静态模式）
+        """
+        try:
+            dynamic_cfg = self.config.get('dynamic_currency_strict_mode', {})
+            if not isinstance(dynamic_cfg, dict) or not bool(dynamic_cfg.get('enabled', False)):
+                return None
+            portfolio = data.get('portfolio', {}) or {}
+            allocations = portfolio.get('allocations', {}) or {}
+            market_data = data.get('market_data', {}) or {}
+            # 计算各子评分（均需配置与数据支持）
+            mc_score = self._calculate_multi_currency_score(allocations, market_data, dynamic_cfg)
+            cb_score = self._calculate_cross_border_score(portfolio, dynamic_cfg)
+            reg_score = self._calculate_regulatory_overlay_score(allocations, dynamic_cfg)
+            # 仅当配置中要求的维度都有分数时才计算综合评分
+            scores = {}
+            if mc_score is not None:
+                scores['multi_currency'] = mc_score
+            if cb_score is not None:
+                scores['cross_border'] = cb_score
+            if reg_score is not None:
+                scores['regulatory'] = reg_score
+            if not scores:
+                return None
+            comp_score = self._calculate_comprehensive_score(scores, dynamic_cfg)
+            if comp_score is None:
+                return None
+            threshold = float(dynamic_cfg.get('comprehensive_trigger_score')) if dynamic_cfg.get('comprehensive_trigger_score') is not None else None
+            if threshold is None:
+                return None
+            return bool(comp_score >= threshold)
+        except Exception:
+            return None
+
+    def _calculate_multi_currency_score(self, allocations: Dict[str, Any], market_data: Dict[str, Any], cfg: Dict[str, Any]) -> Optional[float]:
+        """
+        多币种占比分数：使用组合权重与价格货币，需提供阈值multi_currency_ratio_threshold
+        
+        Args:
+            allocations: 组合配置，symbol -> {'weight': float}
+            market_data: 市场数据，包含 prices
+            cfg: 动态严格模式配置
+            
+        Returns:
+            非基准货币权重比例（0-1），或 None（配置缺失）
+        """
+        try:
+            thr = cfg.get('multi_currency_ratio_threshold')
+            if thr is None:
+                return None
+            prices = (market_data.get('prices') or {})
+            total_w = 0.0
+            non_base_w = 0.0
+            for symbol, alloc in allocations.items():
+                w = float(alloc.get('weight', 0.0))
+                total_w += w
+                cur = (prices.get(symbol, {}) or {}).get('currency')
+                if cur and cur != self.base_currency:
+                    non_base_w += w
+            ratio = (non_base_w / total_w) if total_w > 0 else 0.0
+            return float(ratio)
+        except Exception:
+            return None
+
+    def _calculate_cross_border_score(self, portfolio: Dict[str, Any], cfg: Dict[str, Any]) -> Optional[float]:
+        """
+        跨境敞口分数：优先使用 portfolio['cross_border_exposure']；否则返回None
+        
+        Args:
+            portfolio: 组合数据，需包含 cross_border_exposure 字段
+            cfg: 动态严格模式配置，需包含 cross_border_exposure_threshold
+            
+        Returns:
+            跨境敞口比例（0-1），或 None（数据缺失）
+        """
+        try:
+            per_market_thr = (cfg.get('cross_border_exposure_threshold') or {})
+            if not isinstance(per_market_thr, dict):
+                return None
+            exposure = portfolio.get('cross_border_exposure')
+            if exposure is None:
+                return None
+            return float(exposure)
+        except Exception:
+            return None
+
+    def _calculate_regulatory_overlay_score(self, allocations: Dict[str, Any], cfg: Dict[str, Any]) -> Optional[float]:
+        """
+        监管叠加评分：需提供regulatory_overlay_rules；无明确规则或数据则返回None
+        
+        Args:
+            allocations: 组合配置
+            cfg: 动态严格模式配置，需包含 regulatory_overlay_rules
+            
+        Returns:
+            监管叠加分数（0-1），或 None（规则/数据缺失）
+        """
+        try:
+            rules = (cfg.get('regulatory_overlay_rules') or {}).get(self.market_type)
+            if not isinstance(rules, list) or not rules:
+                return None
+            # 简化：无可靠度量数据时不计算，返回None，保持配置驱动
+            return None
+        except Exception:
+            return None
+
+    def _calculate_comprehensive_score(self, scores: Dict[str, float], cfg: Dict[str, Any]) -> Optional[float]:
+        """
+        综合评分：仅当cfg提供component_weights且所需维度分数都存在时计算，否则返回None
+        
+        Args:
+            scores: 子评分字典，key 为维度名称（multi_currency/cross_border/regulatory）
+            cfg: 动态严格模式配置，需包含 component_weights
+            
+        Returns:
+            加权综合评分（0-1），或 None（配置缺失或维度不足）
+        """
+        try:
+            comp_w = cfg.get('component_weights')
+            if not isinstance(comp_w, dict):
+                return None
+            total = 0.0
+            weight_sum = 0.0
+            for k, w in comp_w.items():
+                s = scores.get(k)
+                if s is None:
+                    # 配置要求的维度缺失分数，返回None
+                    return None
+                total += float(s) * float(w)
+                weight_sum += float(w)
+            if weight_sum <= 0.0:
+                return None
+            return float(total / weight_sum)
+        except Exception:
+            return None
+
+    def _calculate_currency_coverage(self, prices: Dict[str, Dict[str, Any]]) -> tuple[int, int, float]:
+        """
+        计算货币字段覆盖率（公共辅助方法）
+        
+        Returns:
+            tuple: (总标的数, 有货币字段的标的数, 覆盖率)
+        """
         total_symbols = len(prices)
         symbols_with_currency = sum(1 for p in prices.values() if p.get('currency'))
         currency_coverage = symbols_with_currency / total_symbols if total_symbols > 0 else 0.0
+        return total_symbols, symbols_with_currency, currency_coverage
+
+    def _assess_data_source_quality(self, prices: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+        """评估数据源货币信息完整性，且C/D级时记录告警提示自动处理"""
+        total_symbols, symbols_with_currency, currency_coverage = self._calculate_currency_coverage(prices)
         # 调整评级：A(>=95%)、B(>=80%)、C(>=50%)、D(<50%)
         if currency_coverage >= 0.95:
             rating = 'A'
@@ -305,6 +441,83 @@ class RiskCalculator:
             'currency_coverage': currency_coverage,
             'quality_rating': rating,
         }
+
+    def _assess_data_quality_multi(self, market_data: Dict[str, Any], dq_cfg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        多维度数据质量评估（配置驱动；数据不足时返回None或仅提供部分维度）
+        
+        Args:
+            market_data: 市场数据字典，包含 prices 等字段
+            dq_cfg: 数据质量评估配置，需包含 enabled/base_weights/grade_thresholds
+            
+        Returns:
+            包含 overall_score/dimension_scores/quality_grade 的字典，或 None（配置未启用/不完整）
+        """
+        try:
+            if not isinstance(dq_cfg, dict) or not bool(dq_cfg.get('enabled', False)):
+                return None
+            base_weights = dq_cfg.get('base_weights') or dq_cfg.get('weights')
+            grade_thresholds = dq_cfg.get('grade_thresholds') or {}
+            if not isinstance(base_weights, dict) or not isinstance(grade_thresholds, dict):
+                return None
+            prices = (market_data.get('prices') or {})
+            # 仅实现 completeness：基于currency_coverage
+            _, _, currency_coverage = self._calculate_currency_coverage(prices)
+            # 维度得分（0-100）
+            dimension_scores: Dict[str, float] = {
+                'completeness': float(currency_coverage * 100.0)
+            }
+            # 仅当所有需要的维度都有分数时计算overall；否则返回partial并按coverage给出grade
+            required_dims = list(base_weights.keys())
+            if all(dim in dimension_scores for dim in required_dims):
+                total = 0.0
+                ws = 0.0
+                for dim, w in base_weights.items():
+                    total += float(dimension_scores.get(dim, 0.0)) * float(w)
+                    ws += float(w)
+                overall_score = float(total / ws) if ws > 0 else 0.0
+                grade = self._convert_score_to_grade(overall_score, grade_thresholds)
+                return {
+                    'overall_score': overall_score,
+                    'dimension_scores': dimension_scores,
+                    'quality_grade': grade
+                }
+            else:
+                # partial 输出：仅基于coverage给出grade
+                overall_score = float(dimension_scores['completeness'])
+                grade = self._convert_score_to_grade(overall_score, grade_thresholds)
+                return {
+                    'overall_score': overall_score,
+                    'dimension_scores': dimension_scores,
+                    'quality_grade': grade
+                }
+        except Exception:
+            return None
+
+    def _convert_score_to_grade(self, score: float, thresholds: Dict[str, Any]) -> str:
+        """
+        根据配置阈值将分数转换为等级（A/B/C/D）
+        
+        Args:
+            score: 得分（0-100）
+            thresholds: 阈值字典，包含 A/B/C 的边界值
+            
+        Returns:
+            质量等级字符串（A/B/C/D）
+        """
+        try:
+            a = float(thresholds.get('A', 90))
+            b = float(thresholds.get('B', 75))
+            c = float(thresholds.get('C', 60))
+            if score >= a:
+                return 'A'
+            if score >= b:
+                return 'B'
+            if score >= c:
+                return 'C'
+            return 'D'
+        except Exception:
+            return 'D'
 
     def attach_exchange_rate_adapter(self, adapter: 'ExchangeRateAdapter') -> None:
         """注入外部实时汇率适配器（不改变现有指标计算）"""
@@ -341,7 +554,7 @@ class RiskCalculator:
             logger.warning(f"统一货币失败（不影响计算）: {e}")
             return None
 
-    def _us_compliance_logging(self, currency_warnings: List[str]) -> None:
+    def _us_compliance_logging(self, currency_warnings: List[str], data_quality: Optional[Dict[str, Any]] = None) -> None:
         """美股合规性日志记录（仅US市场），增强结构化日志"""
         if self.market_type != 'US' or not currency_warnings:
             return
@@ -363,7 +576,7 @@ class RiskCalculator:
             logger.warning(
                 f"[US_COMPLIANCE_EVENT] 货币一致性问题检测 - 市场: {self.market_type}, "
                 f"警告数量: {len(compliance_events)}, 详情: {'; '.join(currency_warnings)}",
-                extra={'compliance_events': compliance_events}
+                extra={'compliance_events': compliance_events, 'data_quality': (data_quality or {})}
             )
 
     def calculate_all_metrics(self, data: Dict[str, Any]) -> Dict[str, float]:
@@ -375,21 +588,38 @@ class RiskCalculator:
         - 委托 RiskMetricsService 计算指标
         """
         try:
+            audit_events = []
+            t_currency_start = time.time()
             # TODO：补充了货币一致性运行时检查，强化数据源质量评估，来源：docs/answer.md
             currency_warnings = self._runtime_currency_check(data)
             currency_warnings += self._check_risk_parameters_currency(data)
+            dynamic_val = self._determine_dynamic_strict_mode(data)
+            if dynamic_val is not None:
+                prev = bool(getattr(self, 'strict_currency_check', False))
+                self.strict_currency_check = bool(dynamic_val)
+                logger.info(f"动态严格模式覆盖: {prev} -> {self.strict_currency_check}")
             self._handle_currency_warnings(currency_warnings)
             # 美股合规日志
-            self._us_compliance_logging(currency_warnings)
+            self._us_compliance_logging(currency_warnings, data_quality)
+            audit_events.append({'step': 'currency_checks', 'duration': time.time() - t_currency_start, 'status': 'success'})
             # 数据源质量评估（调整为A/B/C/D分级）
             data_quality: Dict[str, Any] = {}
             market_data_prices = data.get('market_data', {}).get('prices', {}) or {}
             if market_data_prices:
+                t_dataq_start = time.time()
                 data_quality = self._assess_data_source_quality(market_data_prices)
+                dq_cfg = self.config.get('data_quality_assessment', {})
+                if isinstance(dq_cfg, dict) and bool(dq_cfg.get('enabled', False)):
+                    dq_multi = self._assess_data_quality_multi({'prices': market_data_prices}, dq_cfg)
+                    if dq_multi:
+                        data_quality.update({'multi': dq_multi})
                 logger.info(f"数据源质量评级: {data_quality['quality_rating']}, "
                             f"货币覆盖率: {data_quality['currency_coverage']:.2%}")
+                audit_events.append({'step': 'data_quality_assessment', 'duration': time.time() - t_dataq_start, 'status': 'success'})
             # 在存在多币种/不一致时，尝试统一货币（仅摘要，不影响指标计算）
+            t_unify_start = time.time()
             self._unify_currency_for_portfolio(data)
+            audit_events.append({'step': 'currency_unify_summary', 'duration': time.time() - t_unify_start, 'status': 'success'})
 
             # 数据提取委托给预处理器
             returns = self.preprocessor.extract_returns_from_dict(data)
@@ -461,7 +691,8 @@ class RiskCalculator:
             elapsed = time.time() - start_time
             logger.info(
                 f"calculate_all_metrics: 完成, 市场{self.market_type}, "
-                f"耗时{elapsed:.3f}s, 指标{len(metrics)}个"
+                f"耗时{elapsed:.3f}s, 指标{len(metrics)}个",
+                extra={'audit_events': audit_events, 'min_points': min_points}
             )
             return metrics
             
@@ -478,6 +709,49 @@ class RiskCalculator:
         )
         raise NotImplementedError("Use StressTester.simulate_correlation_breakdown")
 
+    def _validate_required_fields(self) -> None:
+        """验证必要配置项的可用性（仅记录告警，不阻断）。来源：docs/answer.md 高优先级改进建议。
+        - 动态严格模式：enabled=True 时要求 component_weights/comprehensive_trigger_score；
+        - 数据质量评估：enabled=True 时要求 base_weights/grade_thresholds。
+        注：组合字段（如 portfolio.cross_border_exposure）在运行时校验，不在初始化阻断。
+        """
+        try:
+            issues = []
+            dyn_cfg = self.config.get('dynamic_currency_strict_mode', {}) or {}
+            if isinstance(dyn_cfg, dict) and bool(dyn_cfg.get('enabled', False)):
+                if dyn_cfg.get('component_weights') is None:
+                    issues.append('动态严格模式缺少配置项: component_weights')
+                if dyn_cfg.get('comprehensive_trigger_score') is None:
+                    issues.append('动态严格模式缺少配置项: comprehensive_trigger_score')
+            dq_cfg = self.config.get('data_quality_assessment', {}) or {}
+            if isinstance(dq_cfg, dict) and bool(dq_cfg.get('enabled', False)):
+                base_weights = dq_cfg.get('base_weights') or dq_cfg.get('weights')
+                grade_thresholds = dq_cfg.get('grade_thresholds')
+                if not isinstance(base_weights, dict):
+                    issues.append('数据质量评估缺少配置项: base_weights/weights')
+                if not isinstance(grade_thresholds, dict):
+                    issues.append('数据质量评估缺少配置项: grade_thresholds')
+            if issues:
+                logger.warning(f"配置必要项校验发现问题: {'; '.join(issues)}")
+        except Exception:
+            # 仅记录，不阻断初始化
+            pass
 
+    def _get_market_specific_config(self, config_key: str, default_config: Dict[str, Any]) -> Dict[str, Any]:
+        """获取市场特定配置，回退到默认配置。来源：docs/answer.md 建议配置结构。
+        Args:
+            config_key: 顶层配置键，例如 'data_quality_assessment' 或 'dynamic_currency_strict_mode'
+            default_config: 当未提供市场特异配置时使用的默认配置
+        Returns:
+            dict: 当前市场的特定配置或默认配置
+        """
+        try:
+            top = self.config.get(config_key, {}) or {}
+            market_specific = top.get('market_specific', {}) or {}
+            if isinstance(market_specific, dict) and self.market_type in market_specific:
+                return market_specific.get(self.market_type, default_config) or default_config
+            return default_config
+        except Exception:
+            return default_config
 
 

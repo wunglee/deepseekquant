@@ -11,7 +11,7 @@
 
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Optional, Union, Any
+from typing import Dict, List, Optional, Union, Any, TYPE_CHECKING
 import logging
 from scipy import stats
 import time
@@ -24,9 +24,13 @@ except Exception:
     Counter = None
     Histogram = None
 
-from core_bak_refactored.infrastructure.risk_metrics import StatisticalCalculator
+from core_bak_refactored.infrastructure.statistical_calculators import StatisticalCalculator
 from ..share.market_config import MarketConfigManager
 from .international_enhancements import InternationalEnhancements
+
+# 避免循环导入，使用TYPE_CHECKING
+if TYPE_CHECKING:
+    from .risk_calculator import PortfolioState, MarketData
 
 logger = logging.getLogger('DeepSeekQuant.RiskMetricsService')
 
@@ -768,3 +772,101 @@ class RiskMetricsService(InternationalEnhancements):
         except Exception as e:
             logger.error(f"综合风险指标计算失败: {e}")
             return {}
+
+    @risk_calculation_logger
+    def calculate_var_monte_carlo(self, 
+                                portfolio_state: 'PortfolioState',
+                                market_data: 'MarketData',
+                                confidence_level: float = 0.95,
+                                n_simulations: Optional[int] = None,
+                                random_seed: Optional[int] = None) -> float:
+        """
+        蒙特卡洛法VaR【业务层正式实现】
+        
+        业务含义：通过随机模拟捕捉非线性风险和极端尾部事件
+        应用场景：复杂衍生品组合、压力场景下的VaR
+        
+        Args:
+            portfolio_state: 组合状态（含权重）
+            market_data: 市场数据（价格、收益等）
+            confidence_level: 置信水平，默认0.95
+            n_simulations: 模拟次数，默认1000
+            random_seed: 随机种子（可重现性），默认42
+        
+        Returns:
+            蒙特卡洛VaR（损失金额，正数）
+        """
+        try:
+            # 使用配置或传参
+            n_sims = n_simulations or int(self.config.get('monte_carlo_sims', 1000))
+            if n_sims < 1000:
+                n_sims = 1000
+                
+            seed = random_seed if random_seed is not None else self.config.get('monte_carlo_seed', 42)
+            
+            # 提取组合中的标的
+            symbols = list(portfolio_state.allocations.keys())
+            
+            # 提取收益率数据
+            from core_bak_refactored.infrastructure.data_preprocessor import RiskDataPreprocessor
+            preprocessor = RiskDataPreprocessor()
+            
+            returns_data = {}
+            for symbol in symbols:
+                prices_dict = market_data['prices'].get(symbol)
+                if not prices_dict:
+                    continue
+                    
+                closes = prices_dict.get('close', [])
+                min_points = 63  # 最小数据点要求
+                
+                if len(closes) >= min_points:
+                    returns_data[symbol] = preprocessor.extract_returns_from_prices(np.array(closes))
+            
+            if not returns_data:
+                logger.warning(
+                    f"calculate_var_monte_carlo: 无有效价格数据，市场{self.market_type}，返回NaN"
+                )
+                return float('nan')
+            
+            # 对齐时间序列
+            min_len = min(len(v) for v in returns_data.values())
+            aligned_returns = np.column_stack([v[-min_len:] for v in returns_data.values()])
+            
+            # 计算均值向量与协方差矩阵
+            mean_vector = aligned_returns.mean(axis=0)
+            
+            # 处理单资产情况（需要确保协方差矩阵是2维）
+            if aligned_returns.shape[1] == 1:
+                # 单资产：方差是标量，需要转换为1x1矩阵
+                cov_matrix = np.array([[aligned_returns.var()]])
+            else:
+                cov_matrix = np.cov(aligned_returns.T)
+            
+            # 蒙特卡洛模拟
+            np.random.seed(seed)
+            simulated_returns = np.random.multivariate_normal(mean_vector, cov_matrix, n_sims)
+            
+            # 提取组合权重
+            weights = np.array([
+                alloc.get('weight', 0.0) 
+                for alloc in portfolio_state.allocations.values()
+            ])
+            
+            # 计算组合收益模拟
+            portfolio_simulations = simulated_returns @ weights
+            
+            # 计算VaR（分位数，使用基础设施层统一方法）
+            var_level = (1 - confidence_level) * 100
+            var_value = StatisticalCalculator.calculate_percentile(portfolio_simulations, var_level)
+            
+            logger.info(
+                f"蒙特卡洛VaR完成：市场{self.market_type}，模拟{n_sims}次，"
+                f"置信度{confidence_level:.2%}，VaR={abs(var_value):.6f}"
+            )
+            
+            return float(abs(var_value))  # 返回正数表示损失
+            
+        except Exception as e:
+            logger.error(f"蒙特卡洛VaR计算失败：{e}")
+            return float('nan')

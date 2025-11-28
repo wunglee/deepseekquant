@@ -1,113 +1,103 @@
-# 第3轮咨询 - 迁移准入标准与阶段边界声明（5B-5 / 临时系统）
+# 第5轮咨询 — 准入准备
 
-## 🔒 阶段边界与称谓统一（必须阅读）
-- 当前工作系统：`core_bak_refactored`（临时独立系统，用于整理 `core_bak` 的中间产物）。
-- 架构边界：所有开发/测试均仅限在 `core_bak_refactored/` 下进行；禁止修改根目录未来系统代码。
-- 生产部署限制：在未完成迁移至根目录未来系统且未通过专家验收之前，**禁止讨论任何生产部署或生产化准备**；“阶段C：生产部署准备”不适用于当前临时系统。
-- 轮次衔接：第1轮（目标口径确认）→ 第2轮（阶段A+B完成与职责归位）→ 第3轮（当前，仅咨询迁移准入标准与边界）。
-- 称谓统一：以下问题均以“您”为称谓。
+## 📋 Phase边界声明（必须）
+- 当前阶段：风险模块协调器与前置检查，本轮进行专家确认；不讨论生产发布与跨域融合。
+- 系统范围：仅限`core_bak_refactored`；不修改根目录`core/`模块。
 
----
+## 背景说明
+- 本轮为文档与架构对齐咨询轮：代码仅做小步辅助性调整（如缓存/风险模块内部职责澄清与校验增强），不改变对外行为；现有单元测试保持通过（15/15）。
 
-## 📁 相关文件清单（本次更新涉及）
-### 核心实现文件（本次修改）
-- 无（本轮仅生成/提交 `docs/ask.md`）
+#### 📚 依赖上下文与设计文档清单（必须）
+- 设计文档：
+  - `docs/design/core_bak_refactored/core/risk/模块设计文档.md`
+  - `docs/design/core_bak_refactored/core/risk/接口设计文档.md`
+  - `docs/design/core_bak_refactored/ARCHITECTURE.md`
+- 共享配置与基础设施：
+  - `core_bak_refactored/core/share/market_config.py`
+  - `core_bak_refactored/infrastructure/cache_service.py`
 
-### 测试文件（本次验证）
-- 无（本轮不改动测试）
+## 🧩 代码评审
 
-### 配置与文档
-- `docs/ask.md`（第3轮咨询，迁移准入标准）
+### 上一轮答复摘要与本轮改进（必须)
+- 摘要回顾（上一轮 `docs/answer.md`）：
+  - 动态严格模式：配置驱动、分市场阈值、综合触发分数；缺失配置/数据返回None。
+  - 多维数据质量：Phase 1仅completeness，分级阈值A/B/C/D；report-only不影响计算。
+  - 高优先级改进建议：
+    - 4.1.1：在 RiskCalculator 初始化时验证必要配置项（仅记录告警，不阻断）。
+    - 4.1.2：支持市场差异化配置的读取（market_specific 回退默认）。
+- 代码清单汇总：
+  - 核心实现：`core_bak_refactored/core/risk/risk_calculator.py`
+  - 单元测试：`core_bak_refactored/tests/units/core/risk/risk_calculator_test.py`
+  - 配置与依赖：`core_bak_refactored/core/share/market_config.py`、`core_bak_refactored/infrastructure/cache_service.py`
+- 本轮改进映射：
+  - 已新增 `RiskCalculator._validate_required_fields()` 并在初始化后调用；对动态严格模式与数据质量评估的关键配置项进行告警校验。
+  - 已新增 `RiskCalculator._get_market_specific_config(config_key, default_config)`；当存在 `market_specific` 时读取当前市场配置，否则回退默认。
+  - 不改变既有指标计算与行为；单元测试 15/15 通过。
+- 改进考虑：
+  - 严格遵循“配置驱动、无默认值”，监管维度可选；缺失字段不替代估算，只记录告警。
+  - 校验仅提示问题，不阻断初始化；市场差异化读取保持向后兼容（默认回退）。
 
----
+### 业务视角的代码实现评审要点
+- 触发可靠性：综合评分的维度选择与加权完全由配置驱动；缺失维度不替代估算，避免误触发。
+- 市场差异化：跨境阈值按市场读取；测试覆盖体现差异化生效。
+- 数据质量治理：Phase 1仅报告不干预计算；分级标准清晰可验证。
+- 合规路径：US合规日志保留；监管维度可选占位，待规则与数据就绪后再参与评分。
+- 契约一致性：输入/输出/异常路径与业务口径一致；协调器不承载算法实现，仅委托与前置检查。
 
-## 📌 上一轮核心结论（简要提炼）
-- 阶段A：5事件端到端流程验证完成；跨市场一致性≥0.85、数据质量评分≥90%达到框架验证。
-- 阶段B：GICS一级行业参数统计验证完成（样本量≥1000、t检验p<0.05、参数范围与经济合理性成立）。
-- 架构优化：业务逻辑职责归位（risk/data/tests），测试模块纯委托，无业务实现。
-- 真实数据依赖：Yahoo Finance存在限流与中国指数不可用问题，现采用自动降级至Mock（依赖缺失处理已实现）。
-- 临时系统边界：当前在 `core_bak_refactored`，不讨论生产部署，仅咨询迁移准入标准。
+### ✅ 本轮改进验收清单（专家确认）
+- 监管：规则Schema、评分公式、阻断阈值、动作映射、审计字段、exec集成点。
+- 跨境：数据来源与计算标准；缺失策略。
+- 数据质量：Phase 3维度、各市场权重/阈值、各等级动作策略。
+- 性能与审计：目标与留存；必需字段。
 
----
+### 本轮改进（清单与关键评审）（必须)
+- 文件：`core_bak_refactored/core/risk/risk_calculator.py`
+  - 关键方法：
+    - `_determine_dynamic_strict_mode(data)`：读取`dynamic_currency_strict_mode`配置（enabled/weights/thresholds），按可用维度计算综合评分；当配置或数据缺失时返回None（不覆盖静态）。
+    - `_calculate_multi_currency_score(allocations, market_data, cfg)`：基于`base_currency`计算非基准货币权重占比。
+    - `_calculate_cross_border_score(portfolio, cfg)`：读取`portfolio.cross_border_exposure`，字段缺失返回None。
+    - `_calculate_regulatory_overlay_score(allocations, cfg)`：占位实现；无规则/数据时返回None；保持监管维度可选。
+    - `_calculate_comprehensive_score(scores, cfg)`：仅对存在的维度按`component_weights`加权；权重与维度键名严格一致。
+    - `_assess_data_quality_multi(market_data, dq_cfg)`：Phase 1仅计算`completeness=currency_coverage×100`；`usage_scenarios.report_only=True`，不影响指标。
+    - `_convert_score_to_grade(score, thresholds)`：A≥90、B≥75、C≥60、D<60。
+    - `_calculate_currency_coverage(prices)`：返回(总标的数、有currency的标的数、覆盖率)。
+  - 字段/返回/异常与业务口径映射：
+    - 输入字段：`market_data.prices[*].currency`、`portfolio.allocations[*].weight`、`portfolio.cross_border_exposure`、配置项（阈值/权重/触发分）。
+    - 返回约定：布尔决策/评分浮点/数据质量字典；异常路径不抛未声明异常，记录日志后返回安全值（如None或{}）。
+    - 业务口径：严格遵循“配置驱动、无默认值”；监管维度可选；缺失字段导致维度不参与评分而非替代估算。
+- 文件：`core_bak_refactored/tests/units/core/risk/risk_calculator_test.py`
+  - 关键评审点：
+    - 分市场阈值验证（JP/SG/CN/EU）；
+    - 边界值（0.64不触发、0.66触发）；
+    - 数据质量分级（B/C/D）与阈值边界；
+    - 缺失字段容错（cross_border_exposure缺失返回None）。
 
-## 📁 上一轮修改的代码清单与需评审的关键部分（含详细解释）
-（目的：迁移前对已完成实现进行业务口径层面的评审与确认）
+### 🧩 架构变更与影响（如果有）
+- 协调器保持不实现算法；动态严格决策与数据质量评估定位为“前置检查/报告”。
+- 监管维度在有规则/数据时参与评分；无则返回None；综合评分按可用维度加权。
+- `cross_border_exposure`由Portfolio模块提供；Risk不设默认值，不在缺失时自行估算。
 
-- 组件一：`core_bak_refactored/core/risk/cross_market_calibrator.py`
-  - 关键方法与业务口径映射：
-    - `normalize_to_usd(value, source_currency, event_window_data)`：USD统一计量；使用事件窗口期**日均中间价**（避免极端值）。
-    - `apply_liquidity_adjustment(raw_risk_metric, market_id, days_required)`：流动性调整因子（US/EU=0.95，CN/HK=0.90，JP/SG=0.85）；A股T+1与港股LULD的机制处理是否符合您第1轮口径。
+## 本轮业务问题（下一轮需解决，非本轮验收内容）
 
-- 组件二：`core_bak_refactored/core/backtest/_fragments/uat_validator.py`
-  - 关键方法与业务口径映射：
-    - `validate_weighted_average_error(errors_by_event, event_type_mapping)`：事件类型差异化阈值，但总体加权平均误差≤15%。
-    - `validate_triple_indicator_system(predictions, actuals)`：三级指标体系（MAPE≤15% + 方向准确率≥90% + 尾部误差≤25%且占比≤20%）。
+### 领域知识
+- 请您确认监管维度的规则Schema与评分公式：权重结构、优先级因子与聚合；并按市场（US/HK/CN/JP/SG/EU）提供示例口径。
+- 请您确认Portfolio为`cross_border_exposure`唯一数据源；启用动态严格模式时该字段为必需；请说明计算口径（地域/货币/综合）与一致性示例。
+- 请您确认数据质量Phase 3维度定义与数据来源：accuracy/consistency/timeliness/reliability 的指标说明。
+- 请您确认审计留存口径与最小必需字段清单（内部≥90天、监管≥3年）。
 
-- 组件三：`core_bak_refactored/core/risk/stress_testing.py`
-  - 关键方法与业务口径映射：
-    - `IndustryParameterAnalyzer.analyze_and_validate(samples)`：GICS一级行业统计与t检验；`compute_industry_parameters` 与 `compute_t_tests` 的统计口径与您给定范围一致性。
-    - `IndustryParameterAnalyzer.generate_test_samples(n_samples, seed)`：行业样本生成的参数范围与经济合理性（金融>防御）。
+### 优化机会
+- 请您确认各市场的数据质量权重与阈值的差异化优化（如US更关注accuracy、HK更关注completeness）。
+- 请您确认阻断阈值与动作映射的优化方向，降低误触发并提升一致性。
+- 请您确认性能目标达成路径（100标的×63日窗口P95≤500ms、极端P99≤1500ms）。
 
-- 组件四：`core_bak_refactored/core/data/_fragments/data_utils.py`
-  - 关键方法与业务口径映射：
-    - `safe_get_event_data(provider, event, window_days, baseline_days)`：事件窗口数据的安全获取与返回结构兼容（dict/df）；错误静默策略是否可接受。
-    - `calculate_actual_return(event_window_df)` / `calculate_return(data, price_column)`：收益率计算口径与字段一致性（close）。
+### 实施路径
+- 请您确认监管维度在Phase 2是否“必选”；如需“必选”，请提供最小可行规则集与数据源。
+- 请您确认exec域集成点：下单门控的调用位置与必需字段（风险分、监管标记、原因、时间戳）。
+- 请您确认缺失策略：当关键字段缺失时动态严格模式返回None（不覆盖静态）；不发明默认值。
 
-- 测试与工具层：
-  - `core_bak_refactored/tests/common/test_assertions.py`：通用断言工具（质量评分、误差阈值、统计显著性、性能断言）。
-  - `core_bak_refactored/tests/core/backtest/test_fixtures.py`：纯委托架构（tests只编排，调用业务模块方法；不承载业务逻辑）。
+## 🔗 相关文件（参考）
+- `core_bak_refactored/core/risk/risk_calculator.py`
+- `core_bak_refactored/tests/units/core/risk/risk_calculator_test.py`
 
----
-
-## 🧩 背景说明（本轮仅咨询迁移准入标准）
-- 目标：在**不讨论生产部署**的前提下，明确从 `core_bak_refactored` 迁移到根目录未来系统的**准入标准**与**边界口径**。
-- 约束：保持现有接口契约稳定、职责划分清晰、文档与测试齐备；真实数据源与降级策略的接受口径需要您确认。
-
----
-
-## 🏗️ 我们的架构组织（职责边界澄清）
-- risk：压力测试与行业参数统计（不承载data/backtest具体实现）；对接校准与UAT验证口径。
-- data：数据提供与常用处理工具（安全取数、收益计算、数据校验）。
-- tests：测试编排与断言（纯委托至业务模块），不包含业务逻辑实现。
-
----
-
-## ❓ 核心问题（请您逐项给出口径与阈值）
-1) 迁移准入标准（`core_bak_refactored` → 根目录未来系统）
-- 代码与测试：最低通过率（例如≥98%？）、测试覆盖维度是否已足够（端到端/行业参数/跨市场一致性）。
-- 架构与文档：需同步的设计文档清单（模块/接口/架构）与更新粒度；接口契约稳定性判定标准（签名/返回/异常）。
-- 版本与审计：迁移版本标注方式（tag/semver）与审计字段（report_id/timestamp/metadata）。
-
-2) 迁移路径与流程
-- 策略：按模块分批（risk → data → backtest）或一次性整体迁移？
-- 依赖：迁移前需标记为“稳定”的依赖（数据源/汇率/市场配置）。
-- 记录：是否需要在 `docs/consultation.md` 与各模块 `SPRINT.md` 追加“迁移确认记录”。
-
-3) 数据源与降级策略的接受口径
-- 真实数据源：是否必须先接入 JoinQuant/Wind/Tushare 等备源再迁移？
-- 降级策略：对 Yahoo 限流与中国指数不可用的 Mock 降级，是否可作为迁移前的临时接受口径？是否需新增交叉验证？
-
-4) UAT评审版报告（迁移前可生成的“非生产模板”）
-- 是否需要生成迁移评审版UAT报告？最低内容清单（历史回测摘要、跨市场一致性、行业参数统计、数据质量、性能指标）。
-
-5) 行业参数与跨市场校准的最终阈值确认
-- 行业差异阈值：坚持≥10%，或接受≥6%（考虑随机性）的过渡口径？是否建议扩大样本量或细分行业？
-- 跨市场一致性：相关性≥0.85是否需增加市场权重或分层阈值？
-
----
-
-## 🔍 业务视角的代码实现评审要点（方法/字段/返回结构与业务口径一致性）
-- 方法签名与参数语义：`normalize_to_usd`、`apply_liquidity_adjustment`、`validate_weighted_average_error`、`validate_triple_indicator_system`、`analyze_and_validate`、`safe_get_event_data`、`calculate_actual_return` 等与业务口径的一致性核验。
-- 返回结构与异常处理：事件窗口数据（df/dict）兼容；错误静默与降级行为是否需要注明在评审版报告中。
-- 字段与计量口径：价格列 `close`、汇率选取（日均中间价）、参与率与折扣因子、机制修正系数（LULD/T+1）。
-
----
-
-## 📝 评审请求（请您明确答复）
-- 请对上述“迁移准入标准”“路径与流程”“数据源与降级口径”“UAT评审版报告”“阈值确认”等逐项给出业务口径与验收阈值。
-- 请确认组件与方法的业务一致性（签名/参数/返回/异常），并指出需调整或补充之处。
-- 我们将在收到您的答复后，严格按口径在 `core_bak_refactored/` 内完成对齐性修正与迁移准备，随后进入迁移评审。
-
----
-
-**重要：请尽可能详尽和充分，不要遗漏和简化，谢谢！**
+## 📝 说明（必须）
+- 重要：请尽可能详尽和充分，不要遗漏和简化，谢谢！

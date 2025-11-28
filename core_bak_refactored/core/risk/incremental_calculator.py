@@ -20,6 +20,8 @@ from dataclasses import dataclass
 from datetime import datetime
 import logging
 
+from core_bak_refactored.infrastructure.statistical_calculators import StatisticalCalculator
+
 logger = logging.getLogger(__name__)
 
 
@@ -359,8 +361,8 @@ class IncrementalVaRCalculator:
         else:
             updated_returns = np.concatenate([base_returns, [new_return]])
         
-        # 历史模拟法计算VaR
-        new_var = np.percentile(
+        # 历史模拟法计算VaR（使用基础设施层统一方法）
+        new_var = StatisticalCalculator.calculate_percentile(
             -updated_returns,  # 负号转换为损失
             self.confidence_level * 100
         )

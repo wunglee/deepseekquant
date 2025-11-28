@@ -2,9 +2,199 @@
 
 ## Session Summary
 Date: 2025-11-26  
-Status: High-priority tasks from expert answer.md Round 3 completed + Design-level refactoring
+Status: Expert answer.md Round 3 full implementation completed + Market-specific data quality rules
 
-## Latest Update: Design-Level Refactoring (2025-11-26)
+## Latest Update: Market-Specific Data Quality Rules (2025-11-26)
+
+### Implementation Summary
+按照专家answer.md第3轮反馈，完成了以下核心改进：
+
+### 1. Market-Specific Data Quality Thresholds (第3轮第1节)
+
+**File**: `core_bak_refactored/core/data/_fragments/data_quality_checker.py`
+
+#### Continuity Check Thresholds (ABNORMAL_GAP_THRESHOLD)
+```python
+ABNORMAL_GAP_THRESHOLD = {
+    'default': 10,
+    MarketCode.CN.value: 7,   # 春节/国庆休市
+    MarketCode.US.value: 3,   # 熔断事件标记
+    MarketCode.HK.value: 5,   # 半日市/台风
+    MarketCode.JP.value: 5,   # 地震休市
+    MarketCode.EU.value: 5,   # 各国节假日差异
+    MarketCode.SG.value: 5,   # 穆斯林节日
+}
+```
+
+#### Reasonableness Volatility Thresholds (MARKET_SPECIFIC_THRESHOLDS)
+```python
+MARKET_SPECIFIC_THRESHOLDS = {
+    MarketCode.CN.value: {'max_daily_return': 0.10},  # 涨跌停限制
+    MarketCode.US.value: {'max_daily_return': 0.20},  # 熔断机制
+    MarketCode.HK.value: {'max_daily_return': 0.08},  # 市调机制
+    MarketCode.JP.value: {'max_daily_return': 0.06},  # 央行决议日
+    MarketCode.EU.value: {'max_daily_return': 0.07},  # 政治事件
+    MarketCode.SG.value: {'max_daily_return': 0.10},  # 外部依赖性
+}
+```
+
+#### Cross-Validation Thresholds per Market (PER_MARKET_CROSS_VALIDATION_THRESHOLDS)
+```python
+PER_MARKET_CROSS_VALIDATION_THRESHOLDS = {
+    MarketCode.CN.value: {
+        'daily_divergence': 0.30,
+        'mean_divergence': 0.03,
+        'std_divergence': 0.10,
+        'max_daily_divergence_ratio': 0.10,
+    },
+    MarketCode.US.value: {  # 最严格
+        'daily_divergence': 0.25,
+        'mean_divergence': 0.02,
+        'std_divergence': 0.08,
+        'max_daily_divergence_ratio': 0.05,
+    },
+    MarketCode.HK.value: {
+        'daily_divergence': 0.30,
+        'mean_divergence': 0.03,
+        'std_divergence': 0.12,
+        'max_daily_divergence_ratio': 0.10,
+    },
+    MarketCode.SG.value: {  # 最宽松
+        'daily_divergence': 0.35,
+        'mean_divergence': 0.04,
+        'std_divergence': 0.15,
+        'max_daily_divergence_ratio': 0.15,
+    },
+    # JP, EU similar to HK/JP averages
+}
+```
+
+**Business Rationale**:
+- CN market: Higher volatility threshold (10%) due to T+1 and retail dominance
+- US market: Stricter thresholds due to institutional trading and better data quality
+- HK market: Moderate thresholds balancing Chinese and international influence
+- SG market: More lenient thresholds due to small market size and external dependency
+
+### 2. UAT Business Exemption Mechanism (第3轮第4节)
+
+**File**: `core_bak_refactored/core/backtest/_fragments/uat_validator.py`
+
+#### BusinessExemption Dataclass
+```python
+@dataclass
+class BusinessExemption:
+    """业务豁免记录（专家答复）"""
+    category: str  # 豁免类别
+    reason: str    # 详细理由
+    approvers: List[str]  # 审批人列表
+    period: Tuple[datetime, datetime]  # 豁免期限
+    audit_trail: Dict[str, Any]  # 审计痕迹
+```
+
+#### Exemption Categories (answer.md 第3轮第4节)
+1. **extreme_market**: 极端行情豁免 (市场熔断/黑天鹅事件)
+2. **system_maintenance**: 系统维护豁免 (数据源计划内维护)
+3. **data_anomaly**: 数据异常豁免 (交易所数据错误)
+4. **model_transition**: 模型过渡豁免 (新模型上线磨合期)
+
+#### UATResult Extension
+```python
+@dataclass
+class UATResult:
+    test_item: str
+    passed: bool
+    actual_value: float
+    threshold: float
+    business_exemption: Optional[BusinessExemption] = None  # 新增
+    risk_statement: Optional[str] = None  # 新增
+    details: Dict[str, Any] = field(default_factory=dict)
+```
+
+**Usage Example**:
+```python
+exemption = BusinessExemption(
+    category='extreme_market',
+    reason='2024年X月X日全球市场因XX事件出现系统性波动',
+    approvers=['张三（风控总监）', '李四（业务负责人）'],
+    period=(datetime(2024, 1, 1), datetime(2024, 1, 31)),
+    audit_trail={'decision_number': '2024-001'}
+)
+
+result = UATResult(
+    test_item='data_quality',
+    passed=False,
+    actual_value=0.85,
+    threshold=0.90,
+    business_exemption=exemption,
+    risk_statement='数据质量暂时低于标准，但已获豁免'
+)
+```
+
+### 3. Test Coverage Enhancement
+
+**New Test Cases**: `core_bak_refactored/tests/units/core/data/_fragments/data_quality_checker_test.py`
+
+1. ✅ `test_market_specific_volatility_threshold()` - CN 10% vs US 20%
+2. ✅ `test_market_specific_gap_threshold()` - CN 7-day Spring Festival gap
+3. ✅ `test_market_specific_cross_validation_thresholds()` - US stricter thresholds
+
+**New Test Cases**: `core_bak_refactored/tests/units/core/backtest/_fragments/uat_validator_test.py`
+
+4. ✅ `test_business_exemption_creation()` - Exemption object creation
+5. ✅ `test_uat_result_with_exemption()` - UATResult with exemption field
+6. ✅ `test_exemption_categories()` - All 4 exemption categories
+
+**Test Results**: 79/79 tests passing ✅ (22.38s runtime)
+
+### 4. Backward Compatibility Guarantee
+
+**Design Principles**:
+- ✅ All new `market` parameters are optional (`Optional[str]`)
+- ✅ Default behavior matches original logic exactly
+- ✅ Existing code requires no changes
+- ✅ New features activated via explicit parameter passing
+
+**Verification**:
+- All existing test cases pass without modification
+- New test cases independently verify market-specific functionality
+- No breaking changes to public APIs
+
+### 5. Future Optimization Items (Deferred)
+
+根据专家answer.md第3轮反馈，以下项目标记为后续优化：
+
+1. **Holiday Calendar Integration** (第3轮第1节)
+   - Current: Using day-threshold approach
+   - Suggested: Integrate official holiday calendars (ChinaHolidayCalendar, USHolidayCalendar, etc.)
+   - Priority: Medium (current approach covers most scenarios)
+
+2. **API Quality Monitoring** (第3轮第2节)
+   - Current: Basic health checks
+   - Suggested: Response time, success rate, data delay, update frequency monitoring
+   - Priority: Medium (production enhancement)
+
+3. **Production Alert Grouping Strategy** (第3轮第5节)
+   - Current: Basic AlertManager
+   - Suggested: Work-hour differentiation, market grouping, special date strategies
+   - Priority: High (production requirement)
+
+### 6. Technical Debt and Optimization Notes
+
+1. **Numerical Stability**
+   - Division-by-zero warnings identified in cross-validation
+   - Suggested: Add boundary checks for std()=0 cases
+
+2. **Performance Optimization**
+   - Current: 22s for 79 test cases
+   - Suggested: Consider parallel test execution
+
+3. **Documentation Update**
+   - Market-specific rules implemented but need user documentation
+   - Suggested: Add market differentiation configuration guide to module design docs
+
+---
+
+## Previous Update: Design-Level Refactoring (2025-11-26)
 
 ### Refactoring Overview
 按照规范要求，对已实现代码进行了设计级别的优化重构，包括：
