@@ -384,29 +384,11 @@
     - 实际工作量：2天（代码重构 + 架构优化 + 文档同步 + 测试验证）
 
 - 迭代6：性能与数据质量监控（规划中）
-  - 迭代目标（业务价值导向 + 周期≤1周）
-    - **业务价值**：提升风险计算性能稳定性；数据质量仅接入外部标识
-    - **职责单一**：风险模块仅进行性能埋点与质量标识消费，不实现质量规则
-    - 可量化目标：动态性能SLA达成率≥95%（分组合规模）
+  - 迭代目标：仅保留性能埋点与质量标识接入（无质量规则实现）
   - 进展跟踪
-    - [ ] 动态性能阈值优化（风险模块埋点 + 基础设施支撑）
-      - 业务目标：分级SLA，避免“一刀切”导致性能抖动
-      - 可量化指标：
-        - SLA达成率≥95%（≤100标的 P95≤500ms；≤500标的 P95≤1000ms；>500标的 P95≤3000ms）
-        - 性能采集覆盖率100%（所有 `calculate_portfolio_risk` 调用点）
-      - 实施方案：
-        - 在 `portfolio_risk.py` 增加耗时采集埋点
-        - 在 `infrastructure` 提供 `PerformanceSLAConfig` 与 `PerformanceMonitor.check_sla()`
-      - 验收标准：
-        - 单元测试覆盖3种规模组合的SLA检查逻辑
-        - 指标导出支持CSV/JSON
-      - 相关文件：`core_bak_refactored/core/risk/portfolio_risk.py`；`core_bak_refactored/infrastructure/...`
-    - [ ] 质量标识接入（消费自 core/data）
-      - 业务目标：在风险入口接入 quality_flags，不实现检查逻辑
-      - 实施方案：调用 `core/data` 的 `DataQualityMonitor` 输出 `quality_flags`，写入 `report_snapshot`
-      - 验收标准：质量标识成功外部化；无内置规则或默认阈值
-      - 相关文件：`core_bak_refactored/core/data/...`（服务提供）；`core_bak_refactored/core/risk/portfolio_risk.py`（消费）
-  - 状态：🔄 规划中（等待技术债务清理完成后开始）
-  - 预计周期：3-5天（含测试与文档同步）
+    - [ ] 性能埋点与SLA检查（调用基础设施接口）
+    - [ ] 接入并外部化 quality_flags（消费自 core/data）
+  - 状态：🔄 规划中
+  - 预计周期：3-5天
 
 备注：仅用于本模块（risk）的迭代计划与跟踪；其他同级模块应在各自模块目录下维护独立的 SPRINT.md。状态管理政策：进行中的迭代必须标记为🔄 IN_PROGRESS，禁止在迭代完成前标记为✅ COMPLETE。
