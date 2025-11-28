@@ -430,6 +430,7 @@ TODO:
  ### 🔧 代码重构与优化规范
 
 **核心原则**：
+- 面向接口编程（Protocol/抽象接口）、依赖注入（DI）为基本原则；运行期装配具体实现（真实/Mock/加速版），保持真实与模拟的严格隔离
 - 职责边界清晰、消除重复、接口稳定
 - 异常与类型完善、可读性与维护性优先
 - 性能与鲁棒性的合理优化
@@ -1162,9 +1163,9 @@ git commit -m "chore(docs): 清空consultation.md，迭代X已完成"
 ### 概念定义（Phase / Iteration / Milestone）
 
 ### 概念定义（Phase / Iteration / Milestone）
-- 阶段（Phase，全局）：跨模块的宏观计划分段，由 `docs/PLAN.md` 定义与管理。阶段切换通常伴随方向/范围调整，是全局时间/范围的分段单位。
-- 迭代（Iteration，模块内）：某个模块的工作周期，统一在各模块 `TODO.md` 内维护为“迭代计划”。同一迭代内的专家咨询记录持续追加到 `docs/consultation.md`；迭代完成后清空该文件（保留标题），开启下一迭代。
-- 里程碑（Milestone，全局）：可交付或检查点，记录于 `docs/PLAN.md`。里程碑用于标注关键成果（例如 P0 完成、首版发布），可以位于某个阶段之内或跨阶段。区别：阶段是时间/范围分段；里程碑是事件/成果节点。
+- 阶段(Phase,全局):跨模块的宏观计划分段,由 `docs/process/PLAN.md` 定义与管理。阶段切换通常伴随方向/范围调整,是全局时间/范围的分段单位。
+- 迭代(Iteration,模块内):某个模块的工作周期,统一在各模块 `TODO.md` 内维护为"迭代计划"。同一迭代内的专家咨询记录持续追加到 `docs/consultation.md`;迭代完成后清空该文件(保留标题),开启下一迭代。
+- 里程碑(Milestone,全局):可交付或检查点,记录于 `docs/process/PLAN.md`。里程碑用于标注关键成果(例如 P0 完成、首版发布),可以位于某个阶段之内或跨阶段。区别:阶段是时间/范围分段;里程碑是事件/成果节点。
 
 
 ### 文档目录
@@ -1367,12 +1368,12 @@ def calculate_metrics(self, data):
 RISK_CHANGED=$(git diff --cached --name-only | grep "core_bak_refactored/core/risk/")
 
 if [ -n "$RISK_CHANGED" ]; then
-    DOC1=$(git diff --cached --name-only | grep "docs/design/core/risk/模块设计文档.md")
-    DOC2=$(git diff --cached --name-only | grep "docs/design/core/risk/接口设计文档.md")
+    DOC1=$(git diff --cached --name-only | grep "docs/design/core_bak_refactored/core/risk/模块设计文档.md")
+    DOC2=$(git diff --cached --name-only | grep "docs/design/core_bak_refactored/core/risk/接口设计文档.md")
     
     if [ -z "$DOC1" ] && [ -z "$DOC2" ]; then
         echo "⚠️  错误：代码变更但文档未同步！"
-        echo "请更新：docs/design/core/risk/模块设计文档.md 或 接口设计文档.md"
+        echo "请更新：docs/design/core_bak_refactored/core/risk/模块设计文档.md 或 接口设计文档.md"
         exit 1
     fi
 fi
@@ -1395,7 +1396,7 @@ jobs:
           FILES=$(git diff --name-only origin/main...HEAD)
           RISK_CHANGED=$(echo "$FILES" | grep "core_bak_refactored/core/risk/")
           if [ -n "$RISK_CHANGED" ]; then
-            DOC_CHANGED=$(echo "$FILES" | grep "docs/design/core/risk/")
+            DOC_CHANGED=$(echo "$FILES" | grep "docs/design/core_bak_refactored/core/risk/")
             if [ -z "$DOC_CHANGED" ]; then
               echo "⚠️  Error: Code changed but documentation not updated!"
               exit 1
@@ -1405,9 +1406,9 @@ jobs:
 
 ### 📖 详细文档
 
-完整的同步规范说明请参考：
-- **模块设计文档**: `docs/design/core/risk/模块设计文档.md` - 第九章
-- **接口设计文档**: `docs/design/core/risk/接口设计文档.md` - 附录B
+完整的同步规范说明请参考:
+- **模块设计文档**: `docs/design/core_bak_refactored/core/risk/模块设计文档.md` - 第九章
+- **接口设计文档**: `docs/design/core_bak_refactored/core/risk/接口设计文档.md` - 附录B
 
 ---
 
