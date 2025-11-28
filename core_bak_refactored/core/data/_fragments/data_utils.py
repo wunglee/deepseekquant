@@ -101,7 +101,7 @@ class DataUtils:
             (事件窗口数据DataFrame, 是否成功bool)
         
         Examples:
-            >>> from core_bak_refactored.core.data._fragments.historical_data_provider import MockHistoricalDataProvider
+            >>> from core_bak_refactored.tests.fixtures.core.data.mock_historical_data_provider import MockHistoricalDataProvider
             >>> provider = MockHistoricalDataProvider()
             >>> event = EventConfig(...)
             >>> data, success = DataUtils.safe_get_event_data(provider, event)

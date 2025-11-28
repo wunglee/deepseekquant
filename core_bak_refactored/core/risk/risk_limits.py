@@ -12,7 +12,7 @@ from typing import Dict, List, Optional, Any
 import logging
 
 from .risk_models import RiskLimit, PositionLimit, RiskControlAction, RiskLevel, RiskType, RiskMetric
-from .risk_metrics_service import RiskMetricsService
+from .risk_metrics_service import RiskMetricsService, RiskMetricsEngine
 
 # P1-3: 导入智能化增强模块
 try:
@@ -31,9 +31,9 @@ logger = logging.getLogger('DeepSeekQuant.RiskLimits')
 class RiskLimitsManager:
     """风险限额管理器(P1-3增强版)"""
     
-    def __init__(self, config: Dict):
+    def __init__(self, config: Dict, metrics_engine: Optional[RiskMetricsEngine] = None):
         self.config = config
-        self.risk_metrics_service = RiskMetricsService(config)
+        self.risk_metrics_service: RiskMetricsEngine = metrics_engine or RiskMetricsService(config)
         self.risk_limits: Dict[str, RiskLimit] = {}
         self.position_limits: Dict[str, PositionLimit] = {}
         

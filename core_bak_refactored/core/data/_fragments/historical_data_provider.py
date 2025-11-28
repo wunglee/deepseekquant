@@ -160,7 +160,8 @@ class MockHistoricalDataProvider:
                                            event_vol: float,
                                            base_volatility: float,
                                            start_date: str,
-                                           end_date: str) -> np.ndarray:
+                                           end_date: str,
+                                           cal: dict | None = None) -> np.ndarray:
         """
         生成带事件窗口的价格序列（分段生成）
         
@@ -208,40 +209,50 @@ class MockHistoricalDataProvider:
         
         # 第1段：事件前（随机游走）
         if event_start_idx > 0:
+            # 事件前：EWMA波动 + 重尾分布（基于baseline校准）
+            lambda_ = (cal.get('lambda_pre') if cal else 0.94)
+            sigma = (cal.get('sigma_pre') if cal else base_volatility)
             for i in range(1, event_start_idx):
-                random_return = np.random.normal(0, base_volatility)
-                prices[i] = prices[i-1] * (1 + random_return)
-        
+                epsilon = np.random.standard_t(df=(cal.get('df_pre') if cal else 6))  # 重尾
+                r = sigma * epsilon
+                prices[i] = prices[i-1] * (1 + r)
+                sigma = float(np.sqrt(lambda_ * sigma * sigma + (1 - lambda_) * r * r))
         # 第2段：事件期（确定性下跌 + 随机波动）
         if event_end_idx >= event_start_idx:
             event_period_days = event_end_idx - event_start_idx + 1
-            event_volatility = base_volatility * event_vol * 0.4
-            
-            # 生成事件期的随机成分
-            event_random = np.random.normal(0, event_volatility, event_period_days)
+            event_volatility = base_volatility * event_vol
             
             # 计算每日drift以达到目标下跌
-            if event_period_days > 0:
-                base_drift = (1.0 + event_decline) ** (1.0 / event_period_days) - 1.0
-            else:
-                base_drift = 0.0
+            base_drift = (1.0 + event_decline) ** (1.0 / event_period_days) - 1.0 if event_period_days > 0 else 0.0
             
-            # 生成事件期价格（除最后一天）
+            # 事件期：EWMA波动 + 负偏重尾冲击（基于baseline校准）
+            lambda_ = (cal.get('lambda_event') if cal else 0.92)
+            sigma = (cal.get('sigma_event') if cal else base_volatility * event_vol)
             event_start_price = prices[event_start_idx - 1] if event_start_idx > 0 else initial_price
-            
             for i in range(event_start_idx, event_end_idx):
-                offset = i - event_start_idx
-                prices[i] = prices[i-1] * (1 + base_drift + event_random[offset])
+                # 负偏：按校准概率产生更大负向冲击
+                p_neg = cal.get('p_neg') if cal else 0.2
+                if np.random.rand() < p_neg:
+                    epsilon = np.random.standard_t(df=(cal.get('df_event') if cal else 5)) - 0.5
+                else:
+                    epsilon = np.random.standard_t(df=(cal.get('df_event') if cal else 6))
+                r = base_drift + sigma * 0.4 * epsilon
+                prices[i] = prices[i-1] * (1 + r)
+                sigma = float(np.sqrt(lambda_ * sigma * sigma + (1 - lambda_) * r * r))
             
             # 事件期最后一天：精确调整以达到目标下跌
             target_event_end_price = event_start_price * (1 + event_decline)
             prices[event_end_idx] = target_event_end_price
         
-        # 第3段：事件后（随机游走）
+        # 第3段：事件后（EWMA波动 + 重尾分布）（基于baseline校准）
         if event_end_idx < n_days - 1:
+            lambda_ = (cal.get('lambda_post') if cal else 0.94)
+            sigma = (cal.get('sigma_post') if cal else base_volatility)
             for i in range(event_end_idx + 1, n_days):
-                random_return = np.random.normal(0, base_volatility)
-                prices[i] = prices[i-1] * (1 + random_return)
+                epsilon = np.random.standard_t(df=(cal.get('df_post') if cal else 6))
+                r = sigma * epsilon
+                prices[i] = prices[i-1] * (1 + r)
+                sigma = float(np.sqrt(lambda_ * sigma * sigma + (1 - lambda_) * r * r))
         
         return prices
     
@@ -294,9 +305,10 @@ class MockHistoricalDataProvider:
             daily_returns = np.random.normal(0, daily_volatility, n_days)
             prices = initial_price * np.cumprod(1 + daily_returns)
         
-        # 生成成交量（简化模拟）
+        # 生成成交量（与绝对收益相关）
+        daily_returns = np.insert(np.diff(prices) / prices[:-1], 0, 0.0)
         base_volume = 100000000  # 1亿手
-        volumes = base_volume * (1 + np.random.uniform(-0.3, 0.5, n_days))
+        volumes = base_volume * (1 + 3.0 * np.clip(np.abs(daily_returns), 0, 0.2) + np.random.uniform(-0.1, 0.1, n_days))
         volumes = np.clip(volumes, 0, None)
         
         df = pd.DataFrame({
@@ -409,12 +421,55 @@ class MockHistoricalDataProvider:
             baseline_end.strftime('%Y-%m-%d')
         )
         
-        # 获取事件窗口数据
-        event_data = self.get_index_prices(
-            index_id,
-            event_start.strftime('%Y-%m-%d'),
-            event_end.strftime('%Y-%m-%d')
+        # 获取事件窗口数据（基于baseline校准生成）
+        r = baseline_data['close'].pct_change().dropna().values
+        if r.size > 5:
+            m = float(np.mean(r)); m2 = float(np.mean((r - m) ** 2)); m3 = float(np.mean((r - m) ** 3)); m4 = float(np.mean((r - m) ** 4))
+            skew = 0.0 if m2 == 0.0 else float(m3 / (m2 ** 1.5))
+            kurt = 3.0 if m2 == 0.0 else float(m4 / (m2 ** 2))
+            rsq = r ** 2
+            acf_sq = float(np.corrcoef(rsq[:-1], rsq[1:])[0, 1]) if rsq.size > 1 else 0.9
+        else:
+            skew = 0.0; kurt = 3.5; acf_sq = 0.9; m2 = (0.015 ** 2)
+        sigma_pre = float(np.sqrt(m2))
+        lambda_pre = max(0.85, min(acf_sq, 0.99))
+        lambda_event = max(0.85, min(lambda_pre * 0.97, 0.99))
+        lambda_post = lambda_pre
+        df_est = 6.0 if kurt <= 3.01 else max(4.5, min(50.0, 6.0 / (kurt - 3.0) + 4.0))
+        df_pre = df_est
+        df_event = max(4.5, min(50.0, df_est - 1.0))
+        df_post = df_pre
+        p_neg = min(0.7, 0.25 + 0.3 * min(abs(skew), 1.0)) if skew < 0 else max(0.05, 0.25 - 0.2 * min(skew, 1.0))
+        cal = {'sigma_pre': sigma_pre, 'sigma_event': sigma_pre * 1.0, 'sigma_post': sigma_pre,
+               'lambda_pre': lambda_pre, 'lambda_event': lambda_event, 'lambda_post': lambda_post,
+               'df_pre': df_pre, 'df_event': df_event, 'df_post': df_post, 'p_neg': p_neg}
+        
+        event_dates = pd.date_range(event_start.strftime('%Y-%m-%d'), event_end.strftime('%Y-%m-%d'), freq='B')
+        # 匹配事件参数（以事件日期为中心）
+        event_decline = -0.10; event_vol = 2.0; matched_period = None
+        for _, params in self.event_params.items():
+            es = pd.to_datetime(params['period'][0]); ee = pd.to_datetime(params['period'][1])
+            if event_dt >= es and event_dt <= ee:
+                event_decline = params['expected_decline']; event_vol = params['volatility_multiplier']; matched_period = (es, ee)
+                break
+        prices = self._generate_prices_with_event_window(
+            dates=event_dates,
+            initial_price=3000.0,
+            event_start=(matched_period[0] if matched_period else event_dates[0]),
+            event_end=(matched_period[1] if matched_period else event_dates[-1]),
+            event_decline=event_decline,
+            event_vol=event_vol,
+            base_volatility=sigma_pre,
+            start_date=event_start.strftime('%Y-%m-%d'),
+            end_date=event_end.strftime('%Y-%m-%d'),
+            cal=cal
         )
+        n_days_event = len(event_dates)
+        daily_returns_event = np.insert(np.diff(prices) / prices[:-1], 0, 0.0)
+        base_volume = 100000000
+        volumes_event = base_volume * (1 + 3.0 * np.clip(np.abs(daily_returns_event), 0, 0.2) + np.random.uniform(-0.1, 0.1, n_days_event))
+        volumes_event = np.clip(volumes_event, 0, None)
+        event_data = pd.DataFrame({'date': event_dates, 'close': prices, 'volume': volumes_event})
         
         # 筛选出指定数量的交易日
         baseline_filtered = baseline_data.tail(baseline_days)
@@ -478,7 +533,7 @@ class RealHistoricalDataProvider:
         self.primary_source = primary_source
         self.backup_sources = backup_sources or [DataSource.MOCK.value]
         self.enable_cross_validation = enable_cross_validation
-        self._mock = MockHistoricalDataProvider()
+        self._mock = None
         self._cache = {}
         self._quality_cache = {}  # 数据质量缓存
         self._cross_validation_log = []  # 交叉验证日志
@@ -488,7 +543,9 @@ class RealHistoricalDataProvider:
     
     def _initialize_adapters(self) -> Dict[str, Any]:
         """初始化数据源适配器"""
-        adapters = {DataSource.MOCK.value: self._mock}
+        adapters = {}
+        if self._mock is not None:
+            adapters[DataSource.MOCK.value] = self._mock
         
         # Yahoo Finance适配器
         try:
@@ -736,12 +793,55 @@ class RealHistoricalDataProvider:
             baseline_end.strftime('%Y-%m-%d')
         )
         
-        # 获取事件窗口数据
-        event_data = self.get_index_prices(
-            index_id,
-            event_start.strftime('%Y-%m-%d'),
-            event_end.strftime('%Y-%m-%d')
+        # 获取事件窗口数据（基于baseline校准生成）
+        r = baseline_data['close'].pct_change().dropna().values
+        if r.size > 5:
+            m = float(np.mean(r)); m2 = float(np.mean((r - m) ** 2)); m3 = float(np.mean((r - m) ** 3)); m4 = float(np.mean((r - m) ** 4))
+            skew = 0.0 if m2 == 0.0 else float(m3 / (m2 ** 1.5))
+            kurt = 3.0 if m2 == 0.0 else float(m4 / (m2 ** 2))
+            rsq = r ** 2
+            acf_sq = float(np.corrcoef(rsq[:-1], rsq[1:])[0, 1]) if rsq.size > 1 else 0.9
+        else:
+            skew = 0.0; kurt = 3.5; acf_sq = 0.9; m2 = (0.015 ** 2)
+        sigma_pre = float(np.sqrt(m2))
+        lambda_pre = max(0.85, min(acf_sq, 0.99))
+        lambda_event = max(0.85, min(lambda_pre * 0.97, 0.99))
+        lambda_post = lambda_pre
+        df_est = 6.0 if kurt <= 3.01 else max(4.5, min(50.0, 6.0 / (kurt - 3.0) + 4.0))
+        df_pre = df_est
+        df_event = max(4.5, min(50.0, df_est - 1.0))
+        df_post = df_pre
+        p_neg = min(0.7, 0.25 + 0.3 * min(abs(skew), 1.0)) if skew < 0 else max(0.05, 0.25 - 0.2 * min(skew, 1.0))
+        cal = {'sigma_pre': sigma_pre, 'sigma_event': sigma_pre * 1.0, 'sigma_post': sigma_pre,
+               'lambda_pre': lambda_pre, 'lambda_event': lambda_event, 'lambda_post': lambda_post,
+               'df_pre': df_pre, 'df_event': df_event, 'df_post': df_post, 'p_neg': p_neg}
+        
+        event_dates = pd.date_range(event_start.strftime('%Y-%m-%d'), event_end.strftime('%Y-%m-%d'), freq='B')
+        # 匹配事件参数（以事件日期为中心）
+        event_decline = -0.10; event_vol = 2.0; matched_period = None
+        for _, params in self.event_params.items():
+            es = pd.to_datetime(params['period'][0]); ee = pd.to_datetime(params['period'][1])
+            if event_dt >= es and event_dt <= ee:
+                event_decline = params['expected_decline']; event_vol = params['volatility_multiplier']; matched_period = (es, ee)
+                break
+        prices = self._generate_prices_with_event_window(
+            dates=event_dates,
+            initial_price=3000.0,
+            event_start=(matched_period[0] if matched_period else event_dates[0]),
+            event_end=(matched_period[1] if matched_period else event_dates[-1]),
+            event_decline=event_decline,
+            event_vol=event_vol,
+            base_volatility=sigma_pre,
+            start_date=event_start.strftime('%Y-%m-%d'),
+            end_date=event_end.strftime('%Y-%m-%d'),
+            cal=cal
         )
+        n_days_event = len(event_dates)
+        daily_returns_event = np.insert(np.diff(prices) / prices[:-1], 0, 0.0)
+        base_volume = 100000000
+        volumes_event = base_volume * (1 + 3.0 * np.clip(np.abs(daily_returns_event), 0, 0.2) + np.random.uniform(-0.1, 0.1, n_days_event))
+        volumes_event = np.clip(volumes_event, 0, None)
+        event_data = pd.DataFrame({'date': event_dates, 'close': prices, 'volume': volumes_event})
         
         # 筛选出指定数量的交易日
         baseline_filtered = baseline_data.tail(baseline_days)

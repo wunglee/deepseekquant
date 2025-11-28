@@ -15,7 +15,7 @@ from datetime import datetime
 import time
 import uuid
 
-from .risk_metrics_service import RiskMetricsService
+from .risk_metrics_service import RiskMetricsService, RiskMetricsEngine
 from core_bak_refactored.infrastructure.statistical_calculators import StatisticalCalculator
 
 logger = logging.getLogger('DeepSeekQuant.PortfolioRisk')
@@ -163,7 +163,7 @@ def _calculate_single_portfolio_static(
 class PortfolioRiskAnalyzer:
     """组合风险分析器 - 集成增量计算和并行优化"""
     
-    def __init__(self, config: Dict, enable_parallel: bool = True, enable_incremental: bool = True):
+    def __init__(self, config: Dict, enable_parallel: bool = True, enable_incremental: bool = True, metrics_engine: Optional[RiskMetricsEngine] = None):
         """
         初始化组合风险分析器
         
@@ -173,7 +173,7 @@ class PortfolioRiskAnalyzer:
             enable_incremental: 启用增量计算 (默认True)
         """
         self.config = config
-        self.risk_metrics_service = RiskMetricsService(config)
+        self.risk_metrics_service: RiskMetricsEngine = metrics_engine or RiskMetricsService(config)
         
         # 优化组件
         self.enable_parallel = enable_parallel and PARALLEL_AVAILABLE

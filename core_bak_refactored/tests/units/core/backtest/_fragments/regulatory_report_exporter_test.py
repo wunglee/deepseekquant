@@ -11,7 +11,7 @@ import tempfile
 from pathlib import Path
 
 from core_bak_refactored.core.backtest._fragments.event_window_backtester import EventWindowBacktester
-from core_bak_refactored.core.data._fragments.historical_data_provider import MockHistoricalDataProvider
+from core_bak_refactored.tests.fixtures.core.data.mock_historical_data_provider import MockHistoricalDataProvider
 from core_bak_refactored.core.portfolio._fragments.synthetic_portfolio_builder import SyntheticPortfolioBuilder
 from core_bak_refactored.core.backtest._fragments.regulatory_report_exporter import RegulatoryReportExporter
 from core_bak_refactored.core.backtest._fragments.stress_test_result import StressTestResult, from_backtest_result

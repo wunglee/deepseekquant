@@ -119,7 +119,7 @@ class EventWindowBacktester:
         """
         if data_provider is None:
             try:
-                from core_bak_refactored.core.data._fragments.historical_data_provider import MockHistoricalDataProvider
+                from core_bak_refactored.tests.fixtures.core.data.mock_historical_data_provider import MockHistoricalDataProvider
                 self.data_provider = MockHistoricalDataProvider()
                 logger.info("未提供数据源，已自动使用MockHistoricalDataProvider")
             except Exception as e:

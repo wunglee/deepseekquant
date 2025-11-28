@@ -49,7 +49,7 @@ class EndToEndIntegrationTest(unittest.TestCase):
     def setUp(self):
         """测试环境初始化"""
         # 使用纯Mock数据源，避免外部API超时
-        from core_bak_refactored.core.data._fragments.historical_data_provider import MockHistoricalDataProvider
+        from core_bak_refactored.tests.fixtures.core.data.mock_historical_data_provider import MockHistoricalDataProvider
         self.data_provider = MockHistoricalDataProvider()
         self.use_real_data = False  # Mock数据模式
         

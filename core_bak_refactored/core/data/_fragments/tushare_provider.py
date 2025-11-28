@@ -272,7 +272,7 @@ class TushareDataProvider:
     
     def _fallback_to_mock(self, symbol: str, start_date: str, end_date: str) -> pd.DataFrame:
         """回退到Mock数据"""
-        from core_bak_refactored.core.data._fragments.historical_data_provider import MockHistoricalDataProvider
+        from core_bak_refactored.tests.fixtures.core.data.mock_historical_data_provider import MockHistoricalDataProvider
         
         mock_provider = MockHistoricalDataProvider()
         

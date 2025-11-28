@@ -17,7 +17,7 @@ import logging
 import time
 import warnings
 
-from .risk_metrics_service import RiskMetricsService
+from .risk_metrics_service import RiskMetricsService, RiskMetricsEngine
 from .risk_models import RiskMetric
 from ..share.market_config import MarketConfigManager
 from ..share.exchange_rates import CurrencyConverter, ExchangeRateAdapter
@@ -60,7 +60,7 @@ class RiskCalculator:
     - 不直接处理数据，委托给预处理器
     """
     
-    def __init__(self, config: Dict):
+    def __init__(self, config: Dict, metrics_engine: Optional[RiskMetricsEngine] = None):
         # 国际化：市场配置管理器
         self.config_manager = MarketConfigManager()
         
@@ -79,7 +79,8 @@ class RiskCalculator:
             config['market_configs'] = default_config['market_configs']
         
         self.config = config
-        self.risk_metrics_service = RiskMetricsService(config)
+        # 通过依赖注入接入风险指标引擎，默认实现为 RiskMetricsService
+        self.risk_metrics_service: RiskMetricsEngine = metrics_engine or RiskMetricsService(config)
         self.preprocessor = RiskDataPreprocessor()
         # 可选：外部实时汇率适配器（由业务层注入）
         self.exchange_rate_adapter: Optional[ExchangeRateAdapter] = None

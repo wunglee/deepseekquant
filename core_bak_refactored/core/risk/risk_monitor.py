@@ -6,7 +6,7 @@
 
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, TYPE_CHECKING
 from datetime import datetime
 import logging
 import time
@@ -17,16 +17,19 @@ from .risk_models import RiskLevel, RiskType, RiskEvent, RiskAssessment
 
 logger = logging.getLogger('DeepSeekQuant.RiskMonitor')
 
+if TYPE_CHECKING:
+    from .risk_calculator import RiskCalculator
 
 class RiskMonitor:
     """独立风险监控器 - 用于实时风险监控"""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Dict[str, Any], calculator: Optional['RiskCalculator'] = None):
         self.config = config
         self.risk_thresholds = config.get('risk_thresholds', {})
         self.alert_handlers = []
         self.is_monitoring = False
         self.monitoring_thread = None
+        self.calculator = calculator
         
         # 风险事件历史
         self.risk_events: deque = deque(maxlen=config.get('max_event_history', 100))

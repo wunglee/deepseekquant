@@ -4,7 +4,7 @@ import numpy as np
 from datetime import datetime
 
 from core_bak_refactored.core.data._fragments.data_quality_enhancer import DataQualityEnhancer, DataQualityReport
-from core_bak_refactored.core.data._fragments.historical_data_provider import MockHistoricalDataProvider
+from core_bak_refactored.tests.fixtures.core.data.mock_historical_data_provider import MockHistoricalDataProvider
 
 
 class TestDataQualityEnhancer(unittest.TestCase):

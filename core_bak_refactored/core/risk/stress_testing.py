@@ -13,7 +13,7 @@ import copy
 import random
 
 from .risk_models import StressTestScenario, RiskLevel
-from .risk_metrics_service import RiskMetricsService
+from .risk_metrics_service import RiskMetricsService, RiskMetricsEngine
 from . import calculate_hhi
 
 logger = logging.getLogger('DeepSeekQuant.StressTesting')
@@ -190,9 +190,9 @@ class StressTester:
     根据专家answer.md线108-141指导，内置9种历史事件场景
     """
     
-    def __init__(self, config: Dict):
+    def __init__(self, config: Dict, metrics_engine: Optional[RiskMetricsEngine] = None):
         self.config = config
-        self.risk_metrics_service = RiskMetricsService(config)
+        self.risk_metrics_service: RiskMetricsEngine = metrics_engine or RiskMetricsService(config)
         self.scenarios: Dict[str, StressTestScenario] = {}
         self._load_builtin_scenarios()   # P1增强
         self._load_custom_scenarios()    # 自定义

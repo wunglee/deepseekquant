@@ -125,7 +125,7 @@ class YahooFinanceDataProvider:
             
             if self.fallback:
                 logger.info(f"Falling back to Mock data for {index_id}")
-                from core_bak_refactored.core.data._fragments.historical_data_provider import MockHistoricalDataProvider
+                from core_bak_refactored.tests.fixtures.core.data.mock_historical_data_provider import MockHistoricalDataProvider
                 mock_provider = MockHistoricalDataProvider()
                 return mock_provider.get_index_prices(index_id, start_date, end_date)
             else:
@@ -199,7 +199,7 @@ class YahooFinanceDataProvider:
             
             if self.fallback:
                 logger.info(f"Falling back to Mock data for {symbol}")
-                from core_bak_refactored.core.data._fragments.historical_data_provider import MockHistoricalDataProvider
+                from core_bak_refactored.tests.fixtures.core.data.mock_historical_data_provider import MockHistoricalDataProvider
                 mock_provider = MockHistoricalDataProvider()
                 return mock_provider.get_index_prices(symbol, start_date, end_date)
             else:
@@ -255,7 +255,7 @@ class YahooFinanceDataProvider:
             
             if self.fallback:
                 logger.info(f"Falling back to Mock data for {index_id}")
-                from core_bak_refactored.core.data._fragments.historical_data_provider import MockHistoricalDataProvider
+                from core_bak_refactored.tests.fixtures.core.data.mock_historical_data_provider import MockHistoricalDataProvider
                 mock_provider = MockHistoricalDataProvider()
                 # 返回模拟的波动率数据
                 return mock_provider.get_index_returns(index_id, start_date, end_date)

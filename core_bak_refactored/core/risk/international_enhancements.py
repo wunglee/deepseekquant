@@ -207,8 +207,8 @@ class InternationalEnhancements:
             'relative_risk': {}
         }
         
-        # 导入必要的类（避免循环导入）
-        from .risk_metrics_service import RiskMetricsService
+        # 优先使用注入的引擎工厂（若存在），否则按需懒加载默认实现
+        engine_factory = getattr(self, 'engine_factory', None)
         
         for market_name, returns in returns_map.items():
             # 为每个市场创建临时的风险服务实例
@@ -218,7 +218,11 @@ class InternationalEnhancements:
             }
             
             try:
-                market_service = RiskMetricsService(market_config)
+                if engine_factory:
+                    market_service = engine_factory(market_config)
+                else:
+                    from .risk_metrics_service import RiskMetricsService
+                    market_service = RiskMetricsService(market_config)
                 
                 # 计算综合风险指标
                 metrics = market_service.calculate_all_metrics(returns)

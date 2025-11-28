@@ -6,13 +6,14 @@
 
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, TYPE_CHECKING
 from datetime import datetime
 import logging
 
 from .risk_models import RiskAssessment, RiskLevel
 from .risk_calculator import RiskCalculator
 from .risk_limits import RiskLimitsManager
+from .risk_metrics_service import RiskMetricsEngine
 from .stress_testing import StressTester
 from .portfolio_risk import PortfolioRiskAnalyzer
 from .position_risk import PositionRiskAnalyzer
@@ -25,12 +26,12 @@ logger = logging.getLogger('DeepSeekQuant.RiskProcessor')
 class RiskProcessor:
     """风险处理器 - 协调各个风险分析组件"""
     
-    def __init__(self, config: Dict):
+    def __init__(self, config: Dict, metrics_engine: Optional[RiskMetricsEngine] = None):
         self.config = config
         
         # 初始化各个组件
-        self.calculator = RiskCalculator(config)
-        self.limits_manager = RiskLimitsManager(config)
+        self.calculator = RiskCalculator(config, metrics_engine=metrics_engine)
+        self.limits_manager = RiskLimitsManager(config, metrics_engine=metrics_engine)
         self.stress_tester = StressTester(config)
         self.portfolio_analyzer = PortfolioRiskAnalyzer(config)
         self.position_analyzer = PositionRiskAnalyzer(config)

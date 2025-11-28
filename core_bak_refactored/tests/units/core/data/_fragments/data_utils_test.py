@@ -2,7 +2,7 @@ import unittest
 import pandas as pd
 
 from core_bak_refactored.core.data._fragments.data_utils import DataUtils, EventConfig
-from core_bak_refactored.core.data._fragments.historical_data_provider import MockHistoricalDataProvider
+from core_bak_refactored.tests.fixtures.core.data.mock_historical_data_provider import MockHistoricalDataProvider
 
 
 class DataUtilsTest(unittest.TestCase):

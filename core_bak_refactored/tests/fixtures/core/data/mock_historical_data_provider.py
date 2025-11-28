@@ -1,0 +1,286 @@
+import numpy as np
+import pandas as pd
+from typing import Dict, Any
+import logging
+
+from core_bak_refactored.core.data._fragments.data_quality_checker import DataQualityChecker
+
+logger = logging.getLogger('DeepSeekQuant.Tests.MockData')
+
+
+class MockHistoricalDataProvider:
+    """
+    测试用Mock历史数据提供者（仅用于测试fixtures）
+    - 分段生成价格：事件前(EWMA重尾) + 事件期(精确下跌+负偏重尾) + 事件后(EWMA重尾)
+    - 成交量与绝对收益相关，体现波动聚类
+    """
+
+    def __init__(self):
+        self.event_params = {
+            '2015_china_market_crash': {
+                'period': ('2015-06-15', '2015-08-26'),
+                'expected_decline': -0.43,
+                'volatility_multiplier': 2.5
+            },
+            'covid_19_pandemic': {
+                'period': ('2020-02-20', '2020-03-23'),
+                'expected_decline': -0.20,
+                'volatility_multiplier': 3.0
+            },
+            '2008_financial_crisis': {
+                'period': ('2008-09-15', '2008-11-20'),
+                'expected_decline': -0.40,
+                'volatility_multiplier': 3.5
+            },
+            '2011_eurozone_debt_crisis': {
+                'period': ('2011-09-01', '2011-11-30'),
+                'expected_decline': -0.25,
+                'volatility_multiplier': 2.5
+            },
+            '2011_us_debt_ceiling_crisis': {
+                'period': ('2011-07-22', '2011-08-10'),
+                'expected_decline': -0.12,
+                'volatility_multiplier': 2.0
+            },
+            '2016_china_circuit_breaker': {
+                'period': ('2016-01-04', '2016-01-08'),
+                'expected_decline': -0.15,
+                'volatility_multiplier': 2.0
+            },
+            '2022_russia_ukraine_conflict': {
+                'period': ('2022-02-24', '2022-03-15'),
+                'expected_decline': -0.12,
+                'volatility_multiplier': 1.8
+            },
+            '1997_asian_financial_crisis': {
+                'period': ('1997-07-02', '1998-08-28'),
+                'expected_decline': -0.35,
+                'volatility_multiplier': 2.8
+            }
+        }
+
+    def _generate_prices_with_event_window(self,
+                                           dates: pd.DatetimeIndex,
+                                           initial_price: float,
+                                           event_start: pd.Timestamp,
+                                           event_end: pd.Timestamp,
+                                           event_decline: float,
+                                           event_vol: float,
+                                           base_volatility: float,
+                                           start_date: str,
+                                           end_date: str,
+                                           cal: dict | None = None) -> np.ndarray:
+        np.random.seed(hash(start_date + end_date) % 2**32)
+        n_days = len(dates)
+        prices = np.zeros(n_days)
+        prices[0] = initial_price
+
+        # 定位事件段索引
+        event_start_idx = None
+        event_end_idx = None
+        for i, date in enumerate(dates):
+            if event_start_idx is None and date >= event_start:
+                event_start_idx = i
+            if event_end_idx is None and date > event_end:
+                event_end_idx = i - 1
+                break
+        if event_start_idx is None:
+            event_start_idx = 0
+        if event_end_idx is None:
+            event_end_idx = n_days - 1
+
+        # 事件前：EWMA + 重尾
+        if event_start_idx > 0:
+            lambda_ = (cal.get('lambda_pre') if cal else 0.94)
+            sigma = (cal.get('sigma_pre') if cal else base_volatility)
+            sigma2 = sigma * sigma
+            r_prev = 0.0
+            for i in range(1, event_start_idx):
+                epsilon = np.random.standard_t(df=(cal.get('df_pre') if cal else 6))
+                r = sigma * epsilon
+                prices[i] = prices[i-1] * (1 + r)
+                sigma2 = (cal.get('omega', 1e-6)) + (cal.get('alpha', 0.1)) * (r_prev * r_prev) + (cal.get('beta', 0.85)) * (sigma2)
+                sigma = float(np.sqrt(sigma2))
+                r_prev = r
+
+        # 事件期：精确下跌 + 负偏重尾
+        if event_end_idx >= event_start_idx:
+            event_period_days = event_end_idx - event_start_idx + 1
+            base_drift = (1.0 + event_decline) ** (1.0 / event_period_days) - 1.0 if event_period_days > 0 else 0.0
+            lambda_ = (cal.get('lambda_event') if cal else 0.92)
+            sigma = (cal.get('sigma_event') if cal else base_volatility * event_vol)
+            sigma2 = sigma * sigma
+            r_prev = 0.0
+            event_start_price = prices[event_start_idx - 1] if event_start_idx > 0 else initial_price
+            for i in range(event_start_idx, event_end_idx):
+                p_neg = cal.get('p_neg') if cal else 0.2
+                if np.random.rand() < p_neg:
+                    epsilon = np.random.standard_t(df=(cal.get('df_event') if cal else 5)) - 0.5
+                else:
+                    epsilon = np.random.standard_t(df=(cal.get('df_event') if cal else 6))
+                r = base_drift + sigma * 0.4 * epsilon
+                prices[i] = prices[i-1] * (1 + r)
+                sigma2 = (cal.get('omega', 1e-6)) + (cal.get('alpha', 0.1)) * (r_prev * r_prev) + (cal.get('beta', 0.85)) * (sigma2)
+                sigma = float(np.sqrt(sigma2))
+                r_prev = r
+            target_event_end_price = event_start_price * (1 + event_decline)
+            prices[event_end_idx] = target_event_end_price
+
+        # 事件后：EWMA + 重尾
+        if event_end_idx < n_days - 1:
+            lambda_ = (cal.get('lambda_post') if cal else 0.94)
+            sigma = (cal.get('sigma_post') if cal else base_volatility)
+            sigma2 = sigma * sigma
+            r_prev = 0.0
+            for i in range(event_end_idx + 1, n_days):
+                epsilon = np.random.standard_t(df=(cal.get('df_post') if cal else 6))
+                r = sigma * epsilon
+                prices[i] = prices[i-1] * (1 + r)
+                sigma2 = (cal.get('omega', 1e-6)) + (cal.get('alpha', 0.1)) * (r_prev * r_prev) + (cal.get('beta', 0.85)) * (sigma2)
+                sigma = float(np.sqrt(sigma2))
+                r_prev = r
+
+        return prices
+
+    def get_index_prices(self, index_id: str, start_date: str, end_date: str) -> pd.DataFrame:
+        start = pd.to_datetime(start_date)
+        end = pd.to_datetime(end_date)
+        dates = pd.date_range(start, end, freq='B')
+        n_days = len(dates)
+        initial_price = 3000.0
+        base_volatility = 0.015
+
+        # 事件期匹配（交集判定）
+        event_decline = 0.0
+        event_vol = 1.0
+        matched_event_start = None
+        matched_event_end = None
+        for _, params in self.event_params.items():
+            es = pd.to_datetime(params['period'][0])
+            ee = pd.to_datetime(params['period'][1])
+            if not (end < es or start > ee):
+                event_decline = params['expected_decline']
+                event_vol = params['volatility_multiplier']
+                matched_event_start = es
+                matched_event_end = ee
+                break
+
+        if event_decline != 0.0 and matched_event_start is not None:
+            prices = self._generate_prices_with_event_window(
+                dates=dates,
+                initial_price=initial_price,
+                event_start=matched_event_start,
+                event_end=matched_event_end,
+                event_decline=event_decline,
+                event_vol=event_vol,
+                base_volatility=base_volatility,
+                start_date=start_date,
+                end_date=end_date,
+                cal=None
+            )
+        else:
+            # 非事件期：随机游走
+            np.random.seed(hash(start_date + end_date) % 2**32)
+            daily_returns = np.random.normal(0, base_volatility, n_days)
+            prices = initial_price * np.cumprod(1 + daily_returns)
+
+        # 成交量与绝对收益相关
+        daily_returns = np.insert(np.diff(prices) / prices[:-1], 0, 0.0)
+        base_volume = 100000000
+        volumes = base_volume * (1 + 3.0 * np.clip(np.abs(daily_returns), 0, 0.2) + np.random.uniform(-0.1, 0.1, n_days))
+        volumes = np.clip(volumes, 0, None)
+
+        return pd.DataFrame({'date': dates, 'close': prices, 'volume': volumes})
+
+    def get_index_returns(self, index_id: str, start_date: str, end_date: str) -> pd.Series:
+        df = self.get_index_prices(index_id, start_date, end_date)
+        returns = df['close'].pct_change().fillna(0)
+        returns.index = df['date']
+        return returns
+
+    def validate_data_quality(self, data) -> Dict[str, Any]:
+        checker = DataQualityChecker()
+        report = checker.check_quality(data, index_id='mock')
+        total_rows = len(data)
+        missing_values = int(data.isna().sum().sum())
+        outliers_detected = sum(
+            1 for issue in (report.issues or [])
+            if ('异常' in issue) or ('零成交量' in issue) or ('极值' in issue)
+        )
+        return {
+            'completeness_score': report.completeness,
+            'consistency_score': report.consistency,
+            'accuracy_score': report.reasonableness,
+            'outliers_detected': outliers_detected,
+            'total_rows': total_rows,
+            'missing_values': missing_values,
+        }
+
+    def get_event_window_data(self, index_id: str, event_date: str,
+                              window_days: int = 30, baseline_days: int = 252) -> Dict[str, pd.DataFrame]:
+        event_dt = pd.to_datetime(event_date)
+        baseline_start = event_dt - pd.Timedelta(days=baseline_days + window_days + 100)
+        baseline_end = event_dt - pd.Timedelta(days=1)
+        event_start = event_dt - pd.Timedelta(days=window_days + 30)
+        event_end = event_dt + pd.Timedelta(days=window_days + 30)
+
+        baseline_data = self.get_index_prices(index_id, baseline_start.strftime('%Y-%m-%d'), baseline_end.strftime('%Y-%m-%d'))
+        # 基于baseline统计进行校准生成事件段数据
+        r = baseline_data['close'].pct_change().dropna().values
+        if r.size > 5:
+            m = float(np.mean(r)); m2 = float(np.mean((r - m) ** 2))
+            m3 = float(np.mean((r - m) ** 3)); m4 = float(np.mean((r - m) ** 4))
+            skew = 0.0 if m2 == 0.0 else float(m3 / (m2 ** 1.5))
+            kurt = 3.0 if m2 == 0.0 else float(m4 / (m2 ** 2))
+            rsq = r ** 2
+            acf_sq = float(np.corrcoef(rsq[:-1], rsq[1:])[0, 1]) if rsq.size > 1 else 0.9
+        else:
+            skew = 0.0; kurt = 3.5; acf_sq = 0.9; m2 = (0.015 ** 2)
+        sigma_pre = float(np.sqrt(m2))
+        lambda_pre = max(0.85, min(acf_sq, 0.99))
+        lambda_event = max(0.85, min(lambda_pre * 0.97, 0.99))
+        lambda_post = lambda_pre
+        df_est = 6.0 if kurt <= 3.01 else max(4.5, min(50.0, 6.0 / (kurt - 3.0) + 4.0))
+        df_pre = df_est
+        df_event = max(4.5, min(50.0, df_est - 1.0))
+        df_post = df_pre
+        p_neg = min(0.7, 0.25 + 0.3 * min(abs(skew), 1.0)) if skew < 0 else max(0.05, 0.25 - 0.2 * min(skew, 1.0))
+        # GARCH(1,1)参数估计（简化自标定）
+        beta = max(0.60, min(0.95, acf_sq))
+        alpha = max(0.05, min(0.25, 1.0 - beta - 0.02))
+        omega = float(m2 * max(1e-6, (1.0 - alpha - beta)))
+        cal = {'sigma_pre': sigma_pre, 'sigma_event': sigma_pre * 1.0, 'sigma_post': sigma_pre,
+               'lambda_pre': lambda_pre, 'lambda_event': lambda_event, 'lambda_post': lambda_post,
+               'df_pre': df_pre, 'df_event': df_event, 'df_post': df_post, 'p_neg': p_neg,
+               'alpha': alpha, 'beta': beta, 'omega': omega}
+
+        event_dates = pd.date_range(event_start.strftime('%Y-%m-%d'), event_end.strftime('%Y-%m-%d'), freq='B')
+        # 匹配事件参数
+        event_decline = -0.10; event_vol = 2.0; matched_period = None
+        for _, params in self.event_params.items():
+            es = pd.to_datetime(params['period'][0]); ee = pd.to_datetime(params['period'][1])
+            if event_dt >= es and event_dt <= ee:
+                event_decline = params['expected_decline']; event_vol = params['volatility_multiplier']; matched_period = (es, ee)
+                break
+        prices = self._generate_prices_with_event_window(
+            dates=event_dates,
+            initial_price=3000.0,
+            event_start=(matched_period[0] if matched_period else event_dates[0]),
+            event_end=(matched_period[1] if matched_period else event_dates[-1]),
+            event_decline=event_decline,
+            event_vol=event_vol,
+            base_volatility=sigma_pre,
+            start_date=event_start.strftime('%Y-%m-%d'),
+            end_date=event_end.strftime('%Y-%m-%d'),
+            cal=cal
+        )
+        daily_returns_event = np.insert(np.diff(prices) / prices[:-1], 0, 0.0)
+        base_volume = 100000000
+        volumes_event = base_volume * (1 + 3.0 * np.clip(np.abs(daily_returns_event), 0, 0.2) + np.random.uniform(-0.1, 0.1, len(event_dates)))
+        volumes_event = np.clip(volumes_event, 0, None)
+        event_data = pd.DataFrame({'date': event_dates, 'close': prices, 'volume': volumes_event})
+
+        baseline_filtered = baseline_data.tail(baseline_days)
+        event_filtered = event_data[(event_data['date'] >= event_dt - pd.Timedelta(days=window_days)) &
+                                    (event_data['date'] <= event_dt + pd.Timedelta(days=window_days))]
+        return {'event_window': event_filtered, 'baseline': baseline_filtered}
