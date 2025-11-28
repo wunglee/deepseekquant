@@ -151,8 +151,102 @@ class MockHistoricalDataProvider:
             }
         }
     
+    def _generate_prices_with_event_window(self,
+                                           dates: pd.DatetimeIndex,
+                                           initial_price: float,
+                                           event_start: pd.Timestamp,
+                                           event_end: pd.Timestamp,
+                                           event_decline: float,
+                                           event_vol: float,
+                                           base_volatility: float,
+                                           start_date: str,
+                                           end_date: str) -> np.ndarray:
+        """
+        生成带事件窗口的价格序列（分段生成）
+        
+        逺辑：
+        1. 事件前：随机游走，波动率=base_volatility
+        2. 事件期：确定性下跌，总下跌=event_decline，波动率=base_volatility*event_vol
+        3. 事件后：随机游走，波动率=base_volatility
+        
+        Args:
+            dates: 日期索引
+            initial_price: 起始价格
+            event_start: 事件起始日期
+            event_end: 事件结束日期
+            event_decline: 事件期总下跌幅度
+            event_vol: 事件期波动率倍数
+            base_volatility: 基准波动率
+            start_date: 请求开始日期
+            end_date: 请求结束日期
+        
+        Returns:
+            价格序列
+        """
+        np.random.seed(hash(start_date + end_date) % 2**32)  # 确定性随机种子
+        
+        n_days = len(dates)
+        prices = np.zeros(n_days)
+        prices[0] = initial_price
+        
+        # 分段索引
+        event_start_idx = None
+        event_end_idx = None
+        
+        for i, date in enumerate(dates):
+            if event_start_idx is None and date >= event_start:
+                event_start_idx = i
+            if event_end_idx is None and date > event_end:
+                event_end_idx = i - 1
+                break
+        
+        # 如果事件期超出请求范围，调整索引
+        if event_start_idx is None:
+            event_start_idx = 0
+        if event_end_idx is None:
+            event_end_idx = n_days - 1
+        
+        # 第1段：事件前（随机游走）
+        if event_start_idx > 0:
+            for i in range(1, event_start_idx):
+                random_return = np.random.normal(0, base_volatility)
+                prices[i] = prices[i-1] * (1 + random_return)
+        
+        # 第2段：事件期（确定性下跌 + 随机波动）
+        if event_end_idx >= event_start_idx:
+            event_period_days = event_end_idx - event_start_idx + 1
+            event_volatility = base_volatility * event_vol * 0.4
+            
+            # 生成事件期的随机成分
+            event_random = np.random.normal(0, event_volatility, event_period_days)
+            
+            # 计算每日drift以达到目标下跌
+            if event_period_days > 0:
+                base_drift = (1.0 + event_decline) ** (1.0 / event_period_days) - 1.0
+            else:
+                base_drift = 0.0
+            
+            # 生成事件期价格（除最后一天）
+            event_start_price = prices[event_start_idx - 1] if event_start_idx > 0 else initial_price
+            
+            for i in range(event_start_idx, event_end_idx):
+                offset = i - event_start_idx
+                prices[i] = prices[i-1] * (1 + base_drift + event_random[offset])
+            
+            # 事件期最后一天：精确调整以达到目标下跌
+            target_event_end_price = event_start_price * (1 + event_decline)
+            prices[event_end_idx] = target_event_end_price
+        
+        # 第3段：事件后（随机游走）
+        if event_end_idx < n_days - 1:
+            for i in range(event_end_idx + 1, n_days):
+                random_return = np.random.normal(0, base_volatility)
+                prices[i] = prices[i-1] * (1 + random_return)
+        
+        return prices
+    
     def get_index_prices(self, index_id: str, start_date: str, end_date: str) -> pd.DataFrame:
-        """生成模拟的指数价格数据"""
+        """生成模拟的指数价格数据（支持事件窗口概念）"""
         # 解析日期
         start = pd.to_datetime(start_date)
         end = pd.to_datetime(end_date)
@@ -161,6 +255,9 @@ class MockHistoricalDataProvider:
         # 检查是否与已知事件窗口有交集（修复：判断交集而非完全包含）
         event_decline = 0.0
         event_vol = 1.0
+        matched_event_start = None
+        matched_event_end = None
+        
         for event_id, params in self.event_params.items():
             event_start = pd.to_datetime(params['period'][0])
             event_end = pd.to_datetime(params['period'][1])
@@ -168,43 +265,33 @@ class MockHistoricalDataProvider:
             if not (end < event_start or start > event_end):
                 event_decline = params['expected_decline']
                 event_vol = params['volatility_multiplier']
+                matched_event_start = event_start
+                matched_event_end = event_end
                 logger.info(f"检测到事件窗口交集: {event_id}, decline={event_decline}, vol={event_vol}")
                 break
         
         # 生成模拟价格序列（确定性趋势 + 随机波动）
         n_days = len(dates)
         initial_price = 3000.0  # 沪深300典型水平
-        
-        # 基于事件参数生成收益率
         base_volatility = 0.015  # 1.5%日波动率
-        daily_volatility = base_volatility * event_vol
         
-        # 生成确定性下跌趋势（事件期间）+ 随机波动
-        if event_decline != 0.0 and n_days > 0:
-            # 先生成随机波动，然后调整最后一天确保总收益率准确
-            np.random.seed(hash(start_date + end_date) % 2**32)  # 确定性随机种子
-            random_component = np.random.normal(0, daily_volatility * 0.4, n_days)
-            
-            # 初始价格
-            prices = np.zeros(n_days)
-            prices[0] = initial_price
-            
-            # 生成前 n-1 天的价格（带随机波动）
-            base_drift = (1.0 + event_decline) ** (1.0 / n_days) - 1.0
-            for i in range(1, n_days):
-                prices[i] = prices[i-1] * (1 + base_drift + random_component[i-1])
-            
-            # 最后一天精确调整以达到目标收益率
-            target_final_price = initial_price * (1 + event_decline)
-            prices[-1] = target_final_price
-            
-            # 从价格计算收益率
-            daily_returns = np.diff(prices) / prices[:-1]
-            daily_returns = np.insert(daily_returns, 0, 0)  # 第一天无收益
+        if event_decline != 0.0 and matched_event_start and matched_event_end:
+            # 有事件期交集：分段生成（事件前 + 事件期 + 事件后）
+            prices = self._generate_prices_with_event_window(
+                dates=dates,
+                initial_price=initial_price,
+                event_start=matched_event_start,
+                event_end=matched_event_end,
+                event_decline=event_decline,
+                event_vol=event_vol,
+                base_volatility=base_volatility,
+                start_date=start_date,
+                end_date=end_date
+            )
         else:
             # 非事件期间：纯随机游走
+            daily_volatility = base_volatility
             daily_returns = np.random.normal(0, daily_volatility, n_days)
-            # 计算价格序列
             prices = initial_price * np.cumprod(1 + daily_returns)
         
         # 生成成交量（简化模拟）
