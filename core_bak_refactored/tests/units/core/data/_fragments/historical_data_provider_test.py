@@ -15,12 +15,12 @@ from io import StringIO
 from datetime import datetime
 import logging
 
-from core_bak_refactored.core.data._fragments.data_utils import DataUtils, EventConfig
-from core_bak_refactored.core.data._fragments.historical_data_provider import (
+from core_bak_refactored.core.data.data_utils import DataUtils, EventConfig
+from core_bak_refactored.core.data.historical_data_provider import (
     RealHistoricalDataProvider,
     MockHistoricalDataProvider
 )
-from core_bak_refactored.core.data._fragments.yahoo_finance_provider import YahooFinanceDataProvider
+from core_bak_refactored.core.data.yahoo_finance_provider import YahooFinanceDataProvider
 from core_bak_refactored.core.backtest._fragments.event_window_backtester import EventWindowBacktester, BacktestReporter
 from core_bak_refactored.core.portfolio._fragments.synthetic_portfolio_builder import SyntheticPortfolioBuilder
 from core_bak_refactored.core.share.market_enums import MarketCode, DataSource

@@ -3,7 +3,7 @@ import pandas as pd
 from typing import Dict, Any
 import logging
 
-from core_bak_refactored.core.data._fragments.data_quality_checker import DataQualityChecker
+from core_bak_refactored.core.data.data_quality_checker import DataQualityChecker
 
 logger = logging.getLogger('DeepSeekQuant.Tests.MockData')
 
@@ -91,15 +91,15 @@ class MockHistoricalDataProvider:
 
         # 事件前：EWMA + 重尾
         if event_start_idx > 0:
-            lambda_ = (cal.get('lambda_pre') if cal else 0.94)
-            sigma = (cal.get('sigma_pre') if cal else base_volatility)
+            lambda_ = (cal.get('lambda_pre', 0.94) if cal else 0.94)
+            sigma = (cal.get('sigma_pre', base_volatility) if cal else base_volatility)
             sigma2 = sigma * sigma
             r_prev = 0.0
             for i in range(1, event_start_idx):
-                epsilon = np.random.standard_t(df=(cal.get('df_pre') if cal else 6))
+                epsilon = np.random.standard_t(df=(cal.get('df_pre', 6) if cal else 6))
                 r = sigma * epsilon
                 prices[i] = prices[i-1] * (1 + r)
-                sigma2 = (cal.get('omega', 1e-6)) + (cal.get('alpha', 0.1)) * (r_prev * r_prev) + (cal.get('beta', 0.85)) * (sigma2)
+                sigma2 = ((cal.get('omega', 1e-6) if cal else 1e-6)) + ((cal.get('alpha', 0.1) if cal else 0.1)) * (r_prev * r_prev) + ((cal.get('beta', 0.85) if cal else 0.85)) * (sigma2)
                 sigma = float(np.sqrt(sigma2))
                 r_prev = r
 
@@ -107,20 +107,20 @@ class MockHistoricalDataProvider:
         if event_end_idx >= event_start_idx:
             event_period_days = event_end_idx - event_start_idx + 1
             base_drift = (1.0 + event_decline) ** (1.0 / event_period_days) - 1.0 if event_period_days > 0 else 0.0
-            lambda_ = (cal.get('lambda_event') if cal else 0.92)
-            sigma = (cal.get('sigma_event') if cal else base_volatility * event_vol)
+            lambda_ = (cal.get('lambda_event', 0.92) if cal else 0.92)
+            sigma = (cal.get('sigma_event', base_volatility * event_vol) if cal else base_volatility * event_vol)
             sigma2 = sigma * sigma
             r_prev = 0.0
             event_start_price = prices[event_start_idx - 1] if event_start_idx > 0 else initial_price
             for i in range(event_start_idx, event_end_idx):
-                p_neg = cal.get('p_neg') if cal else 0.2
+                p_neg = (cal.get('p_neg', 0.2) if cal else 0.2)
                 if np.random.rand() < p_neg:
-                    epsilon = np.random.standard_t(df=(cal.get('df_event') if cal else 5)) - 0.5
+                    epsilon = np.random.standard_t(df=(cal.get('df_event', 5) if cal else 5)) - 0.5
                 else:
-                    epsilon = np.random.standard_t(df=(cal.get('df_event') if cal else 6))
+                    epsilon = np.random.standard_t(df=(cal.get('df_event', 6) if cal else 6))
                 r = base_drift + sigma * 0.4 * epsilon
                 prices[i] = prices[i-1] * (1 + r)
-                sigma2 = (cal.get('omega', 1e-6)) + (cal.get('alpha', 0.1)) * (r_prev * r_prev) + (cal.get('beta', 0.85)) * (sigma2)
+                sigma2 = ((cal.get('omega', 1e-6) if cal else 1e-6)) + ((cal.get('alpha', 0.1) if cal else 0.1)) * (r_prev * r_prev) + ((cal.get('beta', 0.85) if cal else 0.85)) * (sigma2)
                 sigma = float(np.sqrt(sigma2))
                 r_prev = r
             target_event_end_price = event_start_price * (1 + event_decline)
@@ -128,15 +128,15 @@ class MockHistoricalDataProvider:
 
         # 事件后：EWMA + 重尾
         if event_end_idx < n_days - 1:
-            lambda_ = (cal.get('lambda_post') if cal else 0.94)
-            sigma = (cal.get('sigma_post') if cal else base_volatility)
+            lambda_ = (cal.get('lambda_post', 0.94) if cal else 0.94)
+            sigma = (cal.get('sigma_post', base_volatility) if cal else base_volatility)
             sigma2 = sigma * sigma
             r_prev = 0.0
             for i in range(event_end_idx + 1, n_days):
-                epsilon = np.random.standard_t(df=(cal.get('df_post') if cal else 6))
+                epsilon = np.random.standard_t(df=(cal.get('df_post', 6) if cal else 6))
                 r = sigma * epsilon
                 prices[i] = prices[i-1] * (1 + r)
-                sigma2 = (cal.get('omega', 1e-6)) + (cal.get('alpha', 0.1)) * (r_prev * r_prev) + (cal.get('beta', 0.85)) * (sigma2)
+                sigma2 = ((cal.get('omega', 1e-6) if cal else 1e-6)) + ((cal.get('alpha', 0.1) if cal else 0.1)) * (r_prev * r_prev) + ((cal.get('beta', 0.85) if cal else 0.85)) * (sigma2)
                 sigma = float(np.sqrt(sigma2))
                 r_prev = r
 

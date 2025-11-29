@@ -28,7 +28,7 @@ import pandas as pd
 from typing import Dict, List, Tuple
 
 # 从业务模块导入EventConfig（职责归位）
-from core_bak_refactored.core.data._fragments.data_utils import EventConfig
+from core_bak_refactored.core.data.data_utils import EventConfig
 
 
 class TestEventProvider:
@@ -146,7 +146,7 @@ class DataProcessingHelper:
         Returns:
             实际收益率（如果数据不足返回0.0）
         """
-        from core_bak_refactored.core.data._fragments.data_utils import DataUtils
+        from core_bak_refactored.core.data.data_utils import DataUtils
         return DataUtils.calculate_actual_return(event_window_df)
     
     @staticmethod
@@ -165,7 +165,7 @@ class DataProcessingHelper:
         Returns:
             (事件窗口数据, 是否成功)
         """
-        from core_bak_refactored.core.data._fragments.data_utils import DataUtils
+        from core_bak_refactored.core.data.data_utils import DataUtils
         return DataUtils.safe_get_event_data(data_provider, event, window_days, baseline_days)
     
     @staticmethod
@@ -180,7 +180,7 @@ class DataProcessingHelper:
         Returns:
             预测误差（绝对值）
         """
-        from core_bak_refactored.core.data._fragments.data_utils import DataUtils
+        from core_bak_refactored.core.data.data_utils import DataUtils
         return DataUtils.calculate_prediction_error(actual_return, expected_decline)
 
 

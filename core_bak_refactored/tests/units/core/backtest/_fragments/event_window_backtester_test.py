@@ -14,7 +14,7 @@ from datetime import datetime
 
 from core_bak_refactored.core.backtest._fragments.event_window_backtester import EventWindowBacktester, BacktestReporter
 from core_bak_refactored.tests.fixtures.core.data.mock_historical_data_provider import MockHistoricalDataProvider
-from core_bak_refactored.core.data._fragments.yahoo_finance_provider import YahooFinanceDataProvider
+from core_bak_refactored.core.data.yahoo_finance_provider import YahooFinanceDataProvider
 from core_bak_refactored.core.portfolio._fragments.synthetic_portfolio_builder import SyntheticPortfolioBuilder
 from core_bak_refactored.core.risk.backtest_framework import create_data_provider
 from core_bak_refactored.core.risk.stress_testing import StressTester

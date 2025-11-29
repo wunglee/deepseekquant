@@ -2,7 +2,7 @@ import unittest
 import pandas as pd
 from datetime import datetime
 
-from core_bak_refactored.core.data._fragments.tushare_provider import TushareDataProvider
+from core_bak_refactored.core.data.tushare_provider import TushareDataProvider
 
 
 class TushareProviderTest(unittest.TestCase):

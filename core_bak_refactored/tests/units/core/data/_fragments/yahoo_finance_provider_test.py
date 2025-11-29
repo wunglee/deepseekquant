@@ -2,7 +2,7 @@ import unittest
 from datetime import datetime
 import pandas as pd
 
-from core_bak_refactored.core.data._fragments.yahoo_finance_provider import YahooFinanceDataProvider
+from core_bak_refactored.core.data.yahoo_finance_provider import YahooFinanceDataProvider
 
 
 class YahooFinanceProviderTest(unittest.TestCase):

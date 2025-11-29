@@ -86,7 +86,7 @@ class HistoricalDataProvider(Protocol):
 # 真实数据提供者（Phase 3B实现）
 # =============================================================================
 
-from core_bak_refactored.core.data._fragments.yahoo_finance_provider import YahooFinanceDataProvider
+from core_bak_refactored.core.data.yahoo_finance_provider import YahooFinanceDataProvider
 
 
 # =============================================================================

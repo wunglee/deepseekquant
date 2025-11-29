@@ -2,7 +2,7 @@ import unittest
 
 from core_bak_refactored.core.risk.backtest_framework import create_data_provider, HistoricalDataProvider
 from core_bak_refactored.tests.fixtures.core.data.mock_historical_data_provider import MockHistoricalDataProvider
-from core_bak_refactored.core.data._fragments.yahoo_finance_provider import YahooFinanceDataProvider
+from core_bak_refactored.core.data.yahoo_finance_provider import YahooFinanceDataProvider
 
 
 class BacktestFrameworkTest(unittest.TestCase):
