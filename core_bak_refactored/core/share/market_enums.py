@@ -6,6 +6,7 @@
 """
 
 from enum import Enum
+from typing import Any
 
 
 class MarketCode(str, Enum):
@@ -21,6 +22,33 @@ class MarketCode(str, Enum):
     JP = 'JP'  # 日本股市
     EU = 'EU'  # 欧洲股市
     SG = 'SG'  # 新加坡股市
+    UNKNOWN = 'UNKNOWN'  # 未识别/默认市场
+    
+    @classmethod
+    def parse(cls, code: Any) -> 'MarketCode':
+        """集中解析市场代码（字符串/枚举），失败回退为 UNKNOWN
+        
+        Args:
+            code: 市场代码（字符串或枚举）
+        
+        Returns:
+            MarketCode: 解析后的枚举，无法识别时返回 UNKNOWN
+        
+        Examples:
+            >>> MarketCode.parse('CN')
+            <MarketCode.CN: 'CN'>
+            >>> MarketCode.parse(MarketCode.US)
+            <MarketCode.US: 'US'>
+            >>> MarketCode.parse('invalid')
+            <MarketCode.UNKNOWN: 'UNKNOWN'>
+        """
+        if isinstance(code, cls):
+            return code
+        if isinstance(code, str):
+            code_upper = code.upper()
+            if cls.is_valid(code_upper):
+                return cls(code_upper)
+        return cls.UNKNOWN
     
     @classmethod
     def get_all_codes(cls) -> list:
@@ -100,7 +128,7 @@ REGIONAL_DATA_SOURCE_PRIORITY = {
         DataSource.YAHOO,        # 新加坡主数据源
         DataSource.MOCK          # 兜底
     ],
-    'default': [
+    MarketCode.UNKNOWN: [
         DataSource.YAHOO,        # 默认优先Yahoo
         DataSource.MOCK          # 兜底
     ]

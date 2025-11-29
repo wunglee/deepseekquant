@@ -22,6 +22,7 @@ import logging
 from enum import Enum
 from dataclasses import dataclass, field
 from datetime import datetime
+from ..share.market_enums import MarketCode
 
 logger = logging.getLogger('DeepSeekQuant.RiskLimitsEnhanced')
 
@@ -57,7 +58,7 @@ class ThresholdBreach:
 # =============================================================================
 
 MARKET_SPECIFIC_LIMITS = {
-    'CN': {
+    MarketCode.CN: {
         'description': 'A股市场特定限额（专家确认：第2轮咨询）',
         # 🔒 监管明确要求（需法务审核）
         'single_stock_max_weight': 0.10,      # 🔒 证监会《证券投资基金运作管理办法》第31条
@@ -79,7 +80,7 @@ MARKET_SPECIFIC_LIMITS = {
         
         'regulatory_framework': 'CSRC',
     },
-    'US': {
+    MarketCode.US: {
         'description': '美股市场特定限额（专家确认）',
         'single_stock_max_weight': 0.15,
         'sector_max_weight': 0.40,
@@ -92,7 +93,7 @@ MARKET_SPECIFIC_LIMITS = {
         'penny_stock_max_weight': 0.03,       # ⚠️ 调整：从0.05→0.03（专家建议）
         'regulatory_framework': 'SEC/FINRA',
     },
-    'HK': {
+    MarketCode.HK: {
         'description': '港股市场特定限额（专家确认）',
         'single_stock_max_weight': 0.10,      # ⚠️ 调整：从0.12→0.10（符合SFC要求）
         'sector_max_weight': 0.30,            # ⚠️ 调整：从0.35→0.30（专家建议）
@@ -787,11 +788,11 @@ class MarketSpecificLimitsChecker:
     
     def _check_regulatory_requirements(self, portfolio_state) -> List[Dict[str, Any]]:
         """检查监管特定要求"""
-        if self.market_type == 'CN':
+        if self.market_type == MarketCode.CN:
             return self._check_cn_specific_rules(portfolio_state)
-        elif self.market_type == 'US':
+        elif self.market_type == MarketCode.US:
             return self._check_us_specific_rules(portfolio_state)
-        elif self.market_type == 'HK':
+        elif self.market_type == MarketCode.HK:
             return self._check_hk_specific_rules(portfolio_state)
         return []
     

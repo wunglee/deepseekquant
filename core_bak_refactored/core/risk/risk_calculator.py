@@ -21,6 +21,7 @@ from .risk_metrics_service import RiskMetricsService, RiskMetricsEngine
 from .risk_models import RiskMetric
 from ..share.market_config import MarketConfigManager
 from ..share.exchange_rates import CurrencyConverter, ExchangeRateAdapter
+from ..share.market_enums import MarketCode
 
 # 导入数据预处理器
 from core_bak_refactored.infrastructure.data_preprocessor import RiskDataPreprocessor
@@ -70,12 +71,12 @@ class RiskCalculator:
             logger.warning(f"配置验证发现问题: {config_errors}")
         
         # 识别市场类型
-        self.market_type = config.get('market_type', 'CN')
+        self.market_type = MarketCode.parse(config.get('market_type', 'CN'))
         
         # 确保配置完整性（自动补全缺失配置）
-        if 'market_configs' not in config or self.market_type not in config.get('market_configs', {}):
+        if 'market_configs' not in config or str(self.market_type) not in config.get('market_configs', {}):
             logger.warning(f"缺少{self.market_type}市场配置，使用默认配置")
-            default_config = self.config_manager.generate_config_template(self.market_type)
+            default_config = self.config_manager.generate_config_template(str(self.market_type))
             config['market_configs'] = default_config['market_configs']
         
         self.config = config
@@ -88,10 +89,10 @@ class RiskCalculator:
 
         # TODO：补充了货币一致性检查初始化，待确认，来源：docs/answer.md
         # 基准货币与严格检查开关
-        market_info = self.config_manager.get_market_info(self.market_type)
+        market_info = self.config_manager.get_market_info(str(self.market_type))
         self.base_currency = market_info.get('currency', 'CNY')
         market_configs = self.config.get('market_configs', {})
-        current_market_cfg = market_configs.get(self.market_type, {})
+        current_market_cfg = market_configs.get(str(self.market_type), {})
         if 'base_currency' in current_market_cfg:
             self.base_currency = current_market_cfg['base_currency']
         self.current_market_cfg = current_market_cfg
@@ -109,7 +110,7 @@ class RiskCalculator:
         try:
             # 优先使用分市场配置
             market_cfg = (getattr(self, 'current_market_cfg', None)
-                          or self.config.get('market_configs', {}).get(self.market_type, {}))
+                          or self.config.get('market_configs', {}).get(str(self.market_type), {}))
             if isinstance(market_cfg, dict) and 'min_data_points' in market_cfg:
                 return int(market_cfg.get('min_data_points', 63))
             return int(self.config.get('min_data_points', 63))
@@ -235,7 +236,7 @@ class RiskCalculator:
         for w in warnings:
             if '多币种' in w:
                 # 美股多币种常见，降级为信息
-                if self.market_type == 'US':
+                if self.market_type == MarketCode.US:
                     info.append(w)
                 else:
                     warn.append(w)
@@ -243,7 +244,7 @@ class RiskCalculator:
                 warn.append(w)
             elif ('不在' in w) or ('≠' in w):
                 # 组合不一致在美股更严格，提升为错误
-                if self.market_type == 'US':
+                if self.market_type == MarketCode.US:
                     err.append(w)
                 else:
                     warn.append(w)

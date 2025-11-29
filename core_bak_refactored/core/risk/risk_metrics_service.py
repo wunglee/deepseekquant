@@ -26,6 +26,7 @@ except Exception:
 
 from core_bak_refactored.infrastructure.statistical_calculators import StatisticalCalculator
 from ..share.market_config import MarketConfigManager
+from ..share.market_enums import MarketCode
 from .international_enhancements import InternationalEnhancements
 
 # 避免循环导入，使用TYPE_CHECKING
@@ -114,19 +115,19 @@ class RiskMetricsService(InternationalEnhancements):
         self.calculator = StatisticalCalculator()
         
         # 国际化增强：市场类型和配置
-        self.market_type = config.get('market_type', 'CN')  # 默认A股市场
+        self.market_type = MarketCode.parse(config.get('market_type', 'CN'))  # 默认A股市场
         self.config_manager = MarketConfigManager()
         
         # 获取市场特定配置
         self.market_configs = config.get('market_configs', {})
-        if self.market_type not in self.market_configs:
+        if str(self.market_type) not in self.market_configs:
             # 如果缺少配置，使用配置管理器生成默认配置
-            default_config = self.config_manager.generate_config_template(self.market_type)
+            default_config = self.config_manager.generate_config_template(str(self.market_type))
             self.market_configs = default_config['market_configs']
         
         self.current_market_config = self.market_configs.get(
-            self.market_type,
-            self.market_configs.get('CN', {})  # 回退到CN配置
+            str(self.market_type),
+            self.market_configs.get(str(MarketCode.CN), {})  # 回退到CN配置
         )
         
         # 市场异常检测历史记录
@@ -155,7 +156,7 @@ class RiskMetricsService(InternationalEnhancements):
         self.dynamic_risk_free_rate = config.get('dynamic_risk_free_rate', None)  # 优先使用
         
         # P0修复：涨跌停配置（仅CN市场适用）
-        if self.market_type == 'CN':
+        if self.market_type == MarketCode.CN:
             self.limit_thresholds = self.current_market_config.get('limit_thresholds', {
                 'main_board': 0.10,     # 主板±10%
                 'gem': 0.20,            # 创业板±20%
@@ -168,7 +169,7 @@ class RiskMetricsService(InternationalEnhancements):
             self.default_limit_threshold = None
         
         # US市场熔断配置
-        if self.market_type == 'US':
+        if self.market_type == MarketCode.US:
             self.circuit_breaker_levels = self.current_market_config.get(
                 'circuit_breaker_levels',
                 [0.07, 0.13, 0.20]

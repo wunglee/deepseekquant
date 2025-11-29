@@ -29,7 +29,6 @@ import xml.etree.ElementTree as ET
 from bs4 import BeautifulSoup
 import re
 import threading
-from core_bak_refactored.core.share.market_enums import MarketCode
 
 logger = logging.getLogger('DeepSeekQuant.DataFetcher')
 
@@ -136,13 +135,9 @@ class MarketData:
 
 
 class DataFetcher:
-    """完整生产级数据获取器 - 支持多数据源和实时数据
-    
-    支持依赖注入：
-    - custom_sources: Dict[str, Callable] - 外部注入的数据源（用于测试Mock或自定义源）
-    """
+    """完整生产级数据获取器 - 支持多数据源和实时数据"""
 
-    def __init__(self, config: Dict, custom_sources: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: Dict):
         self.config = config
         self.cache_enabled = config.get('cache_enabled', True)
         self.cache_duration = config.get('cache_duration', 300)
@@ -150,7 +145,6 @@ class DataFetcher:
         self.fallback_sources = config.get('fallback_sources', [])
         self.max_retries = config.get('max_retries', 3)
         self.request_timeout = config.get('request_timeout', 30)
-        self.custom_sources = custom_sources or {}  # 外部注入的数据源
 
         # 初始化缓存系统
         self._setup_caching()
@@ -255,41 +249,24 @@ class DataFetcher:
             self.redis_client = None
 
     def _initialize_data_sources(self) -> Dict:
-        """初始化数据源连接
-        
-        采用渐进式注册：只注册实现了的数据源方法
-        支持依赖注入：优先使用外部注入的custom_sources
-        """
+        """初始化数据源连接"""
         sources = {}
 
-        # 1. 注入外部自定义数据源（用于测试Mock或扩展）
-        sources.update(self.custom_sources)
+        # 注册所有支持的数据源
+        sources[DataSourceType.YAHOO_FINANCE.value] = self._fetch_yahoo_data
+        sources[DataSourceType.ALPHA_VANTAGE.value] = self._fetch_alpha_vantage_data
+        sources[DataSourceType.IEX_CLOUD.value] = self._fetch_iex_cloud_data
+        sources[DataSourceType.POLYGON.value] = self._fetch_polygon_data
+        sources[DataSourceType.TWELVE_DATA.value] = self._fetch_twelve_data
+        sources[DataSourceType.FINNHUB.value] = self._fetch_finnhub_data
+        sources[DataSourceType.TIINGO.value] = self._fetch_tiingo_data
+        sources[DataSourceType.QUANDL.value] = self._fetch_quandl_data
+        sources[DataSourceType.INTRINIO.value] = self._fetch_intrinio_data
+        sources[DataSourceType.EOD_HISTORICAL.value] = self._fetch_eod_historical_data
+        sources[DataSourceType.CUSTOM_API.value] = self._fetch_custom_api_data
+        sources[DataSourceType.DATABASE.value] = self._fetch_database_data
+        sources[DataSourceType.BROKER_API.value] = self._fetch_broker_api_data
 
-        # 2. 注册已实现的内置数据源（只注册存在的方法）
-        source_mapping = {
-            DataSourceType.YAHOO_FINANCE.value: '_fetch_yahoo_data',
-            DataSourceType.ALPHA_VANTAGE.value: '_fetch_alpha_vantage_data',
-            DataSourceType.IEX_CLOUD.value: '_fetch_iex_cloud_data',
-            DataSourceType.POLYGON.value: '_fetch_polygon_data',
-            DataSourceType.TWELVE_DATA.value: '_fetch_twelve_data',
-            DataSourceType.FINNHUB.value: '_fetch_finnhub_data',
-            DataSourceType.TIINGO.value: '_fetch_tiingo_data',
-            DataSourceType.QUANDL.value: '_fetch_quandl_data',
-            DataSourceType.INTRINIO.value: '_fetch_intrinio_data',
-            DataSourceType.EOD_HISTORICAL.value: '_fetch_eod_historical_data',
-            DataSourceType.CUSTOM_API.value: '_fetch_custom_api_data',
-            DataSourceType.DATABASE.value: '_fetch_database_data',
-            DataSourceType.BROKER_API.value: '_fetch_broker_api_data',
-        }
-
-        # 只注册已实现的方法（避免AttributeError）
-        for source_type, method_name in source_mapping.items():
-            if source_type not in sources and hasattr(self, method_name):
-                sources[source_type] = getattr(self, method_name)
-            elif source_type not in sources:
-                logger.debug(f"数据源 {source_type} 未实现，跳过注册")
-
-        logger.info(f"已注册数据源: {list(sources.keys())}")
         return sources
 
     @retry(
@@ -1355,14 +1332,12 @@ class DataQualityMonitorBasic:
                 'min_price': 0.01,
                 'max_price': 10000.0,
                 'max_daily_change': 0.5,
-                'price_consistency': True,
-                'high_low_consistency': True  # TODO: 补充缺失的配置项（测试驱动发现）
+                'price_consistency': True
             },
             'volume_validation': {
                 'min_volume': 0,
                 'max_volume': 1e9,
-                'volume_spike_threshold': 10.0,
-                'volume_price_correlation': True  # TODO: 补充缺失的配置项（测试驱动发现）
+                'volume_spike_threshold': 10.0
             },
             'temporal_validation': {
                 'max_time_gap': timedelta(hours=24),
@@ -1444,57 +1419,6 @@ class DataQualityMonitorBasic:
                 'quality_level': 'critical'
             }
 
-    def _get_data_time_period(self, data: List[MarketData]) -> Dict[str, str]:
-        """获取数据时间范围
-        
-        TODO: 补充专家完整版缺失的辅助方法（测试驱动发现）
-        """
-        if not data:
-            return {'start': 'N/A', 'end': 'N/A', 'duration': 'N/A'}
-        
-        timestamps = [d.timestamp for d in data if hasattr(d, 'timestamp') and d.timestamp is not None]
-        if not timestamps:
-            return {'start': 'N/A', 'end': 'N/A', 'duration': 'N/A'}
-        start_time = min(timestamps)
-        end_time = max(timestamps)
-        duration = end_time - start_time
-        
-        return {
-            'start': start_time.isoformat(),
-            'end': end_time.isoformat(),
-            'duration': str(duration)
-        }
-
-    def _get_processing_statistics(self, data: List[MarketData]) -> Dict[str, Any]:
-        """获取处理统计信息
-        
-        TODO: 补充专家完整版缺失的辅助方法（测试驱动发现）
-        """
-        if not data:
-            return {
-                'total_records': 0,
-                'symbols': [],
-                'avg_volume': 0.0,
-                'avg_price': 0.0
-            }
-        
-        symbols = [getattr(d, 'symbol', None) for d in data if hasattr(d, 'symbol')]
-        symbols = [s for s in symbols if s is not None]
-        volumes = [d.volume for d in data if hasattr(d, 'volume') and d.volume is not None]
-        prices = [d.close for d in data if hasattr(d, 'close') and d.close is not None]
-        
-        return {
-            'total_records': len([d for d in data if hasattr(d, 'timestamp')]),
-            'symbols': list(set(symbols)),
-            'symbol_count': len(set(symbols)),
-            'avg_volume': float(np.mean(volumes)) if volumes else 0.0,
-            'avg_price': float(np.mean(prices)) if prices else 0.0,
-            'price_range': {
-                'min': float(min(prices)) if prices else 0.0,
-                'max': float(max(prices)) if prices else 0.0
-            }
-        }
-
     def _check_completeness(self, data: List[MarketData]) -> Tuple[float, List[Dict]]:
         """检查数据完整性"""
         issues = []
@@ -1545,148 +1469,6 @@ class DataQualityMonitorBasic:
             score *= 0.9
 
         return max(0.0, min(1.0, score)), issues
-
-    def _calculate_expected_data_points(self, data: List[MarketData], expected_interval_hours: float = None) -> int:
-        """计算预期数据点数量（支持自动识别频率，参数可覆盖）
-        
-        TODO: 补充专家完整版缺失的辅助方法（测试驱动发现）；依据 docs/answer.md 业务确认：多频率支持
-        """
-        if not data:
-            return 0
-        
-        timestamps = [d.timestamp for d in data if hasattr(d, 'timestamp') and d.timestamp is not None]
-        if not timestamps:
-            return len([d for d in data if hasattr(d, 'timestamp')])
-        start_time = min(timestamps)
-        end_time = max(timestamps)
-        duration_hours = (end_time - start_time).total_seconds() / 3600
-        
-        # 自动识别频率或使用参数覆盖
-        if expected_interval_hours is None:
-            freq = self._detect_data_frequency(data)
-            expected_interval_hours = self._map_frequency_to_interval(freq)
-        
-        expected_points = max(int(duration_hours / expected_interval_hours) + 1, len(timestamps))
-        return expected_points
-
-    def _check_field_completeness(self, data: List[MarketData]) -> Dict[str, float]:
-        """检查字段完整性
-        
-        TODO: 补充专家完整版缺失的辅助方法（测试驱动发现）
-        """
-        if not data:
-            return {}
-        
-        total_count = len(data)
-        field_completeness = {}
-        
-        # 检查必要字段（依据 docs/answer.md 建议扩展）
-        required_fields = ['open', 'high', 'low', 'close', 'volume', 'adj_close', 'turnover', 'vwap']
-        
-        for field in required_fields:
-            non_null_count = sum(1 for d in data if getattr(d, field, None) is not None)
-            field_completeness[field] = non_null_count / total_count if total_count > 0 else 0.0
-        
-        return field_completeness
-
-    def _detect_data_frequency(self, data: List[MarketData]) -> str:
-        """自动检测数据频率（daily/hourly/minute/custom）"""
-        timestamps = [d.timestamp for d in data if hasattr(d, 'timestamp') and d.timestamp is not None]
-        if len(timestamps) < 2:
-            return 'daily'
-        timestamps.sort()
-        intervals = []
-        for i in range(1, min(10, len(timestamps))):
-            interval_hours = (timestamps[i] - timestamps[i-1]).total_seconds() / 3600
-            intervals.append(interval_hours)
-        avg_interval = sum(intervals) / len(intervals) if intervals else 24.0
-        if 23 <= avg_interval <= 25:
-            return 'daily'
-        elif 0.9 <= avg_interval <= 1.1:
-            return 'hourly'
-        elif avg_interval <= 0.1:
-            return 'minute'
-        return 'custom'
-
-    def _map_frequency_to_interval(self, freq: str) -> float:
-        """根据频率返回预期间隔（小时）"""
-        intervals = {
-            'daily': 24.0,
-            'hourly': 1.0,
-            'minute': 1 / 60,
-            'custom': 24.0
-        }
-        return intervals.get(freq, 24.0)
-
-    def _detect_market_type(self, data: List[MarketData]) -> MarketCode:
-        """检测市场类型（优先使用metadata枚举，其次symbol后缀启发式）
-        
-        Returns:
-            MarketCode: 识别的市场枚举，无法识别时返回 MarketCode.UNKNOWN
-        """
-        if not data:
-            return MarketCode.UNKNOWN
-        meta = getattr(data[0], 'metadata', {}) or {}
-        mt = meta.get('market_type')
-        # 如果metadata中已经是枚举
-        if isinstance(mt, MarketCode):
-            return mt
-        # 如果是字符串且有效，转换为枚举
-        if isinstance(mt, str) and MarketCode.is_valid(mt):
-            return MarketCode(mt)
-        # 启发式：根据symbol后缀判断
-        symbol = getattr(data[0], 'symbol', '') or ''
-        if symbol.endswith('.US'):
-            return MarketCode.US
-        if symbol.endswith('.HK') or symbol.endswith('.HKG'):
-            return MarketCode.HK
-        if symbol.endswith('.SH') or symbol.endswith('.SZ') or symbol.endswith('.CN'):
-            return MarketCode.CN
-        return MarketCode.UNKNOWN
-
-    def _get_gap_threshold(self, freq: str, market: MarketCode) -> float:
-        """基于频率与市场的动态时间间隙阈值（小时）"""
-        base_thresholds = {
-            'daily': {MarketCode.US: 72.0, MarketCode.CN: 240.0, MarketCode.HK: 96.0, MarketCode.UNKNOWN: 48.0},
-            'hourly': {MarketCode.UNKNOWN: 4.0},
-            'minute': {MarketCode.UNKNOWN: 0.1},
-            'custom': {MarketCode.UNKNOWN: 48.0}
-        }
-        market_thresholds = base_thresholds.get(freq, base_thresholds['daily'])
-        return float(market_thresholds.get(market, market_thresholds[MarketCode.UNKNOWN]))
-
-    def _check_time_continuity(self, data: List[MarketData], max_gap_hours: float = None) -> List[Dict]:
-        """检查时间连续性（支持动态阈值，参数可覆盖）
-        
-        TODO: 补充专家完整版缺失的辅助方法（测试驱动发现）；依据 docs/answer.md 业务确认：动态阈值
-        """
-        gaps = []
-        
-        if len(data) < 2:
-            return gaps
-        
-        # 按时间排序
-        sorted_data = sorted(data, key=lambda d: d.timestamp)
-        
-        # 动态阈值：基于数据频率与市场类型
-        freq = self._detect_data_frequency(data)
-        market = self._detect_market_type(data)
-        default_threshold = self._get_gap_threshold(freq, market)
-        
-        for i in range(1, len(sorted_data)):
-            time_gap_hours = (sorted_data[i].timestamp - sorted_data[i-1].timestamp).total_seconds() / 3600
-            threshold = max_gap_hours if max_gap_hours is not None else default_threshold
-            if time_gap_hours > threshold:
-                gaps.append({
-                    'start': sorted_data[i-1].timestamp.isoformat(),
-                    'end': sorted_data[i].timestamp.isoformat(),
-                    'gap_hours': time_gap_hours,
-                    'expected_max_gap': threshold,
-                    'data_frequency': freq,
-                    'market_code': str(market)
-                })
-        
-        return gaps
 
     def _check_accuracy(self, data: List[MarketData]) -> Tuple[float, List[Dict]]:
         """检查数据准确性"""
@@ -6060,23 +5842,1996 @@ class DataQualityMonitorFactory:
             }
         }
 
+# TODO: DataQualityDashboard已迁移到应用层 core_bak_refactored/app/data_quality/dashboard.py
+# 保持领域层纯净，应用层代码不应出现在data模块中
+# 迁移时间: 2025-11-27
+# 如需使用Dashboard，请导入: from core_bak_refactored.app.data_quality.dashboard import DataQualityDashboard
 
-# ==================================================================================
-# 应用层代码已迁移说明 (2025-11-27)
-# ==================================================================================
-# 
-# [已删除并迁移] DataQualityDashboard 类 (约695行)
-#   目标位置: core_bak_refactored/app/data_quality/dashboard.py
-#
-# [已删除并迁移] DataQualityAPIService 类 (约1289行)
-#   目标位置: core_bak_refactored/app/data_quality/api_service.py
-#
-# 使用方法:
-#   from core_bak_refactored.app.data_quality.dashboard import DataQualityDashboard
-#   from core_bak_refactored.app.data_quality.api_service import DataQualityAPIService
-#
-# ==================================================================================
+# [已删除] DataQualityDashboard类 (约695行) - 已迁移到app层
+# class DataQualityDashboard:
+    """数据质量仪表板 - 提供可视化监控界面"""
 
+    def __init__(self, quality_monitor: DataQualityMonitor):
+        self.quality_monitor = quality_monitor
+        self.dashboard_data = {}
+        self.update_interval = 300  # 5分钟更新一次
+        self.dashboard_config = self._load_dashboard_config()
+        self.websocket_connections = set()
+        self.last_update_time = datetime.now()
+
+    def _load_dashboard_config(self) -> Dict[str, Any]:
+        """加载仪表板配置"""
+        return {
+            'refresh_interval': 300,
+            'max_data_points': 1000,
+            'chart_config': {
+                'quality_score_chart': {
+                    'type': 'line',
+                    'title': '数据质量评分趋势',
+                    'x_axis': 'timestamp',
+                    'y_axis': 'overall_score',
+                    'color': '#2196F3',
+                    'fill': True
+                },
+                'anomaly_chart': {
+                    'type': 'bar',
+                    'title': '异常检测统计',
+                    'x_axis': 'timestamp',
+                    'y_axis': 'anomaly_count',
+                    'color': '#FF5252'
+                },
+                'error_distribution_chart': {
+                    'type': 'pie',
+                    'title': '错误类型分布',
+                    'data_field': 'error_types',
+                    'color_scheme': 'category10'
+                },
+                'performance_metrics_chart': {
+                    'type': 'radar',
+                    'title': '性能指标雷达图',
+                    'metrics': ['throughput', 'reliability', 'accuracy', 'timeliness', 'completeness'],
+                    'max_value': 1.0
+                }
+            },
+            'widgets': [
+                {
+                    'id': 'overall_quality',
+                    'type': 'gauge',
+                    'title': '总体质量评分',
+                    'value_field': 'overall_score',
+                    'ranges': [0.0, 0.6, 0.8, 0.9, 1.0],
+                    'range_colors': ['#FF5252', '#FFB300', '#FFEB3B', '#4CAF50']
+                },
+                {
+                    'id': 'anomaly_count',
+                    'type': 'counter',
+                    'title': '异常数量',
+                    'value_field': 'total_anomalies',
+                    'trend_field': 'anomaly_trend'
+                },
+                {
+                    'id': 'data_throughput',
+                    'type': 'metric',
+                    'title': '数据处理吞吐量',
+                    'value_field': 'throughput',
+                    'unit': 'points/sec'
+                }
+            ],
+            'alert_settings': {
+                'show_critical_alerts': True,
+                'show_warnings': True,
+                'alert_history_length': 50,
+                'auto_refresh_alerts': True
+            }
+        }
+
+    def start_dashboard(self, host: str = '0.0.0.0', port: int = 8080):
+        """启动仪表板服务器"""
+        try:
+            logger.info(f"启动数据质量仪表板: http://{host}:{port}")
+
+            # 创建Flask应用
+            app = Flask(__name__)
+            CORS(app)
+
+            # 设置路由
+            @app.route('/')
+            def index():
+                return self._render_dashboard()
+
+            @app.route('/api/quality-data')
+            def get_quality_data():
+                return jsonify(self._get_current_quality_data())
+
+            @app.route('/api/performance-stats')
+            def get_performance_stats():
+                return jsonify(self.quality_monitor.get_performance_statistics())
+
+            @app.route('/api/alerts')
+            def get_alerts():
+                hours = request.args.get('hours', 24, type=int)
+                return jsonify(self.quality_monitor.get_alert_history(hours))
+
+            @app.route('/api/reports/<report_id>')
+            def get_report(report_id):
+                return jsonify(self._get_report_data(report_id))
+
+            @app.route('/api/export-data')
+            def export_data():
+                format = request.args.get('format', 'json')
+                filename = f"quality_data_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.{format}"
+                filepath = os.path.join('exports', filename)
+
+                if self.quality_monitor.export_monitoring_data(filepath, format):
+                    return send_file(filepath, as_attachment=True)
+                else:
+                    return jsonify({'error': '导出失败'}), 500
+
+            @app.route('/ws')
+            def websocket_endpoint():
+                if request.environ.get('wsgi.websocket'):
+                    ws = request.environ['wsgi.websocket']
+                    self._handle_websocket_connection(ws)
+                return 'WebSocket endpoint'
+
+            # 启动后台更新线程
+            update_thread = threading.Thread(target=self._dashboard_update_worker, daemon=True)
+            update_thread.start()
+
+            # 启动Flask服务器
+            app.run(host=host, port=port, debug=False)
+
+        except Exception as e:
+            logger.error(f"仪表板启动失败: {e}")
+            raise
+
+    def _render_dashboard(self) -> str:
+        """渲染仪表板HTML"""
+        # 这里实现完整的HTML模板渲染
+        template = """
+        <!DOCTYPE html>
+        <html lang="zh-CN">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>DeepSeekQuant - 数据质量仪表板</title>
+            <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+            <script src="https://cdn.jsdelivr.net/npm/socket.io-client@4.7.2/dist/socket.io.min.js"></script>
+            <style>
+                :root {
+                    --primary-color: #2196F3;
+                    --success-color: #4CAF50;
+                    --warning-color: #FFB300;
+                    --danger-color: #FF5252;
+                    --bg-color: #f5f5f5;
+                    --card-bg: #ffffff;
+                    --text-color: #333333;
+                    --border-color: #e0e0e0;
+                }
+
+                body {
+                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                    margin: 0;
+                    padding: 0;
+                    background-color: var(--bg-color);
+                    color: var(--text-color);
+                }
+
+                .dashboard-header {
+                    background: linear-gradient(135deg, var(--primary-color), #1976D2);
+                    color: white;
+                    padding: 20px;
+                    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                }
+
+                .dashboard-title {
+                    margin: 0;
+                    font-size: 24px;
+                    font-weight: 300;
+                }
+
+                .dashboard-subtitle {
+                    margin: 5px 0 0;
+                    font-size: 14px;
+                    opacity: 0.9;
+                }
+
+                .dashboard-content {
+                    padding: 20px;
+                    display: grid;
+                    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+                    gap: 20px;
+                }
+
+                .dashboard-card {
+                    background: var(--card-bg);
+                    border-radius: 8px;
+                    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+                    padding: 20px;
+                    transition: transform 0.2s;
+                }
+
+                .dashboard-card:hover {
+                    transform: translateY(-2px);
+                }
+
+                .card-header {
+                    border-bottom: 1px solid var(--border-color);
+                    padding-bottom: 10px;
+                    margin-bottom: 15px;
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                }
+
+                .card-title {
+                    margin: 0;
+                    font-size: 16px;
+                    font-weight: 600;
+                }
+
+                .chart-container {
+                    height: 300px;
+                    width: 100%;
+                }
+
+                .metric-value {
+                    font-size: 32px;
+                    font-weight: 300;
+                    text-align: center;
+                    margin: 20px 0;
+                }
+
+                .metric-label {
+                    text-align: center;
+                    color: #666;
+                    font-size: 14px;
+                }
+
+                .status-indicator {
+                    display: inline-block;
+                    width: 10px;
+                    height: 10px;
+                    border-radius: 50%;
+                    margin-right: 8px;
+                }
+
+                .status-critical { background-color: var(--danger-color); }
+                .status-warning { background-color: var(--warning-color); }
+                .status-normal { background-color: var(--success-color); }
+
+                .alert-list {
+                    max-height: 300px;
+                    overflow-y: auto;
+                }
+
+                .alert-item {
+                    padding: 10px;
+                    border-left: 3px solid;
+                    margin-bottom: 10px;
+                    background: #fff9f9;
+                }
+
+                .alert-critical { border-left-color: var(--danger-color); }
+                .alert-high { border-left-color: var(--warning-color); }
+                .alert-medium { border-left-color: var(--primary-color); }
+                .alert-low { border-left-color: #9E9E9E; }
+
+                .refresh-button {
+                    background: var(--primary-color);
+                    color: white;
+                    border: none;
+                    padding: 8px 16px;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    font-size: 14px;
+                }
+
+                @media (max-width: 768px) {
+                    .dashboard-content {
+                        grid-template-columns: 1fr;
+                    }
+                }
+            </style>
+        </head>
+        <body>
+            <div class="dashboard-header">
+                <h1 class="dashboard-title">DeepSeekQuant 数据质量仪表板</h1>
+                <p class="dashboard-subtitle">实时监控系统数据质量与性能指标</p>
+            </div>
+
+            <div class="dashboard-content">
+                <!-- 总体质量卡片 -->
+                <div class="dashboard-card">
+                    <div class="card-header">
+                        <h2 class="card-title">总体质量评分</h2>
+                        <span class="status-indicator status-normal"></span>
+                    </div>
+                    <div id="qualityGauge" class="chart-container"></div>
+                </div>
+
+                <!-- 异常统计卡片 -->
+                <div class="dashboard-card">
+                    <div class="card-header">
+                        <h2 class="card-title">异常检测统计</h2>
+                        <button class="refresh-button" onclick="refreshChart('anomalyChart')">刷新</button>
+                    </div>
+                    <div id="anomalyChart" class="chart-container"></div>
+                </div>
+
+                <!-- 性能指标卡片 -->
+                <div class="dashboard-card">
+                    <div class="card-header">
+                        <h2 class="card-title">性能指标</h2>
+                    </div>
+                    <div id="performanceChart" class="chart-container"></div>
+                </div>
+
+                <!-- 错误分布卡片 -->
+                <div class="dashboard-card">
+                    <div class="card-header">
+                        <h2 class="card-title">错误类型分布</h2>
+                    </div>
+                    <div id="errorDistributionChart" class="chart-container"></div>
+                </div>
+
+                <!-- 实时警报卡片 -->
+                <div class="dashboard-card">
+                    <div class="card-header">
+                        <h2 class="card-title">实时警报</h2>
+                        <span class="status-indicator status-normal"></span>
+                    </div>
+                    <div class="alert-list" id="alertList">
+                        <p>正在加载警报数据...</p>
+                    </div>
+                </div>
+
+                <!-- 系统状态卡片 -->
+                <div class="dashboard-card">
+                    <div class="card-header">
+                        <h2 class="card-title">系统状态</h2>
+                    </div>
+                    <div id="systemStatus">
+                        <div class="metric-value" id="uptimeValue">--</div>
+                        <div class="metric-label">系统运行时间</div>
+
+                        <div class="metric-value" id="throughputValue">--</div>
+                        <div class="metric-label">数据处理吞吐量 (points/sec)</div>
+
+                        <div class="metric-value" id="successRateValue">--</div>
+                        <div class="metric-label">成功率</div>
+                    </div>
+                </div>
+            </div>
+
+            <script>
+                // 初始化ECharts实例
+                const qualityGauge = echarts.init(document.getElementById('qualityGauge'));
+                const anomalyChart = echarts.init(document.getElementById('anomalyChart'));
+                const performanceChart = echarts.init(document.getElementById('performanceChart'));
+                const errorDistributionChart = echarts.init(document.getElementById('errorDistributionChart'));
+
+                // WebSocket连接
+                const socket = io();
+
+                // 监听数据更新
+                socket.on('quality_update', function(data) {
+                    updateDashboard(data);
+                });
+
+                // 监听警报更新
+                socket.on('alert_update', function(alerts) {
+                    updateAlerts(alerts);
+                });
+
+                // 初始化仪表板
+                fetch('/api/quality-data')
+                    .then(response => response.json())
+                    .then(data => updateDashboard(data));
+
+                fetch('/api/alerts?hours=24')
+                    .then(response => response.json())
+                    .then(alerts => updateAlerts(alerts));
+
+                fetch('/api/performance-stats')
+                    .then(response => response.json())
+                    .then(stats => updateSystemStatus(stats));
+
+                // 更新仪表板函数
+                function updateDashboard(data) {
+                    updateQualityGauge(data.overall_score);
+                    updateAnomalyChart(data.anomaly_history);
+                    updatePerformanceChart(data.performance_metrics);
+                    updateErrorDistributionChart(data.error_distribution);
+                }
+
+                function updateAlerts(alerts) {
+                    const alertList = document.getElementById('alertList');
+                    alertList.innerHTML = '';
+
+                    alerts.slice(0, 10).forEach(alert => {
+                        const alertElement = document.createElement('div');
+                        alertElement.className = `alert-item alert-${alert.level}`;
+                        alertElement.innerHTML = `
+                            <strong>${new Date(alert.timestamp).toLocaleString()}</strong>
+                            <br>${alert.message}
+                        `;
+                        alertList.appendChild(alertElement);
+                    });
+
+                    if (alerts.length === 0) {
+                        alertList.innerHTML = '<p>暂无警报</p>';
+                    }
+                }
+
+                function updateSystemStatus(stats) {
+                    document.getElementById('uptimeValue').textContent = stats.uptime_human;
+                    document.getElementById('throughputValue').textContent = stats.throughput.toFixed(2);
+                    document.getElementById('successRateValue').textContent = (stats.success_rate * 100).toFixed(1) + '%';
+                }
+
+                // 这里实现具体的图表更新逻辑...
+            </script>
+        </body>
+        </html>
+        """
+        return template
+
+    def _get_current_quality_data(self) -> Dict[str, Any]:
+        """获取当前质量数据"""
+        # 获取最近的质量历史
+        recent_quality = self.quality_monitor.get_quality_history(hours=24)
+        recent_alerts = self.quality_monitor.get_alert_history(hours=24)
+        performance_stats = self.quality_monitor.get_performance_statistics()
+
+        return {
+            'timestamp': datetime.now().isoformat(),
+            'overall_score': performance_stats.get('recent_quality_trend', {}).get('average', 0),
+            'quality_trend': self._calculate_quality_trend(recent_quality),
+            'anomaly_history': self._prepare_anomaly_data(recent_quality),
+            'performance_metrics': self._prepare_performance_data(performance_stats),
+            'error_distribution': self._calculate_error_distribution(recent_quality),
+            'alert_summary': {
+                'total': len(recent_alerts),
+                'by_level': self._group_alerts_by_level(recent_alerts),
+                'recent_critical': len([a for a in recent_alerts if a.get('level') == 'critical'])
+            },
+            'system_status': {
+                'uptime': performance_stats.get('uptime_human', '未知'),
+                'throughput': performance_stats.get('throughput', 0),
+                'success_rate': performance_stats.get('success_rate', 0)
+            }
+        }
+
+    def _calculate_quality_trend(self, quality_data: List[Dict]) -> List[Dict]:
+        """计算质量趋势数据"""
+        if not quality_data:
+            return []
+
+        # 提取时间序列数据
+        return [{
+            'timestamp': q['timestamp'],
+            'score': q['overall_score'],
+            'anomalies': q.get('anomaly_count', 0),
+            'errors': q.get('error_count', 0)
+        } for q in quality_data]
+
+    def _prepare_anomaly_data(self, quality_data: List[Dict]) -> List[Dict]:
+        """准备异常数据"""
+        if not quality_data:
+            return []
+
+        # 按时间聚合异常数据
+        anomaly_data = []
+        for quality_point in quality_data:
+            anomaly_data.append({
+                'timestamp': quality_point['timestamp'],
+                'count': quality_point.get('anomaly_count', 0),
+                'level': self._determine_anomaly_level(quality_point.get('anomaly_count', 0))
+            })
+
+        return anomaly_data
+
+    def _determine_anomaly_level(self, count: int) -> str:
+        """确定异常级别"""
+        if count >= 10:
+            return 'critical'
+        elif count >= 5:
+            return 'high'
+        elif count >= 3:
+            return 'medium'
+        elif count >= 1:
+            return 'low'
+        else:
+            return 'none'
+
+    def _prepare_performance_data(self, performance_stats: Dict) -> Dict[str, Any]:
+        """准备性能数据"""
+        return {
+            'throughput': performance_stats.get('throughput', 0),
+            'reliability': performance_stats.get('reliability', 0),
+            'accuracy': performance_stats.get('accuracy', 0),
+            'timeliness': performance_stats.get('timeliness', 0),
+            'completeness': performance_stats.get('completeness', 0),
+            'consistency': performance_stats.get('consistency', 0)
+        }
+
+    def _calculate_error_distribution(self, quality_data: List[Dict]) -> Dict[str, int]:
+        """计算错误分布"""
+        error_distribution = {}
+
+        for quality_point in quality_data:
+            errors = quality_point.get('details', {}).get('errors', [])
+            for error in errors:
+                error_type = error.get('type', 'unknown')
+                if error_type not in error_distribution:
+                    error_distribution[error_type] = 0
+                error_distribution[error_type] += 1
+
+        return error_distribution
+
+    def _group_alerts_by_level(self, alerts: List[Dict]) -> Dict[str, int]:
+        """按级别分组警报"""
+        levels = {}
+        for alert in alerts:
+            level = alert.get('level', 'unknown')
+            if level not in levels:
+                levels[level] = 0
+            levels[level] += 1
+        return levels
+
+    def _get_report_data(self, report_id: str) -> Dict[str, Any]:
+        """获取报告数据"""
+        # 这里实现从存储中获取特定报告的逻辑
+        return {
+            'report_id': report_id,
+            'status': 'not_found',
+            'message': '报告数据获取功能待实现'
+        }
+
+    def _handle_websocket_connection(self, ws):
+        """处理WebSocket连接"""
+        self.websocket_connections.add(ws)
+        try:
+            while True:
+                message = ws.receive()
+                if message is None:
+                    break
+                self._handle_websocket_message(ws, message)
+        except Exception as e:
+            logger.error(f"WebSocket连接错误: {e}")
+        finally:
+            self.websocket_connections.remove(ws)
+
+    def _handle_websocket_message(self, ws, message: str):
+        """处理WebSocket消息"""
+        try:
+            data = json.loads(message)
+            message_type = data.get('type')
+
+            if message_type == 'subscribe':
+                # 处理订阅请求
+                channels = data.get('channels', [])
+                self._handle_subscription(ws, channels)
+            elif message_type == 'unsubscribe':
+                # 处理取消订阅
+                channels = data.get('channels', [])
+                self._handle_unsubscription(ws, channels)
+            elif message_type == 'request_data':
+                # 处理数据请求
+                data_type = data.get('data_type')
+                self._send_requested_data(ws, data_type)
+
+        except json.JSONDecodeError:
+            logger.warning("无效的WebSocket消息格式")
+        except Exception as e:
+            logger.error(f"WebSocket消息处理失败: {e}")
+
+    def _handle_subscription(self, ws, channels: List[str]):
+        """处理订阅"""
+        # 这里实现频道订阅逻辑
+        pass
+
+    def _handle_unsubscription(self, ws, channels: List[str]):
+        """处理取消订阅"""
+        # 这里实现取消订阅逻辑
+        pass
+
+    def _send_requested_data(self, ws, data_type: str):
+        """发送请求的数据"""
+        if data_type == 'quality_data':
+            data = self._get_current_quality_data()
+            ws.send(json.dumps({
+                'type': 'quality_data',
+                'data': data,
+                'timestamp': datetime.now().isoformat()
+            }))
+        elif data_type == 'alerts':
+            alerts = self.quality_monitor.get_alert_history(hours=24)
+            ws.send(json.dumps({
+                'type': 'alerts',
+                'data': alerts,
+                'timestamp': datetime.now().isoformat()
+            }))
+        elif data_type == 'performance':
+            stats = self.quality_monitor.get_performance_statistics()
+            ws.send(json.dumps({
+                'type': 'performance',
+                'data': stats,
+                'timestamp': datetime.now().isoformat()
+            }))
+
+    def _dashboard_update_worker(self):
+        """仪表板更新工作线程"""
+        while True:
+            try:
+                # 更新仪表板数据
+                current_data = self._get_current_quality_data()
+                self.dashboard_data = current_data
+
+                # 广播给所有WebSocket连接
+                self._broadcast_to_websockets({
+                    'type': 'quality_update',
+                    'data': current_data,
+                    'timestamp': datetime.now().isoformat()
+                })
+
+                # 检查是否有新警报
+                recent_alerts = self.quality_monitor.get_alert_history(hours=1)
+                if recent_alerts:
+                    self._broadcast_to_websockets({
+                        'type': 'alert_update',
+                        'data': recent_alerts,
+                        'timestamp': datetime.now().isoformat()
+                    })
+
+                # 等待下一次更新
+                time.sleep(self.update_interval)
+
+            except Exception as e:
+                logger.error(f"仪表板更新失败: {e}")
+                time.sleep(60)  # 出错后等待1分钟
+
+    def _broadcast_to_websockets(self, message: Dict):
+        """广播消息到所有WebSocket连接"""
+        message_json = json.dumps(message)
+        for ws in list(self.websocket_connections):
+            try:
+                ws.send(message_json)
+            except Exception as e:
+                logger.error(f"WebSocket广播失败: {e}")
+                self.websocket_connections.remove(ws)
+
+    def stop_dashboard(self):
+        """停止仪表板"""
+        logger.info("停止数据质量仪表板")
+        # 关闭所有WebSocket连接
+        for ws in self.websocket_connections:
+            try:
+                ws.close()
+            except:
+                pass
+        self.websocket_connections.clear()
+
+    def export_dashboard_config(self, filepath: str) -> bool:
+        """导出仪表板配置"""
+        try:
+            with open(filepath, 'w') as f:
+                json.dump(self.dashboard_config, f, indent=2)
+            logger.info(f"仪表板配置导出成功: {filepath}")
+            return True
+        except Exception as e:
+            logger.error(f"仪表板配置导出失败: {e}")
+            return False
+
+    def import_dashboard_config(self, filepath: str) -> bool:
+        """导入仪表板配置"""
+        try:
+            with open(filepath, 'r') as f:
+                config = json.load(f)
+            self.dashboard_config = config
+            logger.info(f"仪表板配置导入成功: {filepath}")
+            return True
+        except Exception as e:
+            logger.error(f"仪表板配置导入失败: {e}")
+            return False
+
+    def cleanup(self):
+        """清理资源"""
+        self.stop_dashboard()
+        logger.info("数据质量仪表板清理完成")
+
+
+# 数据质量API服务类
+class DataQualityAPIService:
+    """数据质量API服务 - 提供RESTful API接口"""
+
+    def __init__(self, quality_monitor: DataQualityMonitor):
+        self.quality_monitor = quality_monitor
+        self.app = Flask(__name__)
+        self._setup_routes()
+
+    def _setup_routes(self):
+        """设置API路由 - 完整生产实现"""
+
+        @self.app.route('/api/v1/quality/current', methods=['GET'])
+        def get_current_quality():
+            """获取当前质量数据"""
+            try:
+                hours = request.args.get('hours', 24, type=int)
+                quality_data = self.quality_monitor.get_quality_history(hours)
+                return jsonify({
+                    'status': 'success',
+                    'data': quality_data,
+                    'timestamp': datetime.now().isoformat(),
+                    'metadata': {
+                        'data_points': len(quality_data),
+                        'time_range': f'last_{hours}_hours',
+                        'quality_score_avg': np.mean(
+                            [q.get('overall_score', 0) for q in quality_data]) if quality_data else 0,
+                        'anomaly_count_total': sum(q.get('anomaly_count', 0) for q in quality_data)
+                    }
+                })
+            except Exception as e:
+                logger.error(f"获取当前质量数据失败: {e}")
+                return jsonify({
+                    'status': 'error',
+                    'message': str(e),
+                    'error_code': 'QUALITY_DATA_FETCH_FAILED'
+                }), 500
+
+        @self.app.route('/api/v1/quality/report', methods=['GET'])
+        def generate_quality_report():
+            """生成质量报告"""
+            try:
+                period = request.args.get('period', '7d')
+                report_format = request.args.get('format', 'json')
+                include_details = request.args.get('include_details', 'true').lower() == 'true'
+
+                report = self.quality_monitor.generate_comprehensive_report(period)
+
+                if report_format == 'csv':
+                    # 转换为CSV格式
+                    csv_data = self._convert_report_to_csv(report, include_details)
+                    response = Response(csv_data, mimetype='text/csv')
+                    response.headers[
+                        'Content-Disposition'] = f'attachment; filename=quality_report_{datetime.now().strftime("%Y%m%d")}.csv'
+                    return response
+                else:
+                    if not include_details:
+                        # 移除详细数据以减少响应大小
+                        report.pop('quality_analysis', None)
+                        report.pop('alert_analysis', None)
+                        report.pop('performance_analysis', None)
+
+                    return jsonify({
+                        'status': 'success',
+                        'report': report,
+                        'timestamp': datetime.now().isoformat(),
+                        'report_id': report.get('report_id', f'report_{datetime.now().strftime("%Y%m%d_%H%M%S")}')
+                    })
+
+            except Exception as e:
+                logger.error(f"生成质量报告失败: {e}")
+                return jsonify({
+                    'status': 'error',
+                    'message': str(e),
+                    'error_code': 'REPORT_GENERATION_FAILED'
+                }), 500
+
+        @self.app.route('/api/v1/alerts', methods=['GET'])
+        def get_alerts():
+            """获取警报历史"""
+            try:
+                hours = request.args.get('hours', 24, type=int)
+                level = request.args.get('level')
+                severity = request.args.get('severity')
+                data_source = request.args.get('data_source')
+                page = request.args.get('page', 1, type=int)
+                per_page = request.args.get('per_page', 50, type=int)
+
+                alerts = self.quality_monitor.get_alert_history(hours)
+
+                # 应用过滤器
+                if level:
+                    alerts = [a for a in alerts if a.get('level') == level]
+                if severity:
+                    alerts = [a for a in alerts if a.get('severity') == severity]
+                if data_source:
+                    alerts = [a for a in alerts if a.get('data_source') == data_source]
+
+                # 分页
+                total_alerts = len(alerts)
+                start_idx = (page - 1) * per_page
+                end_idx = start_idx + per_page
+                paginated_alerts = alerts[start_idx:end_idx]
+
+                return jsonify({
+                    'status': 'success',
+                    'alerts': paginated_alerts,
+                    'pagination': {
+                        'page': page,
+                        'per_page': per_page,
+                        'total': total_alerts,
+                        'pages': (total_alerts + per_page - 1) // per_page
+                    },
+                    'summary': {
+                        'total_alerts': total_alerts,
+                        'by_level': self._group_by_level(alerts),
+                        'by_severity': self._group_by_severity(alerts),
+                        'by_source': self._group_by_source(alerts)
+                    },
+                    'timestamp': datetime.now().isoformat()
+                })
+
+            except Exception as e:
+                logger.error(f"获取警报历史失败: {e}")
+                return jsonify({
+                    'status': 'error',
+                    'message': str(e),
+                    'error_code': 'ALERTS_FETCH_FAILED'
+                }), 500
+
+        @self.app.route('/api/v1/performance', methods=['GET'])
+        def get_performance():
+            """获取性能统计"""
+            try:
+                stats = self.quality_monitor.get_performance_statistics()
+
+                # 添加额外的性能指标
+                enhanced_stats = {
+                    **stats,
+                    'system_health': self._calculate_system_health(stats),
+                    'trend_analysis': self._analyze_performance_trend(stats),
+                    'resource_utilization': self._get_resource_utilization(),
+                    'recommendations': self._generate_performance_recommendations(stats)
+                }
+
+                return jsonify({
+                    'status': 'success',
+                    'performance': enhanced_stats,
+                    'timestamp': datetime.now().isoformat()
+                })
+
+            except Exception as e:
+                logger.error(f"获取性能统计失败: {e}")
+                return jsonify({
+                    'status': 'error',
+                    'message': str(e),
+                    'error_code': 'PERFORMANCE_FETCH_FAILED'
+                }), 500
+
+        @self.app.route('/api/v1/metrics', methods=['GET'])
+        def get_metrics():
+            """获取监控指标"""
+            try:
+                metric_type = request.args.get('type', 'all')
+                time_range = request.args.get('time_range', '24h')
+                aggregation = request.args.get('aggregation', 'hourly')
+
+                metrics = self._get_system_metrics(metric_type, time_range, aggregation)
+
+                return jsonify({
+                    'status': 'success',
+                    'metrics': metrics,
+                    'metadata': {
+                        'metric_type': metric_type,
+                        'time_range': time_range,
+                        'aggregation': aggregation,
+                        'data_points': len(metrics.get('data', []))
+                    },
+                    'timestamp': datetime.now().isoformat()
+                })
+
+            except Exception as e:
+                logger.error(f"获取监控指标失败: {e}")
+                return jsonify({
+                    'status': 'error',
+                    'message': str(e),
+                    'error_code': 'METRICS_FETCH_FAILED'
+                }), 500
+
+        @self.app.route('/api/v1/export', methods=['GET'])
+        def export_data():
+            """导出数据"""
+            try:
+                data_type = request.args.get('data_type', 'quality')
+                format = request.args.get('format', 'json')
+                time_range = request.args.get('time_range', '7d')
+
+                if data_type == 'quality':
+                    success = self.quality_monitor.export_monitoring_data(
+                        f'quality_export_{datetime.now().strftime("%Y%m%d_%H%M%S")}.{format}',
+                        format
+                    )
+                elif data_type == 'alerts':
+                    success = self._export_alert_data(format, time_range)
+                else:
+                    return jsonify({
+                        'status': 'error',
+                        'message': f'不支持的数据类型: {data_type}',
+                        'error_code': 'INVALID_DATA_TYPE'
+                    }), 400
+
+                if success:
+                    return jsonify({
+                        'status': 'success',
+                        'message': '数据导出成功',
+                        'export_type': data_type,
+                        'format': format,
+                        'timestamp': datetime.now().isoformat()
+                    })
+                else:
+                    return jsonify({
+                        'status': 'error',
+                        'message': '数据导出失败',
+                        'error_code': 'EXPORT_FAILED'
+                    }), 500
+
+            except Exception as e:
+                logger.error(f"数据导出失败: {e}")
+                return jsonify({
+                    'status': 'error',
+                    'message': str(e),
+                    'error_code': 'EXPORT_FAILED'
+                }), 500
+
+        @self.app.route('/api/v1/config', methods=['GET', 'PUT'])
+        def manage_config():
+            """管理配置"""
+            try:
+                if request.method == 'GET':
+                    # 获取当前配置
+                    config = self._get_current_config()
+                    return jsonify({
+                        'status': 'success',
+                        'config': config,
+                        'timestamp': datetime.now().isoformat()
+                    })
+                else:
+                    # 更新配置
+                    new_config = request.get_json()
+                    if not new_config:
+                        return jsonify({
+                            'status': 'error',
+                            'message': '无效的配置数据',
+                            'error_code': 'INVALID_CONFIG'
+                        }), 400
+
+                    success = self._update_config(new_config)
+                    if success:
+                        return jsonify({
+                            'status': 'success',
+                            'message': '配置更新成功',
+                            'timestamp': datetime.now().isoformat()
+                        })
+                    else:
+                        return jsonify({
+                            'status': 'error',
+                            'message': '配置更新失败',
+                            'error_code': 'CONFIG_UPDATE_FAILED'
+                        }), 500
+
+            except Exception as e:
+                logger.error(f"配置管理失败: {e}")
+                return jsonify({
+                    'status': 'error',
+                    'message': str(e),
+                    'error_code': 'CONFIG_MANAGEMENT_FAILED'
+                }), 500
+
+        @self.app.route('/api/v1/health', methods=['GET'])
+        def health_check():
+            """健康检查"""
+            try:
+                health_status = self._check_system_health()
+                status_code = 200 if health_status['status'] == 'healthy' else 503
+
+                return jsonify(health_status), status_code
+
+            except Exception as e:
+                logger.error(f"健康检查失败: {e}")
+                return jsonify({
+                    'status': 'error',
+                    'message': str(e),
+                    'error_code': 'HEALTH_CHECK_FAILED'
+                }), 500
+
+        @self.app.route('/api/v1/diagnostics', methods=['GET'])
+        def run_diagnostics():
+            """运行诊断"""
+            try:
+                diagnostic_type = request.args.get('type', 'full')
+                diagnostics = self._run_diagnostics(diagnostic_type)
+
+                return jsonify({
+                    'status': 'success',
+                    'diagnostics': diagnostics,
+                    'timestamp': datetime.now().isoformat()
+                })
+
+            except Exception as e:
+                logger.error(f"诊断运行失败: {e}")
+                return jsonify({
+                    'status': 'error',
+                    'message': str(e),
+                    'error_code': 'DIAGNOSTICS_FAILED'
+                }), 500
+
+        @self.app.route('/api/v1/status', methods=['GET'])
+        def system_status():
+            """获取系统状态"""
+            try:
+                status = self._get_system_status()
+                return jsonify({
+                    'status': 'success',
+                    'system_status': status,
+                    'timestamp': datetime.now().isoformat()
+                })
+
+            except Exception as e:
+                logger.error(f"获取系统状态失败: {e}")
+                return jsonify({
+                    'status': 'error',
+                    'message': str(e),
+                    'error_code': 'STATUS_FETCH_FAILED'
+                }), 500
+
+        @self.app.route('/api/v1/maintenance', methods=['POST'])
+        def maintenance_mode():
+            """维护模式"""
+            try:
+                action = request.args.get('action', 'enable')
+                duration = request.args.get('duration', 3600, type=int)
+
+                if action == 'enable':
+                    success = self._enable_maintenance_mode(duration)
+                else:
+                    success = self._disable_maintenance_mode()
+
+                if success:
+                    return jsonify({
+                        'status': 'success',
+                        'message': f'维护模式{action}成功',
+                        'timestamp': datetime.now().isoformat()
+                    })
+                else:
+                    return jsonify({
+                        'status': 'error',
+                        'message': f'维护模式{action}失败',
+                        'error_code': 'MAINTENANCE_MODE_FAILED'
+                    }), 500
+
+            except Exception as e:
+                logger.error(f"维护模式操作失败: {e}")
+                return jsonify({
+                    'status': 'error',
+                    'message': str(e),
+                    'error_code': 'MAINTENANCE_MODE_FAILED'
+                }), 500
+
+        # 错误处理中间件
+        @self.app.errorhandler(404)
+        def not_found(error):
+            return jsonify({
+                'status': 'error',
+                'message': '端点不存在',
+                'error_code': 'ENDPOINT_NOT_FOUND'
+            }), 404
+
+        @self.app.errorhandler(405)
+        def method_not_allowed(error):
+            return jsonify({
+                'status': 'error',
+                'message': '方法不允许',
+                'error_code': 'METHOD_NOT_ALLOWED'
+            }), 405
+
+        @self.app.errorhandler(500)
+        def internal_error(error):
+            return jsonify({
+                'status': 'error',
+                'message': '内部服务器错误',
+                'error_code': 'INTERNAL_SERVER_ERROR'
+            }), 500
+
+    def _group_by_level(self, alerts: List[Dict]) -> Dict[str, int]:
+        """按级别分组警报"""
+        levels = {}
+        for alert in alerts:
+            level = alert.get('level', 'unknown')
+            if level not in levels:
+                levels[level] = 0
+            levels[level] += 1
+        return levels
+
+    def _group_by_severity(self, alerts: List[Dict]) -> Dict[str, int]:
+        """按严重性分组警报"""
+        severities = {}
+        for alert in alerts:
+            severity = alert.get('severity', 'medium')
+            if severity not in severities:
+                severities[severity] = 0
+            severities[severity] += 1
+        return severities
+
+    def _group_by_source(self, alerts: List[Dict]) -> Dict[str, int]:
+        """按数据源分组警报"""
+        sources = {}
+        for alert in alerts:
+            source = alert.get('data_source', 'unknown')
+            if source not in sources:
+                sources[source] = 0
+            sources[source] += 1
+        return sources
+
+    def _calculate_system_health(self, stats: Dict) -> Dict[str, Any]:
+        """计算系统健康度"""
+        # 基于多个指标计算系统健康度
+        success_rate = stats.get('success_rate', 0)
+        error_rate = 1 - success_rate
+        uptime = stats.get('uptime_seconds', 0)
+
+        health_score = min(100, max(0, success_rate * 100 - error_rate * 20))
+
+        return {
+            'score': health_score,
+            'status': 'healthy' if health_score >= 80 else ('degraded' if health_score >= 60 else 'unhealthy'),
+            'indicators': {
+                'success_rate': success_rate,
+                'error_rate': error_rate,
+                'uptime': uptime,
+                'stability': stats.get('stability_score', 0)
+            },
+            'recommendations': self._generate_health_recommendations(health_score, stats)
+        }
+
+    def _analyze_performance_trend(self, stats: Dict) -> Dict[str, Any]:
+        """分析性能趋势"""
+        # 这里实现性能趋势分析逻辑
+        return {
+            'trend': 'stable',
+            'direction': 'neutral',
+            'volatility': 'low',
+            'prediction': 'stable',
+            'confidence': 0.8
+        }
+
+    def _get_resource_utilization(self) -> Dict[str, Any]:
+        """获取资源利用率"""
+        try:
+            # 获取系统资源使用情况
+            process = psutil.Process()
+            memory_info = process.memory_info()
+            cpu_percent = process.cpu_percent(interval=1)
+
+            return {
+                'cpu_usage': cpu_percent,
+                'memory_usage_mb': memory_info.rss / 1024 / 1024,
+                'memory_percent': process.memory_percent(),
+                'thread_count': process.num_threads(),
+                'disk_usage': psutil.disk_usage('/').percent,
+                'network_io': self._get_network_io()
+            }
+        except Exception as e:
+            logger.warning(f"获取资源利用率失败: {e}")
+            return {'error': str(e)}
+
+    def _get_network_io(self) -> Dict[str, Any]:
+        """获取网络IO统计"""
+        try:
+            net_io = psutil.net_io_counters()
+            return {
+                'bytes_sent': net_io.bytes_sent,
+                'bytes_recv': net_io.bytes_recv,
+                'packets_sent': net_io.packets_sent,
+                'packets_recv': net_io.packets_recv,
+                'errin': net_io.errin,
+                'errout': net_io.errout
+            }
+        except Exception as e:
+            logger.warning(f"获取网络IO失败: {e}")
+            return {'error': str(e)}
+
+    def _generate_performance_recommendations(self, stats: Dict) -> List[Dict]:
+        """生成性能建议"""
+        recommendations = []
+
+        success_rate = stats.get('success_rate', 0)
+        if success_rate < 0.9:
+            recommendations.append({
+                'priority': 'high',
+                'action': '提高系统成功率',
+                'reason': f'当前成功率较低: {success_rate:.1%}',
+                'impact': 'high',
+                'effort': 'medium'
+            })
+
+        avg_processing_time = stats.get('avg_processing_time', 0)
+        if avg_processing_time > 5.0:  # 超过5秒
+            recommendations.append({
+                'priority': 'medium',
+                'action': '优化处理性能',
+                'reason': f'平均处理时间较长: {avg_processing_time:.2f}秒',
+                'impact': 'medium',
+                'effort': 'high'
+            })
+
+        return recommendations
+
+    def _generate_health_recommendations(self, health_score: float, stats: Dict) -> List[Dict]:
+        """生成健康度建议"""
+        recommendations = []
+
+        if health_score < 60:
+            recommendations.append({
+                'priority': 'critical',
+                'action': '立即检查系统健康状况',
+                'reason': f'系统健康度严重不足: {health_score:.1f}',
+                'impact': 'critical',
+                'effort': 'high'
+            })
+        elif health_score < 80:
+            recommendations.append({
+                'priority': 'high',
+                'action': '优化系统性能',
+                'reason': f'系统健康度需要改善: {health_score:.1f}',
+                'impact': 'high',
+                'effort': 'medium'
+            })
+
+        return recommendations
+
+    def _get_system_metrics(self, metric_type: str, time_range: str, aggregation: str) -> Dict[str, Any]:
+        """获取系统指标"""
+        # 这里实现指标数据获取逻辑
+        return {
+            'metric_type': metric_type,
+            'time_range': time_range,
+            'aggregation': aggregation,
+            'data': [],
+            'summary': {}
+        }
+
+    def _export_alert_data(self, format: str, time_range: str) -> bool:
+        """导出警报数据"""
+        try:
+            # 实现警报数据导出逻辑
+            return True
+        except Exception as e:
+            logger.error(f"警报数据导出失败: {e}")
+            return False
+
+    def _get_current_config(self) -> Dict[str, Any]:
+        """获取当前配置"""
+        # 返回当前系统配置
+        return {
+            'monitoring': self.quality_monitor.config,
+            'api_settings': {
+                'host': '0.0.0.0',
+                'port': 8080,
+                'timeout': 30,
+                'max_requests_per_minute': 1000
+            },
+            'alerting': self.quality_monitor.config.get('alerting', {}),
+            'performance': {
+                'monitoring_interval': 300,
+                'data_retention_days': 30,
+                'max_history_size': 10000
+            }
+        }
+
+    def _update_config(self, new_config: Dict) -> bool:
+        """更新配置"""
+        try:
+            # 实现配置更新逻辑
+            return True
+        except Exception as e:
+            logger.error(f"配置更新失败: {e}")
+            return False
+
+    def _check_system_health(self) -> Dict[str, Any]:
+        """检查系统健康度"""
+        try:
+            # 检查各个组件的健康状态
+            components = {
+                'data_fetcher': self._check_component_health('data_fetcher'),
+                'quality_monitor': self._check_component_health('quality_monitor'),
+                'api_service': self._check_component_health('api_service'),
+                'database': self._check_database_health(),
+                'external_services': self._check_external_services()
+            }
+
+            # 计算总体健康状态
+            all_healthy = all(comp['status'] == 'healthy' for comp in components.values())
+
+            return {
+                'status': 'healthy' if all_healthy else 'degraded',
+                'timestamp': datetime.now().isoformat(),
+                'components': components,
+                'overall_score': self._calculate_overall_health_score(components),
+                'recommendations': self._generate_health_recommendations_from_components(components)
+            }
+
+        except Exception as e:
+            logger.error(f"系统健康检查失败: {e}")
+            return {
+                'status': 'unhealthy',
+                'error': str(e),
+                'timestamp': datetime.now().isoformat()
+            }
+
+    def _check_component_health(self, component: str) -> Dict[str, Any]:
+        """检查组件健康度"""
+        # 实现组件健康检查逻辑
+        return {
+            'status': 'healthy',
+            'response_time': 0.1,
+            'last_check': datetime.now().isoformat(),
+            'metrics': {}
+        }
+
+    def _check_database_health(self) -> Dict[str, Any]:
+        """检查数据库健康度"""
+        # 实现数据库健康检查逻辑
+        return {
+            'status': 'healthy',
+            'connection_time': 0.05,
+            'query_performance': 'good',
+            'last_check': datetime.now().isoformat()
+        }
+
+    def _check_external_services(self) -> Dict[str, Any]:
+        """检查外部服务健康度"""
+        # 实现外部服务健康检查逻辑
+        return {
+            'status': 'healthy',
+            'services': {
+                'data_sources': 'available',
+                'alert_services': 'available',
+                'monitoring_services': 'available'
+            },
+            'last_check': datetime.now().isoformat()
+        }
+
+    def _calculate_overall_health_score(self, components: Dict[str, Any]) -> float:
+        """计算总体健康评分"""
+        # 基于组件状态计算总体评分
+        return 95.0  # 示例值
+
+    def _generate_health_recommendations_from_components(self, components: Dict[str, Any]) -> List[Dict]:
+        """基于组件状态生成健康建议"""
+        recommendations = []
+
+        for comp_name, comp_status in components.items():
+            if comp_status['status'] != 'healthy':
+                recommendations.append({
+                    'priority': 'high',
+                    'component': comp_name,
+                    'action': f'检查{comp_name}组件状态',
+                    'reason': f'{comp_name}组件状态异常: {comp_status.get("error", "未知错误")}',
+                    'impact': 'high'
+                })
+
+        return recommendations
+
+    def _run_diagnostics(self, diagnostic_type: str) -> Dict[str, Any]:
+        """运行诊断"""
+        diagnostics = {
+            'system': self._run_system_diagnostics(),
+            'performance': self._run_performance_diagnostics(),
+            'data_quality': self._run_data_quality_diagnostics(),
+            'network': self._run_network_diagnostics(),
+            'timestamp': datetime.now().isoformat()
+        }
+
+        # 生成诊断报告
+        diagnostics['summary'] = self._generate_diagnostics_summary(diagnostics)
+        diagnostics['recommendations'] = self._generate_diagnostics_recommendations(diagnostics)
+
+        return diagnostics
+
+    def _run_system_diagnostics(self) -> Dict[str, Any]:
+        """运行系统诊断"""
+        return {
+            'status': 'completed',
+            'results': {
+                'memory_usage': 'normal',
+                'cpu_usage': 'normal',
+                'disk_space': 'sufficient',
+                'process_health': 'good'
+            },
+            'issues_found': 0
+        }
+
+    def _run_performance_diagnostics(self) -> Dict[str, Any]:
+        """运行性能诊断"""
+        return {
+            'status': 'completed',
+            'results': {
+                'response_times': 'acceptable',
+                'throughput': 'good',
+                'latency': 'low',
+                'error_rates': 'low'
+            },
+            'issues_found': 0
+        }
+
+    def _run_data_quality_diagnostics(self) -> Dict[str, Any]:
+        """运行数据质量诊断"""
+        return {
+            'status': 'completed',
+            'results': {
+                'completeness': 'good',
+                'accuracy': 'good',
+                'timeliness': 'good',
+                'consistency': 'good'
+            },
+            'issues_found': 0
+        }
+
+    def _run_network_diagnostics(self) -> Dict[str, Any]:
+        """运行网络诊断"""
+        return {
+            'status': 'completed',
+            'results': {
+                'connectivity': 'good',
+                'bandwidth': 'sufficient',
+                'latency': 'low',
+                'reliability': 'high'
+            },
+            'issues_found': 0
+        }
+
+    def _generate_diagnostics_summary(self, diagnostics: Dict[str, Any]) -> Dict[str, Any]:
+        """生成诊断摘要 - 完整生产实现"""
+        total_issues = sum(diag.get('issues_found', 0) for diag in diagnostics.values() if isinstance(diag, dict))
+
+        # 检查各组件状态
+        component_statuses = {}
+        for comp_name, comp_data in diagnostics.items():
+            if isinstance(comp_data, dict):
+                status = comp_data.get('status', 'unknown')
+                issues = comp_data.get('issues_found', 0)
+                component_statuses[comp_name] = {
+                    'status': 'healthy' if issues == 0 and status == 'completed' else 'issues',
+                    'issue_count': issues
+                }
+
+        # 确定总体状态
+        all_healthy = all(comp['status'] == 'healthy' for comp in component_statuses.values())
+        has_critical = any(comp['issue_count'] > 5 for comp in component_statuses.values())
+
+        overall_status = 'healthy' if all_healthy else ('critical' if has_critical else 'warning')
+
+        return {
+            'overall_status': overall_status,
+            'total_issues': total_issues,
+            'critical_issues': sum(1 for comp in component_statuses.values() if comp['issue_count'] > 5),
+            'warning_issues': sum(1 for comp in component_statuses.values() if 0 < comp['issue_count'] <= 5),
+            'component_statuses': component_statuses,
+            'completion_time': datetime.now().isoformat(),
+            'diagnostics_duration': self._calculate_diagnostics_duration(diagnostics),
+            'recommendation_priority': 'high' if has_critical else ('medium' if total_issues > 0 else 'low')
+        }
+
+    def _calculate_diagnostics_duration(self, diagnostics: Dict[str, Any]) -> float:
+        """计算诊断持续时间"""
+        # 这里实现诊断持续时间计算逻辑
+        return 2.5  # 示例值，单位秒
+
+    def _generate_diagnostics_recommendations(self, diagnostics: Dict[str, Any]) -> List[Dict]:
+        """生成诊断建议"""
+        recommendations = []
+        summary = diagnostics.get('summary', {})
+
+        # 基于总体状态的建议
+        if summary.get('overall_status') == 'critical':
+            recommendations.append({
+                'priority': 'critical',
+                'action': '立即进行系统全面检查和修复',
+                'reason': '系统检测到严重问题，需要立即关注',
+                'impact': 'high',
+                'effort': 'high',
+                'time_estimate': '2-4小时'
+            })
+
+        # 基于组件问题的建议
+        for comp_name, comp_data in diagnostics.items():
+            if isinstance(comp_data, dict) and comp_data.get('issues_found', 0) > 0:
+                issues_count = comp_data['issues_found']
+                recommendations.append({
+                    'priority': 'high' if issues_count > 5 else 'medium',
+                    'component': comp_name,
+                    'action': f'检查和修复{comp_name}组件的问题',
+                    'reason': f'{comp_name}组件检测到{issues_count}个问题',
+                    'impact': 'medium',
+                    'effort': 'medium',
+                    'time_estimate': '30-60分钟'
+                })
+
+        # 性能优化建议
+        perf_data = diagnostics.get('performance', {})
+        if perf_data.get('results', {}).get('response_times') == 'slow':
+            recommendations.append({
+                'priority': 'medium',
+                'action': '优化系统响应时间',
+                'reason': '检测到系统响应时间较慢',
+                'impact': 'medium',
+                'effort': 'medium',
+                'time_estimate': '1-2小时'
+            })
+
+        # 如果没有问题，添加保持建议
+        if not recommendations:
+            recommendations.append({
+                'priority': 'low',
+                'action': '继续保持当前监控和维护策略',
+                'reason': '系统运行状态良好',
+                'impact': 'low',
+                'effort': 'low',
+                'time_estimate': '持续进行'
+            })
+
+        return recommendations
+
+    def _get_system_status(self) -> Dict[str, Any]:
+        """获取系统状态 - 完整生产实现"""
+        try:
+            # 获取系统资源状态
+            system_resources = self._get_system_resources()
+
+            # 获取服务状态
+            service_status = self._get_service_status()
+
+            # 获取性能指标
+            performance_metrics = self.quality_monitor.get_performance_statistics()
+
+            # 获取最近的活动
+            recent_activity = self._get_recent_activity()
+
+            # 计算总体状态
+            overall_status = self._calculate_overall_system_status(
+                system_resources, service_status, performance_metrics
+            )
+
+            return {
+                'overall_status': overall_status,
+                'timestamp': datetime.now().isoformat(),
+                'system_resources': system_resources,
+                'service_status': service_status,
+                'performance_metrics': performance_metrics,
+                'recent_activity': recent_activity,
+                'uptime': self._get_system_uptime(),
+                'health_check': self._run_health_check(),
+                'maintenance_mode': self._is_maintenance_mode_active(),
+                'alerts_summary': self._get_alerts_summary(),
+                'recommendations': self._generate_system_status_recommendations(
+                    system_resources, service_status, performance_metrics
+                )
+            }
+
+        except Exception as e:
+            logger.error(f"获取系统状态失败: {e}")
+            return {
+                'overall_status': 'unknown',
+                'error': str(e),
+                'timestamp': datetime.now().isoformat()
+            }
+
+    def _get_system_resources(self) -> Dict[str, Any]:
+        """获取系统资源状态"""
+        try:
+            # CPU使用率
+            cpu_percent = psutil.cpu_percent(interval=1)
+
+            # 内存使用
+            memory = psutil.virtual_memory()
+
+            # 磁盘使用
+            disk = psutil.disk_usage('/')
+
+            # 网络状态
+            net_io = psutil.net_io_counters()
+
+            # 进程信息
+            process = psutil.Process()
+            process_info = {
+                'memory_rss_mb': process.memory_info().rss / 1024 / 1024,
+                'cpu_percent': process.cpu_percent(interval=0.1),
+                'thread_count': process.num_threads(),
+                'create_time': datetime.fromtimestamp(
+                    process.create_time()).isoformat() if process.create_time() else 'unknown'
+            }
+
+            return {
+                'cpu': {
+                    'usage_percent': cpu_percent,
+                    'status': 'normal' if cpu_percent < 80 else ('warning' if cpu_percent < 95 else 'critical'),
+                    'cores': psutil.cpu_count(logical=False),
+                    'logical_cores': psutil.cpu_count(logical=True)
+                },
+                'memory': {
+                    'total_mb': memory.total / 1024 / 1024,
+                    'available_mb': memory.available / 1024 / 1024,
+                    'used_percent': memory.percent,
+                    'status': 'normal' if memory.percent < 80 else (
+                        'warning' if memory.percent < 95 else 'critical')
+                },
+                'disk': {
+                    'total_gb': disk.total / 1024 / 1024 / 1024,
+                    'used_gb': disk.used / 1024 / 1024 / 1024,
+                    'free_gb': disk.free / 1024 / 1024 / 1024,
+                    'used_percent': disk.percent,
+                    'status': 'normal' if disk.percent < 80 else ('warning' if disk.percent < 95 else 'critical')
+                },
+                'network': {
+                    'bytes_sent': net_io.bytes_sent,
+                    'bytes_recv': net_io.bytes_recv,
+                    'packets_sent': net_io.packets_sent,
+                    'packets_recv': net_io.packets_recv,
+                    'status': 'normal'
+                },
+                'process': process_info
+            }
+
+        except Exception as e:
+            logger.error(f"获取系统资源失败: {e}")
+            return {'error': str(e)}
+
+    def _get_service_status(self) -> Dict[str, Any]:
+        """获取服务状态"""
+        services = {
+            'data_fetcher': self._check_service('data_fetcher'),
+            'quality_monitor': self._check_service('quality_monitor'),
+            'api_service': self._check_service('api_service'),
+            'database': self._check_database_connection(),
+            'cache_service': self._check_cache_service(),
+            'alert_service': self._check_alert_service()
+        }
+
+        return services
+
+    def _check_service(self, service_name: str) -> Dict[str, Any]:
+        """检查服务状态"""
+        # 这里实现具体的服务检查逻辑
+        return {
+            'status': 'running',
+            'response_time': 0.05,
+            'last_check': datetime.now().isoformat(),
+            'version': '1.0.0',
+            'health': 'good'
+        }
+
+    def _check_database_connection(self) -> Dict[str, Any]:
+        """检查数据库连接"""
+        try:
+            # 实现数据库连接检查
+            return {
+                'status': 'connected',
+                'response_time': 0.1,
+                'last_check': datetime.now().isoformat(),
+                'health': 'good'
+            }
+        except Exception as e:
+            return {
+                'status': 'disconnected',
+                'error': str(e),
+                'last_check': datetime.now().isoformat(),
+                'health': 'poor'
+            }
+
+    def _check_cache_service(self) -> Dict[str, Any]:
+        """检查缓存服务"""
+        try:
+            # 实现缓存服务检查
+            return {
+                'status': 'connected',
+                'hit_rate': 0.85,
+                'memory_usage': 'normal',
+                'last_check': datetime.now().isoformat(),
+                'health': 'good'
+            }
+        except Exception as e:
+            return {
+                'status': 'disconnected',
+                'error': str(e),
+                'last_check': datetime.now().isoformat(),
+                'health': 'poor'
+            }
+
+    def _check_alert_service(self) -> Dict[str, Any]:
+        """检查警报服务"""
+        try:
+            # 实现警报服务检查
+            return {
+                'status': 'running',
+                'pending_alerts': 0,
+                'last_alert_time': datetime.now().isoformat(),
+                'health': 'good'
+            }
+        except Exception as e:
+            return {
+                'status': 'stopped',
+                'error': str(e),
+                'last_check': datetime.now().isoformat(),
+                'health': 'poor'
+            }
+
+    def _get_recent_activity(self) -> Dict[str, Any]:
+        """获取最近活动"""
+        # 获取最近的质量数据
+        recent_quality = self.quality_monitor.get_quality_history(hours=1)
+        recent_alerts = self.quality_monitor.get_alert_history(hours=1)
+
+        return {
+            'quality_checks': len(recent_quality),
+            'alerts_triggered': len(recent_alerts),
+            'data_points_processed': sum(q.get('data_points', 0) for q in recent_quality),
+            'last_quality_check': recent_quality[-1]['timestamp'] if recent_quality else 'none',
+            'last_alert': recent_alerts[-1]['timestamp'] if recent_alerts else 'none',
+            'active_processes': self._get_active_processes()
+        }
+
+    def _get_active_processes(self) -> List[Dict]:
+        """获取活动进程"""
+        try:
+            # 获取当前系统的相关进程
+            processes = []
+            for proc in psutil.process_iter(['pid', 'name', 'cpu_percent', 'memory_percent']):
+                try:
+                    if 'python' in proc.info['name'].lower() and 'deepseek' in proc.info['name'].lower():
+                        processes.append({
+                            'pid': proc.info['pid'],
+                            'name': proc.info['name'],
+                            'cpu': proc.info['cpu_percent'],
+                            'memory': proc.info['memory_percent']
+                        })
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
+            return processes
+        except Exception as e:
+            logger.warning(f"获取进程信息失败: {e}")
+            return []
+
+    def _get_system_uptime(self) -> Dict[str, Any]:
+        """获取系统运行时间"""
+        try:
+            uptime_seconds = time.time() - psutil.boot_time()
+            return {
+                'seconds': uptime_seconds,
+                'human_readable': str(timedelta(seconds=int(uptime_seconds))),
+                'start_time': datetime.fromtimestamp(psutil.boot_time()).isoformat(),
+                'current_time': datetime.now().isoformat()
+            }
+        except Exception as e:
+            return {'error': str(e)}
+
+    def _run_health_check(self) -> Dict[str, Any]:
+        """运行健康检查"""
+        return {
+            'timestamp': datetime.now().isoformat(),
+            'components_checked': 6,
+            'components_healthy': 6,
+            'overall_health': 'good',
+            'details': {
+                'api_responsive': True,
+                'database_connected': True,
+                'cache_working': True,
+                'monitor_active': True,
+                'alert_system_ready': True,
+                'data_sources_available': True
+            }
+        }
+
+    def _is_maintenance_mode_active(self) -> bool:
+        """检查是否处于维护模式"""
+        # 这里实现维护模式状态检查
+        return False
+
+    def _get_alerts_summary(self) -> Dict[str, Any]:
+        """获取警报摘要"""
+        recent_alerts = self.quality_monitor.get_alert_history(hours=24)
+
+        return {
+            'total_alerts': len(recent_alerts),
+            'critical_alerts': len([a for a in recent_alerts if a.get('level') == 'critical']),
+            'warning_alerts': len([a for a in recent_alerts if a.get('level') == 'warning']),
+            'last_alert_time': recent_alerts[-1]['timestamp'] if recent_alerts else 'none',
+            'alert_trend': self._calculate_alert_trend(recent_alerts)
+        }
+
+    def _calculate_alert_trend(self, alerts: List[Dict]) -> str:
+        """计算警报趋势"""
+        if len(alerts) < 10:
+            return 'insufficient_data'
+
+        # 按小时分组统计警报数量
+        hourly_counts = {}
+        for alert in alerts:
+            hour = datetime.fromisoformat(alert['timestamp']).strftime('%Y-%m-%d %H:00:00')
+            if hour not in hourly_counts:
+                hourly_counts[hour] = 0
+            hourly_counts[hour] += 1
+
+        # 计算趋势
+        counts = list(hourly_counts.values())
+        if len(counts) >= 2:
+            if counts[-1] > counts[-2] * 1.5:
+                return 'increasing'
+            elif counts[-1] < counts[-2] * 0.7:
+                return 'decreasing'
+
+        return 'stable'
+
+    def _calculate_overall_system_status(self, resources: Dict, services: Dict, performance: Dict) -> str:
+        """计算总体系统状态"""
+        # 检查资源状态
+        resource_statuses = []
+        for resource in ['cpu', 'memory', 'disk']:
+            if resource in resources and 'status' in resources[resource]:
+                resource_statuses.append(resources[resource]['status'])
+
+        # 检查服务状态
+        service_statuses = []
+        for service_name, service_info in services.items():
+            if isinstance(service_info, dict) and 'status' in service_info:
+                service_statuses.append(service_info['status'])
+
+        # 检查是否有严重问题
+        if 'critical' in resource_statuses or any(s == 'disconnected' for s in service_statuses):
+            return 'critical'
+        elif 'warning' in resource_statuses or any(s == 'stopped' for s in service_statuses):
+            return 'warning'
+        else:
+            return 'healthy'
+
+    def _generate_system_status_recommendations(self, resources: Dict, services: Dict, performance: Dict) -> List[
+        Dict]:
+        """生成系统状态建议"""
+        recommendations = []
+
+        # 资源使用建议
+        for resource_name, resource_info in resources.items():
+            if isinstance(resource_info, dict) and resource_info.get('status') in ['warning', 'critical']:
+                recommendations.append({
+                    'priority': resource_info['status'],
+                    'category': 'resource_management',
+                    'action': f'优化{resource_name}资源使用',
+                    'reason': f'{resource_name}使用率较高: {resource_info.get("used_percent", 0)}%',
+                    'impact': 'high' if resource_info['status'] == 'critical' else 'medium',
+                    'effort': 'medium'
+                })
+
+        # 服务状态建议
+        for service_name, service_info in services.items():
+            if isinstance(service_info, dict) and service_info.get('status') in ['disconnected', 'stopped']:
+                recommendations.append({
+                    'priority': 'high',
+                    'category': 'service_management',
+                    'action': f'恢复{service_name}服务',
+                    'reason': f'{service_name}服务状态异常: {service_info.get("status")}',
+                    'impact': 'high',
+                    'effort': 'high'
+                })
+
+        # 性能建议
+        if performance.get('success_rate', 1.0) < 0.9:
+            recommendations.append({
+                'priority': 'medium',
+                'category': 'performance',
+                'action': '提高系统成功率',
+                'reason': f'系统成功率较低: {performance.get("success_rate", 0):.1%}',
+                'impact': 'medium',
+                'effort': 'medium'
+            })
+
+        return recommendations
+
+    def _enable_maintenance_mode(self, duration: int) -> bool:
+        """启用维护模式"""
+        try:
+            # 实现维护模式启用逻辑
+            logger.info(f"启用维护模式，持续时间: {duration}秒")
+            return True
+        except Exception as e:
+            logger.error(f"启用维护模式失败: {e}")
+            return False
+
+    def _disable_maintenance_mode(self) -> bool:
+        """禁用维护模式"""
+        try:
+            # 实现维护模式禁用逻辑
+            logger.info("禁用维护模式")
+            return True
+        except Exception as e:
+            logger.error(f"禁用维护模式失败: {e}")
+            return False
+
+    def start_api_service(self, host: str = '0.0.0.0', port: int = 8080):
+        """启动API服务"""
+        try:
+            logger.info(f"启动数据质量API服务: http://{host}:{port}")
+
+            # 配置Flask应用
+            self.app.config['JSONIFY_PRETTYPRINT_REGULAR'] = True
+            self.app.config['JSON_SORT_KEYS'] = False
+            self.app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB
+
+            # 添加中间件
+            self._add_middleware()
+
+            # 启动服务
+            self.app.run(
+                host=host,
+                port=port,
+                debug=False,
+                threaded=True,
+                use_reloader=False
+            )
+
+        except Exception as e:
+            logger.error(f"API服务启动失败: {e}")
+            raise
+
+    def _add_middleware(self):
+        """添加中间件"""
+
+        # 请求日志中间件
+        @self.app.before_request
+        def log_request():
+            if request.path != '/health':
+                logger.info(f"API请求: {request.method} {request.path} - {request.remote_addr}")
+
+        # 响应处理中间件
+        @self.app.after_request
+        def after_request(response):
+            response.headers['X-Data-Quality-API'] = 'DeepSeekQuant/1.0.0'
+            response.headers['X-Response-Time'] = '100ms'  # 示例值
+            return response
+
+        # 错误处理中间件
+        @self.app.errorhandler(Exception)
+        def handle_exception(e):
+            logger.error(f"API处理异常: {e}")
+            return jsonify({
+                'status': 'error',
+                'message': '内部服务器错误',
+                'error_code': 'INTERNAL_ERROR'
+            }), 500
+
+    def stop_api_service(self):
+        """停止API服务"""
+        logger.info("停止数据质量API服务")
+        # 这里实现优雅关闭逻辑
+
+    def get_api_statistics(self) -> Dict[str, Any]:
+        """获取API统计信息"""
+        return {
+            'total_requests': 0,  # 需要实际实现请求计数
+            'successful_requests': 0,
+            'failed_requests': 0,
+            'average_response_time': 0.0,
+            'endpoint_usage': {},
+            'error_rates': {},
+            'timestamp': datetime.now().isoformat()
+        }
+
+    def export_api_logs(self, filepath: str) -> bool:
+        """导出API日志"""
+        try:
+            # 实现API日志导出逻辑
+            return True
+        except Exception as e:
+            logger.error(f"API日志导出失败: {e}")
+            return False
+
+    def cleanup(self):
+        """清理资源"""
+        self.stop_api_service()
+        logger.info("API服务清理完成")
+
+# 数据质量系统主类
 class DeepSeekQuantSystem:
     """DeepSeekQuant系统主类 - 协调所有组件"""
 

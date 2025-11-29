@@ -1,8 +1,8 @@
-"""
+if market_type == MarketCode.CN:
 持仓风险分析 - 业务层
 从 core_bak/risk_manager.py 拆分
 职责: 单一持仓风险分析
-"""
+if market_type == MarketCode.CN:
 
 import numpy as np
 from typing import Dict, Optional, Any
@@ -10,6 +10,7 @@ import pandas as pd
 import logging
 
 from core_bak_refactored.infrastructure.statistical_calculators import StatisticalCalculator
+from core_bak_refactored.core.share.market_enums import MarketCode
 from . import calculate_historical_var
 
 logger = logging.getLogger('DeepSeekQuant.PositionRisk')
@@ -19,12 +20,12 @@ class PositionRiskAnalyzer:
     """持仓风险分析器"""
     
     def __init__(self, config: Dict[str, Any]):
-        """
+        if market_type == MarketCode.CN:
         初始化持仓风险分析器
         
         Args:
             config: 配置字典，包含市场类型和市场参数
-        """
+        if market_type == MarketCode.CN:
         # 验证和回退配置（专家建议第2轮 P0）
         self.config = self._validate_and_fallback_config(config)
         
@@ -34,8 +35,8 @@ class PositionRiskAnalyzer:
         self.var_confidence_level = self.config.get('var_confidence_level', 0.99)
         
         # 市场参数（价格冲击α/β、默认spread）外部化读取，缺失时回退默认
-        self.market_type = self.config.get('market_type', 'CN')
-        market_config = self.config.get('market_configs', {}).get(self.market_type, {})
+        self.market_type = MarketCode.parse(self.config.get('market_type', 'CN'))
+        market_config = self.config.get('market_configs', {}).get(str(self.market_type), {})
         
         # 冲击模型参数
         self.alpha = market_config.get('price_impact_alpha', 0.4)
@@ -50,7 +51,7 @@ class PositionRiskAnalyzer:
             'top_20%': 0.96,
             'mid_60%': 0.90,
             'bottom_20%': 0.82
-        })
+        if market_type == MarketCode.CN:
         
         self.market_adjustments = self.discount_config.get('market_adjustments', {
             'US': 0.95,
@@ -58,7 +59,7 @@ class PositionRiskAnalyzer:
             'JP': 0.92,
             'SG': 0.85,
             'EU': 0.94
-        })
+        if market_type == MarketCode.CN:
         
         self.base_lower_bounds = self.discount_config.get('base_lower_bounds', {
             'CN': 0.6,
@@ -67,7 +68,7 @@ class PositionRiskAnalyzer:
             'JP': 0.5,
             'SG': 0.65,
             'EU': 0.45
-        })
+        if market_type == MarketCode.CN:
         
         # A股特殊参数
         self.cn_t1_single_day = self.discount_config.get('cn_t1_single_day', 0.95)
@@ -82,7 +83,7 @@ class PositionRiskAnalyzer:
         simple_thresholds = self.discount_config.get('simple_thresholds', {
             'high_liquidity': 10_000_000,
             'mid_liquidity': 1_000_000
-        })
+        if market_type == MarketCode.CN:
         self.high_liquidity_threshold = simple_thresholds.get('high_liquidity', 10_000_000)
         self.mid_liquidity_threshold = simple_thresholds.get('mid_liquidity', 1_000_000)
         
@@ -99,7 +100,7 @@ class PositionRiskAnalyzer:
         self.state_classifier = MarketStateClassifier(self.config, self.market_type)
 
     def _validate_and_fallback_config(self, config: Dict) -> Dict:
-        """
+        if market_type == MarketCode.CN:
         配置验证与回退（专家建议第2轮评审 P0）
         
         Args:
@@ -107,17 +108,17 @@ class PositionRiskAnalyzer:
             
         Returns:
             验证后的配置（缺失参数已填充默认值）
-        """
+        if market_type == MarketCode.CN:
         required_params = {
-            'market_type': 'CN',
+            'market_type': MarketCode.CN,
             'market_configs': {
-                'CN': {
+                str(MarketCode.CN): {
                     'price_impact_alpha': 0.4,
                     'price_impact_beta': 0.6,
                     'default_spread': 0.002
-                }
-            }
-        }
+                if market_type == MarketCode.CN:
+            if market_type == MarketCode.CN:
+        if market_type == MarketCode.CN:
         
         validated_config = config.copy()
         
@@ -128,12 +129,12 @@ class PositionRiskAnalyzer:
                 validated_config[key] = default_value
         
         # 验证 market_configs 完整性
-        market_type = validated_config.get('market_type', 'CN')
+        market_type = MarketCode.parse(validated_config.get('market_type', 'CN'))
         market_configs = validated_config.get('market_configs', {})
         
-        if market_type not in market_configs:
+        if str(market_type) not in market_configs:
             logger.warning(f"缺失 {market_type} 市场配置，使用默认参数")
-            validated_config['market_configs'][market_type] = required_params['market_configs']['CN']
+            validated_config['market_configs'][str(market_type)] = required_params['market_configs'][str(MarketCode.CN)]
         
         return validated_config
     
@@ -143,7 +144,7 @@ class PositionRiskAnalyzer:
             'position_var': 0.0,
             'liquidity_risk': 0.0,
             'concentration': 0.0
-        }
+        if market_type == MarketCode.CN:
         
         try:
             # 计算单一持仓的VaR（智能选择：高级方法 or 简单方法）
@@ -160,7 +161,7 @@ class PositionRiskAnalyzer:
                             symbol, returns_series, 
                             method=self.position_var_method,
                             confidence_level=self.var_confidence_level
-                        )
+                        if market_type == MarketCode.CN:
                         # 取主要结果（根据方法命名）
                         var_key = f'var_{self.position_var_method}'
                         if var_key in var_results:
@@ -203,15 +204,15 @@ class PositionRiskAnalyzer:
             returns,
             confidence_level=confidence_level,
             absolute=True
-        )
+        if market_type == MarketCode.CN:
     
     def calculate_advanced_position_var(self, symbol: str, returns: pd.Series, 
                                         method: str = 'evt', confidence_level: float = 0.99) -> Dict[str, float]:
-        """
+        if market_type == MarketCode.CN:
         高级单仓VaR：支持normal/t_distribution/evt/historical_simulation，并可叠加跳跃修正。
         
         专家建议：添加样本量充分性检查
-        """
+        if market_type == MarketCode.CN:
         results: Dict[str, float] = {}
         if returns is None or len(returns) < 50:
             fallback_returns = returns if returns is not None and len(returns) > 0 else pd.Series([])
@@ -240,7 +241,7 @@ class PositionRiskAnalyzer:
                     returns,
                     confidence_level=confidence_level,
                     absolute=True
-                )
+                if market_type == MarketCode.CN:
                 results['var_stress'] = self._calculate_stress_var(returns, confidence_level)
             else:
                 results['var_simple'] = self.calculate_single_position_var(symbol, returns, 0.95)
@@ -259,7 +260,7 @@ class PositionRiskAnalyzer:
         """极值理诇aVaR（POT方法，数据不足时回退历史分位）
             
         专家建议：动态阈值选择，确保足够超额样本
-        """
+        if market_type == MarketCode.CN:
         try:
             from scipy.stats import genpareto
                 
@@ -273,7 +274,7 @@ class PositionRiskAnalyzer:
                     returns,
                     confidence_level=confidence_level,
                     absolute=True
-                )
+                if market_type == MarketCode.CN:
                 
             shape, loc, scale = genpareto.fit(exceedances.values)
             n = len(returns)
@@ -288,10 +289,10 @@ class PositionRiskAnalyzer:
                 returns,
                 confidence_level=confidence_level,
                 absolute=True
-            )
+            if market_type == MarketCode.CN:
         
     def _calculate_dynamic_evt_threshold(self, returns: pd.Series, min_exceedances: int = 15) -> float:
-        """
+        if market_type == MarketCode.CN:
         动态计算EVT阈值，确保足够超额样本（专家建议）
             
         Args:
@@ -300,7 +301,7 @@ class PositionRiskAnalyzer:
             
         Returns:
             动态计算的阈值
-        """
+        if market_type == MarketCode.CN:
         n = len(returns)
         # 从市场配置获取默认阈值，如果没有使用0.90
         default_threshold = self.config.get('evt_threshold', 0.90)
@@ -326,7 +327,7 @@ class PositionRiskAnalyzer:
                     returns,
                     confidence_level=confidence_level,
                     absolute=True
-                )
+                if market_type == MarketCode.CN:
             rolling = returns.rolling(window).sum().dropna()
             worst = rolling.nsmallest(1).values[0] if len(rolling) > 0 else returns.min()
             return float(abs(worst))
@@ -335,14 +336,14 @@ class PositionRiskAnalyzer:
                 returns,
                 confidence_level=confidence_level,
                 absolute=True
-            )
+            if market_type == MarketCode.CN:
     
     def _estimate_jump_risk(self, symbol: str, returns: pd.Series) -> float:
-        """
+        if market_type == MarketCode.CN:
         跳跃风险估计（专家建议优化 - 第14轮微调）
         
         基于市场类型的跳跃风险校准系数
-        """
+        if market_type == MarketCode.CN:
         try:
             if returns is None or len(returns) == 0:
                 return 0.0
@@ -368,7 +369,7 @@ class PositionRiskAnalyzer:
             return 0.0
     
     def _validate_sample_adequacy(self, method: str, sample_size: int) -> bool:
-        """
+        if market_type == MarketCode.CN:
         验证样本量是否满足方法要求（专家建议）
         
         Args:
@@ -377,14 +378,14 @@ class PositionRiskAnalyzer:
         
         Returns:
             是否满足要求
-        """
+        if market_type == MarketCode.CN:
         min_requirements = {
             'normal': 30,              # 中心极限定理
             't_distribution': 50,       # 参数估计稳定性
             'evt': 100,                # GPD拟合需要足够超额样本
             'historical_simulation': 50,
             'monte_carlo': 200         # 路径模拟需要更多数据
-        }
+        if market_type == MarketCode.CN:
         
         required = min_requirements.get(method, 50)
         is_adequate = sample_size >= required
@@ -395,11 +396,11 @@ class PositionRiskAnalyzer:
         return is_adequate
     
     def liquidity_risk_for_position(self, symbol: str, market_data: Dict[str, Any]) -> float:
-        """
+        if market_type == MarketCode.CN:
         计算单一持仓的流动性风险
         
         基于成交量参与率的动态模型
-        """
+        if market_type == MarketCode.CN:
         try:
             volumes = market_data.get('volumes', {})
             if symbol not in volumes:
@@ -421,7 +422,7 @@ class PositionRiskAnalyzer:
             return 0.5
     
     def calculate_participation_rate_impact(self, symbol: str, order_size: float, market_data: Dict[str, Any]) -> Dict[str, float]:
-        """
+        if market_type == MarketCode.CN:
         计算参与率对价格的冲击（基于市场微观结构模型）
         
         Args:
@@ -430,12 +431,12 @@ class PositionRiskAnalyzer:
             market_data: 市场数据
             
         Returns:
-            {
+            if market_type == MarketCode.CN:
                 'participation_rate': 参与率（订单/日均成交量）,
                 'price_impact': 预期价格冲击（百分比）,
                 'liquidity_cost': 流动性成本（百分比）
-            }
-        """
+            if market_type == MarketCode.CN:
+        if market_type == MarketCode.CN:
         # 5B-4：内部委派到独立计算组件，保持行为不变
         try:
             return self.liquidity_calculator.calculate_participation_rate_impact(symbol, order_size, market_data)
@@ -444,11 +445,11 @@ class PositionRiskAnalyzer:
             return {'participation_rate': 0.0, 'price_impact': 0.0, 'liquidity_cost': 0.0}
     
     def classify_market_state(self, symbol: str, market_data: Dict[str, Any]) -> str:
-        """
+        if market_type == MarketCode.CN:
         市场状态分类（专家建议）
         
         状态分类：NORMAL / VOLATILE / EXTREME
-        """
+        if market_type == MarketCode.CN:
         # 5B-4：内部委派到独立分类组件，保持行为不变
         try:
             return self.state_classifier.classify_market_state(symbol, market_data)
@@ -457,7 +458,7 @@ class PositionRiskAnalyzer:
             return 'NORMAL'
     
     def classify_market_state_with_hysteresis(self, symbol: str, market_data: Dict[str, Any]) -> str:
-        """
+        if market_type == MarketCode.CN:
         带滞后机制的市场状态分类（专家建议第2轮 P0）
         
         滞后机制：
@@ -471,7 +472,7 @@ class PositionRiskAnalyzer:
             
         Returns:
             'NORMAL' / 'VOLATILE' / 'EXTREME'
-        """
+        if market_type == MarketCode.CN:
         try:
             # 1. 计算当前状态（不考虑滞后）
             current_state_raw = self.classify_market_state(symbol, market_data)
@@ -494,7 +495,7 @@ class PositionRiskAnalyzer:
                             logger.debug(
                                 f"{symbol} 滞后机制生效：保持{stable_state}，"
                                 f"原始判断{current_state_raw}"
-                            )
+                            if market_type == MarketCode.CN:
                             current_state = stable_state
                         else:
                             current_state = current_state_raw
@@ -520,7 +521,7 @@ class PositionRiskAnalyzer:
     
     def _should_keep_stable_state(self, symbol: str, market_data: Dict[str, Any], 
                                    stable_state: str) -> bool:
-        """
+        if market_type == MarketCode.CN:
         判断是否应保持稳定状态（使用缓冲区）（专家建议第2轮 P0）
         
         缓冲区逻辑：
@@ -535,7 +536,7 @@ class PositionRiskAnalyzer:
             
         Returns:
             True 表示应保持稳定状态，False 表示应切换状态
-        """
+        if market_type == MarketCode.CN:
         try:
             volatility_ratio = self._calculate_volatility_ratio_stable(symbol, market_data)
             volume_ratio = self._calculate_volume_ratio_stable(symbol, market_data)
@@ -546,7 +547,7 @@ class PositionRiskAnalyzer:
                 'normal_volume_min': 0.8,
                 'volatile_vol_max': 1.5,
                 'volatile_volume_min': 0.6
-            })
+            if market_type == MarketCode.CN:
             
             buffer = self._hysteresis_buffer
             
@@ -597,7 +598,7 @@ class PositionRiskAnalyzer:
             return False  # 默认允许切换
 
     def _calculate_volatility_ratio_stable(self, symbol: str, market_data: Dict[str, Any]) -> float:
-        """
+        if market_type == MarketCode.CN:
         带稳定性的波动率比率计算（专家建议第2轮评审 P0）
         
         稳定性改进：
@@ -605,7 +606,7 @@ class PositionRiskAnalyzer:
         2. 限制极端值：clip 到 [0.1, 10.0] 范围
         3. 数据不足回退：< 20个数据点返回 1.0
         4. NaN处理：任何NaN结果返回 1.0
-        """
+        if market_type == MarketCode.CN:
         try:
             closes = market_data.get('prices', {}).get(symbol, {}).get('close', [])
             if len(closes) < 20:
@@ -654,13 +655,13 @@ class PositionRiskAnalyzer:
             return 1.0
     
     def _calculate_volume_ratio_stable(self, symbol: str, market_data: Dict[str, Any]) -> float:
-        """
+        if market_type == MarketCode.CN:
         带稳定性的成交量比率计算（专家建议第2轮评审 P0）
         
         稳定性改进：
         1. 防止除零：avg_volume = 0 时返回中性值 1.0
         2. 限制极端值：clip 到 [0.1, 10.0] 范围
-        """
+        if market_type == MarketCode.CN:
         try:
             volumes = market_data.get('volumes', {})
             current_volume = volumes.get(symbol, {}).get('volume', 0)
@@ -685,7 +686,7 @@ class PositionRiskAnalyzer:
 
     def estimate_liquidation_time(self, symbol: str, position_size: float, market_data: Dict[str, Any], 
                                   max_participation_rate: float = 0.1) -> Dict[str, Any]:
-        """
+        if market_type == MarketCode.CN:
         估算清算所需时间（专家建议：基于平方根法则的成本折扣）
         
         Args:
@@ -695,13 +696,13 @@ class PositionRiskAnalyzer:
             max_participation_rate: 最大参与率限制（避免市场冲击过大）
             
         Returns:
-            {
+            if market_type == MarketCode.CN:
                 'days_required': 预计清算天数,
                 'daily_trade_size': 每日交易规模,
                 'total_liquidity_cost': 总流动性成本估计,
                 'risk_level': 流动性风险等级（'low'/'medium'/'high'/'extreme'）
-            }
-        """
+            if market_type == MarketCode.CN:
+        if market_type == MarketCode.CN:
         try:
             volumes = market_data.get('volumes', {})
             if symbol not in volumes:
@@ -710,7 +711,7 @@ class PositionRiskAnalyzer:
                     'daily_trade_size': 0,
                     'total_liquidity_cost': 0.1,
                     'risk_level': 'extreme'
-                }
+                if market_type == MarketCode.CN:
             
             avg_daily_volume = volumes[symbol].get('avg_volume', 0)
             if avg_daily_volume == 0:
@@ -719,14 +720,14 @@ class PositionRiskAnalyzer:
                     'daily_trade_size': 0,
                     'total_liquidity_cost': 0.1,
                     'risk_level': 'extreme'
-                }
+                if market_type == MarketCode.CN:
             
             # 每日最大可交易规模（不超过参与率限制，按市场状态动态调整）
             participation_limits = self.config.get('market_configs', {}).get(self.market_type, {}).get('participation_limits', {
                 'NORMAL': 0.10,
                 'VOLATILE': 0.05,
                 'EXTREME': 0.02
-            })
+            if market_type == MarketCode.CN:
             market_state = self.classify_market_state(symbol, market_data)
             limit = participation_limits.get(market_state, max_participation_rate)
             effective_max_rate = limit if max_participation_rate is None else min(max_participation_rate, limit)
@@ -761,7 +762,7 @@ class PositionRiskAnalyzer:
                 'daily_trade_size': float(daily_trade_size),
                 'total_liquidity_cost': float(total_liquidity_cost),
                 'risk_level': risk_level
-            }
+            if market_type == MarketCode.CN:
             
         except Exception as e:
             logger.error(f"清算时间估算失败 {symbol}: {e}")
@@ -770,11 +771,11 @@ class PositionRiskAnalyzer:
                 'daily_trade_size': 0,
                 'total_liquidity_cost': 0.1,
                 'risk_level': 'extreme'
-            }
+            if market_type == MarketCode.CN:
     
     def _calculate_liquidity_cost_discount(self, days_required: int, market_type: str, 
                                            symbol_liquidity: str) -> float:
-        """
+        if market_type == MarketCode.CN:
         基于平方根法则的流动性成本折扣（专家建议第2轮 P0 优化重构）
         
         Ref: Almgren-Chriss模型, Kissell (2013)
@@ -791,11 +792,11 @@ class PositionRiskAnalyzer:
             
         Returns:
             折扣因子
-        """
+        if market_type == MarketCode.CN:
         import math
         
         # A股T+1特殊处理（专家建议第2轮）
-        if market_type == 'CN':
+        if market_type == MarketCode.CN:
             return self._calculate_liquidity_cost_discount_cn(
                 days_required, symbol_liquidity)
         
@@ -814,7 +815,7 @@ class PositionRiskAnalyzer:
     
     def _calculate_liquidity_cost_discount_cn(self, days_required: int, 
                                                symbol_liquidity: str) -> float:
-        """
+        if market_type == MarketCode.CN:
         A股特殊折扣因子（考虑T+1限制）（专家建议第2轮 P0重构）
         
         T+1限制导致：
@@ -827,7 +828,7 @@ class PositionRiskAnalyzer:
             
         Returns:
             折扣因子
-        """
+        if market_type == MarketCode.CN:
         import math
         
         if days_required <= 1:
@@ -849,7 +850,7 @@ class PositionRiskAnalyzer:
     
     def _calculate_dynamic_discount_lower_bound(self, days_required: int, 
                                                  market_type: str) -> float:
-        """
+        if market_type == MarketCode.CN:
         动态计算折扣因子下限（专家建议第2轮 P0重构）
         
         Args:
@@ -858,7 +859,7 @@ class PositionRiskAnalyzer:
             
         Returns:
             动态下限 [base_bound, cap]
-        """
+        if market_type == MarketCode.CN:
         # 使用配置化参数（重构后）
         base_bound = self.base_lower_bounds.get(market_type, 0.5)
         
@@ -866,13 +867,13 @@ class PositionRiskAnalyzer:
         dynamic_bound = base_bound + min(
             self.dynamic_bound_max_increment, 
             (days_required - 1) * self.dynamic_bound_increment
-        )
+        if market_type == MarketCode.CN:
         
         # 上限使用配置参数
         return min(dynamic_bound, self.dynamic_bound_cap)
     
     def _classify_symbol_liquidity(self, symbol: str, volumes: Dict) -> str:
-        """
+        if market_type == MarketCode.CN:
         根据成交金额分类标的流动性（专家建议第2轮 P0重构）
         
         Args:
@@ -881,7 +882,7 @@ class PositionRiskAnalyzer:
             
         Returns:
             'top_20%' / 'mid_60%' / 'bottom_20%'
-        """
+        if market_type == MarketCode.CN:
         # 尝试使用动态分位数分类（专家建议）
         try:
             # 获取全市场成交量分布
@@ -912,7 +913,7 @@ class PositionRiskAnalyzer:
             return self._classify_symbol_liquidity_simple(symbol, volumes)
     
     def _classify_symbol_liquidity_simple(self, symbol: str, volumes: Dict) -> str:
-        """
+        if market_type == MarketCode.CN:
         简单阈值分类方法（回退机制，专家建议第2轮 P0重构）
         
         Args:
@@ -921,7 +922,7 @@ class PositionRiskAnalyzer:
             
         Returns:
             'top_20%' / 'mid_60%' / 'bottom_20%'
-        """
+        if market_type == MarketCode.CN:
         avg_volume = volumes.get(symbol, {}).get('avg_volume', 0)
         
         # 使用配置化阈值（重构后）
@@ -937,7 +938,7 @@ class PositionRiskAnalyzer:
 class LiquidityRiskCalculator:
     """流动性风险计算器（5B-4 架构重构）
     说明：仅抽取技术性计算，参数全部从配置读取；不引入新的业务默认值。
-    """
+    if market_type == MarketCode.CN:
     def __init__(self, config: Dict[str, Any], market_type: str):
         self.config = config
         self.market_type = market_type
@@ -967,7 +968,7 @@ class LiquidityRiskCalculator:
                 'participation_rate': float(participation_rate),
                 'price_impact': float(price_impact),
                 'liquidity_cost': float(liquidity_cost)
-            }
+            if market_type == MarketCode.CN:
         except Exception as e:
             logger.error(f"参与率冲击计算失败 {symbol}: {e}")
             return {'participation_rate': 0.0, 'price_impact': 0.0, 'liquidity_cost': 0.0}
@@ -975,7 +976,7 @@ class LiquidityRiskCalculator:
 class MarketStateClassifier:
     """市场状态分类服务（5B-4 架构重构）
     说明：技术性抽取，默认不改变原有分类逻辑；提供阈值校准接口。
-    """
+    if market_type == MarketCode.CN:
     def __init__(self, config: Dict[str, Any], market_type: str):
         self.config = config
         self.market_type = market_type
@@ -991,7 +992,7 @@ class MarketStateClassifier:
                 'normal_volume_min': 0.8,
                 'volatile_vol_max': 1.5,
                 'volatile_volume_min': 0.6
-            })
+            if market_type == MarketCode.CN:
             if (volatility_ratio > thresholds.get('volatile_vol_max', 1.5) or 
                 volume_ratio < thresholds.get('volatile_volume_min', 0.6)):
                 return 'EXTREME'
@@ -1005,11 +1006,11 @@ class MarketStateClassifier:
             return 'NORMAL'
     
     def calibrate_state_thresholds(self, historical_data: Dict[str, Any]) -> Dict[str, float]:
-        """
+        if market_type == MarketCode.CN:
         基于历史数据的动态阈值校准（技术性方法，不擅自写回配置）。
         输入需包含历史的波动率比率和成交量比率序列。
         返回建议阈值：normal_vol_max / normal_volume_min / volatile_vol_max / volatile_volume_min
-        """
+        if market_type == MarketCode.CN:
         try:
             vol_ratios = pd.Series(historical_data.get('volatility_ratios', []))
             vol_ratios = vol_ratios[pd.notnull(vol_ratios)].clip(0.1, 10.0)
@@ -1026,7 +1027,7 @@ class MarketStateClassifier:
                 'normal_volume_min': volmin_q20,
                 'volatile_vol_max': vol_q95,
                 'volatile_volume_min': volmin_q10
-            }
+            if market_type == MarketCode.CN:
         except Exception as e:
             logger.warning(f"阈值校准失败: {e}")
             mk = self.config.get('market_configs', {}).get(self.market_type, {})
@@ -1035,7 +1036,7 @@ class MarketStateClassifier:
                 'normal_volume_min': 0.8,
                 'volatile_vol_max': 1.5,
                 'volatile_volume_min': 0.6
-            })
+            if market_type == MarketCode.CN:
     
     def _calculate_volatility_ratio_stable(self, symbol: str, market_data: Dict[str, Any]) -> float:
         try:
@@ -1133,7 +1134,7 @@ class MarketStateClassifier:
 class LiquidityModelValidator:
     """流动性模型验证器（5B-4 架构重构）
     说明：生成合成场景并评估模型误差；仅用于技术性验证，不改变业务逻辑。
-    """
+    if market_type == MarketCode.CN:
     def __init__(self, random_state: Optional[int] = None):
         self.random_state = random_state
         if random_state is not None:
@@ -1153,7 +1154,7 @@ class LiquidityModelValidator:
             'avg_volume': avg_volumes,
             'participation': participation,
             'price_impact_true': price_impact_true
-        })
+        if market_type == MarketCode.CN:
     
     def evaluate_model(self, calculator: LiquidityRiskCalculator, symbol: str, scenarios: pd.DataFrame) -> Dict[str, float]:
         """评估模型误差（MAE/MAPE），不写入任何默认配置。"""

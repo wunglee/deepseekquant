@@ -17,6 +17,7 @@ import uuid
 
 from .risk_metrics_service import RiskMetricsService, RiskMetricsEngine
 from core_bak_refactored.infrastructure.statistical_calculators import StatisticalCalculator
+from core_bak_refactored.core.share.market_enums import MarketCode
 
 logger = logging.getLogger('DeepSeekQuant.PortfolioRisk')
 
@@ -588,7 +589,7 @@ class PortfolioRiskAnalyzer:
                 'report_id': str(uuid.uuid4()),
                 'environment': os.getenv('DEPLOYMENT_ENV', 'dev'),
                 'timestamp': datetime.utcnow().isoformat() + 'Z',
-                'market_type': self.config.get('market_type', 'CN'),
+                'market_type': str(MarketCode.parse(self.config.get('market_type', 'CN'))),
                 'trading_days_per_year': self.config.get('trading_days_per_year', 252),
                 'confidence_levels': self.config.get('confidence_levels', {}),
                 'risk_free_rate': self.risk_metrics_service.risk_free_rate,
@@ -639,7 +640,7 @@ class PortfolioRiskAnalyzer:
                 result['portfolio_returns'] = portfolio_returns
                 result['model_health']['data_points'] = int(len(portfolio_returns))
                 # 业务增强：按市场阈值计算质量与降级策略
-                market_type = self.config.get('market_type', 'CN')
+                market_type = MarketCode.parse(self.config.get('market_type', 'CN'))
                 thresholds = {
                     'US': {'min_points': 63, 'optimal_points': 252},
                     'CN': {'min_points': 30, 'optimal_points': 180},
@@ -647,7 +648,7 @@ class PortfolioRiskAnalyzer:
                     'EU': {'min_points': 60, 'optimal_points': 220},
                     'SG': {'min_points': 50, 'optimal_points': 180}
                 }
-                th = thresholds.get(market_type, {'min_points': 60, 'optimal_points': 252})
+                th = thresholds.get(str(market_type), {'min_points': 60, 'optimal_points': 252})
                 dp = int(len(portfolio_returns))
                 if dp >= th['optimal_points']:
                     quality, degradation, fallback = 'EXCELLENT', 'NONE', 'FULL_MODEL'
@@ -670,7 +671,7 @@ class PortfolioRiskAnalyzer:
                 result['volatility'] = annual_volatility
                 result['total_risk'] = annual_volatility  # 专家指导：总风险=波动率
                 # 业务增强：报告快照市场状态与波动率分层
-                base_threshold = float(self.config.get('volatility_spike_threshold', self.config.get('market_configs', {}).get(self.config.get('market_type', 'CN'), {}).get('volatility_spike_threshold', 0.05)))
+                base_threshold = float(self.config.get('volatility_spike_threshold', self.config.get('market_configs', {}).get(str(MarketCode.parse(self.config.get('market_type', 'CN'))), {}).get('volatility_spike_threshold', 0.05)))
                 daily_vol = float(portfolio_returns.std())
                 vol_tier = 'NORMAL'
                 if daily_vol > base_threshold * 2.0:
@@ -759,7 +760,7 @@ class PortfolioRiskAnalyzer:
                                 if len(closes) >= 2:
                                     log_returns = StatisticalCalculator.calculate_log_returns(np.array(closes))
                                     # 专家建议：A股市场需要涨跌停调整
-                                    if self.config.get('market_type') == 'CN':
+                                    if MarketCode.parse(self.config.get('market_type')) == MarketCode.CN:
                                         log_returns = self._adjust_for_limit_hits(log_returns)
                                     returns_data[symbol] = log_returns
                         
@@ -806,13 +807,14 @@ class PortfolioRiskAnalyzer:
             if result['model_health']['degradation_level'] in ('SIGNIFICANT', 'SEVERE'):
                 compliance_flags.append('DEGRADED_MODEL')
             # 分市场数据新鲜度阈值
-            market_type = self.config.get('market_type', 'CN')
+            market_type = MarketCode.parse(self.config.get('market_type', 'CN'))
             data_freshness_thresholds = {
-                'US': 1800,
-                'CN': 3600,
-                'JP': 7200,
-                'EU': 3600,
-                'SG': 10800
+                MarketCode.US: 1800,
+                MarketCode.CN: 3600,
+                MarketCode.JP: 7200,
+                MarketCode.EU: 3600,
+                MarketCode.SG: 10800,
+                MarketCode.UNKNOWN: 3600
             }
             freshness_thresh = data_freshness_thresholds.get(market_type, 3600)
             if result['report_snapshot']['data_freshness_seconds'] > freshness_thresh:
@@ -917,7 +919,7 @@ class PortfolioRiskAnalyzer:
                 'param_version': str(self.config.get('param_version', 'v1')),
                 'market_data_updated': bool(self.config.get('market_data_updated', False)),
                 'volatility': vol,
-                'market_type': self.config.get('market_type', 'CN'),
+                'market_type': str(MarketCode.parse(self.config.get('market_type', 'CN'))),
                 'volatility_tier': vol_tier,
                 'market_status': market_status,
                 'circuit_breaker_triggered': circuit_breaker_triggered,
@@ -926,11 +928,11 @@ class PortfolioRiskAnalyzer:
                 'major_market_event': major_event
             }
             threshold = float(self.config.get('volatility_spike_threshold', 0.05))
-            limit_threshold = float(self.config.get('limit_hit_ratio_threshold', self.config.get('market_configs', {}).get(self.config.get('market_type', 'CN'), {}).get('limit_hit_ratio_threshold', 0.3)))
+            limit_threshold = float(self.config.get('limit_hit_ratio_threshold', self.config.get('market_configs', {}).get(str(MarketCode.parse(self.config.get('market_type', 'CN'))), {}).get('limit_hit_ratio_threshold', 0.3)))
             # 触发条件：波动率或重大事件/极端相关/熔断/涨跌停比例（分市场阈值）
             event_trigger = circuit_breaker_triggered or extreme_correlation_breakdown or (limit_hit_ratio > limit_threshold) or major_event
             # 触发分数（结合事件权重与波动率占比）
-            weights = self.config.get('market_configs', {}).get(self.config.get('market_type','CN'), {}).get('event_weights', {})
+            weights = self.config.get('market_configs', {}).get(str(MarketCode.parse(self.config.get('market_type','CN'))), {}).get('event_weights', {})
             trigger_score = (vol / threshold if threshold > 0 else 0.0) 
             trigger_score += (weights.get('circuit_breaker', 0.0) if circuit_breaker_triggered else 0.0)
             trigger_score += (weights.get('extreme_correlation', 0.0) if extreme_correlation_breakdown else 0.0)

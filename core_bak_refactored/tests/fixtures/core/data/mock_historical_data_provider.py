@@ -3,7 +3,9 @@ import pandas as pd
 from typing import Dict, Any
 import logging
 
-from core_bak_refactored.core.data.data_quality_checker import DataQualityChecker
+# 暂时移除对DataQualityChecker的依赖，因为它已被移动到backup
+# TODO：待data_quality_checker恢复后再启用
+# from core_bak_refactored.core.data.data_quality_checker import DataQualityChecker
 
 logger = logging.getLogger('DeepSeekQuant.Tests.MockData')
 
@@ -199,18 +201,27 @@ class MockHistoricalDataProvider:
         return returns
 
     def validate_data_quality(self, data) -> Dict[str, Any]:
-        checker = DataQualityChecker()
-        report = checker.check_quality(data, index_id='mock')
+        """TODO：数据质量验证（简化版，无DataQualityChecker依赖）"""
         total_rows = len(data)
         missing_values = int(data.isna().sum().sum())
-        outliers_detected = sum(
-            1 for issue in (report.issues or [])
-            if ('异常' in issue) or ('零成交量' in issue) or ('极值' in issue)
-        )
+        
+        # 简单的异常检测（IQR方法）
+        outliers_detected = 0
+        if 'close' in data.columns:
+            Q1 = data['close'].quantile(0.25)
+            Q3 = data['close'].quantile(0.75)
+            IQR = Q3 - Q1
+            lower_bound = Q1 - 1.5 * IQR
+            upper_bound = Q3 + 1.5 * IQR
+            outliers_detected = ((data['close'] < lower_bound) | (data['close'] > upper_bound)).sum()
+        
+        completeness = 1.0 - (missing_values / (total_rows * len(data.columns))) if total_rows > 0 else 0.0
+        consistency = 1.0 - (outliers_detected / total_rows) if total_rows > 0 else 1.0
+        
         return {
-            'completeness_score': report.completeness,
-            'consistency_score': report.consistency,
-            'accuracy_score': report.reasonableness,
+            'completeness_score': completeness,
+            'consistency_score': consistency,
+            'accuracy_score': 0.95,  # 默认值
             'outliers_detected': outliers_detected,
             'total_rows': total_rows,
             'missing_values': missing_values,
