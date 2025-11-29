@@ -45,10 +45,6 @@ import psutil
 from flask import Flask, jsonify, request, Response
 from flask_cors import CORS
 
-# 从组件导入
-from core_bak_refactored.app.data.api.controllers import DataQualityControllers
-from core_bak_refactored.app.data.api.health import HealthChecker
-
 if TYPE_CHECKING:
     from core_bak_refactored.core.data.data_fetcher import DataQualityMonitor
 
@@ -56,21 +52,11 @@ logger = logging.getLogger('DeepSeekQuant.App.APIService')
 
 
 class DataQualityAPIService:
-    """数据质量API服务 - 提供RESTful API接口
-    
-    迁移状态: 进行中 - 逐步拆分到组件
-    原始代码: api_service_bak.py (1342行)
-    当前进度: 已迁移辅助方法到 controllers.py
-    """
+    """数据质量API服务 - 提供RESTful API接口"""
 
     def __init__(self, quality_monitor: DataQualityMonitor):
         self.quality_monitor = quality_monitor
         self.app = Flask(__name__)
-        
-        # 初始化组件
-        self.controllers = DataQualityControllers(quality_monitor)
-        self.health_checker = HealthChecker(quality_monitor)
-        
         self._setup_routes()
 
     def _setup_routes(self):
@@ -78,14 +64,21 @@ class DataQualityAPIService:
 
         @self.app.route('/api/v1/quality/current', methods=['GET'])
         def get_current_quality():
-            """获取当前质量数据 - 委派到controllers"""
+            """获取当前质量数据"""
             try:
                 hours = request.args.get('hours', 24, type=int)
-                result = self.controllers.get_quality_current(hours)
+                quality_data = self.quality_monitor.get_quality_history(hours)
                 return jsonify({
                     'status': 'success',
-                    **result,
-                    'timestamp': datetime.now().isoformat()
+                    'data': quality_data,
+                    'timestamp': datetime.now().isoformat(),
+                    'metadata': {
+                        'data_points': len(quality_data),
+                        'time_range': f'last_{hours}_hours',
+                        'quality_score_avg': np.mean(
+                            [q.get('overall_score', 0) for q in quality_data]) if quality_data else 0,
+                        'anomaly_count_total': sum(q.get('anomaly_count', 0) for q in quality_data)
+                    }
                 })
             except Exception as e:
                 logger.error(f"获取当前质量数据失败: {e}")
@@ -136,7 +129,7 @@ class DataQualityAPIService:
 
         @self.app.route('/api/v1/alerts', methods=['GET'])
         def get_alerts():
-            """获取警报历史 - 委派到controllers"""
+            """获取警报历史"""
             try:
                 hours = request.args.get('hours', 24, type=int)
                 level = request.args.get('level')
@@ -145,13 +138,37 @@ class DataQualityAPIService:
                 page = request.args.get('page', 1, type=int)
                 per_page = request.args.get('per_page', 50, type=int)
 
-                result = self.controllers.get_alerts_with_pagination(
-                    hours, level, severity, data_source, page, per_page
-                )
-                
+                alerts = self.quality_monitor.get_alert_history(hours)
+
+                # 应用过滤器
+                if level:
+                    alerts = [a for a in alerts if a.get('level') == level]
+                if severity:
+                    alerts = [a for a in alerts if a.get('severity') == severity]
+                if data_source:
+                    alerts = [a for a in alerts if a.get('data_source') == data_source]
+
+                # 分页
+                total_alerts = len(alerts)
+                start_idx = (page - 1) * per_page
+                end_idx = start_idx + per_page
+                paginated_alerts = alerts[start_idx:end_idx]
+
                 return jsonify({
                     'status': 'success',
-                    **result,
+                    'alerts': paginated_alerts,
+                    'pagination': {
+                        'page': page,
+                        'per_page': per_page,
+                        'total': total_alerts,
+                        'pages': (total_alerts + per_page - 1) // per_page
+                    },
+                    'summary': {
+                        'total_alerts': total_alerts,
+                        'by_level': self._group_by_level(alerts),
+                        'by_severity': self._group_by_severity(alerts),
+                        'by_source': self._group_by_source(alerts)
+                    },
                     'timestamp': datetime.now().isoformat()
                 })
 
@@ -165,9 +182,19 @@ class DataQualityAPIService:
 
         @self.app.route('/api/v1/performance', methods=['GET'])
         def get_performance():
-            """获取性能统计 - 委派到controllers"""
+            """获取性能统计"""
             try:
-                enhanced_stats = self.controllers.get_enhanced_performance()
+                stats = self.quality_monitor.get_performance_statistics()
+
+                # 添加额外的性能指标
+                enhanced_stats = {
+                    **stats,
+                    'system_health': self._calculate_system_health(stats),
+                    'trend_analysis': self._analyze_performance_trend(stats),
+                    'resource_utilization': self._get_resource_utilization(),
+                    'recommendations': self._generate_performance_recommendations(stats)
+                }
+
                 return jsonify({
                     'status': 'success',
                     'performance': enhanced_stats,
@@ -303,11 +330,13 @@ class DataQualityAPIService:
 
         @self.app.route('/api/v1/health', methods=['GET'])
         def health_check():
-            """健康检查 - 委派到health_checker"""
+            """健康检查"""
             try:
-                health_status = self.health_checker.check_system_health()
+                health_status = self._check_system_health()
                 status_code = 200 if health_status['status'] == 'healthy' else 503
+
                 return jsonify(health_status), status_code
+
             except Exception as e:
                 logger.error(f"健康检查失败: {e}")
                 return jsonify({
@@ -414,13 +443,67 @@ class DataQualityAPIService:
                 'error_code': 'INTERNAL_SERVER_ERROR'
             }), 500
 
-    #  已迁移的辅助方法，现在委派到组件：
-    # - _group_by_level -> controllers.group_by_level
-    # - _group_by_severity -> controllers.group_by_severity
-    # - _group_by_source -> controllers.group_by_source
-    # - _calculate_system_health -> controllers.calculate_system_health
-    # - _analyze_performance_trend -> controllers.analyze_performance_trend
-    # - _check_system_health -> health_checker.check_system_health
+    def _group_by_level(self, alerts: List[Dict]) -> Dict[str, int]:
+        """按级别分组警报"""
+        levels = {}
+        for alert in alerts:
+            level = alert.get('level', 'unknown')
+            if level not in levels:
+                levels[level] = 0
+            levels[level] += 1
+        return levels
+
+    def _group_by_severity(self, alerts: List[Dict]) -> Dict[str, int]:
+        """按严重性分组警报"""
+        severities = {}
+        for alert in alerts:
+            severity = alert.get('severity', 'medium')
+            if severity not in severities:
+                severities[severity] = 0
+            severities[severity] += 1
+        return severities
+
+    def _group_by_source(self, alerts: List[Dict]) -> Dict[str, int]:
+        """按数据源分组警报"""
+        sources = {}
+        for alert in alerts:
+            source = alert.get('data_source', 'unknown')
+            if source not in sources:
+                sources[source] = 0
+            sources[source] += 1
+        return sources
+
+    def _calculate_system_health(self, stats: Dict) -> Dict[str, Any]:
+        """计算系统健康度"""
+        # 基于多个指标计算系统健康度
+        success_rate = stats.get('success_rate', 0)
+        error_rate = 1 - success_rate
+        uptime = stats.get('uptime_seconds', 0)
+
+        health_score = min(100, max(0, success_rate * 100 - error_rate * 20))
+
+        return {
+            'score': health_score,
+            'status': 'healthy' if health_score >= 80 else ('degraded' if health_score >= 60 else 'unhealthy'),
+            'indicators': {
+                'success_rate': success_rate,
+                'error_rate': error_rate,
+                'uptime': uptime,
+                'stability': stats.get('stability_score', 0)
+            },
+            'recommendations': self._generate_health_recommendations(health_score, stats)
+        }
+
+    def _analyze_performance_trend(self, stats: Dict) -> Dict[str, Any]:
+        """分析性能趋势"""
+        # 这里实现性能趋势分析逻辑
+        return {
+            'trend': 'stable',
+            'direction': 'neutral',
+            'volatility': 'low',
+            'prediction': 'stable',
+            'confidence': 0.8
+        }
 
     def _get_resource_utilization(self) -> Dict[str, Any]:
         """获取资源利用率"""
