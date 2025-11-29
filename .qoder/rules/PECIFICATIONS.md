@@ -452,7 +452,7 @@ TODO:
 - ✅ **强制格式**：必须以 `*_test.py` 结尾（例如：`factor_model_test.py`）
 - ❌ **严禁**：使用 `test_*.py` 前缀格式
 - ✅ **一一对应原则**：一个源文件 `xxx.py` 必须且只能有一个对应测试文件 `xxx_test.py`
-- ✅ **目录镜像原则**：`core_bak_refactored/tests/**` 必须镜像 `core_bak_refactored/core/**` 或 `infrastructure/**` 的目录结构
+- ✅ **目录镜像原则**：`core_bak_refactored/tests/{test_type}/**` 必须镜像 `core_bak_refactored/core/**` 或 `infrastructure/**` 的目录结构
 - ✅ **命名规则**：测试文件名 = 源文件名 + `_test`（不含扩展名）
 
 **强制一一对应规则**:
@@ -460,15 +460,15 @@ TODO:
 源文件位置                                    测试文件位置（必须唯一）
 ────────────────────────────────────────────────────────────────────
 core_bak_refactored/core/risk/
-  └── factor_model.py                      tests/units/core/risk/
+  └── factor_model.py                      core_bak_refactored/tests/units/core/risk/
                                             └── factor_model_test.py ✅（唯一）
 
 core_bak_refactored/infrastructure/
-  └── cache_service.py                     tests/infrastructure/
+  └── cache_service.py                     core_bak_refactored/tests/infrastructure/
                                             └── cache_service_test.py ✅（唯一）
 
 core_bak_refactored/core/data/_fragments/
-  └── data_quality_checker.py              tests/units/core/data/_fragments/
+  └── data_quality_checker.py              core_bak_refactored/tests/units/core/data/_fragments/
                                             └── data_quality_checker_test.py ✅
 ```
 
@@ -484,7 +484,7 @@ core_bak_refactored/core/data/_fragments/
 **测试类型分离规范**:
 
 1. **单元测试** (与源文件一一对应)
-   - 位置：`tests/` 镜像 `core/` 或 `infrastructure/`
+   - 位置：`tests/units/` 镜像 `core/` 或 `infrastructure/`
    - 命名：`{source_name}_test.py`（必须唯一）
    - 范围：测试单个模块的功能
    - 示例：`tests/units/core/risk/factor_model_test.py`
@@ -530,7 +530,7 @@ class FactorModelPerformanceTest(unittest.TestCase):
 **方案B：分离到专门目录（用于大型测试套件）**
 ```
 tests/
-├── core/risk/
+├── units/core/risk/
 │   └── factor_model_test.py          # 单元测试（一一对应）
 ├── integration/
 │   └── factor_model_integration_test.py  # 集成测试（独立）
