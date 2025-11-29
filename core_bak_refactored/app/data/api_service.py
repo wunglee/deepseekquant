@@ -48,6 +48,11 @@ from flask_cors import CORS
 # 从组件导入
 from core_bak_refactored.app.data.api.controllers import DataQualityControllers
 from core_bak_refactored.app.data.api.health import HealthChecker
+from core_bak_refactored.app.data.api.metrics import MetricsCollector
+from core_bak_refactored.app.data.api.diagnostics import DiagnosticsRunner
+from core_bak_refactored.app.data.api.config_manager import ConfigManager
+from core_bak_refactored.app.data.api.exporter import DataExporter
+from core_bak_refactored.app.data.api.system_status import SystemStatusManager
 
 if TYPE_CHECKING:
     from core_bak_refactored.core.data.data_fetcher import DataQualityMonitor
@@ -70,6 +75,11 @@ class DataQualityAPIService:
         # 初始化组件
         self.controllers = DataQualityControllers(quality_monitor)
         self.health_checker = HealthChecker(quality_monitor)
+        self.metrics_collector = MetricsCollector(quality_monitor)
+        self.diagnostics_runner = DiagnosticsRunner(quality_monitor)
+        self.config_manager = ConfigManager(quality_monitor)
+        self.data_exporter = DataExporter(quality_monitor)
+        self.system_status_manager = SystemStatusManager(quality_monitor)
         
         self._setup_routes()
 
@@ -97,7 +107,7 @@ class DataQualityAPIService:
 
         @self.app.route('/api/v1/quality/report', methods=['GET'])
         def generate_quality_report():
-            """生成质量报告"""
+            """生成质量报告 - 委派到data_exporter"""
             try:
                 period = request.args.get('period', '7d')
                 report_format = request.args.get('format', 'json')
@@ -107,7 +117,7 @@ class DataQualityAPIService:
 
                 if report_format == 'csv':
                     # 转换为CSV格式
-                    csv_data = self._convert_report_to_csv(report, include_details)
+                    csv_data = self.data_exporter.convert_report_to_csv(report, include_details)
                     response = Response(csv_data, mimetype='text/csv')
                     response.headers[
                         'Content-Disposition'] = f'attachment; filename=quality_report_{datetime.now().strftime("%Y%m%d")}.csv'
@@ -184,13 +194,13 @@ class DataQualityAPIService:
 
         @self.app.route('/api/v1/metrics', methods=['GET'])
         def get_metrics():
-            """获取监控指标"""
+            """获取监控指标 - 委派到metrics_collector"""
             try:
                 metric_type = request.args.get('type', 'all')
                 time_range = request.args.get('time_range', '24h')
                 aggregation = request.args.get('aggregation', 'hourly')
 
-                metrics = self._get_system_metrics(metric_type, time_range, aggregation)
+                metrics = self.metrics_collector.get_system_metrics(metric_type, time_range, aggregation)
 
                 return jsonify({
                     'status': 'success',
@@ -214,19 +224,19 @@ class DataQualityAPIService:
 
         @self.app.route('/api/v1/export', methods=['GET'])
         def export_data():
-            """导出数据"""
+            """导出数据 - 委派到data_exporter"""
             try:
                 data_type = request.args.get('data_type', 'quality')
                 format = request.args.get('format', 'json')
                 time_range = request.args.get('time_range', '7d')
 
                 if data_type == 'quality':
-                    success = self.quality_monitor.export_monitoring_data(
+                    success = self.data_exporter.export_quality_data(
                         f'quality_export_{datetime.now().strftime("%Y%m%d_%H%M%S")}.{format}',
                         format
                     )
                 elif data_type == 'alerts':
-                    success = self._export_alert_data(format, time_range)
+                    success = self.data_exporter.export_alert_data(format, time_range)
                 else:
                     return jsonify({
                         'status': 'error',
@@ -259,11 +269,11 @@ class DataQualityAPIService:
 
         @self.app.route('/api/v1/config', methods=['GET', 'PUT'])
         def manage_config():
-            """管理配置"""
+            """管理配置 - 委派到config_manager"""
             try:
                 if request.method == 'GET':
                     # 获取当前配置
-                    config = self._get_current_config()
+                    config = self.config_manager.get_current_config()
                     return jsonify({
                         'status': 'success',
                         'config': config,
@@ -279,7 +289,7 @@ class DataQualityAPIService:
                             'error_code': 'INVALID_CONFIG'
                         }), 400
 
-                    success = self._update_config(new_config)
+                    success = self.config_manager.update_config(new_config)
                     if success:
                         return jsonify({
                             'status': 'success',
@@ -318,10 +328,10 @@ class DataQualityAPIService:
 
         @self.app.route('/api/v1/diagnostics', methods=['GET'])
         def run_diagnostics():
-            """运行诊断"""
+            """运行诊断 - 委派到diagnostics_runner"""
             try:
                 diagnostic_type = request.args.get('type', 'full')
-                diagnostics = self._run_diagnostics(diagnostic_type)
+                diagnostics = self.diagnostics_runner.run_diagnostics(diagnostic_type)
 
                 return jsonify({
                     'status': 'success',
@@ -339,9 +349,9 @@ class DataQualityAPIService:
 
         @self.app.route('/api/v1/status', methods=['GET'])
         def system_status():
-            """获取系统状态"""
+            """获取系统状态 - 委派到system_status_manager"""
             try:
-                status = self._get_system_status()
+                status = self.system_status_manager.get_system_status()
                 return jsonify({
                     'status': 'success',
                     'system_status': status,
@@ -358,15 +368,15 @@ class DataQualityAPIService:
 
         @self.app.route('/api/v1/maintenance', methods=['POST'])
         def maintenance_mode():
-            """维护模式"""
+            """维护模式 - 委派到system_status_manager"""
             try:
                 action = request.args.get('action', 'enable')
                 duration = request.args.get('duration', 3600, type=int)
 
                 if action == 'enable':
-                    success = self._enable_maintenance_mode(duration)
+                    success = self.system_status_manager.enable_maintenance_mode(duration)
                 else:
-                    success = self._disable_maintenance_mode()
+                    success = self.system_status_manager.disable_maintenance_mode()
 
                 if success:
                     return jsonify({
