@@ -736,10 +736,10 @@ ABNORMAL_GAP_THRESHOLD = {
 - ✅ 架构组织说明（澄清模块职责边界；tests纯委托，不承载业务逻辑）
 - ✅ 固定模板锚点（用于机器校验）：各章节标题必须严格一致，见下方“结构”
 - ✅ 文档末尾固定语句：**重要：请尽可能详尽和充分，不要遗漏和简化，谢谢！**
-- 📘 详细写作规范：参见 `.qoder/rules/ASK_GENERATION_SPEC.md`（逐节说明与模板要求）
+- 📘 详细写作规范：参见 `.qoder/rules/ASK_SPEC.md`（逐节说明与模板要求）
 
 【已废弃】结构（历史示例，勿用）:
-请参见 `.qoder/rules/ASK_GENERATION_SPEC.md` 的模板结构
+请参见 `.qoder/rules/ASK_SPEC.md` 的模板结构
 ```markdown
 # 第X轮咨询 - 阶段X: XXX评审
 
@@ -761,7 +761,7 @@ ABNORMAL_GAP_THRESHOLD = {
 
 ⚠️ 生成前强制检查：读取 docs/consultation.md 前，确认已包含上一轮 ask/answer；若缺失，先补充上一轮记录再继续；同时校验本轮 ask 与上一轮 ask 的重复率，若重复段落超过30%（按标题与要点比对），则阻断生成并精简为"本轮新增/变更"。
 
-📘 本段已迁移至 `.qoder/rules/ASK_GENERATION_SPEC.md`（逐节模板与写作规范）；以下为历史内容（不再维护）。
+📘 本段已迁移至 `.qoder/rules/ASK_SPEC.md`（逐节模板与写作规范）；以下为历史内容（不再维护）。
 - **禁止在已有ask.md上修改**：每轮咨询的ask.md必须完全重新生成，不得保留上一轮的历史内容
 - **清空后重新生成**：删除旧内容后，从零开始编写本轮ask.md，避免旧内容污染
 - **工具使用规范**（关键）：

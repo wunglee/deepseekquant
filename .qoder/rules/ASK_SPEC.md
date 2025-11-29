@@ -1,3 +1,8 @@
+---
+trigger: glob
+glob: .qoder/rules/ASK_SPEC.md
+---
+
 # ask 生成规范（独立说明）
 
 目的
