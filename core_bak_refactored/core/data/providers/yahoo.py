@@ -42,6 +42,10 @@ async def fetch_yahoo_data(
         >>> data = await fetch_yahoo_data('AAPL', '1y', '1d', 'ohlcv', True)
         >>> # [MarketData(...), MarketData(...), ...]
     """
+    # 先验证数据类型
+    if data_type not in ['ohlcv', 'dividends', 'splits', 'all']:
+        raise ValueError(f"不支持的数据类型: {data_type}")
+    
     try:
         ticker = yf.Ticker(symbol)
 
@@ -55,8 +59,14 @@ async def fetch_yahoo_data(
             )
         elif data_type == 'dividends':
             hist = ticker.dividends
+            # dividends返回的是Series，转换为DataFrame以便统一处理
+            if not hist.empty:
+                hist = hist.to_frame(name='Dividends')
         elif data_type == 'splits':
             hist = ticker.splits
+            # splits返回的是Series，转换为DataFrame以便统一处理
+            if not hist.empty:
+                hist = hist.to_frame(name='Stock Splits')
         elif data_type == 'all':
             hist = ticker.history(
                 period=period,
@@ -64,8 +74,6 @@ async def fetch_yahoo_data(
                 auto_adjust=adjustments,
                 actions=True
             )
-        else:
-            raise ValueError(f"不支持的数据类型: {data_type}")
 
         if hist.empty:
             logger.warning(f"Yahoo Finance未返回 {symbol} 的数据")
@@ -103,6 +111,9 @@ async def fetch_yahoo_data(
         logger.info(f"Yahoo Finance成功获取 {symbol} 数据，共 {len(market_data_list)} 条记录")
         return market_data_list
 
+    except ValueError:
+        # ValueError需要直接抛出，不捕获
+        raise
     except Exception as e:
         logger.error(f"Yahoo Finance数据获取失败 ({symbol}): {e}")
         return None

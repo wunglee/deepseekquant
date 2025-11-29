@@ -17,7 +17,7 @@ class TestDataAggregator:
         """测试OHLCV聚合。"""
         aggregator = DataAggregator()
         
-        # 创建分钟级数据
+        # 创建分钟级数据（60分钟数据会跨越两个小时：9:30-10:29）
         data = []
         base_time = datetime(2024, 1, 1, 9, 30)
         for i in range(60):
@@ -34,9 +34,12 @@ class TestDataAggregator:
         # 聚合到小时级
         result = aggregator.aggregate_ohlcv(data, '1h')
         
-        assert len(result) == 1
+        # 9:30-10:29会跨越两个小时边界（9:00-9:59和10:00-10:59），所以会产生2个结果
+        assert len(result) == 2, f"Expected 2 hourly bars, got {len(result)}"
         assert result[0]['symbol'] == 'AAPL'
-        assert result[0]['volume'] == 60000  # 60 * 1000
+        # 验证总成交量正确
+        total_volume = sum(r['volume'] for r in result)
+        assert total_volume == 60000, f"Expected total volume 60000, got {total_volume}"  # 60 * 1000
 
     def test_aggregate_ohlcv_empty(self):
         """测试空数据聚合。"""
@@ -153,6 +156,7 @@ class TestDataAggregator:
         """测试按天分组。"""
         aggregator = DataAggregator()
         
+        # 从2024-01-01 10:00开始，48小时后是2024-01-03 10:00，跨越3天
         data = []
         base_time = datetime(2024, 1, 1, 10, 0)
         for i in range(48):
@@ -163,7 +167,8 @@ class TestDataAggregator:
         
         result = aggregator.group_by_time_period(data, 'day')
         
-        assert len(result) == 2  # 2天
+        # 2024-01-01 10:00 + 48小时 = 2024-01-03 10:00，跨越3个日历日
+        assert len(result) == 3, f"Expected 3 days, got {len(result)} days: {list(result.keys())}"
 
     def test_group_by_time_period_month(self):
         """测试按月分组。"""
