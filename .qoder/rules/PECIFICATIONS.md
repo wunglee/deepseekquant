@@ -460,7 +460,7 @@ TODO:
 源文件位置                                    测试文件位置（必须唯一）
 ────────────────────────────────────────────────────────────────────
 core_bak_refactored/core/risk/
-  └── factor_model.py                      tests/core/risk/
+  └── factor_model.py                      tests/units/core/risk/
                                             └── factor_model_test.py ✅（唯一）
 
 core_bak_refactored/infrastructure/
@@ -468,7 +468,7 @@ core_bak_refactored/infrastructure/
                                             └── cache_service_test.py ✅（唯一）
 
 core_bak_refactored/core/data/_fragments/
-  └── data_quality_checker.py              tests/core/data/_fragments/
+  └── data_quality_checker.py              tests/units/core/data/_fragments/
                                             └── data_quality_checker_test.py ✅
 ```
 
@@ -487,7 +487,7 @@ core_bak_refactored/core/data/_fragments/
    - 位置：`tests/` 镜像 `core/` 或 `infrastructure/`
    - 命名：`{source_name}_test.py`（必须唯一）
    - 范围：测试单个模块的功能
-   - 示例：`tests/core/risk/factor_model_test.py`
+   - 示例：`tests/units/core/risk/factor_model_test.py`
 
 2. **集成测试** (独立目录)
    - 位置：`tests/integration/`
@@ -513,7 +513,7 @@ core_bak_refactored/core/data/_fragments/
 
 **方案A：合并到单一测试文件（推荐用于测试数量较少）**
 ```python
-# tests/core/risk/factor_model_test.py
+# tests/units/core/risk/factor_model_test.py
 class FactorModelBasicTest(unittest.TestCase):
     """基础功能单元测试"""
     pass
@@ -595,7 +595,7 @@ def check_test_file_naming():
 2. **执行修复**
    ```bash
    # 重命名违规文件
-   mv tests/core/risk/test_factor_model.py tests/core/risk/factor_model_test.py
+   mv tests/units/core/risk/test_factor_model.py tests/units/core/risk/factor_model_test.py
    
    # 合并重复测试
    # 将 factor_model_integration_test.py 中的测试类
@@ -811,10 +811,10 @@ create_file("docs/ask.md", content)  # 再创建新文件
   - 允许使用模拟/桩件捕获上下文（如缓存管理器）以验证触发与评分，不要求外部系统依赖。
 - 测试方法命名要求：方法名跨迭代保持一致，不包含迭代版本标识；迭代升级只更新测试内部逻辑，迭代目标对齐通过“测试清单（路径映射）”进行管理，不依赖方法名变更。
 - 测试清单（路径映射）案例：
-  - 风险识别与响应 → core_bak_refactored/tests/core/risk/risk_calculator_test.py（上下文包含触发评分、分市场阈值触发断言）
-  - 审计与追溯 → core_bak_refactored/tests/core/risk/portfolio_risk_test.py（report_snapshot 字段完整性、model_health 分级合理性）
-  - 触发可靠性与成本 → core_bak_refactored/tests/core/risk/international_support_test.py（分市场阈值与事件权重生效验证）
-  - 市场差异化合规 → core_bak_refactored/tests/core/risk/portfolio_risk_test.py（JP 分级阈值场景覆盖）
+  - 风险识别与响应 → core_bak_refactored/tests/units/core/risk/risk_calculator_test.py（上下文包含触发评分、分市场阈值触发断言）
+  - 审计与追溯 → core_bak_refactored/tests/units/core/risk/portfolio_risk_test.py（report_snapshot 字段完整性、model_health 分级合理性）
+  - 触发可靠性与成本 → core_bak_refactored/tests/units/core/risk/international_support_test.py（分市场阈值与事件权重生效验证）
+  - 市场差异化合规 → core_bak_refactored/tests/units/core/risk/portfolio_risk_test.py（JP 分级阈值场景覆盖）
 
 ---
 
