@@ -7,13 +7,13 @@ from core_bak_refactored.core.data.providers.twelve_data import (
     _map_interval_to_twelve_data,
     _calculate_outputsize
 )
+from .async_mock_helper import AsyncContextManager
 
 
 class TestFetchTwelveData:
     """测试Twelve Data提供者。"""
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="异步HTTP mock配置需要修复 - AsyncMock上async with问题")
     async def test_fetch_time_series_success(self):
         """测试成功获取时间序列数据。"""
         mock_response = {
@@ -30,10 +30,14 @@ class TestFetchTwelveData:
             ]
         }
         
+        # 创建 mock response 对象
+        mock_response_obj = Mock()
+        mock_response_obj.status = 200
+        mock_response_obj.json = AsyncMock(return_value=mock_response)
+        
+        # 使用AsyncContextManager包装
         mock_session = Mock()
-        mock_session.get = AsyncMock()
-        mock_session.get.return_value.__aenter__.return_value.status = 200
-        mock_session.get.return_value.__aenter__.return_value.json = AsyncMock(return_value=mock_response)
+        mock_session.get = Mock(return_value=AsyncContextManager(mock_response_obj))
         
         credentials = {'api_key': 'test_key'}
         
@@ -41,8 +45,8 @@ class TestFetchTwelveData:
             'AAPL', '1y', '1d', 'ohlcv', True, credentials, mock_session
         )
         
-        assert result is not None
-        assert len(result) == 1
+        assert result is not None, "Result should not be None"
+        assert len(result) == 1, f"Expected 1 record, got {len(result)}"
         assert result[0]['symbol'] == 'AAPL'
         assert result[0]['open'] == 150.0
         assert result[0]['metadata']['data_source'] == 'twelve_data'
@@ -102,7 +106,6 @@ class TestFetchTwelveData:
         assert result is None
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="异步HTTP mock配置需要修复 - AsyncMock上async with问题")
     async def test_fetch_quote_success(self):
         """测试获取实时报价。"""
         mock_quote = {
@@ -128,16 +131,20 @@ class TestFetchTwelveData:
             }
         }
         
+        # 创建 mock response 对象
+        mock_response = Mock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(return_value=mock_quote)
+        
+        # 使用AsyncContextManager包装
         mock_session = Mock()
-        mock_session.get = AsyncMock()
-        mock_session.get.return_value.__aenter__.return_value.status = 200
-        mock_session.get.return_value.__aenter__.return_value.json = AsyncMock(return_value=mock_quote)
+        mock_session.get = Mock(return_value=AsyncContextManager(mock_response))
         
         credentials = {'api_key': 'test_key'}
         
         result = await fetch_twelve_data_quote('AAPL', credentials, mock_session)
         
-        assert result is not None
+        assert result is not None, "Result should not be None"
         assert result['symbol'] == 'AAPL'
         assert result['name'] == 'Apple Inc'
         assert result['close'] == 151.0

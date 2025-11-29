@@ -1,14 +1,19 @@
-from typing import Any, Dict, Optional
+"""
+内存TTL缓存（已迁移到 infrastructure/cache）
 
+⚠️ 此模块已废弃，请使用：
+    from core_bak_refactored.infrastructure.cache import MemoryTTLCache
 
-class MemoryTTLCache:
-    """内存TTL缓存（职责单一：读写），最小实现用于测试"""
+保留此文件仅为向后兼容，将在未来版本中移除。
+"""
+import warnings
+from core_bak_refactored.infrastructure.cache import MemoryTTLCache
 
-    def __init__(self) -> None:
-        self._mem: Dict[str, Any] = {}
+warnings.warn(
+    "core.data.cache.memory 已迁移到 infrastructure.cache，"
+    "请更新导入路径：from core_bak_refactored.infrastructure.cache import MemoryTTLCache",
+    DeprecationWarning,
+    stacklevel=2
+)
 
-    def get(self, key: str) -> Optional[Any]:
-        return self._mem.get(key)
-
-    def set(self, key: str, value: Any) -> None:
-        self._mem[key] = value
+__all__ = ['MemoryTTLCache']

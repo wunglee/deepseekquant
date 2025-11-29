@@ -1,18 +1,19 @@
-from typing import Any, Optional
+"""
+Redis缓存适配器（已迁移到 infrastructure/cache）
 
+⚠️ 此模块已废弃，请使用：
+    from core_bak_refactored.infrastructure.cache import RedisCacheAdapter
 
-class RedisCacheAdapter:
-    """Redis缓存适配器（职责单一：接口占位）
-    - 为避免引入外部连接，此处提供最小占位实现，便于测试
-    - 后续可替换为真实Redis客户端
-    """
+保留此文件仅为向后兼容，将在未来版本中移除。
+"""
+import warnings
+from core_bak_refactored.infrastructure.cache import RedisCacheAdapter
 
-    def __init__(self) -> None:
-        self._store = {}
+warnings.warn(
+    "core.data.cache.redis_adapter 已迁移到 infrastructure.cache，"
+    "请更新导入路径：from core_bak_refactored.infrastructure.cache import RedisCacheAdapter",
+    DeprecationWarning,
+    stacklevel=2
+)
 
-    def get(self, key: str) -> Optional[bytes]:
-        return self._store.get(key)
-
-    def setex(self, key: str, ttl: int, value: bytes) -> None:
-        # 仅模拟写入，不实现TTL
-        self._store[key] = value
+__all__ = ['RedisCacheAdapter']

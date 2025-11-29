@@ -28,10 +28,10 @@ from .data_fetcher import (
     DataValidator,
     DataQualityMonitorFactory,
     DeepSeekQuantSystem,
-    DataSourceType,
-    DataFrequency,
-    MarketData,
 )
+
+# 从共享模块导入枚举和数据模型
+from core_bak_refactored.core.share import DataSourceType, DataFrequency, MarketData
 
 from .data_quality_enhancer import (
     DataQualityEnhancer,  # 第6轮专家碎片 - 多源智能切换

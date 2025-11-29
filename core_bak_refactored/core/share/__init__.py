@@ -1,0 +1,34 @@
+"""
+核心共享模块
+
+职责：
+- 提供跨模块共享的业务逻辑组件
+- 统一管理共享枚举、配置和工具函数
+"""
+
+from .market_config import MarketConfigManager, MarketCode
+from .market_enums import DataSource, REGIONAL_DATA_SOURCE_PRIORITY
+from .exchange_rates import MockExchangeRateAdapter, CurrencyConverter
+from .enums import DataSourceType, DataFrequency
+from .models import MarketData
+
+__all__ = [
+    # 市场配置
+    'MarketConfigManager',
+    'MarketCode',
+    
+    # 市场枚举
+    'DataSource',
+    'REGIONAL_DATA_SOURCE_PRIORITY',
+    
+    # 汇率管理
+    'MockExchangeRateAdapter',
+    'CurrencyConverter',
+    
+    # 数据枚举
+    'DataSourceType',
+    'DataFrequency',
+    
+    # 数据模型
+    'MarketData',
+]

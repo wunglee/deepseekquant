@@ -31,6 +31,28 @@ from .numeric_utils import (
 from .statistical_calculators import StatisticalCalculator
 from .timeseries_calculator import TimeSeriesCalculator, TechnicalIndicators
 
+# HTTP客户端基础设施（2025-11-28 从core/data/http迁移）
+from .http import setup_http_client, close_http_client
+
+# 缓存基础设施（2025-11-28 从core/data/cache迁移）
+from .cache import (
+    MemoryTTLCache,
+    RedisCacheAdapter,
+    setup_redis_cache,
+    get_cached_data,
+    cache_data
+)
+
+# 数据验证基础设施（2025-11-28 从core/data/validation迁移）
+from .validation import (
+    validate_market_data,
+    validate_data_list,
+    clean_market_data
+)
+
+# 连接管理基础设施（2025-11-28 从core/data/connection迁移）
+from .connection import DataConnectionManager
+
 __all__ = [
     # 错误处理
     'safe_execute',
@@ -59,4 +81,23 @@ __all__ = [
     'StatisticalCalculator',
     'TimeSeriesCalculator',
     'TechnicalIndicators',  # 别名兼容
+    
+    # HTTP客户端
+    'setup_http_client',
+    'close_http_client',
+    
+    # 缓存系统
+    'MemoryTTLCache',
+    'RedisCacheAdapter',
+    'setup_redis_cache',
+    'get_cached_data',
+    'cache_data',
+    
+    # 数据验证
+    'validate_market_data',
+    'validate_data_list',
+    'clean_market_data',
+    
+    # 连接管理
+    'DataConnectionManager',
 ]

@@ -7,13 +7,13 @@ from core_bak_refactored.core.data.providers.iex_cloud import (
     _determine_endpoint,
     _map_period_to_iex_range
 )
+from .async_mock_helper import AsyncContextManager
 
 
 class TestFetchIEXCloudData:
     """测试IEX Cloud数据提供者。"""
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="异步HTTP mock配置需要修复 - AsyncMock上async with问题")
     async def test_fetch_daily_data_success(self):
         """测试成功获取日线数据。"""
         mock_response_data = [
@@ -31,10 +31,14 @@ class TestFetchIEXCloudData:
             }
         ]
         
+        # 创建 mock response 对象
+        mock_response = Mock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(return_value=mock_response_data)
+        
+        # 使用AsyncContextManager包装
         mock_session = Mock()
-        mock_session.get = AsyncMock()
-        mock_session.get.return_value.__aenter__.return_value.status = 200
-        mock_session.get.return_value.__aenter__.return_value.json = AsyncMock(return_value=mock_response_data)
+        mock_session.get = Mock(return_value=AsyncContextManager(mock_response))
         
         credentials = {'api_key': 'test_key'}
         
@@ -42,8 +46,8 @@ class TestFetchIEXCloudData:
             'AAPL', '1y', '1d', 'ohlcv', True, credentials, mock_session
         )
         
-        assert result is not None
-        assert len(result) == 1
+        assert result is not None, "Result should not be None"
+        assert len(result) == 1, f"Expected 1 record, got {len(result)}"
         assert result[0]['symbol'] == 'AAPL'
         assert result[0]['open'] == 150.0
         assert result[0]['metadata']['data_source'] == 'iex_cloud'
@@ -77,7 +81,6 @@ class TestFetchIEXCloudData:
         assert result is None
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="异步HTTP mock配置需要修复 - AsyncMock上async with问题")
     async def test_fetch_intraday_data(self):
         """测试获取分钟级数据。"""
         mock_response_data = [
@@ -92,10 +95,14 @@ class TestFetchIEXCloudData:
             }
         ]
         
+        # 创建 mock response 对象
+        mock_response = Mock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(return_value=mock_response_data)
+        
+        # 使用AsyncContextManager包装
         mock_session = Mock()
-        mock_session.get = AsyncMock()
-        mock_session.get.return_value.__aenter__.return_value.status = 200
-        mock_session.get.return_value.__aenter__.return_value.json = AsyncMock(return_value=mock_response_data)
+        mock_session.get = Mock(return_value=AsyncContextManager(mock_response))
         
         credentials = {'api_key': 'test_key'}
         
@@ -103,11 +110,10 @@ class TestFetchIEXCloudData:
             'AAPL', '1d', '1m', 'ohlcv', True, credentials, mock_session
         )
         
-        assert result is not None
-        assert len(result) == 1
+        assert result is not None, "Result should not be None"
+        assert len(result) == 1, f"Expected 1 record, got {len(result)}"
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="异步HTTP mock配置需要修复 - AsyncMock上async with问题")
     async def test_fetch_quote_success(self):
         """测试获取实时报价。"""
         mock_quote = {
@@ -126,16 +132,20 @@ class TestFetchIEXCloudData:
             'ytdChange': 0.15
         }
         
+        # 创建 mock response 对象
+        mock_response = Mock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(return_value=mock_quote)
+        
+        # 使用AsyncContextManager包装
         mock_session = Mock()
-        mock_session.get = AsyncMock()
-        mock_session.get.return_value.__aenter__.return_value.status = 200
-        mock_session.get.return_value.__aenter__.return_value.json = AsyncMock(return_value=mock_quote)
+        mock_session.get = Mock(return_value=AsyncContextManager(mock_response))
         
         credentials = {'api_key': 'test_key'}
         
         result = await fetch_iex_quote('AAPL', credentials, mock_session)
         
-        assert result is not None
+        assert result is not None, "Result should not be None"
         assert result['symbol'] == 'AAPL'
         assert result['latest_price'] == 150.0
         assert result['market_cap'] == 2500000000000

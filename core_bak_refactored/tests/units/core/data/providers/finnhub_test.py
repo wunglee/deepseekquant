@@ -7,16 +7,16 @@ from core_bak_refactored.core.data.providers.finnhub import (
     _map_interval_to_finnhub,
     _calculate_start_time
 )
+from .async_mock_helper import AsyncContextManager
 
 
 class TestFetchFinnhubData:
     """测试Finnhub数据提供者。"""
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="异步HTTP mock配置需要修复 - AsyncMock上async with问题")
     async def test_fetch_candle_data_success(self):
         """测试成功获取K线数据。"""
-        mock_response = {
+        mock_response_data = {
             's': 'ok',
             't': [1609459200, 1609545600],  # Unix时间戳
             'o': [150.0, 151.0],
@@ -26,10 +26,14 @@ class TestFetchFinnhubData:
             'v': [1000000, 1100000]
         }
         
+        # 创建 mock response 对象
+        mock_response = Mock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(return_value=mock_response_data)
+        
+        # 使用AsyncContextManager包装
         mock_session = Mock()
-        mock_session.get = AsyncMock()
-        mock_session.get.return_value.__aenter__.return_value.status = 200
-        mock_session.get.return_value.__aenter__.return_value.json = AsyncMock(return_value=mock_response)
+        mock_session.get = Mock(return_value=AsyncContextManager(mock_response))
         
         credentials = {'api_key': 'test_key'}
         
@@ -37,8 +41,8 @@ class TestFetchFinnhubData:
             'AAPL', '1y', '1d', 'ohlcv', True, credentials, mock_session
         )
         
-        assert result is not None
-        assert len(result) == 2
+        assert result is not None, "Result should not be None"
+        assert len(result) == 2, f"Expected 2 records, got {len(result)}"
         assert result[0]['symbol'] == 'AAPL'
         assert result[0]['open'] == 150.0
         assert result[0]['metadata']['data_source'] == 'finnhub'
@@ -100,10 +104,9 @@ class TestFetchFinnhubData:
         assert result is None
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="异步HTTP mock配置需要修复 - AsyncMock上async with问题")
     async def test_fetch_quote_success(self):
         """测试获取实时报价。"""
-        mock_quote = {
+        mock_quote_data = {
             'c': 150.0,  # current price
             'd': 1.0,    # change
             'dp': 0.67,  # percent change
@@ -114,16 +117,20 @@ class TestFetchFinnhubData:
             't': 1609459200  # timestamp
         }
         
+        # 创建 mock response 对象
+        mock_response = Mock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(return_value=mock_quote_data)
+        
+        # 使用AsyncContextManager包装
         mock_session = Mock()
-        mock_session.get = AsyncMock()
-        mock_session.get.return_value.__aenter__.return_value.status = 200
-        mock_session.get.return_value.__aenter__.return_value.json = AsyncMock(return_value=mock_quote)
+        mock_session.get = Mock(return_value=AsyncContextManager(mock_response))
         
         credentials = {'api_key': 'test_key'}
         
         result = await fetch_finnhub_quote('AAPL', credentials, mock_session)
         
-        assert result is not None
+        assert result is not None, "Result should not be None"
         assert result['symbol'] == 'AAPL'
         assert result['current_price'] == 150.0
         assert result['change'] == 1.0
