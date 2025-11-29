@@ -1,32 +1,53 @@
 # TODO（数据模块）
 
-说明：本文件维护“未分配/待实施”的事项，按目标或特性组织；不直接落到具体代码文件维度。
+说明：本文件维护“特殊迭代：遗留专家完整代码修复”的未分配/待实施事项；一旦分配到具体阶段，迁移至同目录 SPRINT.md 对应节点。
 
-## P1 — 数据质量评估服务（迁移与落地）
-- [PENDING] 从 risk 模块迁移“数据质量前置检查”职责到 `core/data`
-  - 内容：统一实现质量评估服务接口，业务模块仅消费质量标识
-  - 交付：`DataQualityMonitor.validate(data)` 返回 `quality_report` 与 `quality_flags`
-- [PENDING] 定义 `DataQualityPolicy`（规则集与阈值）
-  - 内容：完整性/一致性/时效性/可靠性四类规则；各项阈值由专家提供
-  - 交付：策略配置（JSON/YAML）与加载器；严禁默认硬编码
-- [PENDING] 专家咨询与配置来源（ask/answer 流程）
-  - 内容：在 `docs/ask.md` 中咨询阈值与规则细节；在 `docs/answer.md` 中记录答复与依据
-  - 交付：将专家确认的参数固化为配置文件，供策略加载器使用
-- [PENDING] 质量评估实现与测试
-  - 内容：实现 `DataQualityMonitor.validate`；覆盖完整性/一致性/时效性检查
-  - 交付：单元测试（覆盖典型缺失/类型错误/时效过期场景），通过率≥95%
-- [PENDING] 输出集成与消费
-  - 内容：在 `core/risk` 的入口仅消费 `quality_flags`，并外部化到 `report_snapshot`
-  - 交付：集成测试验证 risk 模块不再内置规则/默认值
-- [PENDING] 文档同步
-  - 内容：在 `docs/design/core_bak_refactored/core/data/` 新增模块设计与接口文档；在 risk 模块文档中更新“外部依赖”说明
-  - 交付：设计与接口文档首版，包含数据结构、接口签名、使用示例
+---
 
-## P1 — 质量评估配置加载与校验
-- [PENDING] 策略配置加载器实现（支持 JSON/YAML）
-- [PENDING] 配置校验器实现（必填项/范围/类型校验，错误提示清晰）
-- [PENDING] 可选：热更新钩子设计（watcher/订阅机制）
+## 🧭 模块导航
+1. [应用层依赖建立与测试](#应用层依赖建立与测试)
+2. [模块化拆分与细粒度测试覆盖](#模块化拆分与细粒度测试覆盖)
+3. [设计级优化与重构 + 文档同步](#设计级优化与重构--文档同步)
+4. [risk 依赖切换与碎片迁移](#risk-依赖切换与碎片迁移)
 
-## 提醒（规范约束）
-- 数据质量规则与阈值必须由专家答复明确，不得自行设定默认值
-- 业务模块（如 risk）不得内置数据质量规则，必须消费本模块提供的质量标识
+---
+
+## 应用层依赖建立与测试（阶段3）
+- [COMPLETE] 建立应用层门面/适配层（已迁移至 SPRINT 阶段3）
+  - 路径：`core_bak_refactored/app/data/data_service.py`（已创建）
+  - 目标：统一历史/实时/基本面数据接口，依赖注入接入 `core/data`
+  - 验收：集成测试≥95%通过；错误边界清晰；接口契约文档化
+- [COMPLETE] 集成测试方案（4/4 用例通过）
+  - 内容：模拟成功/失败/回退链路（三类数据源：自定义 + stub）
+  - 交付：`core_bak_refactored/tests/app/data/data_service_integration_test.py` + `data_service_fallback_test.py`
+
+## 模块化拆分与细粒度测试覆盖（阶段4）
+- [COMPLETE] 应用层模块划分
+  - 交付：`app/data/cache_service.py`、`app/data/providers.py`、`app/data/quality_monitor.py`、`app/data/models.py`
+  - 测试：`tests/app/data/app_module_split_test.py`（1/1 通过）
+- [PLANNED] 领域层拆分计划与实施
+  - 目标：从 `core/data/data_fetcher.py` 提取子模块（cache/providers/quality/models）
+  - 验收：每子模块≥90%覆盖率；接口契约文档化（设计文档更新）
+
+## 设计级优化与重构 + 文档同步（阶段5）
+- [PENDING] 设计文档同步
+  - 位置：`docs/design/core_bak_refactored/core/data/`
+  - 内容：分层架构图/模块依赖图/API签名与示例/变更历史
+- [PENDING] 性能埋点与SLA接入
+  - 内容：为核心路径加入埋点；定义SLA阈值（专家确认）
+  - 验收：p50/p95/p99采集；SLA告警策略文档化
+
+## risk 依赖切换与碎片迁移（阶段6）
+- [PENDING] 依赖切换
+  - 目标：risk 域由“碎片 data 依赖”改为“当前 core/data 依赖”
+  - 验收：risk 相关测试保持通过
+- [PENDING] 碎片迁移策略
+  - 内容：评估 `core_bak/*` 中 data 相关碎片，选择性迁移与弃用
+  - 交付：迁移报告（范围/保留/弃用理由/影响评估）
+
+---
+
+## 规范约束（须遵循 `.qoder/rules/PECIFICATIONS.md`）
+- 进行中的阶段标记为 🔄 IN_PROGRESS；完成后方可标记 ✅ COMPLETE
+- 数据质量规则/阈值必须由专家答复明确，不得在代码中硬编码
+- 代码变更必须同步设计文档；测试覆盖需按模块细化
