@@ -1,20 +1,6 @@
-# DeepSeekQuant 规范文件组织说明
-
-> **更新日期**: 2025-11-28
-
 ---
-
-## 📁 规范文件结构
-
-```
-.qoder/rules/
-├── README.md                           # 本文件：规范组织说明
-├── PECIFICATIONS.md                    # 主规范文件（核心入口）
-├── ASK_GENERATION_SPEC.md              # ask.md生成规范（独立文档）
-├── CODE_OPTIMIZATION_STRATEGY.md       # 代码优化策略（独立文档）
-└── (未来可扩展...)
-```
-
+trigger: glob
+glob: .qoder/rules/README.md
 ---
 
 ## 📖 规范文件说明
@@ -47,9 +33,9 @@
 
 ---
 
-### 2. ASK_GENERATION_SPEC.md（ask生成规范）
+### 2. ASK_SPEC.md（ask生成规范）
 
-**文件路径**: `.qoder/rules/ASK_GENERATION_SPEC.md`
+**文件路径**: `.qoder/rules/ASK_SPEC.md`
 
 **定位**: ask.md文档生成的专项规范
 
@@ -107,7 +93,7 @@
 ```
 PECIFICATIONS.md (主规范)
     │
-    ├─→ ASK_GENERATION_SPEC.md (ask生成规范)
+    ├─→ ASK_SPEC.md (ask生成规范)
     │   └─→ 详细的ask结构、写作要求、校验规则
     │
     ├─→ CODE_OPTIMIZATION_STRATEGY.md (代码优化策略)
@@ -131,7 +117,7 @@ PECIFICATIONS.md (主规范)
 ### 对于AI助手
 
 1. **每次任务前必读**: `PECIFICATIONS.md`
-2. **生成ask.md时参考**: `ASK_GENERATION_SPEC.md`
+2. **生成ask.md时参考**: `ASK_SPEC.md`
 3. **执行优化任务时参考**: `CODE_OPTIMIZATION_STRATEGY.md`
 4. **遵循引用链**: 主规范 → 专项规范 → 执行细节
 
