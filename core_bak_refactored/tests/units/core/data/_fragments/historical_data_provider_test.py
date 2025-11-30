@@ -15,8 +15,8 @@ from io import StringIO
 from datetime import datetime
 import logging
 
-from core_bak_refactored.core.data.data_utils import DataUtils, EventConfig
-from core_bak_refactored.core.data.historical_data_provider import (
+from core_bak_refactored.core.data._fragments.data_utils import DataUtils, EventConfig
+from core_bak_refactored.core.data._fragments.historical_data_provider import (
     RealHistoricalDataProvider,
     MockHistoricalDataProvider
 )

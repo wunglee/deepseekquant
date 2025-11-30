@@ -4,10 +4,7 @@
 使用依赖注入方式Mock数据源
 """
 import pytest
-import asyncio
-import pandas as pd
 from datetime import datetime, timedelta
-from unittest.mock import Mock
 from core_bak_refactored.core.data.data_fetcher import (
     DataFetcher,
     MarketData,
