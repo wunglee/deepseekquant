@@ -28,7 +28,7 @@ import logging
 from dataclasses import dataclass
 from enum import Enum
 
-from core_bak_refactored.core.data._fragments.data_quality_checker import DataQualityChecker
+from core_bak_refactored.core.data.data_quality_checker import DataQualityChecker
 from core_bak_refactored.core.share import MarketCode
 
 
