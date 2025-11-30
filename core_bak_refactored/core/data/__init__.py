@@ -38,7 +38,7 @@ from .data_quality_enhancer import (
     DataQualityReport,
 )
 
-from .historical_data_provider import (
+from .providers.historical_data_provider import (
     HistoricalDataProvider,  # 协议接口
     MockHistoricalDataProvider,  # Mock实现
     # RealHistoricalDataProvider,  # TODO: 实现后导出

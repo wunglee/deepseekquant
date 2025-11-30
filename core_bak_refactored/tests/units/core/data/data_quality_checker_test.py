@@ -10,7 +10,7 @@
 import pytest
 import pandas as pd
 import numpy as np
-from core_bak_refactored.core.data.data_quality_checker import (
+from core_bak_refactored.core.data.providers.data_quality_checker import (
     DataQualityChecker,
     DataQualityReport,
     CrossValidationResult

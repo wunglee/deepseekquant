@@ -24,7 +24,7 @@ from core_bak_refactored.core.data.data_fetcher import (
 
 # 从专家碎片导入
 from core_bak_refactored.core.data.data_quality_enhancer import DataQualityEnhancer
-from core_bak_refactored.core.data.historical_data_provider import (
+from core_bak_refactored.core.data.providers.historical_data_provider import (
     RealHistoricalDataProvider,
     MockHistoricalDataProvider
 )

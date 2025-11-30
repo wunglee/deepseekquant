@@ -52,7 +52,7 @@ class DataProviderFactory:
             # 延迟导入，避免循环依赖
             from core_bak_refactored.core.data.providers.yahoo_finance import YahooFinanceDataProvider
             from core_bak_refactored.core.data.providers.tushare import TushareDataProvider
-            from core_bak_refactored.core.data.historical_data_provider import (
+            from core_bak_refactored.core.data.providers.historical_data_provider import (
                 MockHistoricalDataProvider,
                 RealHistoricalDataProvider
             )
