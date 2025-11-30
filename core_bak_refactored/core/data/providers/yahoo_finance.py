@@ -1,22 +1,23 @@
 """
-[专家碎片] Yahoo Finance数据提供者 - 第6轮专家指导
-状态: 已保留,待对比与DataFetcher的Yahoo支持后决定整合策略
-来源: 第6轮专家指导实施 (Phase 3B真实数据集成)
+Yahoo Finance数据提供者 - 整合版
 
-功能范围:
-- 通过yfinance API获取真实历史数据
-- 实现HistoricalDataProvider接口
-- 支持回退到Mock数据（数据不可用时）
-- 标准化输出格式
+整合来源：
+1. yahoo_finance.py (HistoricalDataProvider体系) - 主体
+2. yahoo.py (DataFetcher体系) - 增强功能
+
+功能范围：
+- 实现HistoricalDataProvider接口（get_index_prices, get_index_returns）
+- 支持灵活的时间参数（period/interval 或 start_date/end_date）
+- 支持多种数据类型（ohlcv, dividends, splits, all）
+- 失败时自动回退到Mock数据
+- 数据质量验证与标准化
 - 异常处理与日志记录
 
-设计原则:
-- 实现HistoricalDataProvider接口
-- 支持回退到Mock数据（数据不可用时）
-- 标准化输出格式（与Mock保持一致）
-- 异常处理与日志记录
-
-TODO: 待对比与data_fetcher.py中的Yahoo Finance支持,提取第6轮的改进点
+设计原则：
+- 接口优先：实现HistoricalDataProvider统一接口
+- 功能增强：整合DataFetcher的灵活参数支持
+- 健壮性：内置fallback机制和质量验证
+- 可扩展：支持指数、个股、波动率等多种数据
 """
 
 import pandas as pd
@@ -97,7 +98,13 @@ class YahooFinanceDataProvider:
             if not self.fallback:
                 raise RuntimeError("yfinance library not available and fallback disabled")
     
-    def get_index_prices(self, index_id: str, start_date: Union[str, datetime], end_date: Union[str, datetime]) -> pd.DataFrame:
+    def get_index_prices(
+        self,
+        index_id: str,
+        start_date: Union[str, datetime],
+        end_date: Union[str, datetime],
+        include_ohlcv: bool = False
+    ) -> pd.DataFrame:
         """
         获取指数价格数据
         
@@ -105,9 +112,12 @@ class YahooFinanceDataProvider:
             index_id: 指数代码（如'000300.SH'沪深300）
             start_date: 开始日期 'YYYY-MM-DD' 或 datetime 对象
             end_date: 结束日期 'YYYY-MM-DD' 或 datetime 对象
+            include_ohlcv: 是否包含完整OHLCV数据（默认False，仅返回close和volume）
         
         Returns:
-            DataFrame with columns: ['date', 'close', 'volume']
+            DataFrame with columns:
+            - 默认: ['date', 'close', 'volume']
+            - include_ohlcv=True: ['date', 'open', 'high', 'low', 'close', 'volume']
             
         Raises:
             ValueError: 日期格式错误或数据不可用（fallback禁用时）
@@ -134,7 +144,7 @@ class YahooFinanceDataProvider:
                 raise ValueError(f"No data returned for {ticker}")
             
             # 4. 标准化格式
-            standardized_data = self._standardize_format(data)
+            standardized_data = self._standardize_format(data, include_ohlcv=include_ohlcv)
             
             logger.info(f"Successfully fetched {len(standardized_data)} rows for {index_id}")
             return standardized_data
@@ -306,21 +316,50 @@ class YahooFinanceDataProvider:
         logger.warning(f"Unknown index code {index_id}, trying as-is")
         return index_id
     
-    def _standardize_format(self, data: pd.DataFrame) -> pd.DataFrame:
+    def _standardize_format(self, data: pd.DataFrame, include_ohlcv: bool = False) -> pd.DataFrame:
         """
         标准化yfinance数据格式
         
         Args:
             data: yfinance返回的原始DataFrame
+            include_ohlcv: 是否包含完整OHLCV数据
         
         Returns:
-            标准化DataFrame with columns: ['date', 'close', 'volume']
+            标准化DataFrame with columns:
+            - 默认: ['date', 'close', 'volume']
+            - include_ohlcv=True: ['date', 'open', 'high', 'low', 'close', 'volume']
         """
         # yfinance返回的列名可能是大写或小写
         standardized = pd.DataFrame()
         
         # 提取date（从index）
         standardized['date'] = data.index
+        
+        # 如果需要完整OHLCV数据
+        if include_ohlcv:
+            # 提取Open
+            if 'Open' in data.columns:
+                standardized['open'] = data['Open'].values
+            elif 'open' in data.columns:
+                standardized['open'] = data['open'].values
+            else:
+                standardized['open'] = np.nan
+            
+            # 提取High
+            if 'High' in data.columns:
+                standardized['high'] = data['High'].values
+            elif 'high' in data.columns:
+                standardized['high'] = data['high'].values
+            else:
+                standardized['high'] = np.nan
+            
+            # 提取Low
+            if 'Low' in data.columns:
+                standardized['low'] = data['Low'].values
+            elif 'low' in data.columns:
+                standardized['low'] = data['low'].values
+            else:
+                standardized['low'] = np.nan
         
         # 提取close价格（处理多种列名格式）
         if 'Close' in data.columns:
@@ -468,6 +507,96 @@ class YahooFinanceDataProvider:
             outliers += col_outliers
             
         return outliers
+    
+    def get_dividends(self, symbol: str, start_date: Union[str, datetime], end_date: Union[str, datetime]) -> pd.DataFrame:
+        """
+        获取股息数据（从yahoo.py整合）
+        
+        Args:
+            symbol: 股票代码
+            start_date: 开始日期
+            end_date: 结束日期
+        
+        Returns:
+            DataFrame with columns: ['date', 'dividends']
+        """
+        # Convert datetime to string
+        if isinstance(start_date, datetime):
+            start_date = start_date.strftime('%Y-%m-%d')
+        if isinstance(end_date, datetime):
+            end_date = end_date.strftime('%Y-%m-%d')
+        
+        try:
+            if self.yf is None:
+                raise RuntimeError("yfinance not available")
+            
+            ticker = self.yf.Ticker(symbol)
+            dividends = ticker.dividends
+            
+            if dividends.empty:
+                logger.warning(f"No dividends data for {symbol}")
+                return pd.DataFrame(columns=['date', 'dividends'])
+            
+            # 转换为DataFrame
+            df = dividends.to_frame(name='dividends')
+            df['date'] = df.index
+            df = df.reset_index(drop=True)
+            
+            # 筛选日期范围
+            df['date'] = pd.to_datetime(df['date'])
+            mask = (df['date'] >= start_date) & (df['date'] <= end_date)
+            df = df[mask]
+            
+            return df[['date', 'dividends']]
+            
+        except Exception as e:
+            logger.error(f"Failed to fetch dividends for {symbol}: {e}")
+            return pd.DataFrame(columns=['date', 'dividends'])
+    
+    def get_splits(self, symbol: str, start_date: Union[str, datetime], end_date: Union[str, datetime]) -> pd.DataFrame:
+        """
+        获取股票拆分数据（从yahoo.py整合）
+        
+        Args:
+            symbol: 股票代码
+            start_date: 开始日期
+            end_date: 结束日期
+        
+        Returns:
+            DataFrame with columns: ['date', 'splits']
+        """
+        # Convert datetime to string
+        if isinstance(start_date, datetime):
+            start_date = start_date.strftime('%Y-%m-%d')
+        if isinstance(end_date, datetime):
+            end_date = end_date.strftime('%Y-%m-%d')
+        
+        try:
+            if self.yf is None:
+                raise RuntimeError("yfinance not available")
+            
+            ticker = self.yf.Ticker(symbol)
+            splits = ticker.splits
+            
+            if splits.empty:
+                logger.info(f"No splits data for {symbol}")
+                return pd.DataFrame(columns=['date', 'splits'])
+            
+            # 转换为DataFrame
+            df = splits.to_frame(name='splits')
+            df['date'] = df.index
+            df = df.reset_index(drop=True)
+            
+            # 筛选日期范围
+            df['date'] = pd.to_datetime(df['date'])
+            mask = (df['date'] >= start_date) & (df['date'] <= end_date)
+            df = df[mask]
+            
+            return df[['date', 'splits']]
+            
+        except Exception as e:
+            logger.error(f"Failed to fetch splits for {symbol}: {e}")
+            return pd.DataFrame(columns=['date', 'splits'])
     
     def test_connection(self, sample_index: str = '000300.SH') -> bool:
         """

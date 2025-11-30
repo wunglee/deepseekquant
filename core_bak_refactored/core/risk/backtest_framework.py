@@ -83,48 +83,61 @@ class HistoricalDataProvider(Protocol):
 
 
 # =============================================================================
-# 真实数据提供者（Phase 3B实现）
+# 数据提供者工厂（使用统一工厂模式）
 # =============================================================================
 
-from core_bak_refactored.core.data.yahoo_finance_provider import YahooFinanceDataProvider
+from core_bak_refactored.core.data.providers.factory import DataProviderFactory, get_global_factory
 
-
-# =============================================================================
-# 数据提供者工厂函数
-# =============================================================================
 
 def create_data_provider(provider_type: str = 'yahoo', **kwargs) -> HistoricalDataProvider:
     """
-    创建历史数据提供者
+    创建历史数据提供者（使用工厂模式）
     
     Args:
         provider_type: 数据提供者类型
-            - 'yahoo': Yahoo Finance真实数据（Phase 3B）
-            - 'auto': 自动选择（优先yahoo，失败回退mock，占位设计）
+            - 'yahoo': Yahoo Finance真实数据
+            - 'tushare': Tushare A股数据
+            - 'mock': Mock模拟数据
+            - 'real': 真实数据提供者（多源）
+            - 'auto': 自动选择（优先yahoo）
+            - 或通过 factory.register() 注册的自定义provider
         **kwargs: 传递给数据提供者的额外参数
     
     Returns:
         HistoricalDataProvider实例
     
-    注意：
-        - 生产代码中不再直接构造 MockHistoricalDataProvider。
-        - 如需在测试中使用 Mock，请在测试代码里自行构造或注入。
+    Example:
+        >>> # 基本使用
+        >>> provider = create_data_provider('yahoo', fallback_to_mock=True)
+        >>> 
+        >>> # 使用自定义provider（需先注册）
+        >>> factory = get_global_factory()
+        >>> factory.register('custom', MyCustomProvider)
+        >>> provider = create_data_provider('custom')
     """
-    if provider_type == 'yahoo':
-        logger.info("Creating YahooFinanceDataProvider (Phase 3B)")
-        fallback = kwargs.get('fallback_to_mock', False)
-        return YahooFinanceDataProvider(fallback_to_mock=fallback)
+    factory = get_global_factory()
     
-    elif provider_type == 'auto':
-        logger.info("Auto-selecting data provider (Yahoo only in production)")
+    # 处理 'auto' 模式：优先使用yahoo
+    if provider_type == 'auto':
+        logger.info("Auto-selecting data provider (优先yahoo)")
         try:
-            return YahooFinanceDataProvider(fallback_to_mock=False)
+            return factory.create('yahoo', fallback_to_mock=False)
         except Exception as e:
-            logger.error(f"Yahoo provider unavailable in production: {e}")
-            raise
+            logger.error(f"Yahoo provider创建失败，尝试使用mock: {e}")
+            return factory.create('mock')
     
-    else:
-        raise ValueError(f"Unknown provider_type: {provider_type}. Use 'yahoo' or 'auto'")
+    # 使用工厂创建provider
+    try:
+        logger.info(f"Creating data provider: {provider_type}")
+        return factory.create(provider_type, **kwargs)
+    except ValueError as e:
+        # 提供更友好的错误信息
+        available = factory.list_providers()
+        raise ValueError(
+            f"未知的provider_type: '{provider_type}'\n"
+            f"可用的providers: {available}\n"
+            f"提示: 使用 get_global_factory().register('{provider_type}', YourProviderClass) 注册自定义provider"
+        ) from e
 
 
 # =============================================================================

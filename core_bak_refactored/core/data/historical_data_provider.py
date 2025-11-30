@@ -28,6 +28,10 @@ import logging
 from dataclasses import dataclass
 from enum import Enum
 
+from core_bak_refactored.core.data._fragments.data_quality_checker import DataQualityChecker
+from core_bak_refactored.core.share import MarketCode
+
+
 # TODO: 从market_enums导入,但目前被删除,暂时定义
 class DataSource(Enum):
     """数据源枚举"""
@@ -581,7 +585,7 @@ class RealHistoricalDataProvider:
         
         # Yahoo Finance适配器
         try:
-            from core_bak_refactored.core.data.yahoo_finance_provider import YahooFinanceDataProvider
+            from core_bak_refactored.core.data.providers.yahoo_finance import YahooFinanceDataProvider
             adapters[DataSource.YAHOO.value] = YahooFinanceDataProvider(fallback_to_mock=False)
             logger.info("Yahoo Finance适配器已加载")
         except Exception as e:
@@ -603,7 +607,7 @@ class RealHistoricalDataProvider:
         
         # Tushare适配器（实际API实现，A股/港股备用数据源）
         try:
-            from core_bak_refactored.core.data.tushare_provider import TushareDataProvider
+            from core_bak_refactored.core.data.providers.tushare import TushareDataProvider
             tushare_adapter = TushareDataProvider(fallback_to_mock=False)
             if tushare_adapter.available:
                 adapters[DataSource.TUSHARE.value] = tushare_adapter

@@ -1,11 +1,25 @@
 """
-Yahoo Finance数据提供者（从 DataFetcher._fetch_yahoo_data 迁移而来）
+Yahoo Finance数据提供者（DataFetcher体系 - 已整合到yahoo_finance.py）
 
-职责：
+状态：已废弃，功能已整合到 yahoo_finance.py
+整合时间：2025-11-29
+
+原职责：
 1. 从Yahoo Finance获取历史OHLCV数据
 2. 支持多种数据类型（ohlcv, dividends, splits, all）
 3. 支持价格调整（分红和拆股）
 4. 转换为MarketData对象列表
+
+整合到yahoo_finance.py的功能：
+- ✅ 完整OHLCV数据支持（通过include_ohlcv参数）
+- ✅ Dividends数据（get_dividends方法）
+- ✅ Splits数据（get_splits方法）
+- ✅ 灵活的数据类型支持
+
+注意：
+- 本文件保留用于DataFetcher的异步调用场景
+- 新代码应使用yahoo_finance.py（实现HistoricalDataProvider接口）
+- 如需异步支持，可基于yahoo_finance.py添加async wrapper
 """
 from typing import List, Optional
 from datetime import datetime

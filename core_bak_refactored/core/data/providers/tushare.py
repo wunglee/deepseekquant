@@ -1,11 +1,12 @@
 """
 Tushare数据提供者 - A股/港股数据源
-实际API集成实现
+实现HistoricalDataProvider接口
 
 职责：
 - 通过Tushare Pro API获取A股和港股历史数据
 - 支持指数和个股数据获取
 - 数据标准化和质量验证
+- 实现统一的HistoricalDataProvider接口
 
 依赖：
 pip install tushare
@@ -23,17 +24,19 @@ logger = logging.getLogger('DeepSeekQuant.TushareProvider')
 
 class TushareDataProvider:
     """
-    Tushare数据提供者（实际API实现）
+    Tushare数据提供者（实现HistoricalDataProvider接口）
     
     功能：
     - A股指数/个股数据
     - 港股指数/个股数据（部分支持）
     - 自动token管理
     - 数据质量验证
+    - 实现HistoricalDataProvider标准接口
     
     使用示例：
         provider = TushareDataProvider(token='your_token_here')
         data = provider.get_index_prices('000300.SH', '2015-06-01', '2015-09-01')
+        returns = provider.get_index_returns('000300.SH', '2015-06-01', '2015-09-01')
     """
     
     # 指数代码映射（Tushare代码）
@@ -89,7 +92,7 @@ class TushareDataProvider:
     
     def get_index_prices(self, index_id: str, start_date: Union[str, datetime], end_date: Union[str, datetime]) -> pd.DataFrame:
         """
-        获取指数价格数据
+        获取指数价格数据（实现HistoricalDataProvider接口）
         
         Args:
             index_id: 指数代码（如'000300.SH'沪深300）
@@ -110,27 +113,27 @@ class TushareDataProvider:
         
         # 转换日期格式为Tushare要求的YYYYMMDD
         if isinstance(start_date, datetime):
-            start_date = start_date.strftime('%Y%m%d')
+            start_date_str = start_date.strftime('%Y%m%d')
         else:
-            start_date = start_date.replace('-', '')
+            start_date_str = start_date.replace('-', '')
         
         if isinstance(end_date, datetime):
-            end_date = end_date.strftime('%Y%m%d')
+            end_date_str = end_date.strftime('%Y%m%d')
         else:
-            end_date = end_date.replace('-', '')
+            end_date_str = end_date.replace('-', '')
         
         try:
             # 映射指数代码
             ts_code = self._map_index_to_tushare(index_id)
-            logger.info(f"Fetching data for {index_id} (mapped to {ts_code}) from {start_date} to {end_date}")
+            logger.info(f"Fetching data for {index_id} (mapped to {ts_code}) from {start_date_str} to {end_date_str}")
             
             # 调用Tushare API
             # A股指数使用index_daily
             if ts_code.endswith('.SH') or ts_code.endswith('.SZ'):
                 df = self.ts_pro.index_daily(
                     ts_code=ts_code,
-                    start_date=start_date,
-                    end_date=end_date
+                    start_date=start_date_str,
+                    end_date=end_date_str
                 )
             # 港股指数（部分支持）
             elif ts_code in ['HSI', 'HSCEI']:
@@ -138,8 +141,8 @@ class TushareDataProvider:
                 logger.warning(f"港股指数{ts_code}数据可能不完整，建议使用Wind")
                 df = self.ts_pro.hk_index_daily(
                     ts_code=ts_code,
-                    start_date=start_date,
-                    end_date=end_date
+                    start_date=start_date_str,
+                    end_date=end_date_str
                 )
             else:
                 raise ValueError(f"不支持的指数代码: {ts_code}")
@@ -162,6 +165,29 @@ class TushareDataProvider:
             else:
                 raise ValueError(f"Failed to fetch data for {index_id}: {e}")
     
+    def get_index_returns(self, index_id: str, start_date: Union[str, datetime], end_date: Union[str, datetime]) -> pd.Series:
+        """
+        获取指数收益率序列（实现HistoricalDataProvider接口）
+        
+        Args:
+            index_id: 指数代码
+            start_date: 开始日期 'YYYY-MM-DD' 或 datetime 对象
+            end_date: 结束日期 'YYYY-MM-DD' 或 datetime 对象
+        
+        Returns:
+            Series with date index and return values
+        """
+        # Convert datetime objects to string format if needed
+        if isinstance(start_date, datetime):
+            start_date = start_date.strftime('%Y-%m-%d')
+        if isinstance(end_date, datetime):
+            end_date = end_date.strftime('%Y-%m-%d')
+            
+        prices = self.get_index_prices(index_id, start_date, end_date)
+        prices = prices.set_index('date')
+        returns = prices['close'].pct_change().dropna()
+        return returns
+    
     def get_stock_prices(self, symbol: str, start_date: Union[str, datetime], end_date: Union[str, datetime]) -> pd.DataFrame:
         """
         获取个股价格数据
@@ -182,31 +208,31 @@ class TushareDataProvider:
         
         # 转换日期格式
         if isinstance(start_date, datetime):
-            start_date = start_date.strftime('%Y%m%d')
+            start_date_str = start_date.strftime('%Y%m%d')
         else:
-            start_date = start_date.replace('-', '')
+            start_date_str = start_date.replace('-', '')
         
         if isinstance(end_date, datetime):
-            end_date = end_date.strftime('%Y%m%d')
+            end_date_str = end_date.strftime('%Y%m%d')
         else:
-            end_date = end_date.replace('-', '')
+            end_date_str = end_date.replace('-', '')
         
         try:
-            logger.info(f"Fetching stock data for {symbol} from {start_date} to {end_date}")
+            logger.info(f"Fetching stock data for {symbol} from {start_date_str} to {end_date_str}")
             
             # A股使用daily
             if symbol.endswith('.SH') or symbol.endswith('.SZ'):
                 df = self.ts_pro.daily(
                     ts_code=symbol,
-                    start_date=start_date,
-                    end_date=end_date
+                    start_date=start_date_str,
+                    end_date=end_date_str
                 )
             # 港股使用hk_daily
             elif symbol.endswith('.HK'):
                 df = self.ts_pro.hk_daily(
                     ts_code=symbol,
-                    start_date=start_date,
-                    end_date=end_date
+                    start_date=start_date_str,
+                    end_date=end_date_str
                 )
             else:
                 raise ValueError(f"不支持的股票代码: {symbol}")
@@ -270,7 +296,7 @@ class TushareDataProvider:
         
         return standardized
     
-    def _fallback_to_mock(self, symbol: str, start_date: str, end_date: str) -> pd.DataFrame:
+    def _fallback_to_mock(self, symbol: str, start_date: Union[str, datetime], end_date: Union[str, datetime]) -> pd.DataFrame:
         """回退到Mock数据"""
         from core_bak_refactored.tests.fixtures.core.data.mock_historical_data_provider import MockHistoricalDataProvider
         

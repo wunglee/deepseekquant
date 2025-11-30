@@ -44,7 +44,7 @@ from .historical_data_provider import (
     # RealHistoricalDataProvider,  # TODO: 实现后导出
 )
 
-from .yahoo_finance_provider import (
+from .providers.yahoo_finance import (
     YahooFinanceDataProvider,  # 第6轮专家碎片 - Yahoo数据源
 )
 

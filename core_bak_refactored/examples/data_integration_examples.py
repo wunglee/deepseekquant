@@ -28,7 +28,7 @@ from core_bak_refactored.core.data.historical_data_provider import (
     RealHistoricalDataProvider,
     MockHistoricalDataProvider
 )
-from core_bak_refactored.core.data.yahoo_finance_provider import YahooFinanceDataProvider
+from core_bak_refactored.core.data.providers.yahoo_finance import YahooFinanceDataProvider
 
 
 # ============================================================================

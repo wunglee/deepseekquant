@@ -48,12 +48,16 @@
 
 - 阶段6：risk 模块依赖切换与碎片迁移
   - 状态：🔄 IN_PROGRESS
-  - 目标：risk 域由“碎片 data 依赖”改为“当前 core/data 依赖”，对碎片代码进行选择性迁移整合
+  - 目标：将 core/data/_fragments 迁移整合到 core/data 恰当位置，使 risk 模块继续通过测试
   - 迁移原则：
     1. 消除重复，对于core/data已有的相同意图的不同逻辑，优先使用已有的
     2. core/data/_fragments更优时，将更优特性整合到core/data（仅限技术本身更优情况）
     3. core/data没有但_fragments才有的功能，迁移到core/data下恰当职责边界内
-  - 验收断言：risk 模块相关测试保持通过；迁移范围与保留范围在迁移报告中记录
+  - 进展：
+    - [x] 修复违规依赖：risk/backtest_framework.py 和测试文件已改为依赖 _fragments
+    - [x] 验证测试通过：risk 模块 210/210 测试全部通过
+    - [ ] 迁移 _fragments 到正式目录结构
+  - 验收断言：risk 模块相关测试保持通过；_fragments 完全迁移到正式目录
 
 ---
 
