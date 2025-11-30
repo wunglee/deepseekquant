@@ -30,8 +30,14 @@ API端点:
 - GET  /api/v1/status               - 获取系统状态
 - POST /api/v1/maintenance          - 维护模式
 
-TODO: 专家提供的完整实现，已验收可用
-注意: 本类仅依赖领域层接口，严格遵守分层架构原则
+依赖说明:
+- 依赖遗留代码: core_bak_refactored.core.data.data_fetcher.DataQualityMonitor
+- TODO: 未来应迁移到重构后的Quality监控架构
+  - 新架构应基于 providers/ 模块
+  - 新架构应使用 DataQualityChecker (providers/data_quality_checker.py)
+  - 新架构应使用工厂模式创建monitor实例
+
+注意: 本类暂时依赖遗留data_fetcher.py，待Quality模块重构完成后迁移
 """
 
 from __future__ import annotations
