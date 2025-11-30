@@ -206,9 +206,7 @@ python scripts/validate_ask.py --path docs/ask.md
 ---
 
 ## 🏗️ 架构隔离约定（强制）
-
 ### core_bak_refactored 自包含原则
-
 **核心规则**:
 - ✅ **core_bak_refactored/** 下所有代码**必须完全自包含**
 - ✅ 仅允许导入 core_bak_refactored/ 内部模块和标准库/第三方包
@@ -220,7 +218,9 @@ python scripts/validate_ask.py --path docs/ask.md
 ```
 core_bak_refactored/          # 当前工作系统（临时、自包含）
 ├── core/                     # 业务核心层（与未来系统同构）
+│   └── data/                 # 数据模块
 │   └── risk/                 # 风险模块
+│   └── ..../                 # 其它模块
 ├── infrastructure/           # 基础设施层（与未来系统同构）
 └── tests/                    # 独立测试套件
 
@@ -264,17 +264,18 @@ PYTHONPATH=. pytest core_bak_refactored/tests/ -q
 
 ### 未完成模块依赖处理规范（强制）
 
-**核心原则**：对未完成的历史碎片模块（如exec、data等），采用隔离处理，避免影响当前工作模块。
+**核心原则**：对未完成的历史碎片模块，采用隔离处理，避免影响当前工作模块。
 
 **未完成模块定义**：
-- ✅ **识别标志**：代码存在明显破碎/残缺/语法错误，无法直接运行
-- ✅ **迁移状态**：在 `docs/process/PROGRESS.md` / `docs/process/PLAN.md` 中标记为“未迁移 / 进行中 / 待规划”的模块
+- ✅ **迁移状态**：在 `docs/process/PLAN.md` 的“### core_bak_refactored/core 当前状态”中未标记为“已完成”的模块
 - ✅ **典型示例**：core_bak_refactored/core/exec/（由 `core_bak/execution_engine.py` 拆分而来，当前在Phase 1规划中，代码仍为历史碎片）
-- ❌ **禁止简单规则**：不得使用“除当前工作模块（risk）以外的其他模块一律视为未完成”这种粗粒度判断，必须以 PROGRESS/PLAN 中的状态描述为准
+
+**未完成状态的使用指导**
+1. 对于“进行中”模块：如果还存在_fragments目录，且已有相关实现，就要继续使用或修改相关实现，否则可以直接使用或修改非_fragments目录的相关实现
+2. 对于“未迁移”模块：必须使用使用_fragments临时存放
 
 **依赖处理方案**：
-
-**1. Risk模块调用其他未完成模块时**：
+**1. 调用其他“未迁移”模块时**：
 ```python
 # ❌ 错误：在实现代码中使用Mock
 try:
@@ -291,7 +292,7 @@ from core_bak_refactored.core.exec._fragments.order_manager import OrderManager
 # 待exec模块整体完成后，迁移到正式位置
 ```
 
-**2. Risk模块向其他模块迁移代码时**：
+**2. 如果要向“未迁移”模块迁移代码时**：
 ```
 # ✅ 正确：使用_fragments子目录
 core_bak_refactored/core/exec/_fragments/
@@ -344,47 +345,13 @@ TODO:
 
 # 正常实现代码...
 ```
-
-**执行检查**：
-- [ ] 是否对未完成模块使用了Mock隔离？
-- [ ] 迁移代码是否放在_fragments子目录？
+**对“未迁移”模块的依赖检查**：
+- [ ] 被依赖代码是否放在_fragments子目录？
 - [ ] _fragments文件是否有清晰的来源说明和TODO？
 - [ ] 测试是否通过（使用Mock）？
 - [ ] 是否避免了_fragments之间的相互依赖？
-
-**模块状态参考清单**（基于 `docs/process/PROGRESS.md` 与 `docs/process/PLAN.md`）：
-
-| 模块 | 源文件 | Phase 1状态 | Phase 2状态 | 备注 |
-|------|---------|------------|------------|---------|
-| **risk** | core_bak/risk_manager.py | 🟢 进行中 | ❌ 未开始 | 当前工作模块，已完成1-5层，6-8层进行中 |
-| **share** | - | ✅ 已完成 | ❌ 未开始 | 共享配置层，已完成market_config.py |
-| **infrastructure** | - | ✅ 部分完成 | ❌ 未开始 | 统计计算/货币转换等，按需实现 |
-| **signal** | core_bak/signal_engine.py | ❌ 未迁移 | ❌ 未开始 | 待规划Phase 1拆分 |
-| **exec** | core_bak/execution_engine.py | ❌ 未迁移 | ❌ 未开始 | 待规划Phase 1拆分，当前代码为碎片 |
-| **portfolio** | core_bak/portfolio_manager.py | ❌ 未迁移 | ❌ 未开始 | 待规划Phase 1拆分 |
-| **data** | core_bak/data_fetcher.py | ❌ 未迁移 | ❌ 未开始 | 待规划Phase 1拆分 |
-| **optimization** | core_bak/bayesian_optimizer.py | ❌ 未迁移 | ❌ 未开始 | 待规划Phase 1拆分 |
-| **backtest** | - | 🟡 未知 | ❌ 未开始 | 在core_bak_refactored中存在，但未在PLAN中提及 |
-| **monitoring** | - | 🟡 未知 | ❌ 未开始 | 在core_bak_refactored中存在，但未在PLAN中提及 |
-| **strategy** | - | 🟡 未知 | ❌ 未开始 | 在core_bak_refactored中存在，但未在PLAN中提及 |
-
-**状态说明**：
-- ✅ **已完成**：可以依赖，接口稳定，有测试覆盖
-- 🟢 **进行中**：部分可用，但接口可能变化，需谨慎依赖
-- ❌ **未迁移**：不可依赖，代码可能破碎或不存在，必须Mock隔离
-- 🟡 **未知**：在core_bak_refactored中存在但未在PROGRESS/PLAN中明确描述，需检查具体代码质量后决定
-
-**使用指导**：
-1. 对于“已完成”模块：可以正常导入和使用
-2. 对于“进行中”模块：需要检查具体文件是否可用，如果是当前risk域的工作，可以正常依赖
-3. 对于“未迁移”模块：必须使用Mock隔离，或使用_fragments临时存放
-4. 对于“未知”模块：需要先检查代码质量，如果可用则正常使用，否则当作“未迁移”处理
-
-**重要提醒**：模块状态以 `docs/process/PROGRESS.md` 为准，该文档会随项目进展更新，在处理跨模块依赖前应先读取最新状态。
-要将
 **违规处理**：
-- 🚫 发现直接导入破碎模块：立即改为Mock隔离
-- 🚫 发现迁移代码未使用_fragments：移动到正确位置
+- 🚫 发现被依赖代码未使用_fragments：移动到正确位置
 - 🚫 发现_fragments缺少说明：补充来源、用途、TODO注释
 
 ---
