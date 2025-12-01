@@ -822,7 +822,7 @@ class RiskMetricsService(InternationalEnhancements):
             symbols = list(portfolio_state.allocations.keys())
             
             # 提取收益率数据
-            from core_bak_refactored.infrastructure.data_preprocessor import RiskDataPreprocessor
+            from .risk_preprocessor import RiskDataPreprocessor
             preprocessor = RiskDataPreprocessor()
             
             returns_data = {}

@@ -24,7 +24,7 @@ from ..share.exchange_rates import CurrencyConverter, ExchangeRateAdapter
 from ..share.market_enums import MarketCode
 
 # 导入数据预处理器
-from core_bak_refactored.infrastructure.data_preprocessor import RiskDataPreprocessor
+from .risk_preprocessor import RiskDataPreprocessor
 
 logger = logging.getLogger('DeepSeekQuant.RiskCalculator')
 
@@ -628,8 +628,12 @@ class RiskCalculator:
             market_returns = self.preprocessor.extract_market_returns_from_dict(data)
             # 智能缓存失效触发（波动率或重大事件）
             try:
-                from core_bak_refactored.infrastructure.cache_service import get_smart_invalidation_manager
-                manager = get_smart_invalidation_manager()
+                from core_bak_refactored.infrastructure.cache import get_smart_invalidation_manager, CacheManager
+                # 需要传入 CacheManager 实例
+                cache_mgr = getattr(self, '_currency_converter', None)
+                if cache_mgr is None or not hasattr(cache_mgr, 'memory_cache'):
+                    cache_mgr = CacheManager({'cache_enabled': True, 'cache_ttl': 3600})
+                manager = get_smart_invalidation_manager(cache_mgr)
                 returns_std = float(np.std(returns.values)) if returns is not None and len(returns) > 0 else 0.0
                 base_threshold = float(self.config.get('volatility_spike_threshold', self.config.get('market_configs', {}).get(self.market_type, {}).get('volatility_spike_threshold', 0.05)))
                 vol_tier = 'NORMAL'

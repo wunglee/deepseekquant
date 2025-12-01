@@ -92,7 +92,7 @@ def setup_redis_cache(config: Dict[str, Any]):
         return None
 
 
-def test_redis_connection(redis_client: Any) -> bool:
+def check_redis_connection(redis_client: Any) -> bool:
     """
     测试Redis连接是否可用。
     
@@ -110,14 +110,14 @@ def test_redis_connection(redis_client: Any) -> bool:
         response = redis_client.ping()
         
         if response:
-            logger.debug("Redis连接测试成功")
+            logger.debug("Redis连接检查成功")
             return True
         else:
             logger.warning("Redis PING响应异常")
             return False
             
     except Exception as e:
-        logger.error(f"Redis连接测试失败: {e}")
+        logger.error(f"Redis连接检查失败: {e}")
         return False
 
 

@@ -222,3 +222,82 @@ class DataUtils:
             >>> # cum_returns: [1.0, 1.1, 1.21]
         """
         return (1 + returns).cumprod()
+    
+    @staticmethod
+    def compute_log_returns(prices: pd.Series) -> pd.Series:
+        """
+        计算对数收益率序列
+        
+        Args:
+            prices: 价格序列
+        
+        Returns:
+            对数收益率序列（第一个值为NaN）
+        
+        Examples:
+            >>> prices = pd.Series([100, 110, 121])
+            >>> log_returns = DataUtils.compute_log_returns(prices)
+            >>> # log_returns: [NaN, 0.0953, 0.0953]
+        """
+        return np.log(prices / prices.shift(1))
+    
+    @staticmethod
+    def align_time_series(
+        series1: pd.Series,
+        series2: pd.Series
+    ) -> Tuple[pd.Series, pd.Series]:
+        """
+        对齐两个时间序列（按索引交集）
+        
+        Args:
+            series1: 第一个序列
+            series2: 第二个序列
+        
+        Returns:
+            (对齐后的序列1, 对齐后的序列2)
+        
+        Examples:
+            >>> s1 = pd.Series([1, 2, 3], index=['2020-01-01', '2020-01-02', '2020-01-03'])
+            >>> s2 = pd.Series([4, 5], index=['2020-01-02', '2020-01-03'])
+            >>> aligned1, aligned2 = DataUtils.align_time_series(s1, s2)
+            >>> # 返回交集: ['2020-01-02', '2020-01-03']
+        """
+        # 取交集索引
+        common_index = series1.index.intersection(series2.index)
+        
+        if len(common_index) == 0:
+            # 无交集时按长度对齐
+            logger.warning("两个序列无交集，按长度对齐")
+            min_len = min(len(series1), len(series2))
+            return (
+                series1.iloc[-min_len:].reset_index(drop=True),
+                series2.iloc[-min_len:].reset_index(drop=True)
+            )
+        
+        return series1.loc[common_index], series2.loc[common_index]
+    
+    @staticmethod
+    def ensure_series(data: any, name: str = "data") -> pd.Series:
+        """
+        确保数据是 pandas Series 类型
+        
+        Args:
+            data: 输入数据（可以是list, np.ndarray, pd.Series）
+            name: 数据名称（用于日志）
+        
+        Returns:
+            pandas Series
+        
+        Examples:
+            >>> data = [1, 2, 3]
+            >>> series = DataUtils.ensure_series(data)
+            >>> isinstance(series, pd.Series)
+            True
+        """
+        if isinstance(data, pd.Series):
+            return data
+        elif isinstance(data, (list, np.ndarray)):
+            return pd.Series(data)
+        else:
+            logger.warning(f"{name}类型无效: {type(data)}，尝试转换为Series")
+            return pd.Series(data)

@@ -9,7 +9,7 @@
 从 core/data/connection 迁移而来
 """
 
-from .manager import DataConnectionManager
+from .data_connection_manager import DataConnectionManager
 
 __all__ = [
     'DataConnectionManager',

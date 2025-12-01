@@ -56,9 +56,15 @@ async def get_historical_data(
     failed_symbols = []
     
     try:
-        # 1. 生成缓存键
-        from core_bak_refactored.core.data.cache.key import generate_key
-        cache_key = generate_key(symbols, period, interval, data_type, adjustments)
+        # 1. 生成缓存键（使用 fetcher 的 cache_manager）
+        cache_manager = getattr(fetcher, 'cache_manager', None)
+        if cache_manager:
+            cache_key = cache_manager.generate_key(symbols, period, interval, data_type, adjustments)
+        else:
+            # 向后兼容：如果 fetcher 没有 cache_manager，使用旧的 generate_key 函数
+            from core_bak_refactored.infrastructure.cache.cache_manager import CacheManager
+            temp_manager = CacheManager({'cache_enabled': False})
+            cache_key = temp_manager.generate_key(symbols, period, interval, data_type, adjustments)
         
         # 2. 检查缓存
         from core_bak_refactored.core.data.cache.store import get_cached_data

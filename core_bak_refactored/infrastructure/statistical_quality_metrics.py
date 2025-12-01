@@ -1,17 +1,27 @@
-"""
-数据质量计算工具 - 基础设施层
+""" 
+统计质量度量工具 - 基础设施层（重命名自 data_quality_calculators.py）
 
 职责：提供与业务无关的纯数学/统计计算函数，用于数据质量分析
-- 数据一致性检查算法
-- 数据完整性验证算法
-- 数据时效性分析算法
-- 异常检测算法
+- 时间序列一致性计算（时间间隔、价格平滑性）
+- 跨序列相关性计算（符号相关性检测）
+- 统计异常检测算法（3-sigma、IQR、Z-score）
+- 数据完整性度量（缺失率、覆盖率）
 
 架构原则：
-- 不包含任何业务领域概念
-- 只接收纯数值数据
+- 不包含任何业务领域概念（市场、股票、指数等）
+- 只接收纯数值数据（DataFrame、Series、ndarray）
 - 参数全部显式传入，不使用业务默认值
 - 函数命名使用数学/统计术语，而非业务术语
+
+与 core/data/quality/data_quality_checker.py 的区别：
+- 本模块：纯算法层，提供计算能力
+- data_quality_checker：业务质量层，理解市场数据，调用本模块的算法
+
+使用示例：
+    from core_bak_refactored.infrastructure.statistical_quality_metrics import StatisticalQualityMetrics
+    
+    # 纯算法调用
+    consistency_score, issues = StatisticalQualityMetrics.calculate_time_series_consistency(data)
 """
 
 import numpy as np
@@ -19,11 +29,11 @@ import pandas as pd
 from typing import List, Tuple, Dict, Any
 import logging
 
-logger = logging.getLogger('DeepSeekQuant.Infrastructure.DataQualityCalculators')
+logger = logging.getLogger('DeepSeekQuant.Infrastructure.StatisticalQualityMetrics')
 
 
-class DataQualityCalculators:
-    """数据质量计算工具类（纯数学/统计），不包含业务术语"""
+class StatisticalQualityMetrics:
+    """统计质量度量工具类（纯数学/统计），不包含业务术语"""
     
     @staticmethod
     def calculate_time_series_consistency(data: List[Dict[str, Any]]) -> Tuple[float, List[Dict]]:
@@ -49,7 +59,7 @@ class DataQualityCalculators:
             time_gap = (sorted_data[i]['timestamp'] - sorted_data[i - 1]['timestamp']).total_seconds() / 3600  # 小时
             
             # 根据数据频率确定预期间隔
-            expected_interval = DataQualityCalculators._get_expected_interval(sorted_data)
+            expected_interval = StatisticalQualityMetrics._get_expected_interval(sorted_data)
             
             if time_gap > expected_interval * 3:  # 允许3倍间隔的容差
                 issues.append({
@@ -131,11 +141,11 @@ class DataQualityCalculators:
             symbol_data[symbol].append(point)
         
         # 检查相关符号之间的价格关系
-        correlated_symbols = DataQualityCalculators._find_correlated_symbols(symbols)
+        correlated_symbols = StatisticalQualityMetrics._find_correlated_symbols(symbols)
         
         for sym1, sym2 in correlated_symbols:
             if sym1 in symbol_data and sym2 in symbol_data:
-                correlation_issues = DataQualityCalculators._check_symbol_correlation(
+                correlation_issues = StatisticalQualityMetrics._check_symbol_correlation(
                     symbol_data[sym1], symbol_data[sym2], sym1, sym2
                 )
                 issues.extend(correlation_issues)
@@ -178,7 +188,7 @@ class DataQualityCalculators:
         issues = []
         
         # 对齐时间戳
-        aligned_data = DataQualityCalculators._align_time_series(data1, data2)
+        aligned_data = StatisticalQualityMetrics._align_time_series(data1, data2)
         if not aligned_data:
             return issues
             
@@ -376,7 +386,7 @@ class DataQualityCalculators:
             'historical': 43200  # 30天
         }
         
-        data_frequency = DataQualityCalculators._determine_data_frequency(data)
+        data_frequency = StatisticalQualityMetrics._determine_data_frequency(data)
         max_age = freshness_thresholds.get(data_frequency, 1440)
         
         if data_age > max_age:
@@ -392,13 +402,13 @@ class DataQualityCalculators:
             score *= 0.6 if data_age > max_age * 2 else 0.8
         
         # 检查数据更新频率
-        update_frequency_issues = DataQualityCalculators._check_update_frequency(data)
+        update_frequency_issues = StatisticalQualityMetrics._check_update_frequency(data)
         issues.extend(update_frequency_issues)
         if update_frequency_issues:
             score *= 0.85
         
         # 检查延迟分布
-        latency_issues = DataQualityCalculators._check_latency_distribution(data)
+        latency_issues = StatisticalQualityMetrics._check_latency_distribution(data)
         issues.extend(latency_issues)
         if latency_issues:
             score *= 0.9

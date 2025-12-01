@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import Mock, AsyncMock, MagicMock
 import pickle
 import zlib
-from core_bak_refactored.core.data.cache.store import get_cached_data, cache_data
+from core_bak_refactored.infrastructure.cache.store import get_cached_data, cache_data
 
 
 class TestGetCachedData:

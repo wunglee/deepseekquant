@@ -1,6 +1,30 @@
 """
-统一数据验证工具
-从risk模块61处长度检查和85处类型检查中提炼的通用验证器
+类型与格式验证工具 - 基础设施层（重命名自 data_validators.py）
+
+职责：提供与业务无关的通用验证工具
+- 数据长度验证（统一 risk 模块61处 len 检查）
+- 类型验证与转换（统一 risk 模块85处 isinstance 检查）
+- 数值范围验证（最小值、最大值、区间验证）
+- 字典结构验证（必须键、可选键）
+
+架构原则：
+- 完全通用，无业务概念
+- 可复用于任何模块（risk、data、backtest等）
+- 提供统一的验证接口，减少代码重复
+
+与 core/data/validation/ 的区别：
+- 本模块：通用验证工具（类型、长度、范围）
+- core/data/validation：业务数据验证（市场数据格式、业务规则）
+
+使用示例：
+    from core_bak_refactored.infrastructure.type_validators import LengthValidator, TypeValidator
+    
+    # 长度验证
+    if LengthValidator.validate_min_length(returns, 20, "收益率"):
+        # 执行计算
+    
+    # 类型转换
+    returns = TypeValidator.ensure_series(raw_data, "returns")
 """
 
 import numpy as np

@@ -72,8 +72,8 @@ class FactorModelEstimator:
         # P0-3: 缓存集成
         if cache_service is None:
             try:
-                from core_bak_refactored.infrastructure.cache_service import get_cache_service
-                self.cache_service = get_cache_service()
+                from core_bak_refactored.infrastructure.cache import CacheManager
+                self.cache_service = CacheManager({'cache_enabled': True, 'cache_ttl': 3600})
             except Exception:
                 self.cache_service = None
         else:
@@ -318,9 +318,9 @@ class FactorModelEstimator:
                 else:
                     # 过期删除
                     self._l1_cache.pop(cache_key, None)
-            # L2缓存（外部）
-            if self.cache_service:
-                cached_result = self.cache_service.get(cache_key)
+            # L2缓存（外部）- 使用同步的 memory_cache
+            if self.cache_service and hasattr(self.cache_service, 'memory_cache'):
+                cached_result = self.cache_service.memory_cache.get(cache_key)
                 if cached_result is not None:
                     logger.info("因子模型协方差: L2缓存命中 (P0-3优化)")
                     # 保持内部状态一致（供摘要统计）
@@ -402,10 +402,10 @@ class FactorModelEstimator:
             
             # P0-3: 缓存结果
             result = (cov_matrix, metadata)
-            # 设置L2/L1缓存
-            if self.cache_service:
+            # 设置L2/L1缓存 - 使用同步的 memory_cache
+            if self.cache_service and hasattr(self.cache_service, 'memory_cache'):
                 cache_key = self._generate_cache_key(returns, 'covariance')
-                self.cache_service.set(cache_key, result, ttl=3600)  # 1小时TTL
+                self.cache_service.memory_cache[cache_key] = result
                 logger.debug("因子模型协方差: L2缓存设置 (P0-3优化)")
             # L1缓存设置
             self._l1_cache[cache_key] = (result, datetime.now().timestamp())

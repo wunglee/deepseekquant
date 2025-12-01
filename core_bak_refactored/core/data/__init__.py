@@ -31,7 +31,7 @@ TODO:
 
 # 重构新架构 - SOLID原则（推荐使用）
 from .fetcher_orchestrator import DataFetcherOrchestrator
-from .cache.cachemanager import CacheManager
+from core_bak_refactored.infrastructure.cache import CacheManager
 from .market.market_status_service import MarketStatusService
 from .providers.fundamental_data_service import FundamentalDataService
 from .providers.alpha_vantage import AlphaVantageProvider

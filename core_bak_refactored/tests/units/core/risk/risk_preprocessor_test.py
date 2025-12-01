@@ -2,7 +2,7 @@ import unittest
 import numpy as np
 import pandas as pd
 
-from core_bak_refactored.infrastructure.data_preprocessor import RiskDataPreprocessor
+from core_bak_refactored.core.risk.risk_preprocessor import RiskDataPreprocessor
 
 
 class DataPreprocessorTest(unittest.TestCase):

@@ -2,7 +2,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from core_bak_refactored.core.share import MarketData
 from core_bak_refactored.core.data.providers.alpha_vantage import AlphaVantageProvider
-from core_bak_refactored.core.data.cache.cachemanager import CacheManager
+from core_bak_refactored.infrastructure.cache import CacheManager
 from core_bak_refactored.core.data.market.market_status_service import MarketStatusService
 from core_bak_refactored.core.data.providers.fundamental_data_service import FundamentalDataService
 import asyncio
@@ -83,7 +83,7 @@ class DataFetcherOrchestrator:
         
         try:
             # 生成缓存键
-            cache_key = self.cache_manager.generate_key('_'.join(sorted(symbols)), period, interval, data_type, adjustments)
+            cache_key = self.cache_manager.generate_key(symbols, period, interval, data_type, adjustments)
             
             # 检查缓存
             cached = await self.cache_manager.get(cache_key)

@@ -871,8 +871,12 @@ class PortfolioRiskAnalyzer:
         n_portfolios = len(portfolios)
         # 智能缓存失效触发（批量任务、市场波动）
         try:
-            from core_bak_refactored.infrastructure.cache_service import get_smart_invalidation_manager
-            manager = get_smart_invalidation_manager()
+            from core_bak_refactored.infrastructure.cache import get_smart_invalidation_manager, CacheManager
+            # 需要传入 CacheManager 实例
+            cache_mgr = getattr(self, 'cache_manager', None)
+            if cache_mgr is None:
+                cache_mgr = CacheManager({'cache_enabled': True, 'cache_ttl': 3600})
+            manager = get_smart_invalidation_manager(cache_mgr)
             vol = 0.0
             for _, _, mdata in portfolios:
                 try:

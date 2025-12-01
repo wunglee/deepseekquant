@@ -8,7 +8,7 @@ from .error_handling import (
     validate_and_execute
 )
 
-from .data_validators import (
+from .type_validators import (
     LengthValidator,
     TypeValidator,
     NumericValidator,
@@ -32,7 +32,7 @@ from .statistical_calculators import StatisticalCalculator
 from .timeseries_calculator import TimeSeriesCalculator, TechnicalIndicators
 
 # 新增的数据质量计算工具
-from .data_quality_calculators import DataQualityCalculators
+from .statistical_quality_metrics import StatisticalQualityMetrics
 
 # 新增的系统健康度计算工具
 from .system_health_calculators import SystemHealthCalculators
@@ -95,7 +95,7 @@ __all__ = [
     'TechnicalIndicators',  # 别名兼容
     
     # 数据质量计算工具
-    'DataQualityCalculators',
+    'StatisticalQualityMetrics',
     
     # 系统健康度计算工具
     'SystemHealthCalculators',
