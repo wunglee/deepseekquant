@@ -2,7 +2,7 @@ import pytest
 from datetime import datetime
 
 from core_bak_refactored.core.data.providers.alpha_vantage import AlphaVantageProvider
-from core_bak_refactored.core.data.data_fetcher import MarketData
+from core_bak_refactored.core.share import MarketData
 
 
 @pytest.mark.asyncio

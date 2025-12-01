@@ -1,4 +1,4 @@
-from core_bak_refactored.core.data.cache.redis_adapter import RedisCacheAdapter
+from core_bak_refactored.infrastructure.cache import RedisCacheAdapter
 
 
 def test_redis_adapter_basic():

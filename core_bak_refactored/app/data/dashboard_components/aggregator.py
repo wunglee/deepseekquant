@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 from typing import Dict, Any, List
+from core_bak_refactored.infrastructure import QualityAnalysisCalculators
 
 logger = logging.getLogger('DeepSeekQuant.App.Dashboard.Aggregator')
 
@@ -70,14 +71,7 @@ class DashboardDataAggregator:
         Returns:
             趋势数据列表
         """
-        trend_data = []
-        for item in quality_data:
-            trend_data.append({
-                'timestamp': item.get('timestamp', ''),
-                'score': item.get('overall_score', 0),
-                'anomaly_count': item.get('anomaly_count', 0)
-            })
-        return trend_data
+        return QualityAnalysisCalculators.calculate_quality_trend(quality_data)
 
     def prepare_anomaly_data(self, quality_data: List[Dict]) -> List[Dict]:
         """准备异常数据
@@ -88,17 +82,7 @@ class DashboardDataAggregator:
         Returns:
             异常数据列表
         """
-        anomaly_data = []
-        for item in quality_data:
-            count = item.get('anomaly_count', 0)
-            if count > 0:
-                anomaly_data.append({
-                    'timestamp': item.get('timestamp', ''),
-                    'count': count,
-                    'level': self.determine_anomaly_level(count),
-                    'details': item.get('anomaly_details', {})
-                })
-        return anomaly_data
+        return QualityAnalysisCalculators.prepare_anomaly_data(quality_data)
 
     def determine_anomaly_level(self, count: int) -> str:
         """确定异常级别
@@ -109,16 +93,7 @@ class DashboardDataAggregator:
         Returns:
             级别 ('low', 'medium', 'high', 'critical')
         """
-        if count == 0:
-            return 'none'
-        elif count <= 5:
-            return 'low'
-        elif count <= 15:
-            return 'medium'
-        elif count <= 30:
-            return 'high'
-        else:
-            return 'critical'
+        return QualityAnalysisCalculators.determine_anomaly_level(count)
 
     def prepare_performance_data(self, performance_stats: Dict) -> Dict[str, Any]:
         """准备性能数据
@@ -146,12 +121,7 @@ class DashboardDataAggregator:
         Returns:
             错误类型分布字典
         """
-        error_dist = {}
-        for item in quality_data:
-            errors = item.get('errors', {})
-            for error_type, count in errors.items():
-                error_dist[error_type] = error_dist.get(error_type, 0) + count
-        return error_dist
+        return QualityAnalysisCalculators.calculate_error_distribution(quality_data)
 
     def group_alerts_by_level(self, alerts: List[Dict]) -> Dict[str, int]:
         """按级别分组警报
@@ -162,11 +132,12 @@ class DashboardDataAggregator:
         Returns:
             按级别分组的统计
         """
-        grouped = {}
+        # 使用质量分析计算工具进行分组
+        result = {}
         for alert in alerts:
             level = alert.get('level', 'unknown')
-            grouped[level] = grouped.get(level, 0) + 1
-        return grouped
+            result[level] = result.get(level, 0) + 1
+        return result
 
     def get_report_data(self, report_id: str) -> Dict[str, Any]:
         """获取报告数据

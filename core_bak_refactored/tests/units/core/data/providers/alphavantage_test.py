@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import Mock, AsyncMock, patch
 from datetime import datetime
-from core_bak_refactored.core.data.providers.alphavantage import fetch_alpha_vantage_data
+from core_bak_refactored.core.data.providers.alpha_vantage import AlphaVantageProvider
 
 
 class AsyncContextManager:
@@ -16,7 +16,7 @@ class AsyncContextManager:
         return None
 
 
-class TestFetchAlphaVantageData:
+class TestAlphaVantageProvider:
     """测试Alpha Vantage数据提供者。"""
 
     @pytest.mark.asyncio
@@ -45,14 +45,13 @@ class TestFetchAlphaVantageData:
         
         credentials = {'api_key': 'test_key', 'base_url': 'https://test.com'}
         
-        result = await fetch_alpha_vantage_data(
-            'AAPL', '1y', 'daily', 'ohlcv', True, credentials, mock_session
-        )
+        provider = AlphaVantageProvider(api_credentials=credentials, aiohttp_session=mock_session)
+        result = await provider.fetch('AAPL', '1y', 'daily', 'ohlcv', True)
         
         assert result is not None, "Result should not be None"
         assert len(result) == 1, f"Expected 1 record, got {len(result)}"
-        assert result[0]['symbol'] == 'AAPL'
-        assert result[0]['open'] == 150.0
+        assert result[0].symbol == 'AAPL'
+        assert result[0].open == 150.0
 
     @pytest.mark.asyncio
     async def test_fetch_no_api_key(self):
@@ -60,9 +59,8 @@ class TestFetchAlphaVantageData:
         credentials = {}
         mock_session = Mock()
         
-        result = await fetch_alpha_vantage_data(
-            'AAPL', '1y', 'daily', 'ohlcv', True, credentials, mock_session
-        )
+        provider = AlphaVantageProvider(api_credentials=credentials, aiohttp_session=mock_session)
+        result = await provider.fetch('AAPL', '1y', 'daily', 'ohlcv', True)
         
         assert result is None
 
@@ -71,16 +69,19 @@ class TestFetchAlphaVantageData:
         """测试API错误响应。"""
         mock_response = {'Error Message': 'Invalid API call'}
         
+        # 创建 mock response 对象
+        mock_resp = Mock()
+        mock_resp.status = 200
+        mock_resp.json = AsyncMock(return_value=mock_response)
+        
+        # 使用AsyncContextManager包装
         mock_session = Mock()
-        mock_session.get = AsyncMock()
-        mock_session.get.return_value.__aenter__.return_value.status = 200
-        mock_session.get.return_value.__aenter__.return_value.json = AsyncMock(return_value=mock_response)
+        mock_session.get = Mock(return_value=AsyncContextManager(mock_resp))
         
         credentials = {'api_key': 'test_key'}
         
-        result = await fetch_alpha_vantage_data(
-            'INVALID', '1y', 'daily', 'ohlcv', True, credentials, mock_session
-        )
+        provider = AlphaVantageProvider(api_credentials=credentials, aiohttp_session=mock_session)
+        result = await provider.fetch('INVALID', '1y', 'daily', 'ohlcv', True)
         
         assert result is None
 
@@ -89,16 +90,19 @@ class TestFetchAlphaVantageData:
         """测试API限流。"""
         mock_response = {'Note': 'API rate limit exceeded'}
         
+        # 创建 mock response 对象
+        mock_resp = Mock()
+        mock_resp.status = 200
+        mock_resp.json = AsyncMock(return_value=mock_response)
+        
+        # 使用AsyncContextManager包装
         mock_session = Mock()
-        mock_session.get = AsyncMock()
-        mock_session.get.return_value.__aenter__.return_value.status = 200
-        mock_session.get.return_value.__aenter__.return_value.json = AsyncMock(return_value=mock_response)
+        mock_session.get = Mock(return_value=AsyncContextManager(mock_resp))
         
         credentials = {'api_key': 'test_key'}
         
-        result = await fetch_alpha_vantage_data(
-            'AAPL', '1y', 'daily', 'ohlcv', True, credentials, mock_session
-        )
+        provider = AlphaVantageProvider(api_credentials=credentials, aiohttp_session=mock_session)
+        result = await provider.fetch('AAPL', '1y', 'daily', 'ohlcv', True)
         
         assert result is None
 
@@ -128,9 +132,8 @@ class TestFetchAlphaVantageData:
         
         credentials = {'api_key': 'test_key'}
         
-        result = await fetch_alpha_vantage_data(
-            'AAPL', '1d', '5m', 'ohlcv', True, credentials, mock_session
-        )
+        provider = AlphaVantageProvider(api_credentials=credentials, aiohttp_session=mock_session)
+        result = await provider.fetch('AAPL', '1d', '5m', 'ohlcv', True)
         
         assert result is not None, "Result should not be None"
         assert len(result) == 1, f"Expected 1 record, got {len(result) if result else 0}"
@@ -141,9 +144,8 @@ class TestFetchAlphaVantageData:
         credentials = {'api_key': 'test_key'}
         mock_session = Mock()
         
-        result = await fetch_alpha_vantage_data(
-            'AAPL', '1y', 'unsupported', 'ohlcv', True, credentials, mock_session
-        )
+        provider = AlphaVantageProvider(api_credentials=credentials, aiohttp_session=mock_session)
+        result = await provider.fetch('AAPL', '1y', 'unsupported', 'ohlcv', True)
         
         assert result is None
 
@@ -169,11 +171,10 @@ class TestFetchAlphaVantageData:
         
         credentials = {'api_key': 'test_key'}
         
-        result = await fetch_alpha_vantage_data(
-            'AAPL', '1y', 'daily', 'ohlcv', True, credentials, mock_session
-        )
+        provider = AlphaVantageProvider(api_credentials=credentials, aiohttp_session=mock_session)
+        result = await provider.fetch('AAPL', '1y', 'daily', 'ohlcv', True)
         
         assert result is not None, "Result should not be None"
         assert len(result) == 3, f"Expected 3 records, got {len(result)}"
         # 验证排序（从旧到新）
-        assert result[0]['timestamp'] < result[1]['timestamp'] < result[2]['timestamp'], "Data should be sorted chronologically"
+        assert result[0].timestamp < result[1].timestamp < result[2].timestamp, "Data should be sorted chronologically"

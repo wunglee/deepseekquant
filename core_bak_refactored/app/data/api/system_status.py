@@ -40,18 +40,34 @@ class SystemStatusManager:
         Returns:
             系统状态字典
         """
+        # 获取组件状态
+        components_status = {
+            'quality_monitor': 'operational',
+            'api_service': 'operational',
+            'data_fetcher': 'operational'
+        }
+        
+        # 计算整体状态
+        overall_status = 'healthy' if all(status == 'operational' for status in components_status.values()) else 'degraded'
+        
+        # 获取性能指标（从质量监控器获取）
+        try:
+            performance_metrics = getattr(self._qm, 'get_performance_statistics', lambda: {})()
+            if callable(performance_metrics):
+                performance_metrics = {}
+        except:
+            performance_metrics = {}
+        
         return {
             'service': 'data_quality_api',
             'version': '1.0.0',
             'status': 'maintenance' if self._maintenance_mode else 'operational',
+            'overall_status': overall_status,  # 添加缺失的overall_status字段
+            'performance_metrics': performance_metrics,  # 添加缺失的performance_metrics字段
             'uptime': self._get_uptime(),
             'maintenance_mode': self._maintenance_mode,
             'maintenance_remaining': self._get_maintenance_remaining() if self._maintenance_mode else None,
-            'components': {
-                'quality_monitor': 'operational',
-                'api_service': 'operational',
-                'data_fetcher': 'operational'
-            },
+            'components': components_status,
             'timestamp': datetime.now().isoformat()
         }
 

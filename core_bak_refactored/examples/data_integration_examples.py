@@ -1,29 +1,26 @@
 """
 专家碎片组合使用示例
 
-展示如何组合使用专家完整版(DataFetcher)与专家碎片的增量功能:
+展示如何组合使用重构新架构(DataFetcherOrchestrator)与专家碎片的增量功能:
 1. DataQualityEnhancer - 质量驱动的多源智能切换
 2. RealHistoricalDataProvider - 区域化优先级与事件窗口
 3. YahooFinanceDataProvider - 指数代码映射与标准化输出
 
 TODO：专家碎片整合 - 待评审
 作者: Qoder AI
-日期: 2025-11-28
+日期: 2025-11-29
 """
 
 import asyncio
 from datetime import datetime, timedelta
 from typing import Dict, Any
 
-# 从专家完整版导入
-from core_bak_refactored.core.data.data_fetcher import (
-    DataFetcher,
-    DataSourceType,
-    DataFrequency
-)
+# 从重构新架构导入
+from core_bak_refactored.core.data.fetcher_orchestrator import DataFetcherOrchestrator
+from core_bak_refactored.core.share import DataSourceType, DataFrequency
 
 # 从专家碎片导入
-from core_bak_refactored.core.data.data_quality_enhancer import DataQualityEnhancer
+from core_bak_refactored.core.data.quality.data_quality_enhancer import DataQualityEnhancer
 from core_bak_refactored.core.data.providers.historical_data_provider import (
     RealHistoricalDataProvider,
     MockHistoricalDataProvider
@@ -45,28 +42,29 @@ async def example1_basic_data_fetcher():
     - 适合稳定的生产环境
     """
     print("\n" + "=" * 80)
-    print("示例1: 基础使用 - DataFetcher（专家完整版）")
+    print("示例1: 基础使用 - DataFetcherOrchestrator（重构新架构）")
     print("=" * 80)
     
-    # 配置DataFetcher
+    # 配置DataFetcherOrchestrator
     config = {
         'cache_enabled': True,
-        'cache_duration': 300,
-        'primary': DataSourceType.YAHOO_FINANCE.value,
-        'fallback_sources': [
-            DataSourceType.ALPHA_VANTAGE.value,
-            DataSourceType.IEX_CLOUD.value
-        ],
-        'max_retries': 3,
-        'request_timeout': 30
+        'cache_ttl': 300,
+        'primary': 'alpha_vantage',
+        'fallback_sources': ['alpha_vantage'],
+        'api_credentials': {
+            'alpha_vantage': {
+                'api_key': 'demo',  # 使用demo键或配置真实键
+                'base_url': 'https://www.alphavantage.co/query'
+            }
+        }
     }
     
-    fetcher = DataFetcher(config)
+    orchestrator = DataFetcherOrchestrator(config)
     
     # 获取历史数据
     symbols = ['AAPL', 'MSFT', 'GOOGL']
     try:
-        data = await fetcher.get_historical_data(
+        data = await orchestrator.get_historical_data(
             symbols=symbols,
             period='1mo',
             interval='1d',
@@ -250,7 +248,7 @@ async def example4_advanced_combination():
     - 复杂的多源数据策略
     
     组合优势:
-    - DataFetcher提供缓存和性能监控
+    - DataFetcherOrchestrator提供缓存和性能监控
     - DataQualityEnhancer提供质量驱动切换
     - YahooFinanceDataProvider提供指数映射和格式化
     
