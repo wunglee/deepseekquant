@@ -32,7 +32,7 @@ class MarketEnumsTest(unittest.TestCase):
         self.assertIsNotNone(us_priority)
         self.assertIn(DataSource.YAHOO, us_priority)
         # Default key should exist
-        self.assertIn('default', REGIONAL_DATA_SOURCE_PRIORITY)
+        self.assertIn(MarketCode.UNKNOWN, REGIONAL_DATA_SOURCE_PRIORITY)
 
 
 if __name__ == '__main__':

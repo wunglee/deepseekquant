@@ -17,25 +17,35 @@ class FundamentalDataService:
             # 尝试Yahoo Finance
             try:
                 yf_fundamentals = await self._get_yahoo_fundamentals(symbol)
-                fundamentals.update(yf_fundamentals)
+                if self._is_valid_fundamentals(yf_fundamentals):
+                    fundamentals.update(yf_fundamentals)
+                else:
+                    self.logger.debug("Yahoo 返回数据无有效字段")
             except Exception as e:
                 self.logger.debug(f"Yahoo Finance基本面数据获取失败: {e}")
             # 尝试Alpha Vantage
             if not fundamentals:
                 try:
                     av_fundamentals = await self._get_alpha_vantage_fundamentals(symbol)
-                    fundamentals.update(av_fundamentals)
+                    if self._is_valid_fundamentals(av_fundamentals):
+                        fundamentals.update(av_fundamentals)
+                    else:
+                        self.logger.debug("Alpha Vantage 返回数据无有效字段")
                 except Exception as e:
                     self.logger.debug(f"Alpha Vantage基本面数据获取失败: {e}")
             # 尝试其他数据源
             if not fundamentals:
                 try:
                     other_fundamentals = await self._get_other_fundamentals(symbol)
-                    fundamentals.update(other_fundamentals)
+                    if self._is_valid_fundamentals(other_fundamentals):
+                        fundamentals.update(other_fundamentals)
+                    else:
+                        self.logger.debug("其他数据源返回数据无有效字段")
                 except Exception as e:
                     self.logger.debug(f"其他基本面数据源获取失败: {e}")
-            if not fundamentals:
-                raise ValueError("无法获取基本面数据")
+            # 若仍无有效数据则报错
+            if not fundamentals or not self._is_valid_fundamentals(fundamentals):
+                raise ValueError("无法获取有效的基本面数据")
             # 计算衍生指标
             fundamentals.update(self._calculate_fundamental_ratios(fundamentals))
             return fundamentals
@@ -94,6 +104,17 @@ class FundamentalDataService:
     async def _get_other_fundamentals(self, symbol: str) -> Dict[str, Any]:
         """从其他数据源获取基本面数据（占位）"""
         return {}
+
+    def _is_valid_fundamentals(self, data: Dict[str, Any]) -> bool:
+        """判断基本面字典是否包含至少一个非None的有效字段"""
+        if not isinstance(data, dict) or not data:
+            return False
+        for k, v in data.items():
+            if k in ('data_source', 'last_updated'):
+                continue
+            if v is not None:
+                return True
+        return False
 
     def _calculate_fundamental_ratios(self, fundamentals: Dict) -> Dict[str, Any]:
         """计算基本面比率指标"""
