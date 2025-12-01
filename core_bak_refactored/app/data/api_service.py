@@ -57,7 +57,7 @@ from flask_cors import CORS
 # 从组件导入
 from core_bak_refactored.app.data.api.controllers import DataQualityControllers
 from core_bak_refactored.app.data.api.health import HealthChecker
-from core_bak_refactored.app.data.api.metrics import MetricsCollector
+from core_bak_refactored.app.data.api.system_metrics import MetricsCollector
 from core_bak_refactored.app.data.api.diagnostics import DiagnosticsRunner
 from core_bak_refactored.app.data.api.config_manager import ConfigManager
 from core_bak_refactored.app.data.api.exporter import DataExporter

@@ -1,6 +1,6 @@
 """CacheManager 单元测试"""
 import pytest
-from core_bak_refactored.core.data.cache.cache_manager import CacheManager
+from core_bak_refactored.core.data.cache.cachemanager import CacheManager
 
 
 @pytest.mark.asyncio
