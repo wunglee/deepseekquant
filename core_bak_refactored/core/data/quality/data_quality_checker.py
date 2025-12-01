@@ -23,7 +23,7 @@ from core_bak_refactored.core.share.market_enums import MarketCode
 logger = logging.getLogger('DeepSeekQuant.DataQuality')
 
 
-from .quality_types import DataQualityReport
+from core_bak_refactored.core.data.quality.quality_types import DataQualityReport
 
 
 @dataclass
@@ -136,8 +136,13 @@ class DataQualityChecker:
         },
     }
     
-    def __init__(self):
-        """初始化数据质量检查器"""
+    def __init__(self, enable_ml_detection: bool = False, ml_config: Optional[Dict] = None):
+        """初始化数据质量检查器
+        
+        Args:
+            enable_ml_detection: 是否启用ML异常检测（需要sklearn等依赖）
+            ml_config: ML检测器配置（可选）
+        """
         self._check_history: List[DataQualityReport] = []
         self._validation_history: List[CrossValidationResult] = []
         # 数据源可信度评分（初始化100分，专家第4轮建议）
@@ -145,29 +150,40 @@ class DataQualityChecker:
         # 紧急回退缓存（专家第7轮问题6-2）
         self._emergency_cache: Dict[str, pd.DataFrame] = {}
         self._cache_timestamps: Dict[str, datetime] = {}
+        
+        # 🔥 ML异常检测器管理器（可选）
+        self._ml_detection_enabled = enable_ml_detection
+        self._anomaly_detector_manager = None
+        if enable_ml_detection:
+            from core_bak_refactored.core.data.quality.anomaly_detectors import AnomalyDetectorManager
+            self._anomaly_detector_manager = AnomalyDetectorManager(ml_config or {})
+            logger.info("已启用ML异常检测功能")
     
     def check_quality(self, 
                      data: pd.DataFrame,
                      index_id: str = 'unknown',
                      expected_days: Optional[int] = None,
-                     market: Optional[str] = None) -> DataQualityReport:
+                     market: Optional[str] = None,
+                     enable_advanced_checks: bool = True) -> DataQualityReport:
         """
-        数据质量多维度检查
+        数据质量多维度检查（整合版：结合多版本最优特性）
         
         Args:
             data: 数据DataFrame（必须包含date, close, volume列）
             index_id: 指数代码（用于日志）
             expected_days: 期望天数（用于完整性检查）
+            market: 市场代码（用于差异化阈值）
+            enable_advanced_checks: 是否启用增强检查（OHLC验证、时间序列异常检测）
         
         Returns:
             数据质量报告
         """
         issues = []
         
-        # 1. 完整性检查
+        # 1. 完整性检查（包含字段完整性）
         completeness_score = self._check_completeness(data, expected_days, issues)
         
-        # 2. 一致性检查（字段类型、取值范围）
+        # 2. 一致性检查（包含OHLC关系验证）
         consistency_score = self._check_consistency(data, issues)
         
         # 3. 连续性检查（时间连续性、缺失值）
@@ -176,13 +192,28 @@ class DataQualityChecker:
         # 4. 合理性检查（价格波动、成交量异常）
         reasonableness_score = self._check_reasonableness(data, index_id, issues, market)
         
-        # 计算总分（加权平均）
-        overall_score = (
-            completeness_score * 0.25 +
-            consistency_score * 0.25 +
-            continuity_score * 0.25 +
-            reasonableness_score * 0.25
-        )
+        # 🔥 5. 时间序列一致性检查（增强功能，可选）
+        if enable_advanced_checks:
+            ts_consistency_score = self._check_time_series_consistency(data, issues)
+        else:
+            ts_consistency_score = 1.0
+        
+        # 计算总分（加权平均，增强检查纳入权重）
+        if enable_advanced_checks:
+            overall_score = (
+                completeness_score * 0.22 +
+                consistency_score * 0.22 +
+                continuity_score * 0.22 +
+                reasonableness_score * 0.22 +
+                ts_consistency_score * 0.12  # 时间序列一致性权重较低
+            )
+        else:
+            overall_score = (
+                completeness_score * 0.25 +
+                consistency_score * 0.25 +
+                continuity_score * 0.25 +
+                reasonableness_score * 0.25
+            )
         
         report = DataQualityReport(
             overall_score=overall_score,
@@ -195,43 +226,60 @@ class DataQualityChecker:
                 'index_id': index_id,
                 'rows': len(data),
                 'expected_days': expected_days,
-                'timestamp': datetime.now().isoformat()
+                'timestamp': datetime.now().isoformat(),
+                'advanced_checks_enabled': enable_advanced_checks,
+                'ts_consistency_score': ts_consistency_score if enable_advanced_checks else None,
+                'data_frequency': self._detect_data_frequency(data) if 'date' in data.columns else 'unknown'
             }
         )
         
         self._check_history.append(report)
         
         logger.info(f"数据质量检查完成: {index_id}, 总分={overall_score:.2f}, "
-                   f"问题数={len(issues)}")
+                   f"问题数={len(issues)}, 高级检查={'启用' if enable_advanced_checks else '禁用'}")
         
         return report
     
     def _check_completeness(self, data: pd.DataFrame, expected_days: Optional[int], 
                            issues: List[str]) -> float:
-        """完整性检查"""
-        if expected_days is None:
-            return 1.0
+        """完整性检查（整合data_fetcher增强功能：字段完整性+时间连续性）"""
+        if data.empty:
+            issues.append("数据集为空")
+            return 0.0
         
-        actual_days = len(data)
-        completeness = min(1.0, actual_days / expected_days)
-        
-        if completeness < 0.9:
-            issues.append(f"数据不完整: 期望{expected_days}天, 实际{actual_days}天")
-        
-        return completeness
-    
-    def _check_consistency(self, data: pd.DataFrame, issues: List[str]) -> float:
-        """一致性检查"""
         score = 1.0
         
-        # 检查必需字段
+        # 原有逻辑：数据点数量检查
+        if expected_days is not None:
+            actual_days = len(data)
+            completeness_ratio = min(1.0, actual_days / expected_days)
+            
+            if completeness_ratio < 0.95:
+                severity = '严重' if completeness_ratio < 0.8 else '中等'
+                issues.append(f"数据不完整({severity}): 期望{expected_days}天, 实际{actual_days}天 ({completeness_ratio:.1%})")
+                score *= 0.7 if completeness_ratio < 0.8 else 0.9
+        
+        # 🔥 新增：字段完整性检查（从data_fetcher提取）
+        field_completeness = self._check_field_completeness(data)
+        for field, ratio in field_completeness.items():
+            if ratio < 0.99:  # 允许1%字段缺失
+                issues.append(f"字段{field}完整性不足: {ratio:.1%}")
+                score *= 0.95 if ratio < 0.95 else 0.98
+        
+        return max(0.0, score)
+    
+    def _check_consistency(self, data: pd.DataFrame, issues: List[str]) -> float:
+        """一致性检查（整合data_fetcher增强功能：OHLC关系验证）"""
+        score = 1.0
+        
+        # 原有逻辑：检查必需字段
         required_fields = ['date', 'close', 'volume']
         missing_fields = [f for f in required_fields if f not in data.columns]
         if missing_fields:
             issues.append(f"缺失必需字段: {missing_fields}")
             score *= 0.5
         
-        # 检查字段类型
+        # 原有逻辑：检查字段类型
         if 'close' in data.columns:
             if not pd.api.types.is_numeric_dtype(data['close']):
                 issues.append("close字段非数值类型")
@@ -241,6 +289,10 @@ class DataQualityChecker:
             if not pd.api.types.is_numeric_dtype(data['volume']):
                 issues.append("volume字段非数值类型")
                 score *= 0.8
+        
+        # 🔥 新增：OHLC关系验证（从data_fetcher提取）
+        ohlc_score = self._check_ohlc_consistency(data, issues)
+        score *= ohlc_score
         
         return max(0.0, score)
     
@@ -587,3 +639,186 @@ class DataQualityChecker:
         
         logger.info(f"使用数据源{source_name}的紧急回退缓存（年龄：{cache_age:.1f}小时）")
         return self._emergency_cache[source_name].copy()
+    
+    # ========== 🔥 整合data_fetcher增强功能（多版本最优特性） ==========
+    
+    def _check_field_completeness(self, data: pd.DataFrame) -> Dict[str, float]:
+        """检查字段完整性（从data_fetcher._check_field_completeness提取）
+        
+        检查OHLCV等8个关键字段的非空比例
+        """
+        if data.empty:
+            return {}
+        
+        total_count = len(data)
+        field_completeness = {}
+        
+        # 扩展字段列表（从data_fetcher提取）
+        required_fields = ['open', 'high', 'low', 'close', 'volume', 
+                          'adj_close', 'turnover', 'vwap']
+        
+        for field in required_fields:
+            if field in data.columns:
+                non_null_count = data[field].notna().sum()
+                field_completeness[field] = non_null_count / total_count
+        
+        return field_completeness
+    
+    def _check_ohlc_consistency(self, data: pd.DataFrame, issues: List[str]) -> float:
+        """检查OHLC价格关系一致性（从data_fetcher._check_internal_consistency提取）
+        
+        验证规则：
+        1. low <= open, close <= high
+        2. low <= high
+        """
+        if not all(col in data.columns for col in ['open', 'high', 'low', 'close']):
+            return 1.0
+        
+        score = 1.0
+        total = len(data)
+        
+        # 检查: low <= open, close <= high
+        invalid_low = (data['low'] > data['open']) | (data['low'] > data['close'])
+        if invalid_low.any():
+            count = invalid_low.sum()
+            issues.append(f"{count}条记录low价格异常(low > open或close) - {count/total:.1%}")
+            score *= max(0.5, 1.0 - count / total * 0.5)
+        
+        # 检查: high >= open, close
+        invalid_high = (data['high'] < data['open']) | (data['high'] < data['close'])
+        if invalid_high.any():
+            count = invalid_high.sum()
+            issues.append(f"{count}条记录high价格异常(high < open或close) - {count/total:.1%}")
+            score *= max(0.5, 1.0 - count / total * 0.5)
+        
+        # 检查: low <= high
+        invalid_range = data['low'] > data['high']
+        if invalid_range.any():
+            count = invalid_range.sum()
+            issues.append(f"{count}条记录价格范围异常(low > high) - {count/total:.1%}")
+            score *= 0.5
+        
+        return max(0.0, score)
+    
+    def _detect_data_frequency(self, data: pd.DataFrame) -> str:
+        """自动检测数据频率（从data_fetcher._detect_data_frequency提取）
+        
+        Returns:
+            'minute' | 'hourly' | 'daily' | 'weekly' | 'custom'
+        """
+        if 'date' not in data.columns or len(data) < 2:
+            return 'daily'
+        
+        dates = pd.to_datetime(data['date']).sort_values()
+        intervals = dates.diff().dt.total_seconds() / 3600  # 转换为小时
+        intervals = intervals.dropna()
+        
+        if len(intervals) == 0:
+            return 'daily'
+        
+        # 使用中位数识别频率（更鲁棒）
+        median_interval = intervals.median()
+        
+        if median_interval < 0.1:  # < 6分钟
+            return 'minute'
+        elif median_interval < 1.5:  # 1-1.5小时
+            return 'hourly'
+        elif median_interval < 30:  # 1.5-30小时
+            return 'daily'
+        elif median_interval < 200:  # 30-200小时
+            return 'weekly'
+        else:
+            return 'custom'
+    
+    def _check_time_series_consistency(self, data: pd.DataFrame, issues: List[str]) -> float:
+        """检查时间序列一致性（从data_fetcher提取，增强趋势突变检测）
+        
+        使用3-sigma规则检测异常价格变化
+        """
+        if 'close' not in data.columns or len(data) < 3:
+            return 1.0
+        
+        score = 1.0
+        prices = data['close'].values
+        
+        # 计算价格变化率
+        price_changes = np.abs(np.diff(prices) / prices[:-1])
+        
+        if len(price_changes) < 2:
+            return 1.0
+        
+        # 统计异常检测（3-sigma）
+        mean_change = np.mean(price_changes)
+        std_change = np.std(price_changes)
+        
+        if std_change > 1e-8:  # 避免除零
+            anomaly_threshold = mean_change + 3 * std_change
+            anomalies = price_changes > anomaly_threshold
+            anomaly_count = np.sum(anomalies)
+            
+            if anomaly_count > 0:
+                issues.append(
+                    f"发现{anomaly_count}个价格突变点 "
+                    f"(变化率>{anomaly_threshold:.1%}, 均值={mean_change:.1%})")
+                score *= max(0.85, 1.0 - anomaly_count / len(price_changes) * 0.3)
+        
+        return max(0.0, score)
+    
+    def detect_anomalies_ml(self, 
+                           data: pd.DataFrame, 
+                           target_column: str = 'close',
+                           min_votes: int = 2) -> Dict[str, Any]:
+        """使用ML方法检测异常（可选功能）
+        
+        Args:
+            data: 数据DataFrame
+            target_column: 目标列名
+            min_votes: 最小投票数（多个检测器投票）
+        
+        Returns:
+            异常检测结果字典
+        """
+        if not self._ml_detection_enabled:
+            logger.warning("ML异常检测未启用，请在初始化时设置enable_ml_detection=True")
+            return {'enabled': False, 'anomalies': []}
+        
+        if self._anomaly_detector_manager is None:
+            return {'enabled': False, 'error': 'detector_manager_not_initialized'}
+        
+        if target_column not in data.columns:
+            logger.error(f"列{target_column}不存在于数据中")
+            return {'enabled': True, 'error': f'column_{target_column}_not_found', 'anomalies': []}
+        
+        # 提取目标列数据
+        values = data[target_column].dropna().values
+        
+        if len(values) < 10:
+            logger.warning(f"数据点不足10个，跳过ML异常检测")
+            return {'enabled': True, 'anomalies': [], 'reason': 'insufficient_data'}
+        
+        # 执行检测
+        all_results = self._anomaly_detector_manager.detect_all(values)
+        aggregated_indices = self._anomaly_detector_manager.get_aggregated_anomalies(
+            values, min_votes=min_votes
+        )
+        
+        # 构造返回结果
+        return {
+            'enabled': True,
+            'total_points': len(values),
+            'anomaly_count': len(aggregated_indices),
+            'anomaly_indices': aggregated_indices,
+            'min_votes': min_votes,
+            'detector_results': {
+                name: {
+                    'anomaly_count': len(result.anomaly_indices),
+                    'anomaly_indices': result.anomaly_indices,
+                    'method': result.method
+                }
+                for name, result in all_results.items()
+            },
+            'metadata': {
+                'target_column': target_column,
+                'detectors_used': list(all_results.keys())
+            }
+        }

@@ -1,4 +1,4 @@
-from core_bak_refactored.core.data.cache.memory import MemoryTTLCache
+from core_bak_refactored.infrastructure.cache import MemoryTTLCache
 
 
 def test_memory_ttl_cache_basic():

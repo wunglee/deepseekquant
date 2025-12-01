@@ -1,39 +1,48 @@
 """
-[专家完整版 + 专家碎片] Data模块 - 数据获取与质量管理
+[重构新架构 + 专家碎片] Data模块 - 数据获取与质量管理
 
-状态: 方案B执行完成,碎片已修复
-更新时间: 2025-11-27
+状态: ABCD重构流程执行中
+更新时间: 2025-11-29
 
 模块结构:
-1. 专家完整版 (core_bak/data_fetcher.py -> data_fetcher.py)
-   - DataFetcher: 完整的生产级数据获取器 (8652行)
-   - DataQualityMonitor: 增强版质量监控器 (推荐)
-   - DataQualityMonitorBasic: 基础版质量监控器
-   - DataValidator: 数据验证器
-   - DataQualityMonitorFactory: 监控器工厂
-   - DeepSeekQuantSystem: 系统集成类
+1. 重构新架构 (SOLID原则,职责单一) - 推荐使用
+   - DataFetcherOrchestrator: 数据获取编排器 (仅负责路由与编排)
+   - CacheManager: 三层缓存管理器 (L1内存+L2 LRU+L3 Redis)
+   - MarketStatusService: 市场状态评估服务
+   - FundamentalDataService: 基本面数据服务
+   - AlphaVantageProvider: AlphaVantage数据源
 
-2. 专家碎片 (增量功能,待评审)
+2. 遗留组件 (data_fetcher.py) - 待删除
+   - DataFetcher: 遗留的单体类，已被新架构替代
+   - DataQualityMonitor: 质量监控器（待评估是否独立提取）
+   - DataValidator: 数据验证器（待评估是否独立提取）
+   注意：请直接使用 DataFetcherOrchestrator，不再导出 DataFetcher
+
+3. 专家碎片 (增量功能,待评审)
    - DataQualityEnhancer: 多源数据智能切换 (第6轮专家)
    - RealHistoricalDataProvider: 历史数据提供者 (第2轮专家 + Phase 5B-5)
    - YahooFinanceDataProvider: Yahoo数据源 (第6轮专家)
 
-TODO: 后续需对比碎片与完整版的功能重叠,提取增量功能
+TODO: 
+- [ ] 删除 data_fetcher.py 中的 DataFetcher 类
+- [ ] 评估 DataQualityMonitor/DataValidator 是否独立提取
+- [ ] 对比碎片与完整版的功能重叠
 """
 
-from .data_fetcher import (
-    DataFetcher,
-    DataQualityMonitor,  # 增强版,推荐使用
-    DataQualityMonitorBasic,  # 基础版
-    DataValidator,
-    DataQualityMonitorFactory,
-    DeepSeekQuantSystem,
-)
+# 重构新架构 - SOLID原则（推荐使用）
+from .fetcher_orchestrator import DataFetcherOrchestrator
+from .cache.cache_manager import CacheManager
+from .market.market_status_service import MarketStatusService
+from .providers.fundamental_data_service import FundamentalDataService
+from .providers.alpha_vantage import AlphaVantageProvider
+
+# 遗留组件（仅用于测试，不再导出）
+# from .data_fetcher import DataFetcher  # 已被 DataFetcherOrchestrator 替代
 
 # 从共享模块导入枚举和数据模型
 from core_bak_refactored.core.share import DataSourceType, DataFrequency, MarketData
 
-from .data_quality_enhancer import (
+from .quality.data_quality_enhancer import (
     DataQualityEnhancer,  # 第6轮专家碎片 - 多源智能切换
     DataQualityReport,
 )
@@ -49,13 +58,14 @@ from .providers.yahoo_finance import (
 )
 
 __all__ = [
-    # 专家完整版
-    'DataFetcher',
-    'DataQualityMonitor',
-    'DataQualityMonitorBasic',
-    'DataValidator',
-    'DataQualityMonitorFactory',
-    'DeepSeekQuantSystem',
+    # 重构新架构（推荐使用）
+    'DataFetcherOrchestrator',
+    'CacheManager',
+    'MarketStatusService',
+    'FundamentalDataService',
+    'AlphaVantageProvider',
+    
+    # 共享模型
     'DataSourceType',
     'DataFrequency',
     'MarketData',

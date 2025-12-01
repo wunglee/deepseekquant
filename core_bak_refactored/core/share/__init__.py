@@ -11,6 +11,9 @@ from .market_enums import DataSource, REGIONAL_DATA_SOURCE_PRIORITY
 from .exchange_rates import MockExchangeRateAdapter, CurrencyConverter
 from .enums import DataSourceType, DataFrequency
 from .models import MarketData
+from .alert_enums import AlertSeverity, AlertChannel, DataQualityIssueType
+from .config_manager import ConfigManager, MonitoringConfig, AlertingConfig, DataConfig, SystemConfig
+from .performance_stats import PerformanceStatsManager, PerformanceMetrics
 
 __all__ = [
     # 市场配置
@@ -28,6 +31,22 @@ __all__ = [
     # 数据枚举
     'DataSourceType',
     'DataFrequency',
+    
+    # 告警枚举
+    'AlertSeverity',
+    'AlertChannel',
+    'DataQualityIssueType',
+    
+    # 配置管理
+    'ConfigManager',
+    'MonitoringConfig',
+    'AlertingConfig',
+    'DataConfig',
+    'SystemConfig',
+    
+    # 性能统计
+    'PerformanceStatsManager',
+    'PerformanceMetrics',
     
     # 数据模型
     'MarketData',

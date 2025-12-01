@@ -31,13 +31,16 @@ API端点:
 - POST /api/v1/maintenance          - 维护模式
 
 依赖说明:
-- 依赖遗留代码: core_bak_refactored.core.data.data_fetcher.DataQualityMonitor
-- TODO: 未来应迁移到重构后的Quality监控架构
-  - 新架构应基于 providers/ 模块
-  - 新架构应使用 DataQualityChecker (providers/data_quality_checker.py)
-  - 新架构应使用工厂模式创建monitor实例
+- ✅ 已迁移到重构后架构: 使用 QualityMonitoringService (app/data/monitoring_service.py)
+- ✅ 监控服务整合了重构后的核心组件:
+  - DataQualityChecker (core/data/providers/data_quality_checker.py) - 质量检查
+  - AlertManager (core/monitoring/alert_manager.py) - 告警管理
+- ✅ 完全消除了对 data_fetcher.py 的依赖
 
-注意: 本类暂时依赖遗留data_fetcher.py，待Quality模块重构完成后迁移
+架构说明:
+- 应用层使用适配器模式对接遗留API接口
+- 核心逻辑由重构后组件提供
+- 便于后续进一步优化API接口
 """
 
 from __future__ import annotations
@@ -61,7 +64,7 @@ from core_bak_refactored.app.data.api.exporter import DataExporter
 from core_bak_refactored.app.data.api.system_status import SystemStatusManager
 
 if TYPE_CHECKING:
-    from core_bak_refactored.core.data.data_fetcher import DataQualityMonitor
+    from core_bak_refactored.app.data.monitoring_service import QualityMonitoringService
 
 logger = logging.getLogger('DeepSeekQuant.App.APIService')
 
@@ -69,12 +72,13 @@ logger = logging.getLogger('DeepSeekQuant.App.APIService')
 class DataQualityAPIService:
     """数据质量API服务 - 提供RESTful API接口
     
-    迁移状态: 进行中 - 逐步拆分到组件
-    原始代码: api_service_bak.py (1342行)
-    当前进度: 已迁移辅助方法到 controllers.py
+    架构说明:
+    - 应用层：API路由和请求处理
+    - 依赖监控服务：QualityMonitoringService（整合DataQualityChecker + AlertManager）
+    - 职责分离：API组件专注于各自职责（健康检查、指标、诊断等）
     """
 
-    def __init__(self, quality_monitor: DataQualityMonitor):
+    def __init__(self, quality_monitor: QualityMonitoringService):
         self.quality_monitor = quality_monitor
         self.app = Flask(__name__)
         
@@ -311,11 +315,19 @@ class DataQualityAPIService:
 
             except Exception as e:
                 logger.error(f"配置管理失败: {e}")
-                return jsonify({
-                    'status': 'error',
-                    'message': str(e),
-                    'error_code': 'CONFIG_MANAGEMENT_FAILED'
-                }), 500
+                # 区分客户端错误和服务器错误
+                if '400' in str(e) or 'Bad Request' in str(e):
+                    return jsonify({
+                        'status': 'error',
+                        'message': str(e),
+                        'error_code': 'INVALID_CONFIG'
+                    }), 400
+                else:
+                    return jsonify({
+                        'status': 'error',
+                        'message': str(e),
+                        'error_code': 'CONFIG_MANAGEMENT_FAILED'
+                    }), 500
 
         @self.app.route('/api/v1/health', methods=['GET'])
         def health_check():

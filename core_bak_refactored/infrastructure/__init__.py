@@ -31,6 +31,18 @@ from .numeric_utils import (
 from .statistical_calculators import StatisticalCalculator
 from .timeseries_calculator import TimeSeriesCalculator, TechnicalIndicators
 
+# 新增的数据质量计算工具
+from .data_quality_calculators import DataQualityCalculators
+
+# 新增的系统健康度计算工具
+from .system_health_calculators import SystemHealthCalculators
+
+# 新增的质量分析计算工具
+from .quality_analysis_calculators import QualityAnalysisCalculators
+
+# 新增的异常检测器
+from .anomaly_detectors import ZScoreDetector, IQRDetector, RollingStdDetector, AnomalyDetectionManager, AnomalyResult
+
 # HTTP客户端基础设施（2025-11-28 从core/data/http迁移）
 from .http import setup_http_client, close_http_client
 
@@ -81,6 +93,22 @@ __all__ = [
     'StatisticalCalculator',
     'TimeSeriesCalculator',
     'TechnicalIndicators',  # 别名兼容
+    
+    # 数据质量计算工具
+    'DataQualityCalculators',
+    
+    # 系统健康度计算工具
+    'SystemHealthCalculators',
+    
+    # 质量分析计算工具
+    'QualityAnalysisCalculators',
+    
+    # 异常检测器
+    'ZScoreDetector',
+    'IQRDetector',
+    'RollingStdDetector',
+    'AnomalyDetectionManager',
+    'AnomalyResult',
     
     # HTTP客户端
     'setup_http_client',

@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 
-from core_bak_refactored.core.data.data_quality_enhancer import DataQualityEnhancer, DataQualityReport
+from core_bak_refactored.core.data.quality.data_quality_enhancer import DataQualityEnhancer, DataQualityReport
 from core_bak_refactored.tests.fixtures.core.data.mock_historical_data_provider import MockHistoricalDataProvider
 
 
@@ -84,8 +84,8 @@ class TestDataQualityEnhancer(unittest.TestCase):
         start_date = '2015-06-15'
         end_date = '2015-08-26'
         
-        # 使用主数据源获取数据
-        data = self.enhancer.get_enhanced_prices('000300.SH', start_date, end_date)
+        # 使用主数据源获取数据（现在返回元组）
+        data, quality_report = self.enhancer.get_enhanced_prices('000300.SH', start_date, end_date)
         
         # 验证返回了数据
         self.assertIsInstance(data, pd.DataFrame)
@@ -93,6 +93,10 @@ class TestDataQualityEnhancer(unittest.TestCase):
         self.assertIn('date', data.columns)
         self.assertIn('close', data.columns)
         self.assertIn('volume', data.columns)
+        
+        # 验证质量报告
+        self.assertIsInstance(quality_report, DataQualityReport)
+        self.assertGreater(quality_report.overall_score, 0.0)
 
     def test_data_quality_report_structure(self):
         """测试数据质量报告结构"""

@@ -9,6 +9,7 @@ from typing import Any, Dict, List
 from datetime import datetime
 import logging
 import numpy as np
+from core_bak_refactored.infrastructure import SystemHealthCalculators
 
 logger = logging.getLogger('DeepSeekQuant.App.APIControllers')
 
@@ -72,10 +73,19 @@ class DataQualityControllers:
     def get_enhanced_performance(self) -> Dict:
         """获取增强的性能统计"""
         stats = self._qm.get_performance_statistics()
+        
+        # 计算系统健康度和趋势分析
+        system_health = self.calculate_system_health(stats)
+        trend_analysis = self.analyze_performance_trend(stats)
+        
+        # 生成建议（基于统计数据）
+        recommendations = self._generate_recommendations_from_stats(stats, system_health)
+        
         return {
             **stats,
-            'system_health': self.calculate_system_health(stats),
-            'trend_analysis': self.analyze_performance_trend(stats)
+            'system_health': system_health,
+            'trend_analysis': trend_analysis,
+            'recommendations': recommendations
         }
 
     # 辅助方法 - 从api_service.py迁移
@@ -131,11 +141,9 @@ class DataQualityControllers:
 
     def analyze_performance_trend(self, stats: Dict) -> Dict[str, Any]:
         """分析性能趋势"""
-        return {
-            'trend': 'stable',
-            'change_rate': 0.0,
-            'prediction': {
-                'next_hour': stats.get('throughput', 0),
-                'confidence': 0.85
-            }
-        }
+        return SystemHealthCalculators.analyze_performance_trend(stats)
+    
+    def _generate_recommendations_from_stats(self, stats: Dict, health: Dict) -> List[Dict[str, str]]:
+        """基于统计数据生成建议"""
+        health_score = health.get('score', 100)
+        return SystemHealthCalculators.generate_recommendations_from_stats(stats, health_score)

@@ -22,7 +22,7 @@ import pandas as pd
 from typing import Dict, List
 
 from core_bak_refactored.core.data.providers.historical_data_provider import RealHistoricalDataProvider
-from core_bak_refactored.core.data.providers.data_quality_checker import DataQualityChecker
+from core_bak_refactored.core.data.quality import DataQualityChecker
 from core_bak_refactored.core.risk.cross_market_calibrator import CrossMarketCalibrator
 from core_bak_refactored.core.backtest._fragments.uat_validator import UATValidator
 from core_bak_refactored.core.backtest._fragments.event_window_backtester import EventWindowBacktester

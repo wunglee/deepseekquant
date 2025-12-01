@@ -33,17 +33,45 @@ from core_bak_refactored.app.data.dashboard_components.aggregator import Dashboa
 from core_bak_refactored.app.data.dashboard_components.websocket_handler import WebSocketHandler
 from core_bak_refactored.app.data.dashboard_components.renderer import DashboardRenderer
 
+# 导入应用层监控服务（替代废弃的DataQualityMonitor）
 if TYPE_CHECKING:
-    from core_bak_refactored.core.data.data_fetcher import DataQualityMonitor
+    from core_bak_refactored.app.data.monitoring_service import MonitoringService
 
 logger = logging.getLogger('DeepSeekQuant.App.Dashboard')
 
 
 class DataQualityDashboard:
-    """数据质量仪表板 - 提供可视化监控界面"""
+    """数据质量仪表板 - 提供可视化监控界面
+    
+    .. deprecated:: 2025-11-29
+        建议使用 MonitoringService + DataQualityChecker 组合
+        
+        迁移说明：
+        - 旧的DataQualityMonitor已废弃
+        - 应用层监控应由MonitoringService负责
+        - 核心层质量检查由DataQualityChecker负责
+        
+        迁移示例：
+        ```python
+        # 旧代码（已废弃）
+        # from core_bak_refactored.core.data.data_fetcher import DataQualityMonitor
+        # from core_bak_refactored.app.data.dashboard import DataQualityDashboard
+        # monitor = DataQualityMonitor(config)
+        # dashboard = DataQualityDashboard(monitor)
+        
+        # 新代码
+        from core_bak_refactored.app.data.monitoring_service import MonitoringService
+        from core_bak_refactored.core.data.quality import DataQualityChecker
+        
+        checker = DataQualityChecker()
+        monitoring_service = MonitoringService(checker, config)
+        # 仪表板功能应集成在MonitoringService中
+        ```
+    """
 
-    def __init__(self, quality_monitor: DataQualityMonitor):
+    def __init__(self, quality_monitor: 'MonitoringService', scheduler=None):
         self.quality_monitor = quality_monitor
+        self.scheduler = scheduler  # MonitoringScheduler实例（可选）
         self.dashboard_data = {}
         self.update_interval = 300  # 5分钟更新一次
         self.dashboard_config = self._load_dashboard_config()
@@ -146,6 +174,24 @@ class DataQualityDashboard:
             def get_alerts():
                 hours = request.args.get('hours', 24, type=int)
                 return jsonify(self.quality_monitor.get_alert_history(hours))
+
+            @app.route('/api/scheduler-status')
+            def get_scheduler_status():
+                """获取调度器状态（新增）"""
+                if self.scheduler:
+                    status = self.scheduler.get_status()
+                    return jsonify({
+                        'scheduler_enabled': True,
+                        'running': status['running'],
+                        'strategy': status['strategy'],
+                        'check_interval': status['check_interval'],
+                        'next_run': status['next_run']
+                    })
+                else:
+                    return jsonify({
+                        'scheduler_enabled': False,
+                        'message': '调度器未配置'
+                    })
 
             @app.route('/api/reports/<report_id>')
             def get_report(report_id):

@@ -1,0 +1,139 @@
+"""
+共享性能统计管理器（业务层）
+
+职责：
+- 提供标准化的性能统计接口
+- 支持性能指标的收集、计算和报告
+- 提供性能数据的类型安全访问
+"""
+
+from typing import Dict, Any, List
+from dataclasses import dataclass, asdict
+from datetime import datetime
+import logging
+
+logger = logging.getLogger('DeepSeekQuant.Core.Share.PerformanceStats')
+
+
+@dataclass
+class PerformanceMetrics:
+    """性能指标数据类"""
+    throughput: float = 0.0  # 吞吐量（数据点/秒）
+    success_rate: float = 1.0  # 成功率 (0-1)
+    reliability: float = 1.0  # 可靠性 (0-1)
+    stability_score: float = 1.0  # 稳定性分数 (0-1)
+    uptime_seconds: float = 0.0  # 运行时间（秒）
+    uptime_human: str = "0 minutes"  # 人类可读的运行时间
+    data_points_processed: int = 0  # 处理的数据点数
+    anomalies_detected: int = 0  # 检测到的异常数
+    alerts_triggered: int = 0  # 触发的告警数
+    validation_errors: int = 0  # 验证错误数
+    avg_processing_time: float = 0.0  # 平均处理时间（秒）
+    monitoring_cycles: int = 0  # 监控周期数
+    start_time: str = ""  # 启动时间
+
+
+class PerformanceStatsManager:
+    """
+    性能统计管理器
+    
+    职责：提供标准化的性能统计接口
+    """
+    
+    def __init__(self):
+        self._stats = PerformanceMetrics()
+        self._stats.start_time = datetime.now().isoformat()
+    
+    def get_stats(self) -> PerformanceMetrics:
+        """获取性能统计"""
+        return self._stats
+    
+    def get_stats_dict(self) -> Dict[str, Any]:
+        """获取性能统计数据字典"""
+        return asdict(self._stats)
+    
+    def increment_counter(self, counter_name: str, value: int = 1):
+        """增加计数器"""
+        if hasattr(self._stats, counter_name):
+            current_value = getattr(self._stats, counter_name)
+            setattr(self._stats, counter_name, current_value + value)
+    
+    def update_metric(self, metric_name: str, value: Any):
+        """更新指标"""
+        if hasattr(self._stats, metric_name):
+            setattr(self._stats, metric_name, value)
+    
+    def calculate_throughput(self) -> float:
+        """计算吞吐量（数据点/秒）"""
+        if self._stats.uptime_seconds > 0:
+            return self._stats.data_points_processed / self._stats.uptime_seconds
+        return 0.0
+    
+    def calculate_success_rate(self) -> float:
+        """计算成功率"""
+        total_attempts = self._stats.data_points_processed + self._stats.validation_errors
+        if total_attempts > 0:
+            return self._stats.data_points_processed / total_attempts
+        return 1.0
+    
+    def calculate_uptime(self) -> float:
+        """计算运行时间（秒）"""
+        if self._stats.start_time:
+            start_time = datetime.fromisoformat(self._stats.start_time)
+            uptime = datetime.now() - start_time
+            return uptime.total_seconds()
+        return 0.0
+    
+    def format_uptime(self, seconds: float) -> str:
+        """格式化运行时长为人类可读格式"""
+        days = int(seconds // 86400)
+        hours = int((seconds % 86400) // 3600)
+        minutes = int((seconds % 3600) // 60)
+        
+        if days > 0:
+            return f"{days} days {hours} hours"
+        elif hours > 0:
+            return f"{hours} hours {minutes} minutes"
+        else:
+            return f"{minutes} minutes"
+    
+    def update_performance_stats(self):
+        """更新性能统计"""
+        # 更新运行时间
+        uptime_seconds = self.calculate_uptime()
+        self._stats.uptime_seconds = uptime_seconds
+        self._stats.uptime_human = self.format_uptime(uptime_seconds)
+        
+        # 更新吞吐量
+        self._stats.throughput = self.calculate_throughput()
+        
+        # 更新成功率
+        self._stats.success_rate = self.calculate_success_rate()
+        
+        # 更新可靠性（基于成功率和告警数）
+        self._stats.reliability = max(0.0, min(1.0, self._stats.success_rate - (self._stats.alerts_triggered * 0.01)))
+        
+        # 更新稳定性分数（基于异常数和错误数）
+        stability_penalty = (self._stats.anomalies_detected * 0.001) + (self._stats.validation_errors * 0.01)
+        self._stats.stability_score = max(0.0, min(1.0, 1.0 - stability_penalty))
+    
+    def reset_stats(self):
+        """重置统计"""
+        self._stats = PerformanceMetrics()
+        self._stats.start_time = datetime.now().isoformat()
+    
+    def get_summary(self) -> Dict[str, Any]:
+        """获取统计摘要"""
+        self.update_performance_stats()
+        return {
+            'throughput': self._stats.throughput,
+            'success_rate': self._stats.success_rate,
+            'reliability': self._stats.reliability,
+            'stability_score': self._stats.stability_score,
+            'uptime_human': self._stats.uptime_human,
+            'data_points_processed': self._stats.data_points_processed,
+            'anomalies_detected': self._stats.anomalies_detected,
+            'alerts_triggered': self._stats.alerts_triggered,
+            'validation_errors': self._stats.validation_errors,
+            'avg_processing_time': self._stats.avg_processing_time
+        }

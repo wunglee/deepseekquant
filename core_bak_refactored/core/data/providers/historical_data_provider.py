@@ -28,34 +28,11 @@ import logging
 from dataclasses import dataclass
 from enum import Enum
 
-from core_bak_refactored.core.data.providers.data_quality_checker import DataQualityChecker
+from core_bak_refactored.core.data.quality import DataQualityChecker
 from core_bak_refactored.core.share import MarketCode
-
-
-# TODO: 从market_enums导入,但目前被删除,暂时定义
-class DataSource(Enum):
-    """数据源枚举"""
-    YAHOO = 'yahoo'
-    JOINQUANT = 'joinquant'
-    WIND = 'wind'
-    TUSHARE = 'tushare'
-    MOCK = 'mock'
-    ALPHA_VANTAGE = 'alpha_vantage'
-
-# TODO: 从quality_types.py迁移到此处,避免外部依赖
-@dataclass
-class DataQualityReport:
-    """数据质量报告"""
-    completeness_score: float
-    consistency_score: float
-    accuracy_score: float
-    outliers_detected: int
-    total_rows: int
-    missing_values: int
-    overall_score: float
+from core_bak_refactored.core.share.market_enums import REGIONAL_DATA_SOURCE_PRIORITY, DataSource
 
 logger = logging.getLogger('DeepSeekQuant.DataFragments')
-
 
 # =============================================================================
 # 协议接口（数据模块标准）
@@ -532,13 +509,8 @@ class RealHistoricalDataProvider:
     - 停牌处理：停牌日数据沿用最近有效价格，但不计入收益率计算
     """
     
-    # 区域化数据源优先级配置（专家第2轮5.1节 + 统䰀market_config.py覆盖范围）
-    # TODO: 从market_enums导入,但目前被删除,暂时定义默认值
-    REGIONAL_PRIORITY = {
-        'CN': ['joinquant', 'tushare', 'yahoo'],  # A股优先JoinQuant
-        'US': ['yahoo', 'alpha_vantage'],         # 美股优先Yahoo
-        'HK': ['wind', 'yahoo']                   # 港股优先Wind
-    }
+    # 区域化数据源优先级配置（专家第2轮5.1节）
+    # 直接使用market_enums中的全局枚举配置（已在文件顶部导入）
     
     # 事件窗口配置（专家第2轮5.1节）
     EVENT_WINDOW_CONFIGS = {
@@ -765,7 +737,7 @@ class RealHistoricalDataProvider:
         Returns:
             数据源优先级列表
         """
-        # 从symbol中提取市场代码
+        # 从symbol中提取市场代码（统一使用MarketCode枚举）
         if index_id.endswith('.SH') or index_id.endswith('.SZ'):
             market = MarketCode.CN
         elif index_id.endswith('.US'):
@@ -779,11 +751,11 @@ class RealHistoricalDataProvider:
         elif index_id.endswith('.SI'):  # 新加坡
             market = MarketCode.SG
         else:
-            market = 'default'
+            market = MarketCode.UNKNOWN
         
-        # 获取优先级列表，转换为字符串
-        priority = self.REGIONAL_PRIORITY.get(market, self.REGIONAL_PRIORITY['default'])
-        return [source.value if isinstance(source, DataSource) else source for source in priority]
+        # 从全局枚举配置获取优先级列表，转换为字符串
+        priority = REGIONAL_DATA_SOURCE_PRIORITY.get(market, REGIONAL_DATA_SOURCE_PRIORITY[MarketCode.UNKNOWN])
+        return [source.value for source in priority]
     
     def get_event_window_data(self, 
                               index_id: str, 
