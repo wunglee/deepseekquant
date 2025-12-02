@@ -15,7 +15,7 @@ from datetime import datetime
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..')))
 
 from core_bak_refactored.core.risk.risk_metrics_service import RiskMetricsService
-from core_bak_refactored.core.share.market_config import MarketConfigManager
+from core_bak_refactored.core.share.market.market_config import MarketConfigManager
 
 
 class TestInternationalSupport(unittest.TestCase):

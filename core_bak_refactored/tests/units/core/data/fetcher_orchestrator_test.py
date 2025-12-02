@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, patch
 
 from core_bak_refactored.core.data.fetcher_orchestrator import DataFetcherOrchestrator
 from core_bak_refactored.core.share import MarketData
-from core_bak_refactored.core.share.market_enums import MarketCode
+from core_bak_refactored.core.share.market.market_enums import MarketCode
 
 
 @pytest.mark.asyncio

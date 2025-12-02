@@ -52,7 +52,7 @@ async def assess_market_sentiment(fetcher: Any) -> Dict[str, Any]:
         put_call_ratio = await _get_put_call_ratio(fetcher)
         
         # 3. 获取涨跌家数比
-        from core_bak_refactored.core.data.market.breadth import get_advance_decline
+        from core_bak_refactored.core.share.market.breadth import get_advance_decline
         advance_decline = await get_advance_decline(fetcher)
         ad_ratio = advance_decline.get('advance_decline_ratio', 1.0)
         

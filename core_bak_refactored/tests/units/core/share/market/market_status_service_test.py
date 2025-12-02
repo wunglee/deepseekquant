@@ -1,7 +1,7 @@
 """MarketStatusService 单元测试"""
 import pytest
 from unittest.mock import AsyncMock
-from core_bak_refactored.core.data.market.market_status_service import MarketStatusService
+from core_bak_refactored.core.share.market.market_status_service import MarketStatusService
 
 
 @pytest.mark.asyncio

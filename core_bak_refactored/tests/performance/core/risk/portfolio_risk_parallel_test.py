@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 from datetime import datetime, timedelta
 from core_bak_refactored.core.risk.portfolio_risk import PortfolioRiskAnalyzer
-from core_bak_refactored.core.share.market_config import MarketConfigManager
+from core_bak_refactored.core.share.market.market_config import MarketConfigManager
 
 
 class MockPortfolioState:

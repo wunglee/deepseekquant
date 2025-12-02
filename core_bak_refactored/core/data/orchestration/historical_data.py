@@ -107,7 +107,7 @@ async def get_historical_data(
         if failed_symbols and hasattr(fetcher, 'fallback_sources') and fetcher.fallback_sources:
             logger.warning(f"主数据源失败，尝试备用数据源: {failed_symbols}")
             
-            from core_bak_refactored.core.data.fallback.orchestrator import try_fallback_sources
+            from core_bak_refactored.core.data.fetcher.fallback_orchestrator import try_fallback_sources
             fallback_results = await try_fallback_sources(
                 fetcher, failed_symbols, period, interval, data_type, adjustments
             )

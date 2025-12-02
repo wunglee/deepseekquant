@@ -1,5 +1,5 @@
 from datetime import datetime
-from core_bak_refactored.core.data.market.calendar import is_market_open, is_market_holiday
+from core_bak_refactored.core.share.market.calendar import is_market_open, is_market_holiday
 
 
 def test_is_market_holiday_checks_common_holidays():

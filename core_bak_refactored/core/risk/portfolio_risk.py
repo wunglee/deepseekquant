@@ -17,7 +17,7 @@ import uuid
 
 from .risk_metrics_service import RiskMetricsService, RiskMetricsEngine
 from core_bak_refactored.infrastructure.statistical_calculators import StatisticalCalculator
-from core_bak_refactored.core.share.market_enums import MarketCode
+from core_bak_refactored.core.share.market.market_enums import MarketCode
 
 logger = logging.getLogger('DeepSeekQuant.PortfolioRisk')
 

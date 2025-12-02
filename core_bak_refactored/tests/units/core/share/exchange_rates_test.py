@@ -6,7 +6,7 @@ import sys
 sys.path.insert(0, os.path.abspath('.'))
 
 from core_bak_refactored.core.share.exchange_rates import CurrencyConverter, MockExchangeRateAdapter
-from core_bak_refactored.core.share.market_config import MarketConfigManager
+from core_bak_refactored.core.share.market.market_config import MarketConfigManager
 
 
 def test_convert_portfolio_currency_to_usd():

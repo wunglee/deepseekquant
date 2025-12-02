@@ -1,5 +1,5 @@
 import pytest
-from core_bak_refactored.core.data.market.status import get_market_status
+from core_bak_refactored.core.share.market.status import get_market_status
 from core_bak_refactored.core.data.fetcher_orchestrator import DataFetcherOrchestrator
 
 

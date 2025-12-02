@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import Mock, AsyncMock
 import asyncio
-from core_bak_refactored.core.data.fallback.orchestrator import try_fallback_sources
+from core_bak_refactored.core.data.fetcher.fallback_orchestrator import try_fallback_sources
 
 
 class TestTryFallbackSources:

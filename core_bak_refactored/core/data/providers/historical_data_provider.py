@@ -30,7 +30,7 @@ from enum import Enum
 
 from core_bak_refactored.core.data.quality import DataQualityChecker
 from core_bak_refactored.core.share import MarketCode
-from core_bak_refactored.core.share.market_enums import REGIONAL_DATA_SOURCE_PRIORITY, DataSource
+from core_bak_refactored.core.share.market.market_enums import REGIONAL_DATA_SOURCE_PRIORITY, DataSource
 
 logger = logging.getLogger('DeepSeekQuant.DataFragments')
 

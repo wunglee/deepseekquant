@@ -1,7 +1,7 @@
 import unittest
 
-from core_bak_refactored.core.share.market_config import MarketConfigManager
-from core_bak_refactored.core.share.market_enums import MarketCode
+from core_bak_refactored.core.share.market.market_config import MarketConfigManager
+from core_bak_refactored.core.share.market.market_enums import MarketCode
 
 
 class MarketConfigTest(unittest.TestCase):

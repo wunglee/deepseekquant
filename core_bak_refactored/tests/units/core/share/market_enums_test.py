@@ -1,6 +1,6 @@
 import unittest
 
-from core_bak_refactored.core.share.market_enums import MarketCode, DataSource, REGIONAL_DATA_SOURCE_PRIORITY
+from core_bak_refactored.core.share.market.market_enums import MarketCode, DataSource, REGIONAL_DATA_SOURCE_PRIORITY
 
 
 class MarketEnumsTest(unittest.TestCase):

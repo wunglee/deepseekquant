@@ -9,7 +9,7 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime
 import logging
 
-from core_bak_refactored.core.share.market_enums import MarketCode
+from core_bak_refactored.core.share.market.market_enums import MarketCode
 
 logger = logging.getLogger(__name__)
 

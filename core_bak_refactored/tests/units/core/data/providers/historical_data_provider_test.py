@@ -23,7 +23,7 @@ from core_bak_refactored.core.data.providers.historical_data_provider import (
 from core_bak_refactored.core.data.providers.yahoo_finance import YahooFinanceDataProvider
 from core_bak_refactored.core.backtest._fragments.event_window_backtester import EventWindowBacktester, BacktestReporter
 from core_bak_refactored.core.portfolio._fragments.synthetic_portfolio_builder import SyntheticPortfolioBuilder
-from core_bak_refactored.core.share.market_enums import MarketCode, DataSource
+from core_bak_refactored.core.share.market.market_enums import MarketCode, DataSource
 
 
 class TestBackupSourcesAndLogging:
@@ -203,7 +203,7 @@ class TestBackupSourcesAndLogging:
     
     def test_all_markets_covered(self):
         """测试所有market_config.py中的市场都有对应优先级"""
-        from core_bak_refactored.core.share.market_enums import MarketCode, REGIONAL_DATA_SOURCE_PRIORITY
+        from core_bak_refactored.core.share.market.market_enums import MarketCode, REGIONAL_DATA_SOURCE_PRIORITY
         
         for market in MarketCode:
             assert market in REGIONAL_DATA_SOURCE_PRIORITY
