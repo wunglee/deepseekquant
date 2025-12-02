@@ -9,7 +9,7 @@ from datetime import datetime
 import logging
 
 from .portfolio_models import PortfolioState, AssetAllocation, AllocationMethod
-from ...infrastructure.portfolio_optimizers import PortfolioOptimizers
+from .optimizers import PortfolioOptimizers
 
 logger = logging.getLogger('DeepSeekQuant.PortfolioProcessor')
 

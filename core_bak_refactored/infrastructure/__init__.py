@@ -55,15 +55,11 @@ from .cache import (
     cache_data
 )
 
-# 数据验证基础设施（2025-11-28 从core/data/validation迁移）
-from .validation import (
-    validate_market_data,
-    validate_data_list,
-    clean_market_data
-)
-
 # 连接管理基础设施（2025-11-28 从core/data/connection迁移）
 from .connection import DataConnectionManager
+
+# 注意：MarketData业务验证已迁移到 core.data.validation
+# 通用技术验证请使用 type_validators（LengthValidator, TypeValidator等）
 
 __all__ = [
     # 错误处理
@@ -120,11 +116,6 @@ __all__ = [
     'setup_redis_cache',
     'get_cached_data',
     'cache_data',
-    
-    # 数据验证
-    'validate_market_data',
-    'validate_data_list',
-    'clean_market_data',
     
     # 连接管理
     'DataConnectionManager',

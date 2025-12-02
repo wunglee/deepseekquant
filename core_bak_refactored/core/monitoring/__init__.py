@@ -3,13 +3,13 @@
 
 组件：
 - alert_manager: 多通道告警管理（企业微信/短信/电话）
+- enums: 监控相关枚举（AlertChannel, AlertSeverity）
 """
 
-from core_bak_refactored.core.monitoring.alert_manager import (
+from .enums import AlertChannel, AlertSeverity
+from .alert_manager import (
     AlertManager,
     AlertConfig,
-    AlertChannel,
-    AlertSeverity,
     AlertRecord
 )
 

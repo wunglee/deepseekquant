@@ -2,7 +2,7 @@ import unittest
 import numpy as np
 from unittest.mock import Mock
 
-from core_bak_refactored.infrastructure.acquisition_functions import AcquisitionFunction
+from core_bak_refactored.core.optimization.bayesian import AcquisitionFunction
 
 
 class AcquisitionFunctionsTest(unittest.TestCase):

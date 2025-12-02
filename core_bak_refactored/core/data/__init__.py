@@ -39,8 +39,11 @@ from .providers.alpha_vantage import AlphaVantageProvider
 # 遗留组件（仅用于测试，不再导出）
 # from .data_fetcher import DataFetcher  # 已被 DataFetcherOrchestrator 替代
 
-# 从共享模块导入枚举和数据模型
-from core_bak_refactored.core.share import DataSourceType, DataFrequency, MarketData
+# 从本模块导入枚举
+from .enums import DataSourceType, DataFrequency, DataType, DataInterval, DataPeriod, DataFormat, DataQualityIssueType
+
+# 从共享模块导入数据模型
+from core_bak_refactored.core.share import MarketData
 
 from .quality.data_quality_enhancer import (
     DataQualityEnhancer,  # 第6轮专家碎片 - 多源智能切换
@@ -57,6 +60,13 @@ from .providers.yahoo_finance import (
     YahooFinanceDataProvider,  # 第6轮专家碎片 - Yahoo数据源
 )
 
+# MarketData业务验证（从 infrastructure 迁移而来）
+from .validation import (
+    validate_market_data,
+    validate_data_list,
+    clean_market_data
+)
+
 __all__ = [
     # 重构新架构（推荐使用）
     'DataFetcherOrchestrator',
@@ -65,9 +75,16 @@ __all__ = [
     'FundamentalDataService',
     'AlphaVantageProvider',
     
-    # 共享模型
+    # 数据枚举
     'DataSourceType',
     'DataFrequency',
+    'DataType',
+    'DataInterval',
+    'DataPeriod',
+    'DataFormat',
+    'DataQualityIssueType',
+    
+    # 共享模型
     'MarketData',
     
     # 专家碎片
@@ -76,4 +93,9 @@ __all__ = [
     'HistoricalDataProvider',
     'MockHistoricalDataProvider',
     'YahooFinanceDataProvider',
+    
+    # MarketData业务验证
+    'validate_market_data',
+    'validate_data_list',
+    'clean_market_data',
 ]

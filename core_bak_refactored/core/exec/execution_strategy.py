@@ -8,7 +8,7 @@ from typing import Dict, List
 import logging
 
 from .exec_models import Order, ExecutionAlgorithm, ExecutionParameters
-from ...infrastructure.execution_algos import ExecutionAlgorithms
+from .algorithms import ExecutionAlgorithms
 
 logger = logging.getLogger('DeepSeekQuant.ExecutionStrategy')
 

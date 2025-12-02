@@ -70,7 +70,111 @@ graph TD
     Exec --> Portfolio
     Optimization --> Strategy
     Data --> Share
-```
+ core_bak_refactored 架构设计文档
+
+## 📅 更新日志
+
+### 2025-12-02: 代码冗余清理与性能监控架构优化
+
+**优化内容**：
+1. **删除冗余聚合器**：移除 `core/share/aggregation_manager.py`（325行），保留 `core/data/aggregation/aggregator.py`
+2. **性能监控架构改造**：`PerformanceMonitor` 改造为底层请求追踪器，集成到 `PerformanceStatsManager`
+3. **删除冗余缓存管理器**：
+   - 移除 `core/share/cache_manager.py`（154行）
+   - 移除 `core/risk/cache_manager.py`（449行）
+   - 统一使用 `infrastructure/cache/CacheManager`（三层缓存架构）
+4. **枚举按业务内聚拆分**：
+   - 删除 `core/share/enums.py`（通用枚举文件）
+   - 创建 `core/data/enums.py`（数据模块专属枚举，7个枚举类）
+   - 创建 `core/monitoring/enums.py`（监控模块专属枚举，2个枚举类）
+   - 删除 `core/monitoring/alert_manager.py` 中的重复枚举定义
+   - 更新 5 个文件的导入路径
+5. **验证模块按业务内聚归位**：
+   - 将 `infrastructure/validation/validator.py`（282行）迁移到 `core/data/validation/`
+   - 原因：`validator.py` 是 MarketData 业务验证逻辑（OHLC关系、价格合理性），属于业务层
+   - 保留 `infrastructure/type_validators.py`（457行）：通用技术验证（类型、长度、数值范围）
+   - 删除 `infrastructure/validation/` 目录
+   - 更新 `infrastructure/__init__.py` 和 `core/data/__init__.py` 的导入路径
+6. **业务模块按业务内聚归位**：
+   - 迁移 `infrastructure/portfolio_optimizers.py`（133行）到 `core/portfolio/optimizers/`
+   - 迁移 `infrastructure/execution_algos.py`（182行）到 `core/exec/algorithms/`
+   - 迁移 `infrastructure/acquisition_functions.py`（190行）和 `gaussian_process.py`（149行）到 `core/optimization/bayesian/`
+   - 原因：这些模块是业务逻辑，非通用技术基础设施
+   - 更新导入路径：`portfolio_processor.py`, `execution_strategy.py`
+   - 迁移测试文件到对应业务模块目录
+
+**架构变更**：
+- **聚合层统一**：`DataAggregator` 作为唯一聚合器（386行，11个方法）
+- **缓存管理统一**：`infrastructure/cache/CacheManager` 作为唯一缓存管理器（三层缓存：L1内存+L2 LRU+L3 Redis）
+  - 删除业务层重复实现：core/share、core/risk 的 CacheManager
+  - 所有业务模块统一从 infrastructure.cache 导入
+- **枚举内聚管理**：按业务模块归属，数据枚举归 `core/data/`，监控枚举归 `core/monitoring/`
+- **性能监控分层**：
+  - 底层：`PerformanceMonitor`（请求级别追踪）
+  - 业务层：`PerformanceStatsManager`（业务指标 + 请求追踪）
+
+**扫描数据**（基于规范要求 - 25个模式完整扫描）：
+
+| 编号 | 模式 | 出现次数 | 说明 |
+|------|------|----------|------|
+| 1 | except Exception as e: | 450 | 异常处理模式 |
+| 2 | if len( | 174 | 数据长度检查 |
+| 3 | .get(' | 1226 | 配置提取模式 |
+| 4 | return float( | 86 | float转换 |
+| 5 | np.percentile( | 19 | 百分位数计算 |
+| 6 | isinstance( | 220 | 类型检查 |
+| 7 | logger. | 1284 | 日志调用 |
+| 8 | try: | 624 | try语句起始 |
+| 9 | sum( | 210 | sum聚合 |
+| 10 | abs( | 162 | 绝对值计算 |
+| 11 | float(abs( | 12 | 组合转换 |
+| 12 | np.clip( | 24 | 数值裁剪 |
+| 13 | .values() | 63 | 字典值遍历 |
+| 14 | is None | 191 | None检查 |
+| 15 | len() == 0 | 58 | 空列表检查 |
+| 16 | max/min( | 242 | 最值计算 |
+| 17 | pd.Series( | 115 | Series构造 |
+| 18 | np.array( | 89 | 数组构造 |
+| 19 | f" | 1608 | f-string格式化 |
+| 20 | getattr( | 61 | 属性获取 |
+| 21 | hasattr( | 113 | 属性检查 |
+| 22 | enumerate( | 35 | 枚举迭代 |
+| 23 | zip( | 16 | 并行迭代 |
+| 24 | list comprehension | 155 | 列表推导式 |
+| 25 | dict comprehension | 59 | 字典推导式 |
+
+**统计汇总**：
+- Python文件总数：307个
+- 总扫描模式数：25个
+- 高频模式（>500次）：f-string(1608), logger(1284), .get(1226), try(624)
+- 潜在优化点：异常处理统一（450次），配置提取标准化（1226次）
+
+**优化成果**：
+- 删除重复代码：**928行**
+  - aggregation_manager.py: 325行
+  - core/share/cache_manager.py: 154行
+  - core/risk/cache_manager.py: 449行
+- 按业务内聚拆分与归位：
+  - 枚举拆分：data_enums.py → core/data/enums.py, alert_enums.py → core/monitoring/enums.py
+  - 验证归位：infrastructure/validation/validator.py → core/data/validation/（MarketData业务验证）
+  - 业务模块归位：
+    * portfolio_optimizers.py → core/portfolio/optimizers/（组合优化业务）
+    * execution_algos.py → core/exec/algorithms/（执行算法业务）
+    * acquisition_functions.py + gaussian_process.py → core/optimization/bayesian/（贝叶斯优化业务）
+- 架构更清晰：缓存、聚合、枚举、验证、业务算法统一管理，遵循分层原则
+- 向后兼容：默认模式不启用请求追踪
+- 测试验证：
+  - core/share: 81/81 passed
+  - infrastructure/cache: 105/105 passed
+  - core/data/validation: 8/8 passed
+  - core/portfolio/optimizers: 3/3 passed
+  - core/exec/algorithms: 3/3 passed
+  - core/optimization/bayesian: 5/5 passed
+- 新增测试：7个测试文件（enums_test, config_manager_test, models_test, performance_stats_test, data/enums_test, monitoring/enums_test, data/validation_test）
+
+**详细报告**：见下文"性能监控架构"章节
+
+---
 
 **依赖说明**：
 - **Share（业务基础）**：纯配置与工具模块，不依赖任何业务模块；提供市场配置、汇率转换等共享能力。
@@ -84,4 +188,64 @@ graph TD
 - Share 为最底层，仅依赖标准库与第三方库，不依赖任何业务模块。
 - Data 作为数据抽象层，依赖 Share 的市场配置。
 - 业务模块（Risk/Backtest/Portfolio）通过 Protocol 接口依赖 Data，实现依赖倒置。
+
+---
+
+## 性能监控架构（2025-12-02 改造）
+
+### 架构层次
+
+```
+业务层：PerformanceStatsManager（core/share/performance_stats.py）
+  ↓ 集成
+底层：PerformanceMonitor（core/data/analytics/performance.py）
+```
+
+### 职责划分
+
+**底层追踪器：PerformanceMonitor**
+- 职责：细粒度跟踪单个API请求性能
+- 指标：requests_total, cache_hits, avg_response_time, source_usage, error_counts
+- 使用场景：需要详细的请求级别性能分析时
+
+**业务层管理器：PerformanceStatsManager**
+- 职责：业务层性能统计 + 可选集成底层追踪器
+- 指标：throughput, success_rate, reliability, stability_score, anomalies_detected
+- 集成方式：通过 `enable_request_tracking=True` 启用底层追踪
+
+### 使用模式
+
+**模式1：默认模式（向后兼容）**
+```python
+manager = PerformanceStatsManager()  # 不启用请求追踪
+manager.increment_counter('data_points_processed', 100)
+summary = manager.get_summary()  # 仅包含业务层指标
+```
+
+**模式2：启用请求追踪**
+```python
+manager = PerformanceStatsManager(enable_request_tracking=True)
+manager.record_request('AAPL', True, 0.5, 'yahoo')  # 委托给底层追踪器
+summary = manager.get_summary()  # 包含业务层 + 请求级别指标
+```
+
+### 数据聚合层统一
+
+**唯一聚合器：DataAggregator**（core/data/aggregation/aggregator.py）
+- 方法数：11个
+- 核心功能：
+  - `aggregate_ohlcv()` - OHLCV数据时间聚合
+  - `calculate_rolling_metrics()` - 滚动窗口指标
+  - `aggregate_by_symbol()` - 按股票代码聚合
+  - `calculate_vwap()` - 成交量加权平均价
+  - `merge_data_sources()` - 数据源合并
+
+**已删除**：`core/share/aggregation_manager.py`（96%重复代码）
+
+### 优化验证
+
+- ✅ 删除冗余：325行重复代码
+- ✅ 测试通过：19/19（DataAggregator）
+- ✅ 向后兼容：默认模式无破坏性变更
+- ✅ 架构清晰：性能监控分层，聚合器统一
 

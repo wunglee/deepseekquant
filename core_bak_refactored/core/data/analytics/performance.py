@@ -1,11 +1,16 @@
 """
-性能监控模块
+底层请求追踪器
 
 职责：
-1. 跟踪API请求性能
-2. 统计缓存效率
-3. 监控错误率
-4. 生成性能报告
+1. 细粒度跟踪单个API请求性能
+2. 统计缓存命中率
+3. 记录数据源使用情况
+4. 提供原始性能指标供上层聚合
+
+设计说明：
+- 本模块为底层追踪器，供 PerformanceStatsManager 使用
+- 专注于请求级别的性能数据收集
+- 不包含业务指标（异常、告警等），由上层管理
 """
 from typing import Dict, Any
 from datetime import datetime, timedelta
@@ -16,9 +21,18 @@ logger = logging.getLogger(__name__)
 
 class PerformanceMonitor:
     """
-    性能监控器。
+    底层请求追踪器（供 PerformanceStatsManager 使用）
     
-    跟踪和分析DataFetcher的性能指标。
+    职责：
+    - 跟踪单个API请求的性能数据
+    - 提供细粒度的缓存、错误、数据源统计
+    - 不包含业务逻辑，仅收集原始指标
+    
+    使用示例：
+        >>> tracker = PerformanceMonitor()
+        >>> tracker.record_request('AAPL', True, 0.5, 'yahoo')
+        >>> tracker.record_cache_hit()
+        >>> summary = tracker.get_summary()
     """
     
     def __init__(self):
@@ -188,13 +202,20 @@ class PerformanceMonitor:
 
 def create_performance_report(metrics: Dict[str, Any]) -> str:
     """
-    创建性能报告。
+    创建性能报告（通用工具函数）
     
     Args:
-        metrics: 性能指标字典
+        metrics: 性能指标字典（可来自 PerformanceMonitor 或 PerformanceStatsManager）
     
     Returns:
         格式化的性能报告字符串
+    
+    使用示例：
+        >>> from core_bak_refactored.core.share.performance_stats import PerformanceStatsManager
+        >>> manager = PerformanceStatsManager(enable_request_tracking=True)
+        >>> summary = manager.get_summary()
+        >>> report = create_performance_report(summary)
+        >>> print(report)
     """
     report_lines = [
         "=" * 60,

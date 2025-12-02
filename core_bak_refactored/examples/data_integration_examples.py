@@ -17,7 +17,7 @@ from typing import Dict, Any
 
 # 从重构新架构导入
 from core_bak_refactored.core.data.fetcher_orchestrator import DataFetcherOrchestrator
-from core_bak_refactored.core.share import DataSourceType, DataFrequency
+from core_bak_refactored.core.data import DataSourceType, DataFrequency
 
 # 从专家碎片导入
 from core_bak_refactored.core.data.quality.data_quality_enhancer import DataQualityEnhancer

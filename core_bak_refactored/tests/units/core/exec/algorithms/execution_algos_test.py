@@ -1,7 +1,7 @@
 import unittest
 import pandas as pd
 
-from core_bak_refactored.infrastructure.execution_algos import ExecutionAlgorithms
+from core_bak_refactored.core.exec.algorithms import ExecutionAlgorithms
 
 
 class ExecutionAlgosTest(unittest.TestCase):

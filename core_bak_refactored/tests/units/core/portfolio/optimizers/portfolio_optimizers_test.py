@@ -1,7 +1,7 @@
 import unittest
 import numpy as np
 
-from core_bak_refactored.infrastructure.portfolio_optimizers import PortfolioOptimizers
+from core_bak_refactored.core.portfolio.optimizers import PortfolioOptimizers
 
 
 class PortfolioOptimizersTest(unittest.TestCase):

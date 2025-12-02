@@ -18,27 +18,11 @@ import time
 from typing import Dict, Any, Optional, List, Callable
 from datetime import datetime, timedelta
 from dataclasses import dataclass, field
-from enum import Enum
 import json
 
+from .enums import AlertChannel, AlertSeverity
+
 logger = logging.getLogger('DeepSeekQuant.AlertManager')
-
-
-class AlertChannel(str, Enum):
-    """告警通道"""
-    WECHAT = 'wechat'        # 企业微信
-    SMS = 'sms'              # 短信
-    PHONE = 'phone'          # 电话
-    EMAIL = 'email'          # 邮件（补充通道）
-    WEBHOOK = 'webhook'      # Webhook（补充通道）
-
-
-class AlertSeverity(str, Enum):
-    """告警严重级别"""
-    INFO = 'info'            # 信息
-    WARNING = 'warning'      # 警告（Level 1）
-    ERROR = 'error'          # 错误（Level 2）
-    CRITICAL = 'critical'    # 严重（Level 3）
 
 
 @dataclass

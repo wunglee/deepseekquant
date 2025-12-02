@@ -1,7 +1,7 @@
 import unittest
 import numpy as np
 
-from core_bak_refactored.infrastructure.gaussian_process import GaussianProcessModel
+from core_bak_refactored.core.optimization.bayesian import GaussianProcessModel
 
 
 class GaussianProcessTest(unittest.TestCase):

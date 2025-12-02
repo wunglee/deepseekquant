@@ -9,12 +9,14 @@
     from core_bak_refactored.core.data.models import MarketData, DataSourceType, DataFrequency
     
     # 新代码
-    from core_bak_refactored.core.share import MarketData, DataSourceType, DataFrequency
+    from core_bak_refactored.core.share import MarketData
+    from core_bak_refactored.core.data import DataSourceType, DataFrequency
     ```
 """
 
-# 为了向后兼容，从share模块重新导出（但应直接使用share模块）
-from core_bak_refactored.core.share import MarketData, DataSourceType, DataFrequency
+# 为了向后兼容，从对应模块重新导出（但应直接使用对应模块）
+from core_bak_refactored.core.share import MarketData
+from core_bak_refactored.core.data import DataSourceType, DataFrequency
 
 __all__ = [
     'MarketData',
