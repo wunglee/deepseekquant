@@ -57,6 +57,7 @@ from core_bak_refactored.infrastructure import (
     SystemHealthCalculators,
     QualityAnalysisCalculators
 )
+from core_bak_refactored.core.data.providers.factory import get_global_factory
 
 logger = logging.getLogger('DeepSeekQuant.MonitoringService')
 
@@ -101,6 +102,16 @@ class QualityMonitoringService:
         # 配置管理
         self.config_manager = ConfigManager()
         self.config = config or self.config_manager.get_system_config().__dict__
+        
+        # 数据提供者（真实数据接入，默认根据配置）
+        data_cfg = self.config_manager.get_data_config()
+        factory = get_global_factory()
+        self.data_provider = factory.create(
+            'real',
+            primary_source=data_cfg.primary_source,
+            backup_sources=data_cfg.backup_sources,
+            enable_cross_validation=self.config_manager.get_monitoring_config().enable_cross_validation,
+        )
         
         # 质量历史记录（从DataQualityChecker的check_history转换而来）
         self._quality_history: List[Dict[str, Any]] = []
@@ -419,18 +430,18 @@ class QualityMonitoringService:
             # 示例：假设有一个数据获取方法
             logger.info("开始监控检查周期")
             
-            # 示例：生成模拟数据（实际应从data_sources拉取）
-            # 在实际集成时，应该调用DataFetcher或其他数据源
-            data = pd.DataFrame({
-                'date': pd.date_range('2024-01-01', periods=100),
-                'close': [100 + i * 0.5 for i in range(100)],
-                'volume': [1000000] * 100
-            })
+            # 使用真实数据提供者获取数据（禁止模拟数据）
+            index_id = self.config_manager.get_data_config().default_index
+            if not index_id:
+                raise RuntimeError("未配置默认指数代码，禁止使用模拟数据。请在配置中设置 data.default_index")
+            end_date = datetime.now().strftime('%Y-%m-%d')
+            start_date = (datetime.now() - timedelta(days=100)).strftime('%Y-%m-%d')
+            data = self.data_provider.get_index_prices(index_id, start_date, end_date)
             
             # 1. 执行质量检查
             quality_report = self.quality_checker.check_quality(
                 data=data,
-                index_id='000300.SH',  # 示例：沪深300
+                index_id=index_id,  # 从配置获取默认指数
                 expected_days=100
             )
             

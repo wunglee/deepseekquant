@@ -6,6 +6,40 @@ import pytest
 from unittest.mock import Mock
 from core_bak_refactored.app.data.monitoring_service import QualityMonitoringService
 from core_bak_refactored.core.monitoring.alert_manager import AlertConfig
+from unittest.mock import patch
+import pandas as pd
+from datetime import datetime, timedelta
+
+# 基于工厂注入的真实provider路径（使用StubProvider避免外部依赖）
+stub_provider_instance = None
+
+class StubProvider:
+    def __init__(self):
+        self.last_index_id = None
+        self.last_start = None
+        self.last_end = None
+    def get_index_prices(self, index_id, start_date, end_date):
+        self.last_index_id = index_id
+        self.last_start = start_date
+        self.last_end = end_date
+        dates = pd.date_range(end=datetime.now(), periods=100)
+        return pd.DataFrame({
+            'date': dates,
+            'close': [100.0 + i for i in range(100)],
+            'volume': [1000000] * 100
+        })
+
+class StubFactory:
+    def create(self, name, **kwargs):
+        if name != 'real':
+            raise ValueError(f"Unexpected provider name: {name}")
+        global stub_provider_instance
+        stub_provider_instance = StubProvider()
+        return stub_provider_instance
+
+@pytest.fixture(autouse=True)
+def patch_global_factory(monkeypatch):
+    monkeypatch.setattr('core_bak_refactored.app.data.monitoring_service.get_global_factory', lambda: StubFactory())
 
 
 class TestQualityMonitoringServiceRunCheckCycle:
@@ -77,9 +111,12 @@ class TestQualityMonitoringServiceRunCheckCycle:
         alert_config = AlertConfig()
         service = QualityMonitoringService(alert_config=alert_config)
         
-        # 由于当前使用模拟数据，质量得分应该是高的
-        # 这里主要验证告警机制能够被调用而不报错
+        # 使用真实provider（通过工厂注入的Stub）保证单测不依赖外部网络
         summary = service.run_check_cycle()
+        # 验证真实provider被调用（通过工厂注入的 Stub）
+        global stub_provider_instance
+        assert stub_provider_instance is not None
+        assert stub_provider_instance.last_index_id == 'AAPL'
         
         # 验证alerts_triggered字段存在
         assert 'alerts_triggered' in summary

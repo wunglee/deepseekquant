@@ -1,0 +1,7 @@
+# 系统配置 - 数据模块 (测试环境)
+primary_source: yahoo
+default_index: MSFT
+backup_sources: []
+cache_enabled: false
+cache_ttl: 60
+max_retries: 1

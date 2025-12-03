@@ -95,41 +95,7 @@ class DataSource(str, Enum):
 
 
 # 数据源区域优先级映射（基于专家answer.md第2轮5.1节）
-REGIONAL_DATA_SOURCE_PRIORITY = {
-    MarketCode.CN: [
-        DataSource.JOINQUANT,    # A股主数据源
-        DataSource.TUSHARE,      # A股备用数据源
-        DataSource.WIND,         # A股第三选择
-        DataSource.YAHOO,        # 全球回退
-        DataSource.MOCK          # 兜底
-    ],
-    MarketCode.US: [
-        DataSource.YAHOO,        # 美股主数据源
-        DataSource.ALPHA_VANTAGE,  # 美股备用
-        DataSource.IEX,          # 美股第三选择
-        DataSource.MOCK          # 兜底
-    ],
-    MarketCode.HK: [
-        DataSource.WIND,         # 港股主数据源
-        DataSource.TUSHARE,      # 港股备用（部分支持）
-        DataSource.YAHOO,        # 全球回退
-        DataSource.JOINQUANT,    # 第四选择
-        DataSource.MOCK          # 兜底
-    ],
-    MarketCode.JP: [
-        DataSource.YAHOO,        # 日股主数据源
-        DataSource.MOCK          # 兜底
-    ],
-    MarketCode.EU: [
-        DataSource.YAHOO,        # 欧股主数据源
-        DataSource.MOCK          # 兜底
-    ],
-    MarketCode.SG: [
-        DataSource.YAHOO,        # 新加坡主数据源
-        DataSource.MOCK          # 兜底
-    ],
-    MarketCode.UNKNOWN: [
-        DataSource.YAHOO,        # 默认优先Yahoo
-        DataSource.MOCK          # 兜底
-    ]
-}
+# 已迁移至 core_bak_refactored/config/regional_data_source.yml
+# 为了向后兼容，这里导入配置管理器并加载配置
+from core_bak_refactored.core.share.config.data_source_configs import REGIONAL_DATA_SOURCE_PRIORITY as CONFIG_REGIONAL_DATA_SOURCE_PRIORITY
+REGIONAL_DATA_SOURCE_PRIORITY = CONFIG_REGIONAL_DATA_SOURCE_PRIORITY

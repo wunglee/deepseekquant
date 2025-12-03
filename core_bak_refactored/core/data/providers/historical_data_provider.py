@@ -20,8 +20,9 @@ import logging
 
 from core_bak_refactored.core.data.quality import DataQualityChecker
 from core_bak_refactored.core.share import MarketCode
-from core_bak_refactored.core.share.market.market_enums import REGIONAL_DATA_SOURCE_PRIORITY, DataSource
 from core_bak_refactored.core.share.config import EVENT_WINDOW_CONFIGS
+from core_bak_refactored.core.share.config.data_source_configs import REGIONAL_DATA_SOURCE_PRIORITY
+from core_bak_refactored.core.share.market.market_enums import DataSource
 
 logger = logging.getLogger('DeepSeekQuant.DataProviders')
 
@@ -80,21 +81,13 @@ class RealHistoricalDataProvider:
         except Exception as e:
             logger.warning(f"Yahoo Finance适配器加载失败: {e}")
         
-        # JoinQuant适配器（stub实现）
-        try:
-            from core_bak_refactored.core.data.providers.stubs import JoinQuantStub
-            adapters[DataSource.JOINQUANT.value] = JoinQuantStub()
-            logger.info("JoinQuant适配器（stub）已加载")
-        except Exception as e:
-            logger.warning(f"JoinQuant适配器加载失败: {e}")
+        # JoinQuant适配器（真实API未集成，暂不加载）
+        # 如需启用，请实现 JoinQuantDataProvider 并在此注册
+        # logger.info("JoinQuant适配器未配置（真实API未集成）")
         
-        # Wind适配器（stub实现）
-        try:
-            from core_bak_refactored.core.data.providers.stubs import WindStub
-            adapters[DataSource.WIND.value] = WindStub()
-            logger.info("Wind适配器（stub）已加载")
-        except Exception as e:
-            logger.warning(f"Wind适配器加载失败: {e}")
+        # Wind适配器（真实API未集成，暂不加载）
+        # 如需启用，请实现 WindDataProvider 并在此注册
+        # logger.info("Wind适配器未配置（真实API未集成）")
         
         # Tushare适配器（实际API实现，A股/港股备用数据源）
         try:
@@ -104,13 +97,13 @@ class RealHistoricalDataProvider:
                 adapters[DataSource.TUSHARE.value] = tushare_adapter
                 logger.info("Tushare适配器已加载（实际API）")
             else:
-                # API不可用，使用stub
-                from core_bak_refactored.core.data.providers.stubs import TushareStub
-                adapters[DataSource.TUSHARE.value] = TushareStub()
-                logger.info("Tushare适配器（stub）已加载（API未配置）")
+                logger.warning("Tushare适配器未配置（API不可用）")
         except Exception as e:
             logger.warning(f"Tushare适配器加载失败: {e}")
         
+        # 至少需要一个真实数据源已就绪
+        if not adapters:
+            raise RuntimeError("无可用数据源；请配置至少一个真实API（例如：Yahoo、Tushare）。")
         return adapters
     
     def get_index_prices(self, index_id: str, start_date: str, end_date: str) -> pd.DataFrame:
@@ -123,6 +116,23 @@ class RealHistoricalDataProvider:
         
         # 区域化数据源优先级（专家第2轮5.1节）
         regional_sources = self._get_regional_priority(index_id)
+        
+        # 强制规则：不同市场必须使用对应的本地真实数据源
+        # CN/HK 必须使用 Tushare（真实API）；US/EU/JP/SG/UNKNOWN 必须使用 Yahoo
+        required_source = None
+        if index_id.endswith('.SH') or index_id.endswith('.SZ'):
+            required_source = DataSource.TUSHARE.value
+        elif index_id.endswith('.HK') or index_id in ['HSI', 'HSCEI']:
+            required_source = DataSource.TUSHARE.value
+        else:
+            required_source = DataSource.YAHOO.value
+        
+        if required_source not in self._adapters:
+            raise RuntimeError(
+                f"市场强制规则未满足：index={index_id} 需要配置真实数据源 '{required_source}'，当前未配置或不可用。"
+                f"请完成相应API的就绪配置（例如：Tushare token 或 Yahoo 接入）。"
+            )
+        
         sources_to_try = regional_sources if regional_sources else ([self.primary_source] + self.backup_sources)
         
         last_error = None
@@ -208,9 +218,9 @@ class RealHistoricalDataProvider:
         else:
             market = MarketCode.UNKNOWN
         
-        # 从全局枚举配置获取优先级列表，转换为字符串
+        # 从全局枚举配置获取优先级列表，保持为枚举对象
         priority = REGIONAL_DATA_SOURCE_PRIORITY.get(market, REGIONAL_DATA_SOURCE_PRIORITY[MarketCode.UNKNOWN])
-        return [source.value for source in priority]
+        return [source for source in priority]
     
     def get_event_window_data(self, 
                               index_id: str, 

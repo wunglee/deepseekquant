@@ -1,0 +1,6 @@
+# 系统配置 - 监控模块
+check_interval: 300
+max_quality_history: 5000
+alert_threshold: 0.8
+enable_cross_validation: true
+cross_validation_interval: 3600

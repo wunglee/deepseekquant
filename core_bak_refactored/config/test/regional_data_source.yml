@@ -1,0 +1,31 @@
+# 数据源区域优先级配置
+# 按市场区域定义数据源的优先级顺序
+
+CN:
+  - joinquant
+  - tushare
+  - wind
+  - yahoo
+
+US:
+  - yahoo
+  - alpha_vantage
+  - iex
+
+HK:
+  - wind
+  - tushare
+  - yahoo
+  - joinquant
+
+JP:
+  - yahoo
+
+EU:
+  - yahoo
+
+SG:
+  - yahoo
+
+UNKNOWN:
+  - yahoo

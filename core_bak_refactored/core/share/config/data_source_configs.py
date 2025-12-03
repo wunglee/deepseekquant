@@ -10,6 +10,10 @@
 - 这里仅作为配置模块的统一导出点
 """
 
-from core_bak_refactored.core.share.market.market_enums import REGIONAL_DATA_SOURCE_PRIORITY
+from core_bak_refactored.core.share.config_manager import ConfigManager
+
+# 从YAML配置中加载区域数据源优先级
+mgr = ConfigManager()
+REGIONAL_DATA_SOURCE_PRIORITY = mgr.get('regional_data_source', {})
 
 __all__ = ['REGIONAL_DATA_SOURCE_PRIORITY']

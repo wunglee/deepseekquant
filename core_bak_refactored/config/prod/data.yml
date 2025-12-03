@@ -1,0 +1,7 @@
+# 系统配置 - 数据模块 (生产环境-热加载测试V2)
+primary_source: yahoo
+default_index: NDX
+backup_sources: [tushare]
+cache_enabled: true
+cache_ttl: 7200
+max_retries: 5

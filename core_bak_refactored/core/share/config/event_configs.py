@@ -11,36 +11,15 @@
 - HISTORICAL_EVENT_PARAMS: 历史重大事件的实际参数（用于Mock数据生成和测试）
 """
 
-# 事件窗口配置（用于事件驱动分析）
-EVENT_WINDOW_CONFIGS = {
-    'market_crash': {
-        'window_days': 30,
-        'baseline_days': 252,
-        'description': '市场崩盘：快速暴跌事件'
-    },
-    'liquidity_crisis': {
-        'window_days': 45,
-        'baseline_days': 252,
-        'description': '流动性危机：中期持续事件'
-    },
-    'currency_crisis': {
-        'window_days': 60,
-        'baseline_days': 252,
-        'description': '货币危机：货币大幅贬值事件'
-    },
-    'sovereign_debt_crisis': {
-        'window_days': 90,
-        'baseline_days': 504,
-        'description': '主权债务危机：结构性长期事件'
-    },
-    'geopolitical_risk': {
-        'window_days': 30,
-        'baseline_days': 252,
-        'description': '地缘政治风险：突发冲击事件'
-    }
-}
+from core_bak_refactored.core.share.config_manager import ConfigManager
+
+# 从YAML配置中加载事件窗口配置
+mgr = ConfigManager()
+EVENT_WINDOW_CONFIGS = mgr.get('event_window', {})
+
 
 # 历史重大事件参数（用于Mock数据生成和测试验证）
+# 保持内联，因为是静态测试数据
 HISTORICAL_EVENT_PARAMS = {
     '2015_china_market_crash': {
         'period': ('2015-06-15', '2015-08-26'),

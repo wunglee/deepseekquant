@@ -1,0 +1,27 @@
+# 事件窗口配置 - 不同事件类型的窗口参数
+# 用于事件驱动分析和回测
+
+market_crash:
+  window_days: 30
+  baseline_days: 252
+  description: "市场崩盘：快速暴跌事件"
+
+liquidity_crisis:
+  window_days: 45
+  baseline_days: 252
+  description: "流动性危机：中期持续事件"
+
+currency_crisis:
+  window_days: 60
+  baseline_days: 252
+  description: "货币危机：货币大幅贬值事件"
+
+sovereign_debt_crisis:
+  window_days: 90
+  baseline_days: 504
+  description: "主权债务危机：结构性长期事件"
+
+geopolitical_risk:
+  window_days: 30
+  baseline_days: 252
+  description: "地缘政治风险：突发冲击事件"
