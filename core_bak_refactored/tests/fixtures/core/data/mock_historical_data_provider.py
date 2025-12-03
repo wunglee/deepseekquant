@@ -144,7 +144,9 @@ class MockHistoricalDataProvider:
             )
         else:
             # 非事件期：随机游走
-            np.random.seed(hash(start_date + end_date) % 2**32)
+            # 支持datetime参数：转换为字符串再进行seed
+            seed_str = str(start_date) + str(end_date)
+            np.random.seed(hash(seed_str) % 2**32)
             daily_returns = np.random.normal(0, base_volatility, n_days)
             prices = initial_price * np.cumprod(1 + daily_returns)
 

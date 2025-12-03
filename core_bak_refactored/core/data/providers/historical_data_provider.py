@@ -59,28 +59,18 @@ class RealHistoricalDataProvider:
             enable_cross_validation: 是否启用数据交叉验证（默认False，专家第3轮5.1节）
         """
         self.primary_source = primary_source
-        self.backup_sources = backup_sources or [DataSource.MOCK.value]
+        self.backup_sources = backup_sources or []
         self.enable_cross_validation = enable_cross_validation
-        self._mock = None
         self._cache = {}
         self._quality_cache = {}  # 数据质量缓存
         self._cross_validation_log = []  # 交叉验证日志
         
-        # 加载数据源适配器
+        # 加载数据源适配器（仅生产数据源）
         self._adapters = self._initialize_adapters()
     
     def _initialize_adapters(self) -> Dict[str, Any]:
-        """初始化数据源适配器"""
+        """初始化数据源适配器（仅生产数据源）"""
         adapters = {}
-        
-        # Mock适配器（从测试夹具加载）
-        try:
-            from core_bak_refactored.tests.fixtures.core.data.mock_historical_data_provider import MockHistoricalDataProvider
-            self._mock = MockHistoricalDataProvider()
-            adapters[DataSource.MOCK.value] = self._mock
-            logger.info("Mock历史数据提供者已加载")
-        except Exception as e:
-            logger.warning(f"Mock提供者加载失败: {e}")
         
         # Yahoo Finance适配器
         try:
@@ -266,41 +256,18 @@ class RealHistoricalDataProvider:
             baseline_end.strftime('%Y-%m-%d')
         )
         
-        # 获取事件窗口数据（委托给数据源适配器）
-        try:
-            # 尝试从主数据源获取
-            event_data = self.get_index_prices(
-                index_id,
-                event_start.strftime('%Y-%m-%d'),
-                event_end.strftime('%Y-%m-%d')
+        # 获取事件窗口数据（从真实数据源）
+        event_data = self.get_index_prices(
+            index_id,
+            event_start.strftime('%Y-%m-%d'),
+            event_end.strftime('%Y-%m-%d')
+        )
+        
+        if event_data.empty:
+            raise ValueError(
+                f"无法获取事件窗口数据: index={index_id}, "
+                f"date_range={event_start.strftime('%Y-%m-%d')} to {event_end.strftime('%Y-%m-%d')}"
             )
-            
-            if event_data.empty:
-                logger.warning(f"事件窗口数据为空，回退到Mock生成")
-                # 回退到Mock数据提供者（如果可用）
-                if self._mock is not None:
-                    event_data = self._mock.get_event_window_data(
-                        index_id=index_id,
-                        event_date=event_date,
-                        event_type=event_type,
-                        window_days=final_window_days,
-                        baseline_days=final_baseline_days
-                    )['event_window']
-                else:
-                    raise ValueError("无可用数据源")
-        except Exception as e:
-            logger.error(f"获取事件窗口数据失败: {e}")
-            # 最后回退到Mock
-            if self._mock is not None:
-                event_data = self._mock.get_event_window_data(
-                    index_id=index_id,
-                    event_date=event_date,
-                    event_type=event_type,
-                    window_days=final_window_days,
-                    baseline_days=final_baseline_days
-                )['event_window']
-            else:
-                raise
         
         # 筛选出指定数量的交易日
         baseline_filtered = baseline_data.tail(baseline_days)
