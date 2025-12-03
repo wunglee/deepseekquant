@@ -28,7 +28,7 @@ import pandas as pd
 from typing import Dict, List, Tuple
 
 # 从业务模块导入EventConfig（职责归位）
-from core_bak_refactored.core.data.data_utils import EventConfig
+from core_bak_refactored.core.backtest.event_analysis import EventConfig
 
 
 class TestEventProvider:
@@ -138,7 +138,7 @@ class DataProcessingHelper:
     @staticmethod
     def calculate_actual_return(event_window_df: pd.DataFrame) -> float:
         """
-        计算事件窗口实际收益率（委托给DataUtils）
+        计算事件窗口实际收益率（委托给EventAnalyzer）
         
         Args:
             event_window_df: 事件窗口数据
@@ -146,15 +146,15 @@ class DataProcessingHelper:
         Returns:
             实际收益率（如果数据不足返回0.0）
         """
-        from core_bak_refactored.core.data.data_utils import DataUtils
-        return DataUtils.calculate_actual_return(event_window_df)
+        from core_bak_refactored.core.backtest.event_analysis import EventAnalyzer
+        return EventAnalyzer.calculate_actual_return(event_window_df)
     
     @staticmethod
     def safe_get_event_data(data_provider, event: EventConfig, 
                           window_days: int = 30, 
                           baseline_days: int = 252) -> Tuple[pd.DataFrame, bool]:
         """
-        安全获取事件数据（委托给DataUtils）
+        安全获取事件数据（委托给EventAnalyzer）
         
         Args:
             data_provider: 数据提供者
@@ -165,13 +165,13 @@ class DataProcessingHelper:
         Returns:
             (事件窗口数据, 是否成功)
         """
-        from core_bak_refactored.core.data.data_utils import DataUtils
-        return DataUtils.safe_get_event_data(data_provider, event, window_days, baseline_days)
+        from core_bak_refactored.core.backtest.event_analysis import EventAnalyzer
+        return EventAnalyzer.safe_get_event_data(data_provider, event, window_days, baseline_days)
     
     @staticmethod
     def calculate_prediction_error(actual_return: float, expected_decline: float) -> float:
         """
-        计算预测误差（委托给DataUtils）
+        计算预测误差（委托给EventAnalyzer）
         
         Args:
             actual_return: 实际收益率
@@ -180,8 +180,8 @@ class DataProcessingHelper:
         Returns:
             预测误差（绝对值）
         """
-        from core_bak_refactored.core.data.data_utils import DataUtils
-        return DataUtils.calculate_prediction_error(actual_return, expected_decline)
+        from core_bak_refactored.core.backtest.event_analysis import EventAnalyzer
+        return EventAnalyzer.calculate_prediction_error(actual_return, expected_decline)
 
 
 class TestAssertionHelper:

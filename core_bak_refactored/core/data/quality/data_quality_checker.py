@@ -701,34 +701,32 @@ class DataQualityChecker:
         return max(0.0, score)
     
     def _detect_data_frequency(self, data: pd.DataFrame) -> str:
-        """自动检测数据频率（从data_fetcher._detect_data_frequency提取）
+        """自动检测数据频率（调用基础设施层统一实现，消除重复）
         
         Returns:
             'minute' | 'hourly' | 'daily' | 'weekly' | 'custom'
         """
+        from core_bak_refactored.infrastructure.statistical_quality_metrics import StatisticalQualityMetrics
+        
         if 'date' not in data.columns or len(data) < 2:
             return 'daily'
         
-        dates = pd.to_datetime(data['date']).sort_values()
-        intervals = dates.diff().dt.total_seconds() / 3600  # 转换为小时
-        intervals = intervals.dropna()
+        # 将 DataFrame 转为基础设施层需要的格式（List[Dict]）
+        data_list = []
+        for _, row in data.iterrows():
+            data_list.append({'timestamp': pd.to_datetime(row['date'])})
         
-        if len(intervals) == 0:
-            return 'daily'
+        # 调用基础设施层频率检测
+        freq_infra = StatisticalQualityMetrics._determine_data_frequency(data_list)
         
-        # 使用中位数识别频率（更鲁棒）
-        median_interval = intervals.median()
-        
-        if median_interval < 0.1:  # < 6分钟
-            return 'minute'
-        elif median_interval < 1.5:  # 1-1.5小时
-            return 'hourly'
-        elif median_interval < 30:  # 1.5-30小时
-            return 'daily'
-        elif median_interval < 200:  # 30-200小时
-            return 'weekly'
-        else:
-            return 'custom'
+        # 映射基础设施层返回值到业务层枚举
+        freq_map = {
+            'realtime': 'minute',
+            'daily': 'daily',
+            'historical': 'weekly',
+            'unknown': 'daily'
+        }
+        return freq_map.get(freq_infra, 'custom')
     
     def _check_time_series_consistency(self, data: pd.DataFrame, issues: List[str]) -> float:
         """检查时间序列一致性（从data_fetcher提取，增强趋势突变检测）

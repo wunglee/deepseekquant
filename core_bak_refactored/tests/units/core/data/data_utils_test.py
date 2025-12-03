@@ -1,7 +1,9 @@
 import unittest
 import pandas as pd
 
-from core_bak_refactored.core.data.data_utils import DataUtils, EventConfig
+from core_bak_refactored.core.data.data_utils import DataUtils
+from core_bak_refactored.core.backtest.event_analysis import EventConfig, EventAnalyzer
+from core_bak_refactored.core.share.data_analysis_utils import DataAnalysisUtils
 from core_bak_refactored.tests.fixtures.core.data.mock_historical_data_provider import MockHistoricalDataProvider
 
 
@@ -10,15 +12,15 @@ class DataUtilsTest(unittest.TestCase):
         df = pd.DataFrame({'close': [100, 110, 121]})
         r = DataUtils.calculate_return(df)
         self.assertAlmostEqual(r, 0.21, places=6)
-        ar = DataUtils.calculate_actual_return(df)
+        ar = EventAnalyzer.calculate_actual_return(df)
         self.assertAlmostEqual(ar, 0.21, places=6)
 
     def test_validate_dataframe(self):
         df = pd.DataFrame({'close': [100, 110]})
-        valid, msg = DataUtils.validate_dataframe(df, ['close'], min_rows=2)
+        valid, msg = DataAnalysisUtils.validate_dataframe(df, ['close'], min_rows=2)
         self.assertTrue(valid)
         self.assertEqual(msg, '')
-        invalid, msg2 = DataUtils.validate_dataframe(df[['close']].iloc[:1], ['close'], min_rows=2)
+        invalid, msg2 = DataAnalysisUtils.validate_dataframe(df[['close']].iloc[:1], ['close'], min_rows=2)
         self.assertFalse(invalid)
         self.assertIn('数据行数不足', msg2)
 
@@ -41,7 +43,7 @@ class DataUtilsTest(unittest.TestCase):
             expected_decline=-0.3,
             market_id='CN'
         )
-        df, success = DataUtils.safe_get_event_data(provider, event, window_days=10, baseline_days=30)
+        df, success = EventAnalyzer.safe_get_event_data(provider, event, window_days=10, baseline_days=30)
         self.assertTrue(success)
         self.assertIsInstance(df, pd.DataFrame)
         self.assertIn('close', df.columns)

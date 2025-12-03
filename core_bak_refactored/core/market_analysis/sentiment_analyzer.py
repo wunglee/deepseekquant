@@ -1,11 +1,15 @@
 """
-市场情绪评估模块（从 DataFetcher相关方法迁移而来）
+市场情绪评估模块
 
 职责：
-1. 评估市场情绪
-2. 计算恐惧贪婪指数
-3. 分析看涨看跌比率
-4. 识别情绪极端状态
+- 评估市场情绪（综合VIX、Put/Call比率、涨跌家数比）
+- 计算恐惧贪婪指数
+- 分析看涨看跌比率
+- 识别情绪极端状态
+- 评估市场流动性状况
+- 确定波动率状态
+
+来源：从 core/data/analytics/sentiment.py 迁移而来（属于高级市场分析，非数据源处理）
 """
 from typing import Dict, Any
 from datetime import datetime
@@ -16,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 async def assess_market_sentiment(fetcher: Any) -> Dict[str, Any]:
     """
-    评估市场情绪（从 DataFetcher._assess_market_sentiment 迁移而来）。
+    评估市场情绪
     
     综合多个指标评估市场情绪，包括：
     - VIX指数
@@ -157,7 +161,7 @@ async def assess_market_sentiment(fetcher: Any) -> Dict[str, Any]:
 
 async def _get_vix_value(fetcher: Any) -> float:
     """
-    获取VIX指数值。
+    获取VIX指数值
     
     Args:
         fetcher: DataFetcher实例
@@ -192,7 +196,7 @@ async def _get_vix_value(fetcher: Any) -> float:
 
 async def _get_put_call_ratio(fetcher: Any) -> float:
     """
-    获取Put/Call比率。
+    获取Put/Call比率
     
     Args:
         fetcher: DataFetcher实例
@@ -212,7 +216,7 @@ async def _get_put_call_ratio(fetcher: Any) -> float:
 
 def assess_liquidity_conditions() -> Dict[str, Any]:
     """
-    评估市场流动性状况（从 DataFetcher._assess_liquidity_conditions 迁移而来）。
+    评估市场流动性状况
     
     基于多个流动性指标的综合评估：
     - 买卖价差
@@ -266,7 +270,7 @@ def assess_liquidity_conditions() -> Dict[str, Any]:
 
 def determine_volatility_regime(vix_value: float = 20.0) -> Dict[str, Any]:
     """
-    确定波动率状态（从 DataFetcher._determine_volatility_regime 迁移而来）。
+    确定波动率状态
     
     基于VIX和其他波动率指标的综合判断，识别当前的波动率状态：
     - low: 低波动率环境（VIX < 15）

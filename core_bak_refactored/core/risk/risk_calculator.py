@@ -19,9 +19,9 @@ import warnings
 
 from .risk_metrics_service import RiskMetricsService, RiskMetricsEngine
 from .risk_models import RiskMetric
-from ..share.market_config import MarketConfigManager
+from ..share.market.market_config import MarketConfigManager
 from ..share.exchange_rates import CurrencyConverter, ExchangeRateAdapter
-from ..share.market_enums import MarketCode
+from ..share.market.market_enums import MarketCode
 
 # 导入数据预处理器
 from .risk_preprocessor import RiskDataPreprocessor

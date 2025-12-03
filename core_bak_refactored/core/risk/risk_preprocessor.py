@@ -17,8 +17,9 @@ import pandas as pd
 from typing import Dict, Optional, Any
 import logging
 
-# 依赖基础预处理层
-from core_bak_refactored.core.data.data_utils import DataUtils
+# 依赖基础预处理层（数据源基础处理）与共享业务逻辑
+from core_bak_refactored.core.data.data_utils import DataUtils  # 仅使用数据源基本处理方法
+from core_bak_refactored.core.share.data_analysis_utils import DataAnalysisUtils  # 共享的高级数据分析能力
 
 logger = logging.getLogger('DeepSeekQuant.RiskDataPreprocessor')
 
@@ -56,15 +57,15 @@ class RiskDataPreprocessor:
             # 方式1：直接提供收益率
             if 'returns' in data:
                 returns = data['returns']
-                # 委托给基础层确保类型
-                return DataUtils.ensure_series(returns, "returns")
+                # 委托给共享业务逻辑层（类型保障）
+                return DataAnalysisUtils.ensure_series(returns, "returns")
             
             # 方式2：从价格计算收益率
             if 'prices' in data:
                 prices = data['prices']
                 if isinstance(prices, (list, np.ndarray)) and len(prices) > 1:
                     # 委托给基础层计算对数收益率
-                    prices_series = DataUtils.ensure_series(prices, "prices")
+                    prices_series = DataAnalysisUtils.ensure_series(prices, "prices")
                     return DataUtils.compute_log_returns(prices_series).dropna()
             
             logger.warning("无法从数据字典提取收益序列")
@@ -97,15 +98,15 @@ class RiskDataPreprocessor:
             # 方式1：直接提供市场收益率
             if 'market_returns' in data:
                 market_returns = data['market_returns']
-                # 委托给基础层确保类型
-                return DataUtils.ensure_series(market_returns, "market_returns")
+                # 委托给共享业务逻辑层（类型保障）
+                return DataAnalysisUtils.ensure_series(market_returns, "market_returns")
             
             # 方式2：从基准价格计算收益率
             if 'benchmark_prices' in data:
                 prices = data['benchmark_prices']
                 if isinstance(prices, (list, np.ndarray)) and len(prices) > 1:
                     # 委托给基础层计算对数收益率
-                    prices_series = DataUtils.ensure_series(prices, "benchmark_prices")
+                    prices_series = DataAnalysisUtils.ensure_series(prices, "benchmark_prices")
                     return DataUtils.compute_log_returns(prices_series).dropna()
             
             # 市场收益可选，返回 None 不记录警告
@@ -130,8 +131,8 @@ class RiskDataPreprocessor:
             >>> prices = np.array([100, 110, 121])
             >>> returns = RiskDataPreprocessor.extract_returns_from_prices(prices)
         """
-        # 委托给基础层计算
-        prices_series = DataUtils.ensure_series(prices, "prices")
+        # 委托给共享业务逻辑层
+        prices_series = DataAnalysisUtils.ensure_series(prices, "prices")
         log_returns = DataUtils.compute_log_returns(prices_series).dropna()
         return log_returns.values
     
@@ -152,8 +153,8 @@ class RiskDataPreprocessor:
             >>> returns2 = pd.Series([0.015, 0.025], index=['2020-01-01', '2020-01-02'])
             >>> aligned1, aligned2 = RiskDataPreprocessor.align_time_series(returns1, returns2)
         """
-        # 直接委托给基础层
-        return DataUtils.align_time_series(series1, series2)
+        # 委托给共享业务逻辑层
+        return DataAnalysisUtils.align_time_series(series1, series2)
     
     @staticmethod
     def validate_returns_data(returns: pd.Series, min_length: int = 20) -> bool:

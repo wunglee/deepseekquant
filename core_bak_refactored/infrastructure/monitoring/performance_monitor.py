@@ -1,5 +1,5 @@
 """
-底层请求追踪器
+性能监控器
 
 职责：
 1. 细粒度跟踪单个API请求性能
@@ -7,10 +7,9 @@
 3. 记录数据源使用情况
 4. 提供原始性能指标供上层聚合
 
-设计说明：
-- 本模块为底层追踪器，供 PerformanceStatsManager 使用
-- 专注于请求级别的性能数据收集
-- 不包含业务指标（异常、告警等），由上层管理
+来源：从 core/data/analytics/performance.py 迁移而来（属于通用基础设施）
+
+使用方：可被所有模块（data、backtest、risk、portfolio等）复用
 """
 from typing import Dict, Any
 from datetime import datetime, timedelta
@@ -21,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 class PerformanceMonitor:
     """
-    底层请求追踪器（供 PerformanceStatsManager 使用）
+    底层请求追踪器（通用性能监控）
     
     职责：
     - 跟踪单个API请求的性能数据
@@ -36,7 +35,7 @@ class PerformanceMonitor:
     """
     
     def __init__(self):
-        """初始化性能监控器。"""
+        """初始化性能监控器"""
         self.metrics = {
             'requests_total': 0,
             'requests_failed': 0,
@@ -52,7 +51,7 @@ class PerformanceMonitor:
     
     def record_request(self, symbol: str, success: bool, response_time: float, source: str = None):
         """
-        记录一次请求。
+        记录一次请求
         
         Args:
             symbol: 股票代码
@@ -82,16 +81,16 @@ class PerformanceMonitor:
         self.metrics['last_update'] = datetime.now().isoformat()
     
     def record_cache_hit(self):
-        """记录缓存命中。"""
+        """记录缓存命中"""
         self.metrics['cache_hits'] += 1
     
     def record_cache_miss(self):
-        """记录缓存未命中。"""
+        """记录缓存未命中"""
         self.metrics['cache_misses'] += 1
     
     def record_error(self, error_type: str):
         """
-        记录错误。
+        记录错误
         
         Args:
             error_type: 错误类型
@@ -100,7 +99,7 @@ class PerformanceMonitor:
     
     def record_data_points(self, count: int):
         """
-        记录处理的数据点数量。
+        记录处理的数据点数量
         
         Args:
             count: 数据点数量
@@ -109,7 +108,7 @@ class PerformanceMonitor:
     
     def get_cache_hit_rate(self) -> float:
         """
-        获取缓存命中率。
+        获取缓存命中率
         
         Returns:
             缓存命中率（0-1）
@@ -121,7 +120,7 @@ class PerformanceMonitor:
     
     def get_error_rate(self) -> float:
         """
-        获取错误率。
+        获取错误率
         
         Returns:
             错误率（0-1）
@@ -133,7 +132,7 @@ class PerformanceMonitor:
     
     def get_uptime(self) -> timedelta:
         """
-        获取运行时长。
+        获取运行时长
         
         Returns:
             运行时长
@@ -142,7 +141,7 @@ class PerformanceMonitor:
     
     def get_throughput(self) -> float:
         """
-        获取吞吐量（请求数/秒）。
+        获取吞吐量（请求数/秒）
         
         Returns:
             吞吐量
@@ -154,7 +153,7 @@ class PerformanceMonitor:
     
     def get_summary(self) -> Dict[str, Any]:
         """
-        获取性能摘要。
+        获取性能摘要
         
         Returns:
             性能摘要字典
@@ -182,12 +181,12 @@ class PerformanceMonitor:
         }
     
     def reset(self):
-        """重置所有指标。"""
+        """重置所有指标"""
         self.__init__()
         logger.info("性能监控指标已重置")
     
     def log_summary(self):
-        """记录性能摘要到日志。"""
+        """记录性能摘要到日志"""
         summary = self.get_summary()
         
         logger.info("=== 性能监控摘要 ===")
@@ -205,15 +204,16 @@ def create_performance_report(metrics: Dict[str, Any]) -> str:
     创建性能报告（通用工具函数）
     
     Args:
-        metrics: 性能指标字典（可来自 PerformanceMonitor 或 PerformanceStatsManager）
+        metrics: 性能指标字典（可来自 PerformanceMonitor 或其他监控系统）
     
     Returns:
         格式化的性能报告字符串
     
     使用示例：
-        >>> from core_bak_refactored.core.share.performance_stats import PerformanceStatsManager
-        >>> manager = PerformanceStatsManager(enable_request_tracking=True)
-        >>> summary = manager.get_summary()
+        >>> from core_bak_refactored.infrastructure.monitoring import PerformanceMonitor, create_performance_report
+        >>> monitor = PerformanceMonitor()
+        >>> # ... 记录一些请求 ...
+        >>> summary = monitor.get_summary()
         >>> report = create_performance_report(summary)
         >>> print(report)
     """

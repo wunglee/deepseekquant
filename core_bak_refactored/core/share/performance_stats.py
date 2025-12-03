@@ -83,7 +83,7 @@ class PerformanceStatsManager:
         
         if enable_request_tracking:
             try:
-                from core_bak_refactored.core.data.analytics.performance import PerformanceMonitor
+                from core_bak_refactored.infrastructure.monitoring.performance_monitor import PerformanceMonitor
                 self._request_tracker = PerformanceMonitor()
                 logger.debug("已启用底层请求追踪器")
             except ImportError as e:

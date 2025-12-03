@@ -15,7 +15,7 @@ from io import StringIO
 from datetime import datetime
 import logging
 
-from core_bak_refactored.core.data.data_utils import DataUtils, EventConfig
+from core_bak_refactored.core.backtest.event_analysis import EventConfig, EventAnalyzer
 from core_bak_refactored.core.data.providers.historical_data_provider import (
     RealHistoricalDataProvider,
     MockHistoricalDataProvider
@@ -50,7 +50,7 @@ class TestBackupSourcesAndLogging:
         formatter = logging.Formatter('%(levelname)s - %(name)s - %(message)s')
         handler.setFormatter(formatter)
         
-        logger = logging.getLogger('DeepSeekQuant.DataUtils')
+        logger = logging.getLogger('DeepSeekQuant.EventAnalysis')
         logger.addHandler(handler)
         logger.setLevel(logging.DEBUG)
         
@@ -63,7 +63,7 @@ class TestBackupSourcesAndLogging:
         failing_provider = Mock()
         failing_provider.get_event_window_data.side_effect = ValueError("数据源连接失败")
         
-        data, success = DataUtils.safe_get_event_data(
+        data, success = EventAnalyzer.safe_get_event_data(
             data_provider=failing_provider,
             event=mock_event
         )
@@ -72,7 +72,7 @@ class TestBackupSourcesAndLogging:
         assert data.empty
         
         log_output = log_capture.getvalue()
-        assert 'safe_get_event_data failed' in log_output
+        assert '事件数据获取异常' in log_output
         assert 'event_id=test_event_001' in log_output
         assert 'Mock' in log_output
         assert '数据源连接失败' in log_output
@@ -82,7 +82,7 @@ class TestBackupSourcesAndLogging:
         unexpected_provider = Mock()
         unexpected_provider.get_event_window_data.return_value = "invalid_format"
         
-        data, success = DataUtils.safe_get_event_data(
+        data, success = EventAnalyzer.safe_get_event_data(
             data_provider=unexpected_provider,
             event=mock_event
         )
@@ -91,7 +91,7 @@ class TestBackupSourcesAndLogging:
         assert data.empty
         
         log_output = log_capture.getvalue()
-        assert 'unexpected format' in log_output
+        assert '事件数据格式异常' in log_output
         assert 'event_id=test_event_001' in log_output
         assert 'type=str' in log_output
     
@@ -181,7 +181,7 @@ class TestBackupSourcesAndLogging:
         """测试Mock数据源作为兜底始终成功"""
         mock_provider = MockHistoricalDataProvider()
         
-        data, success = DataUtils.safe_get_event_data(
+        data, success = EventAnalyzer.safe_get_event_data(
             data_provider=mock_provider,
             event=mock_event
         )

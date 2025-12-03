@@ -9,6 +9,7 @@
 - core/backtest：事件窗口回测与报告生成（准确度指标、误差Top5）
 - core/risk：压力测试、风险度量、限额管理、监控与报告（不承载backtest/data具体实现）
 - core/data：历史/真实数据提供者，统一接口（Protocol）供 backtest/risk 使用
+- core/market_analysis：市场情绪与波动率分析
 - core/exec：执行算法与订单处理
 - core/optimization：参数调优（如贝叶斯）
 - core/share：共享类型与小型工具（如市场配置、汇率转换）
@@ -73,6 +74,72 @@ graph TD
  core_bak_refactored 架构设计文档
 
 ## 📅 更新日志
+
+### 2025-12-02: 职责归位与模块重构（彻底清理版）
+
+**核心变更**：
+1. **data 模块职责清理**：
+   - ✅ **彻底删除**所有向后兼容代码（无委托方法遗留）
+   - ✅ 删除兼容导入文件：`core/data/analytics/sentiment.py`, `performance.py`
+   - ✅ 从 `data_utils.py` 删除 87行委托方法，保留纯净的基础处理工具
+   - ✅ 修正导入路径：`market_config` → `market.market_config`, `market_enums` → `market.market_enums`
+
+2. **新增模块**：
+   - `core/backtest/event_analysis.py` (177行) - 事件驱动分析
+     * `EventConfig` 数据类
+     * `EventAnalyzer` 静态工具类：4个方法（safe_get_event_data, calculate_actual_return, calculate_prediction_error, validate_event_data）
+   - `core/share/data_analysis_utils.py` (141行) - 共享数据分析工具
+     * `DataAnalysisUtils` 静态工具类：3个方法（align_time_series, ensure_series, validate_dataframe）
+   - `core/market_analysis/sentiment_analyzer.py` (355行) - 市场情绪评估
+     * 3个函数：assess_market_sentiment, assess_liquidity_conditions, determine_volatility_regime
+   - `infrastructure/monitoring/performance_monitor.py` (255行) - 性能监控
+     * `PerformanceMonitor` 类
+     * `create_performance_report` 函数
+
+3. **测试同构化**：
+   - ✅ 创建 `tests/units/core/backtest/event_analysis_test.py` (172行, 9个测试)
+   - ✅ 更新所有引用文件的导入路径：
+     * `tests/fixtures/core/backtest/backtest_fixtures.py`
+     * `tests/units/core/data/data_utils_test.py`
+     * `tests/units/core/data/providers/historical_data_provider_test.py`
+     * `core/risk/risk_preprocessor.py`
+     * `core/share/performance_stats.py`
+   - ✅ 修复测试日志断言（logger名称：`DeepSeekQuant.EventAnalysis`）
+   - ✅ 修复导入错误：`share.market_config` → `share.market.market_config`, `share.market_enums` → `share.market.market_enums`
+
+4. **职责划分**（严格遵守单一职责原则）：
+   - **data 模块**：数据源基本处理、转换、验证（OHLC转收益率、时间序列处理）
+   - **backtest 模块**：事件驱动回测分析能力（事件窗口数据提取、误差计算）
+   - **market_analysis 模块**：市场情绪与波动率分析（VIX评估、流动性条件、波动率区间）
+   - **share 模块**：跨模块共享的高级数据分析工具（时间序列对齐、数据验证）
+   - **infrastructure/monitoring**：通用性能监控基础设施（请求追踪、性能报告）
+
+5. **代码统计**：
+   - 删除：155行（87行委托方法 + 68行兼容导入文件）
+   - 新增：928行（职责归位后的新代码）
+   - 净变化：+773行（职责清晰，无冗余）
+
+6. **测试验证**（全通过）：
+   - 单元测试：21+ 测试（data_utils_test, risk_preprocessor_test, event_analysis_test 等）
+   - E2E 集成测试：6/6 通过
+   - 集成测试：6/6 通过（industry_parameter_validation）
+   - ✅ 无向后兼容遗留，代码纯净
+   - ✅ 测试与代码完全同构
+
+**架构影响**：
+- ✅ data 模块现在专注于数据源处理，不包含高级业务逻辑
+- ✅ backtest/market_analysis/share 模块承载相应的业务能力
+- ✅ 依赖方向正确：高级模块依赖基础模块，符合分层架构
+- ✅ 测试与代码同构，符合规范要求
+- ✅ 所有导入路径正确，无遗留引用
+
+**清理验证**：
+- ✅ 零向后兼容遗留（grep验证：0个 `@deprecated` 标记）
+- ✅ 零委托方法（data_utils.py 仅保留基础工具）
+- ✅ 零兼容导入文件（analytics/sentiment.py, performance.py 已删除）
+- ✅ 所有测试文件导入路径已更新
+
+---
 
 ### 2025-12-02: 代码冗余清理与性能监控架构优化
 
@@ -198,7 +265,7 @@ graph TD
 ```
 业务层：PerformanceStatsManager（core/share/performance_stats.py）
   ↓ 集成
-底层：PerformanceMonitor（core/data/analytics/performance.py）
+底层：PerformanceMonitor（infrastructure/monitoring/performance_monitor.py）
 ```
 
 ### 职责划分
@@ -215,7 +282,7 @@ graph TD
 
 ### 使用模式
 
-**模式1：默认模式（向后兼容）**
+**模式1：默认模式**
 ```python
 manager = PerformanceStatsManager()  # 不启用请求追踪
 manager.increment_counter('data_points_processed', 100)

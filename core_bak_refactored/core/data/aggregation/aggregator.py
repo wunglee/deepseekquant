@@ -334,14 +334,25 @@ class DataAggregator:
             logger.error("数据缺少close或volume字段")
             return 0.0
         
-        # VWAP = sum(price * volume) / sum(volume)
-        total_value = (df['close'] * df['volume']).sum()
-        total_volume = df['volume'].sum()
+        # 调用基础设施层通用VWAP计算（消除重复）
+        from core_bak_refactored.infrastructure.timeseries_calculator import TimeSeriesCalculator
         
-        if total_volume == 0:
-            return 0.0
+        # TimeSeriesCalculator.calculate_vwap 需要 typical_price 与 volume Series
+        # 此处使用 close 作为 typical_price（业务可按需调整为 (high+low+close)/3）
+        typical_price = df['close']
+        volume = df['volume']
         
-        return float(total_value / total_volume)
+        # 将索引转为 DatetimeIndex 以支持周期重置（若无时间索引则全局累计）
+        if 'timestamp' in df.columns:
+            df_indexed = df.set_index('timestamp')
+            typical_price = df_indexed['close']
+            volume = df_indexed['volume']
+            vwap_series = TimeSeriesCalculator.calculate_vwap(typical_price, volume, reset_period=None)
+        else:
+            vwap_series = TimeSeriesCalculator.calculate_vwap(typical_price, volume, reset_period=None)
+        
+        # 返回最后一个有效 VWAP 值
+        return float(vwap_series.dropna().iloc[-1]) if len(vwap_series.dropna()) > 0 else 0.0
     
     def merge_data_sources(
         self,

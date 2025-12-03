@@ -22,7 +22,7 @@ import logging
 from enum import Enum
 from dataclasses import dataclass, field
 from datetime import datetime
-from ..share.market_enums import MarketCode
+from ..share.market.market_enums import MarketCode
 
 logger = logging.getLogger('DeepSeekQuant.RiskLimitsEnhanced')
 

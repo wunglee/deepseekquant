@@ -206,21 +206,23 @@ def detect_data_anomalies(data: List[Any], threshold: float = 3.0) -> Dict[str, 
             else:
                 returns.append(0)
 
-        # 计算均值和标准差
+        # 调用基础设施层 Z-Score 检测器（消除重复）
+        from core_bak_refactored.infrastructure.anomaly_detectors import ZScoreDetector
+        
+        detector = ZScoreDetector(threshold=threshold)
+        detect_result = detector.detect(np.array(returns))
+        
+        # 构造返回结果（保持业务层接口不变）
+        anomaly_indices = [int(idx) + 1 for idx in detect_result.anomaly_indices]  # +1因为returns从索引1开始
+        anomaly_reasons = []
+        for idx in detect_result.anomaly_indices:
+            if idx < len(returns):
+                ret = returns[idx]
+                z_score = detect_result.scores[idx] if idx < len(detect_result.scores) else 0
+                anomaly_reasons.append(f"收益率异常: {ret:.2%} (Z-score: {z_score:.2f})")
+        
         mean_return = np.mean(returns)
         std_return = np.std(returns)
-
-        # 检测异常值
-        anomaly_indices = []
-        anomaly_reasons = []
-        
-        for i, ret in enumerate(returns):
-            z_score = abs((ret - mean_return) / std_return) if std_return > 0 else 0
-            
-            if z_score > threshold:
-                anomaly_indices.append(i + 1)  # +1因为returns从索引1开始
-                anomaly_reasons.append(f"收益率异常: {ret:.2%} (Z-score: {z_score:.2f})")
-
         has_anomalies = len(anomaly_indices) > 0
 
         result = {
