@@ -164,6 +164,50 @@ class MockHistoricalDataProvider:
         returns.index = df['date']
         return returns
 
+    def get_stock_prices(self, symbol: str, start_date, end_date) -> pd.DataFrame:
+        """
+        获取个股价格数据（Mock实现，接口与YahooFinanceDataProvider一致）
+        返回列: ['date', 'close', 'volume']
+        """
+        # 支持 str 和 datetime
+        start = pd.to_datetime(start_date)
+        end = pd.to_datetime(end_date)
+        dates = pd.date_range(start, end, freq='B')
+        n_days = len(dates)
+        
+        # 基础参数
+        base_volatility = 0.02
+        initial_price = 100.0 if symbol.endswith('.SS') or symbol.endswith('.SZ') else 50.0
+        
+        # 随机游走生成价格
+        np.random.seed(hash(str(start) + str(end) + symbol) % 2**32)
+        daily_returns = np.random.normal(0, base_volatility, n_days)
+        prices = initial_price * np.cumprod(1 + daily_returns)
+        
+        # 成交量与绝对收益相关
+        base_volume = 5_000_000
+        volumes = base_volume * (
+            1 + 2.0 * np.clip(np.abs(daily_returns), 0, 0.2) + np.random.uniform(-0.05, 0.05, n_days)
+        )
+        volumes = np.clip(volumes, 0, None)
+        
+        return pd.DataFrame({'date': dates, 'close': prices, 'volume': volumes})
+    
+    def get_volatility_index(self, index_id: str, start_date, end_date) -> pd.Series:
+        """
+        获取波动率指数（Mock实现，接口与YahooFinanceDataProvider一致）
+        返回范围: [0.05, 0.5]
+        """
+        start = pd.to_datetime(start_date)
+        end = pd.to_datetime(end_date)
+        dates = pd.date_range(start, end, freq='B')
+        n_days = len(dates)
+        
+        np.random.seed(hash(str(start) + str(end) + index_id) % 2**32)
+        vol = np.random.normal(0.2, 0.05, n_days)
+        vol = np.clip(vol, 0.05, 0.5)
+        return pd.Series(vol, index=dates)
+    
     def validate_data_quality(self, data) -> Dict[str, Any]:
         """TODO：数据质量验证（简化版，无DataQualityChecker依赖）"""
         total_rows = len(data)

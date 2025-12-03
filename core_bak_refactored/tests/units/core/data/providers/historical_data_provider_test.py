@@ -107,7 +107,7 @@ class TestBackupSourcesAndLogging:
         formatter = logging.Formatter('%(levelname)s - %(name)s - %(message)s')
         handler.setFormatter(formatter)
         
-        logger = logging.getLogger('DeepSeekQuant.DataFragments')
+        logger = logging.getLogger('DeepSeekQuant.DataProviders')
         logger.addHandler(handler)
         logger.setLevel(logging.DEBUG)
         
@@ -265,7 +265,7 @@ class TestHistoricalDataProviderEnhancedInterface(unittest.TestCase):
     def setUp(self):
         self.mock_provider = MockHistoricalDataProvider()
 
-    @pytest.mark.skip(reason="MockHistoricalDataProvider不再支持get_stock_prices接口，该方法已弃用")
+
     def test_get_stock_prices_interface(self):
         data = self.mock_provider.get_stock_prices('600036.SS', '2020-01-01', '2020-01-31')
         
@@ -276,7 +276,7 @@ class TestHistoricalDataProviderEnhancedInterface(unittest.TestCase):
         self.assertIn('volume', data.columns)
         self.assertIsInstance(data['date'].iloc[0], pd.Timestamp)
 
-    @pytest.mark.skip(reason="MockHistoricalDataProvider不再支持get_volatility_index接口，该方法已弃用")
+
     def test_get_volatility_index_interface(self):
         volatility_data = self.mock_provider.get_volatility_index('VIX', '2020-01-01', '2020-01-31')
         
