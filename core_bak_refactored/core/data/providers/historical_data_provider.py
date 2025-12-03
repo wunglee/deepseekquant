@@ -21,6 +21,7 @@ import logging
 from core_bak_refactored.core.data.quality import DataQualityChecker
 from core_bak_refactored.core.share import MarketCode
 from core_bak_refactored.core.share.market.market_enums import REGIONAL_DATA_SOURCE_PRIORITY, DataSource
+from core_bak_refactored.core.share.config import EVENT_WINDOW_CONFIGS
 
 logger = logging.getLogger('DeepSeekQuant.DataProviders')
 
@@ -44,18 +45,6 @@ class RealHistoricalDataProvider:
     - 异常值处理：剔除涨跌停日、极端波动日
     - 停牌处理：停牌日数据沿用最近有效价格，但不计入收益率计算
     """
-    
-    # 区域化数据源优先级配置（专家第2轮5.1节）
-    # 直接使用market_enums中的全局枚举配置（已在文件顶部导入）
-    
-    # 事件窗口配置（专家第2轮5.1节）
-    EVENT_WINDOW_CONFIGS = {
-        'market_crash': {'window_days': 30, 'baseline_days': 252},
-        'liquidity_crisis': {'window_days': 45, 'baseline_days': 252},
-        'currency_crisis': {'window_days': 60, 'baseline_days': 252},
-        'sovereign_debt_crisis': {'window_days': 90, 'baseline_days': 504},
-        'geopolitical_risk': {'window_days': 30, 'baseline_days': 252}
-    }
     
     def __init__(self, 
                  primary_source: str = 'yahoo',
@@ -256,7 +245,7 @@ class RealHistoricalDataProvider:
                 'config': 使用的配置
         """
         # 根据事件类型动态调整窗口（专家第2轮5.1节）
-        config = self.EVENT_WINDOW_CONFIGS.get(event_type, self.EVENT_WINDOW_CONFIGS['market_crash'])
+        config = EVENT_WINDOW_CONFIGS.get(event_type, EVENT_WINDOW_CONFIGS['market_crash'])
         final_window_days = window_days if window_days is not None else config['window_days']
         final_baseline_days = baseline_days if baseline_days is not None else config['baseline_days']
         

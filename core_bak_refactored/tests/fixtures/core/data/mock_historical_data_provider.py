@@ -3,9 +3,7 @@ import pandas as pd
 from typing import Dict, Any
 import logging
 
-# 暂时移除对DataQualityChecker的依赖，因为它已被移动到backup
-# TODO：待data_quality_checker恢复后再启用
-# from core_bak_refactored.core.data.data_quality_checker import DataQualityChecker
+from core_bak_refactored.core.share.config import HISTORICAL_EVENT_PARAMS
 
 logger = logging.getLogger('DeepSeekQuant.Tests.MockData')
 
@@ -15,51 +13,15 @@ class MockHistoricalDataProvider:
     测试用Mock历史数据提供者（仅用于测试fixtures）
     - 分段生成价格：事件前(EWMA重尾) + 事件期(精确下跌+负偏重尾) + 事件后(EWMA重尾)
     - 成交量与绝对收益相关，体现波动聚类
+    
+    重构说明（2025-12-02）：
+    - 从 core/data/providers/historical_data_provider.py 迁移而来
+    - 事件参数现在使用共享配置 HISTORICAL_EVENT_PARAMS
     """
 
     def __init__(self):
-        self.event_params = {
-            '2015_china_market_crash': {
-                'period': ('2015-06-15', '2015-08-26'),
-                'expected_decline': -0.43,
-                'volatility_multiplier': 2.5
-            },
-            'covid_19_pandemic': {
-                'period': ('2020-02-20', '2020-03-23'),
-                'expected_decline': -0.20,
-                'volatility_multiplier': 3.0
-            },
-            '2008_financial_crisis': {
-                'period': ('2008-09-15', '2008-11-20'),
-                'expected_decline': -0.40,
-                'volatility_multiplier': 3.5
-            },
-            '2011_eurozone_debt_crisis': {
-                'period': ('2011-09-01', '2011-11-30'),
-                'expected_decline': -0.25,
-                'volatility_multiplier': 2.5
-            },
-            '2011_us_debt_ceiling_crisis': {
-                'period': ('2011-07-22', '2011-08-10'),
-                'expected_decline': -0.12,
-                'volatility_multiplier': 2.0
-            },
-            '2016_china_circuit_breaker': {
-                'period': ('2016-01-04', '2016-01-08'),
-                'expected_decline': -0.15,
-                'volatility_multiplier': 2.0
-            },
-            '2022_russia_ukraine_conflict': {
-                'period': ('2022-02-24', '2022-03-15'),
-                'expected_decline': -0.12,
-                'volatility_multiplier': 1.8
-            },
-            '1997_asian_financial_crisis': {
-                'period': ('1997-07-02', '1998-08-28'),
-                'expected_decline': -0.35,
-                'volatility_multiplier': 2.8
-            }
-        }
+        # 使用共享配置代替内联定义
+        self.event_params = HISTORICAL_EVENT_PARAMS
 
     def _generate_prices_with_event_window(self,
                                            dates: pd.DatetimeIndex,
