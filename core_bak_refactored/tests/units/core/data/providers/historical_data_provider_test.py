@@ -16,10 +16,8 @@ from datetime import datetime
 import logging
 
 from core_bak_refactored.core.backtest.event_analysis import EventConfig, EventAnalyzer
-from core_bak_refactored.core.data.providers.historical_data_provider import (
-    RealHistoricalDataProvider,
-    MockHistoricalDataProvider
-)
+from core_bak_refactored.core.data.providers.historical_data_provider import RealHistoricalDataProvider
+from core_bak_refactored.tests.fixtures.core.data.mock_historical_data_provider import MockHistoricalDataProvider
 from core_bak_refactored.core.data.providers.yahoo_finance import YahooFinanceDataProvider
 from core_bak_refactored.core.backtest._fragments.event_window_backtester import EventWindowBacktester, BacktestReporter
 from core_bak_refactored.core.portfolio._fragments.synthetic_portfolio_builder import SyntheticPortfolioBuilder

@@ -25,7 +25,7 @@ import logging
 # 重构：引入独立的数据质量检查器
 from core_bak_refactored.core.data.data_quality_checker import DataQualityChecker, DataQualityReport
 # 引入市场枚举
-from core_bak_refactored.core.share.market_enums import MarketCode, DataSource, REGIONAL_DATA_SOURCE_PRIORITY
+from core_bak_refactored.core.share.market.market_enums import MarketCode, DataSource, REGIONAL_DATA_SOURCE_PRIORITY
 
 logger = logging.getLogger('DeepSeekQuant.DataFragments')
 

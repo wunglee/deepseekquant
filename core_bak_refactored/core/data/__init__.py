@@ -50,10 +50,12 @@ from .quality.data_quality_enhancer import (
     DataQualityReport,
 )
 
+from .providers.protocols import (
+    HistoricalDataProvider,  # 协议接口（2025-12-02重构：从 historical_data_provider.py 提取）
+)
+
 from .providers.historical_data_provider import (
-    HistoricalDataProvider,  # 协议接口
-    MockHistoricalDataProvider,  # Mock实现
-    # RealHistoricalDataProvider,  # TODO: 实现后导出
+    RealHistoricalDataProvider,  # 真实数据提供者（2025-12-02重构：主要实现）
 )
 
 from .providers.yahoo_finance import (
@@ -90,8 +92,8 @@ __all__ = [
     # 专家碎片
     'DataQualityEnhancer',
     'DataQualityReport',
-    'HistoricalDataProvider',
-    'MockHistoricalDataProvider',
+    'HistoricalDataProvider',  # Protocol接口
+    'RealHistoricalDataProvider',  # 真实数据提供者
     'YahooFinanceDataProvider',
     
     # MarketData业务验证

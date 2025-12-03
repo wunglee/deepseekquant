@@ -1,497 +1,33 @@
 """
-[专家碎片] 历史数据提供者 - 第2轮专家 + Phase 5B-5增强
-状态: 已保留,待对比与DataFetcher功能后决定整合策略
-来源: 
-- 第2轮专家指导实施
-- Phase 5B-5 增强功能
-- 从risk/backtest_framework.py提取
+真实历史数据提供者
 
-功能范围:
-- 历史价格数据获取
-- 多数据源适配（Yahoo Finance / JoinQuant / Wind）
-- 数据预处理和格式化
-- Mock数据生成(基于真实历史事件)
+职责：
+- 历史价格数据获取（支持多数据源回退）
+- 数据质量验证与清洗
+- 区域化数据源优先级管理
+- 交叉验证支持
 
-职责:
-- 历史价格数据获取
-- 多数据源适配（Yahoo Finance / JoinQuant / Wind）
-- 数据预处理和格式化
-
-TODO: 待对比与data_fetcher.py的DataFetcher类功能重叠情况
+重构说明（2025-12-02）：
+- MockHistoricalDataProvider已迁移到tests/fixtures/core/data/mock_historical_data_provider.py
+- Protocol定义已提取到protocols.py
+- Stub适配器已提取到stubs/目录
 """
 
 import numpy as np
 import pandas as pd
-from typing import Protocol, Dict, Any, Optional, List
-from datetime import datetime
+from typing import Dict, Any, Optional, List
 import logging
-from dataclasses import dataclass
-from enum import Enum
 
 from core_bak_refactored.core.data.quality import DataQualityChecker
 from core_bak_refactored.core.share import MarketCode
 from core_bak_refactored.core.share.market.market_enums import REGIONAL_DATA_SOURCE_PRIORITY, DataSource
 
-logger = logging.getLogger('DeepSeekQuant.DataFragments')
+logger = logging.getLogger('DeepSeekQuant.DataProviders')
 
 # =============================================================================
-# 协议接口（数据模块标准）
+# 真实数据提供者
 # =============================================================================
 
-class HistoricalDataProvider(Protocol):
-    """
-    历史数据提供者接口（数据模块标准接口）
-    
-    设计目的：
-    - 解耦业务逻辑与数据来源
-    - 支持模拟数据（当前）和真实数据（未来）无缝切换
-    - 为core_bak_refactored/core/data模块集成预留标准接口
-    """
-    
-    def get_index_prices(self, index_id: str, start_date: str, end_date: str) -> pd.DataFrame:
-        """
-        获取指数价格数据
-        
-        Args:
-            index_id: 指数代码（如'000300.SH'沪深300）
-            start_date: 开始日期 'YYYY-MM-DD'
-            end_date: 结束日期 'YYYY-MM-DD'
-        
-        Returns:
-            DataFrame with columns: ['date', 'close', 'volume']
-        """
-        ...
-    
-    def get_index_returns(self, index_id: str, start_date: str, end_date: str) -> pd.Series:
-        """
-        获取指数收益率序列
-        
-        Args:
-            index_id: 指数代码
-            start_date: 开始日期
-            end_date: 结束日期
-        
-        Returns:
-            Series with date index and return values
-        """
-        ...
-    
-    # 新增接口方法（Phase 4规划）
-    def get_stock_prices(self, symbol: str, start_date: str, end_date: str):
-        """获取个股价格数据"""
-        ...
-        
-    def get_volatility_index(self, index_id: str, start_date: str, end_date: str):
-        """获取波动率指数（如VIX）"""
-        ...
-        
-    def validate_data_quality(self, data) -> Dict[str, Any]:
-        """数据质量验证报告"""
-        ...
-    
-
-# =============================================================================
-# 模拟实现（临时，等待真实数据源替换）
-# =============================================================================
-
-class MockHistoricalDataProvider:
-    """
-    模拟历史数据提供者（功能碎片临时实现）
-    
-    用途：
-    - 在core/data模块未完成前，提供测试数据
-    - 基于真实历史事件参数生成合理的模拟数据
-    - 支持框架功能验证和测试
-    
-    警告：
-    - 数据为模拟生成，仅用于框架验证
-    - 真实回测需要替换为RealHistoricalDataProvider
-    
-    迁移计划：
-    - 当core/data完成后，此类迁移到data模块作为Mock工具
-    """
-    
-    def __init__(self):
-        self.event_params = {
-            '2015_china_market_crash': {
-                'period': ('2015-06-15', '2015-08-26'),
-                'expected_decline': -0.43,
-                'volatility_multiplier': 2.5
-            },
-            'covid_19_pandemic': {
-                'period': ('2020-02-20', '2020-03-23'),
-                'expected_decline': -0.20,
-                'volatility_multiplier': 3.0
-            },
-            '2008_financial_crisis': {
-                'period': ('2008-09-15', '2008-11-20'),
-                'expected_decline': -0.40,
-                'volatility_multiplier': 3.5
-            },
-            '2011_eurozone_debt_crisis': {
-                'period': ('2011-09-01', '2011-11-30'),
-                'expected_decline': -0.25,
-                'volatility_multiplier': 2.5
-            },
-            '2011_us_debt_ceiling_crisis': {
-                'period': ('2011-07-22', '2011-08-10'),
-                'expected_decline': -0.12,
-                'volatility_multiplier': 2.0
-            },
-            '2016_china_circuit_breaker': {
-                'period': ('2016-01-04', '2016-01-08'),
-                'expected_decline': -0.15,
-                'volatility_multiplier': 2.0
-            },
-            '2022_russia_ukraine_conflict': {
-                'period': ('2022-02-24', '2022-03-15'),
-                'expected_decline': -0.12,
-                'volatility_multiplier': 1.8
-            },
-            '1997_asian_financial_crisis': {
-                'period': ('1997-07-02', '1998-08-28'),
-                'expected_decline': -0.35,
-                'volatility_multiplier': 2.8
-            }
-        }
-    
-    def _generate_prices_with_event_window(self,
-                                           dates: pd.DatetimeIndex,
-                                           initial_price: float,
-                                           event_start: pd.Timestamp,
-                                           event_end: pd.Timestamp,
-                                           event_decline: float,
-                                           event_vol: float,
-                                           base_volatility: float,
-                                           start_date: str,
-                                           end_date: str,
-                                           cal: dict | None = None) -> np.ndarray:
-        """
-        生成带事件窗口的价格序列（分段生成）
-        
-        逺辑：
-        1. 事件前：随机游走，波动率=base_volatility
-        2. 事件期：确定性下跌，总下跌=event_decline，波动率=base_volatility*event_vol
-        3. 事件后：随机游走，波动率=base_volatility
-        
-        Args:
-            dates: 日期索引
-            initial_price: 起始价格
-            event_start: 事件起始日期
-            event_end: 事件结束日期
-            event_decline: 事件期总下跌幅度
-            event_vol: 事件期波动率倍数
-            base_volatility: 基准波动率
-            start_date: 请求开始日期
-            end_date: 请求结束日期
-        
-        Returns:
-            价格序列
-        """
-        np.random.seed(hash(start_date + end_date) % 2**32)  # 确定性随机种子
-        
-        n_days = len(dates)
-        prices = np.zeros(n_days)
-        prices[0] = initial_price
-        
-        # 分段索引
-        event_start_idx = None
-        event_end_idx = None
-        
-        for i, date in enumerate(dates):
-            if event_start_idx is None and date >= event_start:
-                event_start_idx = i
-            if event_end_idx is None and date > event_end:
-                event_end_idx = i - 1
-                break
-        
-        # 如果事件期超出请求范围，调整索引
-        if event_start_idx is None:
-            event_start_idx = 0
-        if event_end_idx is None:
-            event_end_idx = n_days - 1
-        
-        # 第1段：事件前（随机游走）
-        if event_start_idx > 0:
-            # 事件前：EWMA波动 + 重尾分布（基于baseline校准）
-            lambda_ = (cal.get('lambda_pre') if cal else 0.94)
-            sigma = (cal.get('sigma_pre') if cal else base_volatility)
-            for i in range(1, event_start_idx):
-                epsilon = np.random.standard_t(df=(cal.get('df_pre') if cal else 6))  # 重尾
-                r = sigma * epsilon
-                prices[i] = prices[i-1] * (1 + r)
-                sigma = float(np.sqrt(lambda_ * sigma * sigma + (1 - lambda_) * r * r))
-        # 第2段：事件期（确定性下跌 + 随机波动）
-        if event_end_idx >= event_start_idx:
-            event_period_days = event_end_idx - event_start_idx + 1
-            event_volatility = base_volatility * event_vol
-            
-            # 计算每日drift以达到目标下跌
-            base_drift = (1.0 + event_decline) ** (1.0 / event_period_days) - 1.0 if event_period_days > 0 else 0.0
-            
-            # 事件期：EWMA波动 + 负偏重尾冲击（基于baseline校准）
-            lambda_ = (cal.get('lambda_event') if cal else 0.92)
-            sigma = (cal.get('sigma_event') if cal else base_volatility * event_vol)
-            event_start_price = prices[event_start_idx - 1] if event_start_idx > 0 else initial_price
-            for i in range(event_start_idx, event_end_idx):
-                # 负偏：按校准概率产生更大负向冲击
-                p_neg = cal.get('p_neg') if cal else 0.2
-                if np.random.rand() < p_neg:
-                    epsilon = np.random.standard_t(df=(cal.get('df_event') if cal else 5)) - 0.5
-                else:
-                    epsilon = np.random.standard_t(df=(cal.get('df_event') if cal else 6))
-                r = base_drift + sigma * 0.4 * epsilon
-                prices[i] = prices[i-1] * (1 + r)
-                sigma = float(np.sqrt(lambda_ * sigma * sigma + (1 - lambda_) * r * r))
-            
-            # 事件期最后一天：精确调整以达到目标下跌
-            target_event_end_price = event_start_price * (1 + event_decline)
-            prices[event_end_idx] = target_event_end_price
-        
-        # 第3段：事件后（EWMA波动 + 重尾分布）（基于baseline校准）
-        if event_end_idx < n_days - 1:
-            lambda_ = (cal.get('lambda_post') if cal else 0.94)
-            sigma = (cal.get('sigma_post') if cal else base_volatility)
-            for i in range(event_end_idx + 1, n_days):
-                epsilon = np.random.standard_t(df=(cal.get('df_post') if cal else 6))
-                r = sigma * epsilon
-                prices[i] = prices[i-1] * (1 + r)
-                sigma = float(np.sqrt(lambda_ * sigma * sigma + (1 - lambda_) * r * r))
-        
-        return prices
-    
-    def get_index_prices(self, index_id: str, start_date: str, end_date: str) -> pd.DataFrame:
-        """生成模拟的指数价格数据（支持事件窗口概念）"""
-        # 解析日期
-        start = pd.to_datetime(start_date)
-        end = pd.to_datetime(end_date)
-        dates = pd.date_range(start, end, freq='B')  # 交易日
-        
-        # 检查是否与已知事件窗口有交集（修复：判断交集而非完全包含）
-        event_decline = 0.0
-        event_vol = 1.0
-        matched_event_start = None
-        matched_event_end = None
-        
-        for event_id, params in self.event_params.items():
-            event_start = pd.to_datetime(params['period'][0])
-            event_end = pd.to_datetime(params['period'][1])
-            # 判断请求范围与事件期是否有交集
-            if not (end < event_start or start > event_end):
-                event_decline = params['expected_decline']
-                event_vol = params['volatility_multiplier']
-                matched_event_start = event_start
-                matched_event_end = event_end
-                logger.info(f"检测到事件窗口交集: {event_id}, decline={event_decline}, vol={event_vol}")
-                break
-        
-        # 生成模拟价格序列（确定性趋势 + 随机波动）
-        n_days = len(dates)
-        initial_price = 3000.0  # 沪深300典型水平
-        base_volatility = 0.015  # 1.5%日波动率
-        
-        if event_decline != 0.0 and matched_event_start and matched_event_end:
-            # 有事件期交集：分段生成（事件前 + 事件期 + 事件后）
-            prices = self._generate_prices_with_event_window(
-                dates=dates,
-                initial_price=initial_price,
-                event_start=matched_event_start,
-                event_end=matched_event_end,
-                event_decline=event_decline,
-                event_vol=event_vol,
-                base_volatility=base_volatility,
-                start_date=start_date,
-                end_date=end_date
-            )
-        else:
-            # 非事件期间：纯随机游走
-            daily_volatility = base_volatility
-            daily_returns = np.random.normal(0, daily_volatility, n_days)
-            prices = initial_price * np.cumprod(1 + daily_returns)
-        
-        # 生成成交量（与绝对收益相关）
-        daily_returns = np.insert(np.diff(prices) / prices[:-1], 0, 0.0)
-        base_volume = 100000000  # 1亿手
-        volumes = base_volume * (1 + 3.0 * np.clip(np.abs(daily_returns), 0, 0.2) + np.random.uniform(-0.1, 0.1, n_days))
-        volumes = np.clip(volumes, 0, None)
-        
-        df = pd.DataFrame({
-            'date': dates,
-            'close': prices,
-            'volume': volumes
-        })
-        
-        logger.debug(f"生成模拟数据: {index_id}, {len(df)}天, 总收益率={prices[-1]/prices[0]-1:.2%}")
-        return df
-    
-    def get_index_returns(self, index_id: str, start_date: str, end_date: str) -> pd.Series:
-        """获取指数收益率序列"""
-        df = self.get_index_prices(index_id, start_date, end_date)
-        returns = df['close'].pct_change().fillna(0)
-        returns.index = df['date']
-        return returns
-    
-    def get_stock_prices(self, symbol: str, start_date: str, end_date: str) -> pd.DataFrame:
-        """获取个股价格数据（模拟实现）"""
-        # 复用指数价格生成逻辑，但使用个股特定参数
-        return self.get_index_prices(symbol, start_date, end_date)
-    
-    def get_volatility_index(self, index_id: str, start_date: str, end_date: str) -> pd.Series:
-        """获取波动率指数（模拟实现）"""
-        # 生成模拟的波动率数据
-        start = pd.to_datetime(start_date)
-        end = pd.to_datetime(end_date)
-        dates = pd.date_range(start, end, freq='B')  # 交易日
-        
-        # 检查是否在已知事件窗口内
-        event_vol = 1.0
-        for event_id, params in self.event_params.items():
-            event_start = pd.to_datetime(params['period'][0])
-            event_end = pd.to_datetime(params['period'][1])
-            if start >= event_start and end <= event_end:
-                event_vol = params['volatility_multiplier']
-                break
-        
-        # 生成模拟波动率序列
-        n_days = len(dates)
-        base_volatility = 0.15  # 15% 基准波动率
-        volatility_values = base_volatility * event_vol * (1 + np.random.uniform(-0.3, 0.3, n_days))
-        volatility_values = np.clip(volatility_values, 0.05, 0.5)  # 限制在5%-50%范围内
-        
-        series = pd.Series(volatility_values, index=dates)
-        return series
-    
-    def validate_data_quality(self, data) -> Dict[str, Any]:
-        """
-        数据质量验证报告（重构：使用DataQualityChecker）
-        
-        Returns:
-            质量报告字典，与RealHistoricalDataProvider保持一致
-        """
-        # 使用实例化的质量检查器，并按新签名调用
-        checker = DataQualityChecker()
-        report = checker.check_quality(data, index_id='mock')
-        
-        # 兼容期望的字典键
-        total_rows = len(data)
-        missing_values = int(data.isna().sum().sum())
-        # 简单启发式：将包含“异常/零成交量/极值”的问题计为异常点
-        outliers_detected = sum(
-            1 for issue in (report.issues or [])
-            if ('异常' in issue) or ('零成交量' in issue) or ('极值' in issue)
-        )
-        
-        return {
-            'completeness_score': report.completeness,
-            'consistency_score': report.consistency,
-            'accuracy_score': report.reasonableness,
-            'outliers_detected': outliers_detected,
-            'total_rows': total_rows,
-            'missing_values': missing_values,
-        }
-    
-    def get_event_window_data(self, 
-                              index_id: str, 
-                              event_date: str,
-                              window_days: int = 30,
-                              baseline_days: int = 252) -> Dict[str, pd.DataFrame]:
-        """
-        获取事件窗口数据（兼容RealHistoricalDataProvider接口）
-        
-        Args:
-            index_id: 指数代码
-            event_date: 事件发生日期 'YYYY-MM-DD'
-            window_days: 事件前后窗口天数
-            baseline_days: 基准期天数
-        
-        Returns:
-            字典包含:
-                'event_window': 事件窗口数据
-                'baseline': 基准期数据
-        """
-        event_dt = pd.to_datetime(event_date)
-        
-        # 计算日期范围
-        baseline_start = event_dt - pd.Timedelta(days=baseline_days + window_days + 100)
-        baseline_end = event_dt - pd.Timedelta(days=1)
-        
-        event_start = event_dt - pd.Timedelta(days=window_days + 30)
-        event_end = event_dt + pd.Timedelta(days=window_days + 30)
-        
-        # 获取基准期数据
-        baseline_data = self.get_index_prices(
-            index_id, 
-            baseline_start.strftime('%Y-%m-%d'),
-            baseline_end.strftime('%Y-%m-%d')
-        )
-        
-        # 获取事件窗口数据（基于baseline校准生成）
-        r = baseline_data['close'].pct_change().dropna().values
-        if r.size > 5:
-            m = float(np.mean(r)); m2 = float(np.mean((r - m) ** 2)); m3 = float(np.mean((r - m) ** 3)); m4 = float(np.mean((r - m) ** 4))
-            skew = 0.0 if m2 == 0.0 else float(m3 / (m2 ** 1.5))
-            kurt = 3.0 if m2 == 0.0 else float(m4 / (m2 ** 2))
-            rsq = r ** 2
-            acf_sq = float(np.corrcoef(rsq[:-1], rsq[1:])[0, 1]) if rsq.size > 1 else 0.9
-        else:
-            skew = 0.0; kurt = 3.5; acf_sq = 0.9; m2 = (0.015 ** 2)
-        sigma_pre = float(np.sqrt(m2))
-        lambda_pre = max(0.85, min(acf_sq, 0.99))
-        lambda_event = max(0.85, min(lambda_pre * 0.97, 0.99))
-        lambda_post = lambda_pre
-        df_est = 6.0 if kurt <= 3.01 else max(4.5, min(50.0, 6.0 / (kurt - 3.0) + 4.0))
-        df_pre = df_est
-        df_event = max(4.5, min(50.0, df_est - 1.0))
-        df_post = df_pre
-        p_neg = min(0.7, 0.25 + 0.3 * min(abs(skew), 1.0)) if skew < 0 else max(0.05, 0.25 - 0.2 * min(skew, 1.0))
-        cal = {'sigma_pre': sigma_pre, 'sigma_event': sigma_pre * 1.0, 'sigma_post': sigma_pre,
-               'lambda_pre': lambda_pre, 'lambda_event': lambda_event, 'lambda_post': lambda_post,
-               'df_pre': df_pre, 'df_event': df_event, 'df_post': df_post, 'p_neg': p_neg}
-        
-        event_dates = pd.date_range(event_start.strftime('%Y-%m-%d'), event_end.strftime('%Y-%m-%d'), freq='B')
-        # 匹配事件参数（以事件日期为中心）
-        event_decline = -0.10; event_vol = 2.0; matched_period = None
-        for _, params in self.event_params.items():
-            es = pd.to_datetime(params['period'][0]); ee = pd.to_datetime(params['period'][1])
-            if event_dt >= es and event_dt <= ee:
-                event_decline = params['expected_decline']; event_vol = params['volatility_multiplier']; matched_period = (es, ee)
-                break
-        prices = self._generate_prices_with_event_window(
-            dates=event_dates,
-            initial_price=3000.0,
-            event_start=(matched_period[0] if matched_period else event_dates[0]),
-            event_end=(matched_period[1] if matched_period else event_dates[-1]),
-            event_decline=event_decline,
-            event_vol=event_vol,
-            base_volatility=sigma_pre,
-            start_date=event_start.strftime('%Y-%m-%d'),
-            end_date=event_end.strftime('%Y-%m-%d'),
-            cal=cal
-        )
-        n_days_event = len(event_dates)
-        daily_returns_event = np.insert(np.diff(prices) / prices[:-1], 0, 0.0)
-        base_volume = 100000000
-        volumes_event = base_volume * (1 + 3.0 * np.clip(np.abs(daily_returns_event), 0, 0.2) + np.random.uniform(-0.1, 0.1, n_days_event))
-        volumes_event = np.clip(volumes_event, 0, None)
-        event_data = pd.DataFrame({'date': event_dates, 'close': prices, 'volume': volumes_event})
-        
-        # 筛选出指定数量的交易日
-        baseline_filtered = baseline_data.tail(baseline_days)
-        
-        # 事件窗口：前后各window_days个交易日
-        event_filtered = event_data[
-            (event_data['date'] >= event_dt - pd.Timedelta(days=window_days)) &
-            (event_data['date'] <= event_dt + pd.Timedelta(days=window_days))
-        ]
-        
-        return {
-            'event_window': event_filtered,
-            'baseline': baseline_filtered
-        }
-
-# =============================================================================
-# 真实数据提供者（待实现）
-# =============================================================================
 
 class RealHistoricalDataProvider:
     """
@@ -547,6 +83,8 @@ class RealHistoricalDataProvider:
     def _initialize_adapters(self) -> Dict[str, Any]:
         """初始化数据源适配器"""
         adapters = {}
+        
+        # Mock适配器（从测试夹具加载）
         try:
             from core_bak_refactored.tests.fixtures.core.data.mock_historical_data_provider import MockHistoricalDataProvider
             self._mock = MockHistoricalDataProvider()
@@ -563,16 +101,18 @@ class RealHistoricalDataProvider:
         except Exception as e:
             logger.warning(f"Yahoo Finance适配器加载失败: {e}")
         
-        # JoinQuant适配器（stub实现，备用数据源）
+        # JoinQuant适配器（stub实现）
         try:
-            adapters[DataSource.JOINQUANT.value] = self._create_joinquant_stub()
+            from core_bak_refactored.core.data.providers.stubs import JoinQuantStub
+            adapters[DataSource.JOINQUANT.value] = JoinQuantStub()
             logger.info("JoinQuant适配器（stub）已加载")
         except Exception as e:
             logger.warning(f"JoinQuant适配器加载失败: {e}")
         
-        # Wind适配器（stub实现，备用数据源）
+        # Wind适配器（stub实现）
         try:
-            adapters[DataSource.WIND.value] = self._create_wind_stub()
+            from core_bak_refactored.core.data.providers.stubs import WindStub
+            adapters[DataSource.WIND.value] = WindStub()
             logger.info("Wind适配器（stub）已加载")
         except Exception as e:
             logger.warning(f"Wind适配器加载失败: {e}")
@@ -586,77 +126,13 @@ class RealHistoricalDataProvider:
                 logger.info("Tushare适配器已加载（实际API）")
             else:
                 # API不可用，使用stub
-                adapters[DataSource.TUSHARE.value] = self._create_tushare_stub()
+                from core_bak_refactored.core.data.providers.stubs import TushareStub
+                adapters[DataSource.TUSHARE.value] = TushareStub()
                 logger.info("Tushare适配器（stub）已加载（API未配置）")
         except Exception as e:
             logger.warning(f"Tushare适配器加载失败: {e}")
         
         return adapters
-    
-    def _create_joinquant_stub(self) -> Any:
-        """创建JoinQuant数据源stub（待实际API实现）"""
-        class JoinQuantStub:
-            """JoinQuant数据源stub - 专家第2轮5.1节：A股优先数据源"""
-            def __init__(self):
-                self.available = False  # TODO: 替换为实际API可用性检查
-                logger.info("JoinQuant stub初始化（待实际API集成）")
-            
-            def get_index_prices(self, index_id: str, start_date: str, end_date: str) -> pd.DataFrame:
-                # TODO: 实际实现调用JoinQuant API
-                # import jqdatasdk
-                # jqdatasdk.auth(username, password)
-                # data = jqdatasdk.get_price(index_id, start_date, end_date, fields=['close', 'volume'])
-                raise NotImplementedError("JoinQuant API未集成，请使用Yahoo或Mock")
-        
-        return JoinQuantStub()
-    
-    def _create_wind_stub(self) -> Any:
-        """创建Wind数据源stub（待实际API实现）"""
-        class WindStub:
-            """Wind数据源stub - 专家第2轮5.1节：港股优先数据源"""
-            def __init__(self):
-                self.available = False  # TODO: 替换为实际API可用性检查
-                logger.info("Wind stub初始化（待实际API集成）")
-            
-            def get_index_prices(self, index_id: str, start_date: str, end_date: str) -> pd.DataFrame:
-                # TODO: 实际实现调用Wind API
-                # from WindPy import w
-                # w.start()
-                # data = w.wsd(index_id, "close,volume", start_date, end_date)
-                raise NotImplementedError("Wind API未集成，请使用Yahoo或Mock")
-        
-        return WindStub()
-    
-    def _create_tushare_stub(self) -> Any:
-        """创建Tushare数据源stub（待实际API实现）"""
-        class TushareStub:
-            """Tushare数据源stub - A股/港股备用数据源"""
-            def __init__(self):
-                self.available = False  # TODO: 替换为实际API可用性检查
-                logger.info("Tushare stub初始化（待实际API集成）")
-            
-            def get_index_prices(self, index_id: str, start_date: str, end_date: str) -> pd.DataFrame:
-                # TODO: 实际实现调用Tushare API
-                # import tushare as ts
-                # ts.set_token('your_token')
-                # pro = ts.pro_api()
-                # 
-                # # A股指数
-                # if index_id.endswith('.SH') or index_id.endswith('.SZ'):
-                #     data = pro.index_daily(ts_code=index_id, start_date=start_date, end_date=end_date)
-                # # 港股指数（部分支持）
-                # elif index_id in ['HSI', 'HSCEI']:
-                #     # Tushare港股数据较少，可能需要回退
-                #     data = pro.hk_index_daily(ts_code=index_id, start_date=start_date, end_date=end_date)
-                # 
-                # return pd.DataFrame({
-                #     'date': pd.to_datetime(data['trade_date']),
-                #     'close': data['close'],
-                #     'volume': data['vol']
-                # })
-                raise NotImplementedError("Tushare API未集成，请使用Yahoo或Mock")
-        
-        return TushareStub()
     
     def get_index_prices(self, index_id: str, start_date: str, end_date: str) -> pd.DataFrame:
         """获取指数价格数据（含自动回退机制 + 区域化优先级 + 健康检查）"""
@@ -801,55 +277,41 @@ class RealHistoricalDataProvider:
             baseline_end.strftime('%Y-%m-%d')
         )
         
-        # 获取事件窗口数据（基于baseline校准生成）
-        r = baseline_data['close'].pct_change().dropna().values
-        if r.size > 5:
-            m = float(np.mean(r)); m2 = float(np.mean((r - m) ** 2)); m3 = float(np.mean((r - m) ** 3)); m4 = float(np.mean((r - m) ** 4))
-            skew = 0.0 if m2 == 0.0 else float(m3 / (m2 ** 1.5))
-            kurt = 3.0 if m2 == 0.0 else float(m4 / (m2 ** 2))
-            rsq = r ** 2
-            acf_sq = float(np.corrcoef(rsq[:-1], rsq[1:])[0, 1]) if rsq.size > 1 else 0.9
-        else:
-            skew = 0.0; kurt = 3.5; acf_sq = 0.9; m2 = (0.015 ** 2)
-        sigma_pre = float(np.sqrt(m2))
-        lambda_pre = max(0.85, min(acf_sq, 0.99))
-        lambda_event = max(0.85, min(lambda_pre * 0.97, 0.99))
-        lambda_post = lambda_pre
-        df_est = 6.0 if kurt <= 3.01 else max(4.5, min(50.0, 6.0 / (kurt - 3.0) + 4.0))
-        df_pre = df_est
-        df_event = max(4.5, min(50.0, df_est - 1.0))
-        df_post = df_pre
-        p_neg = min(0.7, 0.25 + 0.3 * min(abs(skew), 1.0)) if skew < 0 else max(0.05, 0.25 - 0.2 * min(skew, 1.0))
-        cal = {'sigma_pre': sigma_pre, 'sigma_event': sigma_pre * 1.0, 'sigma_post': sigma_pre,
-               'lambda_pre': lambda_pre, 'lambda_event': lambda_event, 'lambda_post': lambda_post,
-               'df_pre': df_pre, 'df_event': df_event, 'df_post': df_post, 'p_neg': p_neg}
-        
-        event_dates = pd.date_range(event_start.strftime('%Y-%m-%d'), event_end.strftime('%Y-%m-%d'), freq='B')
-        # 匹配事件参数（以事件日期为中心）
-        event_decline = -0.10; event_vol = 2.0; matched_period = None
-        for _, params in self.event_params.items():
-            es = pd.to_datetime(params['period'][0]); ee = pd.to_datetime(params['period'][1])
-            if event_dt >= es and event_dt <= ee:
-                event_decline = params['expected_decline']; event_vol = params['volatility_multiplier']; matched_period = (es, ee)
-                break
-        prices = self._generate_prices_with_event_window(
-            dates=event_dates,
-            initial_price=3000.0,
-            event_start=(matched_period[0] if matched_period else event_dates[0]),
-            event_end=(matched_period[1] if matched_period else event_dates[-1]),
-            event_decline=event_decline,
-            event_vol=event_vol,
-            base_volatility=sigma_pre,
-            start_date=event_start.strftime('%Y-%m-%d'),
-            end_date=event_end.strftime('%Y-%m-%d'),
-            cal=cal
-        )
-        n_days_event = len(event_dates)
-        daily_returns_event = np.insert(np.diff(prices) / prices[:-1], 0, 0.0)
-        base_volume = 100000000
-        volumes_event = base_volume * (1 + 3.0 * np.clip(np.abs(daily_returns_event), 0, 0.2) + np.random.uniform(-0.1, 0.1, n_days_event))
-        volumes_event = np.clip(volumes_event, 0, None)
-        event_data = pd.DataFrame({'date': event_dates, 'close': prices, 'volume': volumes_event})
+        # 获取事件窗口数据（委托给数据源适配器）
+        try:
+            # 尝试从主数据源获取
+            event_data = self.get_index_prices(
+                index_id,
+                event_start.strftime('%Y-%m-%d'),
+                event_end.strftime('%Y-%m-%d')
+            )
+            
+            if event_data.empty:
+                logger.warning(f"事件窗口数据为空，回退到Mock生成")
+                # 回退到Mock数据提供者（如果可用）
+                if self._mock is not None:
+                    event_data = self._mock.get_event_window_data(
+                        index_id=index_id,
+                        event_date=event_date,
+                        event_type=event_type,
+                        window_days=final_window_days,
+                        baseline_days=final_baseline_days
+                    )['event_window']
+                else:
+                    raise ValueError("无可用数据源")
+        except Exception as e:
+            logger.error(f"获取事件窗口数据失败: {e}")
+            # 最后回退到Mock
+            if self._mock is not None:
+                event_data = self._mock.get_event_window_data(
+                    index_id=index_id,
+                    event_date=event_date,
+                    event_type=event_type,
+                    window_days=final_window_days,
+                    baseline_days=final_baseline_days
+                )['event_window']
+            else:
+                raise
         
         # 筛选出指定数量的交易日
         baseline_filtered = baseline_data.tail(baseline_days)

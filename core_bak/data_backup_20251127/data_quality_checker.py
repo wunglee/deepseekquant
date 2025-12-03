@@ -18,7 +18,7 @@ from typing import Dict, Any, Optional, List
 from dataclasses import dataclass, field
 from datetime import datetime
 import logging
-from core_bak_refactored.core.share.market_enums import MarketCode
+from core_bak_refactored.core.share.market.market_enums import MarketCode
 
 logger = logging.getLogger('DeepSeekQuant.DataQuality')
 
