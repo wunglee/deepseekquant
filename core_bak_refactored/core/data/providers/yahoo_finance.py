@@ -151,14 +151,7 @@ class YahooFinanceDataProvider:
             
         except Exception as e:
             logger.warning(f"Yahoo Finance failed for {index_id}: {e}")
-            
-            if self.fallback:
-                logger.info(f"Falling back to Mock data for {index_id}")
-                from core_bak_refactored.tests.fixtures.core.data.mock_historical_data_provider import MockHistoricalDataProvider
-                mock_provider = MockHistoricalDataProvider()
-                return mock_provider.get_index_prices(index_id, start_date, end_date)
-            else:
-                raise ValueError(f"Failed to fetch data for {index_id}: {e}")
+            raise ValueError(f"Failed to fetch data for {index_id}: {e}")
     
     def get_index_returns(self, index_id: str, start_date: Union[str, datetime], end_date: Union[str, datetime]) -> pd.Series:
         """
@@ -225,14 +218,7 @@ class YahooFinanceDataProvider:
             
         except Exception as e:
             logger.warning(f"Yahoo Finance failed for {symbol}: {e}")
-            
-            if self.fallback:
-                logger.info(f"Falling back to Mock data for {symbol}")
-                from core_bak_refactored.tests.fixtures.core.data.mock_historical_data_provider import MockHistoricalDataProvider
-                mock_provider = MockHistoricalDataProvider()
-                return mock_provider.get_index_prices(symbol, start_date, end_date)
-            else:
-                raise ValueError(f"Failed to fetch data for {symbol}: {e}")
+            raise ValueError(f"Failed to fetch data for {symbol}: {e}")
     
     def get_volatility_index(self, index_id: str, start_date: Union[str, datetime], end_date: Union[str, datetime]) -> pd.Series:
         """
@@ -281,15 +267,7 @@ class YahooFinanceDataProvider:
             
         except Exception as e:
             logger.warning(f"Failed to fetch volatility index {index_id}: {e}")
-            
-            if self.fallback:
-                logger.info(f"Falling back to Mock data for {index_id}")
-                from core_bak_refactored.tests.fixtures.core.data.mock_historical_data_provider import MockHistoricalDataProvider
-                mock_provider = MockHistoricalDataProvider()
-                # 返回模拟的波动率数据
-                return mock_provider.get_index_returns(index_id, start_date, end_date)
-            else:
-                raise ValueError(f"Failed to fetch volatility data for {index_id}: {e}")
+            raise ValueError(f"Failed to fetch volatility data for {index_id}: {e}")
     
     def _map_index_to_yahoo(self, index_id: str) -> str:
         """

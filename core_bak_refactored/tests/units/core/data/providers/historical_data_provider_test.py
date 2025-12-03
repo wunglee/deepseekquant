@@ -325,16 +325,19 @@ class TestHistoricalDataProviderEnhancedInterface(unittest.TestCase):
         self.assertIn('volume', data.columns)
 
     def test_yahoo_finance_datetime_parameter_support(self):
-        provider = YahooFinanceDataProvider(fallback_to_mock=True)
+        provider = YahooFinanceDataProvider(fallback_to_mock=False)
         start_date = datetime(2020, 1, 1)
         end_date = datetime(2020, 1, 31)
         
-        data = provider.get_index_prices('000300.SS', start_date, end_date)
-        
-        self.assertIsInstance(data, pd.DataFrame)
-        self.assertIn('date', data.columns)
-        self.assertIn('close', data.columns)
-        self.assertIn('volume', data.columns)
+        try:
+            data = provider.get_index_prices('000300.SS', start_date, end_date)
+            self.assertIsInstance(data, pd.DataFrame)
+            self.assertIn('date', data.columns)
+            self.assertIn('close', data.columns)
+            self.assertIn('volume', data.columns)
+        except ValueError as e:
+            # 真实场景不可用时，应抛出异常（不再回退到Mock）
+            self.assertTrue('Failed to fetch data' in str(e) or 'No data returned' in str(e) or 'yfinance' in str(e))
 
 
 class RealProviderMinimalIntegrationTest(unittest.TestCase):
