@@ -40,24 +40,26 @@ class DataProviderFactoryTest(unittest.TestCase):
     """DataProviderFactory 测试"""
     
     def setUp(self):
-        """每个测试前重置全局工厂"""
+        """每个测试前重置全局工厂并注册Mock provider"""
         reset_global_factory()
+        # 在测试中手动注册Mock provider
+        from core_bak_refactored.tests.fixtures.core.data.mock_historical_data_provider import MockHistoricalDataProvider
+        self.factory = DataProviderFactory()
+        self.factory.register('mock', MockHistoricalDataProvider)
     
     def test_factory_creates_builtin_providers(self):
         """测试工厂能创建所有内置providers"""
-        factory = DataProviderFactory()
         
-        # 验证内置providers已注册
-        providers = factory.list_providers()
+        # 验证内置providers已注册（不包拮mock，mock已在setUp中手动注册）
+        providers = self.factory.list_providers()
         self.assertIn('yahoo', providers)
         self.assertIn('tushare', providers)
-        self.assertIn('mock', providers)
+        self.assertIn('mock', providers)  # 在setUp中注册
         self.assertIn('real', providers)
     
     def test_create_yahoo_provider(self):
         """测试创建Yahoo provider"""
-        factory = DataProviderFactory()
-        provider = factory.create('yahoo', fallback_to_mock=True)
+        provider = self.factory.create('yahoo', fallback_to_mock=False)
         
         # 验证provider有正确的方法
         self.assertTrue(hasattr(provider, 'get_index_prices'))
@@ -65,8 +67,7 @@ class DataProviderFactoryTest(unittest.TestCase):
     
     def test_create_mock_provider(self):
         """测试创建Mock provider"""
-        factory = DataProviderFactory()
-        provider = factory.create('mock')
+        provider = self.factory.create('mock')
         
         # 获取数据验证
         data = provider.get_index_prices('000300.SH', '2020-01-01', '2020-01-10')
@@ -76,17 +77,16 @@ class DataProviderFactoryTest(unittest.TestCase):
     
     def test_register_custom_provider(self):
         """测试注册自定义provider（依赖注入）"""
-        factory = DataProviderFactory()
         
         # 注册自定义provider
-        factory.register('custom', CustomMockProvider)
+        self.factory.register('custom', CustomMockProvider)
         
         # 验证已注册
-        self.assertTrue(factory.is_registered('custom'))
-        self.assertIn('custom', factory.list_providers())
+        self.assertTrue(self.factory.is_registered('custom'))
+        self.assertIn('custom', self.factory.list_providers())
         
         # 创建并使用
-        provider = factory.create('custom', custom_value=200)
+        provider = self.factory.create('custom', custom_value=200)
         data = provider.get_index_prices('TEST', '2020-01-01', '2020-01-05')
         
         # 验证使用了自定义值
@@ -94,10 +94,9 @@ class DataProviderFactoryTest(unittest.TestCase):
     
     def test_create_unknown_provider_raises_error(self):
         """测试创建未知provider抛出错误"""
-        factory = DataProviderFactory()
         
         with self.assertRaises(ValueError) as ctx:
-            factory.create('unknown_provider')
+            self.factory.create('unknown_provider')
         
         # 验证错误信息包含可用providers
         error_msg = str(ctx.exception)
@@ -131,24 +130,22 @@ class DataProviderFactoryTest(unittest.TestCase):
     
     def test_unregister_provider(self):
         """测试移除provider"""
-        factory = DataProviderFactory()
-        factory.register('temp', CustomMockProvider)
+        self.factory.register('temp', CustomMockProvider)
         
-        self.assertTrue(factory.is_registered('temp'))
+        self.assertTrue(self.factory.is_registered('temp'))
         
-        factory.unregister('temp')
+        self.factory.unregister('temp')
         
-        self.assertFalse(factory.is_registered('temp'))
+        self.assertFalse(self.factory.is_registered('temp'))
     
     def test_override_builtin_provider(self):
         """测试覆盖内置provider"""
-        factory = DataProviderFactory()
         
         # 覆盖mock provider
-        factory.register('mock', CustomMockProvider)
+        self.factory.register('mock', CustomMockProvider)
         
         # 创建应该使用自定义实现
-        provider = factory.create('mock', custom_value=300)
+        provider = self.factory.create('mock', custom_value=300)
         data = provider.get_index_prices('TEST', '2020-01-01', '2020-01-05')
         
         # 验证使用了自定义值

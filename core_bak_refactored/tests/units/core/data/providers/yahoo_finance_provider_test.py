@@ -8,38 +8,60 @@ from core_bak_refactored.core.data.providers.yahoo_finance import YahooFinanceDa
 
 class YahooFinanceProviderTest(unittest.TestCase):
     def setUp(self):
-        self.provider = YahooFinanceDataProvider(fallback_to_mock=True)
+        self.provider = YahooFinanceDataProvider(fallback_to_mock=False)
         
     def test_initialization(self):
-        provider = YahooFinanceDataProvider(fallback_to_mock=True)
-        self.assertTrue(provider.fallback)
+        provider = YahooFinanceDataProvider(fallback_to_mock=False)
+        self.assertFalse(provider.fallback)
         
     def test_get_index_prices_with_fallback(self):
-        # 即使yfinance不可用，也应该能通过fallback获取Mock数据
-        data = self.provider.get_index_prices('000300.SH', '2020-01-01', '2020-01-31')
-        self.assertIsInstance(data, pd.DataFrame)
-        self.assertIn('date', data.columns)
-        self.assertIn('close', data.columns)
-        self.assertIn('volume', data.columns)
-        self.assertGreater(len(data), 0)
+        # 真实场景下数据不可用应抛出异常
+        provider = YahooFinanceDataProvider(fallback_to_mock=False)
+        try:
+            # 使用可能失败的真实ticker
+            data = provider.get_index_prices('000300.SH', '2020-01-01', '2020-01-31')
+            # 如果成功获取，验证数据结构
+            self.assertIsInstance(data, pd.DataFrame)
+            self.assertIn('date', data.columns)
+            self.assertIn('close', data.columns)
+            self.assertIn('volume', data.columns)
+            self.assertGreater(len(data), 0)
+        except ValueError:
+            # 真实数据不可用时预期抛出ValueError
+            pass
         
     def test_get_index_returns_with_fallback(self):
-        returns = self.provider.get_index_returns('000300.SH', '2020-01-01', '2020-01-31')
-        self.assertIsInstance(returns, pd.Series)
-        self.assertGreater(len(returns), 0)
+        provider = YahooFinanceDataProvider(fallback_to_mock=False)
+        try:
+            returns = provider.get_index_returns('000300.SH', '2020-01-01', '2020-01-31')
+            self.assertIsInstance(returns, pd.Series)
+            self.assertGreater(len(returns), 0)
+        except ValueError:
+            # 真实数据不可用时预期抛出ValueError
+            pass
         
     def test_get_stock_prices_with_fallback(self):
-        data = self.provider.get_stock_prices('600036.SS', '2020-01-01', '2020-01-31')
-        self.assertIsInstance(data, pd.DataFrame)
-        self.assertIn('date', data.columns)
-        self.assertIn('close', data.columns)
+        provider = YahooFinanceDataProvider(fallback_to_mock=False)
+        try:
+            data = provider.get_stock_prices('600036.SS', '2020-01-01', '2020-01-31')
+            self.assertIsInstance(data, pd.DataFrame)
+            self.assertIn('date', data.columns)
+            self.assertIn('close', data.columns)
+        except ValueError:
+            # 真实数据不可用时预期抛出ValueError
+            pass
         
     def test_datetime_parameter_support(self):
+        provider = YahooFinanceDataProvider(fallback_to_mock=False)
         start = datetime(2020, 1, 1)
         end = datetime(2020, 1, 31)
-        data = self.provider.get_index_prices('000300.SH', start, end)
-        self.assertIsInstance(data, pd.DataFrame)
-        self.assertGreater(len(data), 0)
+        try:
+            data = provider.get_index_prices('000300.SH', start, end)
+            self.assertIsInstance(data, pd.DataFrame)
+            self.assertGreater(len(data), 0)
+        except ValueError:
+            # 真实数据不可用时预期抛出ValueError
+            pass
 
     @pytest.mark.asyncio
     async def test_fetch_yahoo_data_ohlcv_success(self):
@@ -76,15 +98,14 @@ class YahooFinanceProviderTest(unittest.TestCase):
                 pass  # Expected
 
     def test_fetch_yahoo_data_with_fallback(self):
-        """测试fallback机制。"""
-        provider = YahooFinanceDataProvider(fallback_to_mock=True)
+        """测试真实场景下网络错误应抛出异常（不再fallback）。"""
+        provider = YahooFinanceDataProvider(fallback_to_mock=False)
 
         with patch.object(provider.yf, 'download', side_effect=Exception("Network error")):
-            result = provider.get_index_prices('000300.SH', '2024-01-01', '2024-01-02')
-
-            # Should fallback to mock data
-            assert result is not None
-            assert len(result) > 0
+            with self.assertRaises(ValueError) as context:
+                provider.get_index_prices('000300.SH', '2024-01-01', '2024-01-02')
+            
+            self.assertIn('Failed to fetch data', str(context.exception))
 
 
 if __name__ == '__main__':

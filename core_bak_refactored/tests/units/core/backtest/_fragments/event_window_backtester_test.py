@@ -18,6 +18,7 @@ from core_bak_refactored.core.data.providers.yahoo_finance import YahooFinanceDa
 from core_bak_refactored.core.portfolio._fragments.synthetic_portfolio_builder import SyntheticPortfolioBuilder
 from core_bak_refactored.core.risk.backtest_framework import create_data_provider
 from core_bak_refactored.core.risk.stress_testing import StressTester
+from core_bak_refactored.core.data.providers.factory import get_global_factory, reset_global_factory
 
 
 class EventWindowBacktesterEnhancedInterfaceTest(unittest.TestCase):
@@ -75,7 +76,7 @@ class EventWindowBacktesterEnhancedInterfaceTest(unittest.TestCase):
         self.assertTrue(callable(self.mock_provider.validate_data_quality))
 
     def test_yahoo_finance_provider_enhanced_features(self):
-        provider = YahooFinanceDataProvider(fallback_to_mock=True)
+        provider = YahooFinanceDataProvider(fallback_to_mock=False)
         
         self.assertTrue(hasattr(provider, 'get_stock_prices'))
         self.assertTrue(hasattr(provider, 'get_volatility_index'))
@@ -131,6 +132,11 @@ class EventWindowBacktesterRealDataIntegrationTest(unittest.TestCase):
     """真实数据集成测试（3个核心事件）"""
 
     def setUp(self):
+        # 注册Mock provider
+        reset_global_factory()
+        factory = get_global_factory()
+        factory.register('mock', MockHistoricalDataProvider)
+        
         provider = create_data_provider('auto')
         self.backtester = EventWindowBacktester(data_provider=provider)
         self.portfolio = SyntheticPortfolioBuilder.build_csi300_equal_weight()
@@ -167,6 +173,11 @@ class EventWindowBacktesterFiveEventsIntegrationTest(unittest.TestCase):
     """5事件真实数据集成测试"""
 
     def setUp(self):
+        # 注册Mock provider
+        reset_global_factory()
+        factory = get_global_factory()
+        factory.register('mock', MockHistoricalDataProvider)
+        
         provider = create_data_provider('auto')
         self.backtester = EventWindowBacktester(data_provider=provider)
         self.portfolio = SyntheticPortfolioBuilder.build_csi300_equal_weight()

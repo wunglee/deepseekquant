@@ -52,15 +52,15 @@ class DataProviderFactory:
             # 延迟导入，避免循环依赖
             from core_bak_refactored.core.data.providers.yahoo_finance import YahooFinanceDataProvider
             from core_bak_refactored.core.data.providers.tushare import TushareDataProvider
-            from core_bak_refactored.core.data.providers.historical_data_provider import (
-                MockHistoricalDataProvider,
-                RealHistoricalDataProvider
-            )
+            from core_bak_refactored.core.data.providers.historical_data_provider import RealHistoricalDataProvider
             
             self._providers['yahoo'] = YahooFinanceDataProvider
             self._providers['tushare'] = TushareDataProvider
-            self._providers['mock'] = MockHistoricalDataProvider
             self._providers['real'] = RealHistoricalDataProvider
+            
+            # Mock数据提供者仅在测试中使用，不在生产工厂中注册
+            # 如需在测试中使用，请手动注册：
+            # factory.register('mock', MockHistoricalDataProvider)
             
             logger.info(f"已注册 {len(self._providers)} 个内置数据提供者: {list(self._providers.keys())}")
             
