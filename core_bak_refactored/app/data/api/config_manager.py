@@ -37,6 +37,13 @@ class ConfigManager:
         Returns:
             当前系统配置字典
         """
+        # 从配置管理器加载API服务配置
+        from core_bak_refactored.core.share.config_manager import ConfigManager
+        config_manager = ConfigManager()
+        
+        # 获取API服务配置，如果不存在则使用默认配置
+        api_config = config_manager.get('api_service', {})
+        
         # 处理Mock对象序列化问题
         try:
             # 尝试获取真实的配置，如果是Mock则使用默认值
@@ -51,14 +58,35 @@ class ConfigManager:
         except:
             alerting_config = {}
         
+        # 合并默认配置和用户配置
+        default_api_settings = {
+            'host': '0.0.0.0',
+            'port': 8081,
+            'timeout': 30,
+            'max_page_size': 100,
+            'default_page_size': 50,
+            'enable_cors': True,
+            'rate_limit': {
+                'enabled': False,
+                'requests_per_minute': 100
+            }
+        }
+        
+        # 深度合并API设置
+        def deep_merge(default, override):
+            result = default.copy()
+            for key, value in override.items():
+                if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+                    result[key] = deep_merge(result[key], value)
+                else:
+                    result[key] = value
+            return result
+        
+        merged_api_settings = deep_merge(default_api_settings, api_config)
+        
         return {
             'monitoring': monitoring_config,
-            'api_settings': {
-                'host': '0.0.0.0',
-                'port': 8080,
-                'timeout': 30,
-                'max_requests_per_minute': 1000
-            },
+            'api_settings': merged_api_settings,
             'alerting': alerting_config,
             'performance': {
                 'monitoring_interval': 300,

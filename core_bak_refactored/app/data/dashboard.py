@@ -84,9 +84,21 @@ class DataQualityDashboard:
 
     def _load_dashboard_config(self) -> Dict[str, Any]:
         """加载仪表板配置"""
-        return {
+        # 从配置管理器加载配置
+        from core_bak_refactored.core.share.config_manager import ConfigManager
+        config_manager = ConfigManager()
+        
+        # 获取仪表板配置，如果不存在则使用默认配置
+        dashboard_config = config_manager.get('dashboard', {})
+        
+        # 合并默认配置和用户配置
+        default_config = {
+            'host': '0.0.0.0',
+            'port': 8080,
             'refresh_interval': 300,
             'max_data_points': 1000,
+            'enable_websocket': True,
+            'websocket_port': 8090,
             'chart_config': {
                 'quality_score_chart': {
                     'type': 'line',
@@ -147,10 +159,28 @@ class DataQualityDashboard:
                 'auto_refresh_alerts': True
             }
         }
+        
+        # 深度合并配置
+        def deep_merge(default, override):
+            result = default.copy()
+            for key, value in override.items():
+                if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+                    result[key] = deep_merge(result[key], value)
+                else:
+                    result[key] = value
+            return result
+        
+        return deep_merge(default_config, dashboard_config)
 
-    def start_dashboard(self, host: str = '0.0.0.0', port: int = 8080):
+    def start_dashboard(self, host: str = None, port: int = None):
         """启动仪表板服务器"""
         try:
+            # 使用配置中的主机和端口，如果未提供则使用默认值
+            if host is None:
+                host = self.dashboard_config.get('host', '0.0.0.0')
+            if port is None:
+                port = self.dashboard_config.get('port', 8080)
+                
             logger.info(f"启动数据质量仪表板: http://{host}:{port}")
 
             # 创建Flask应用

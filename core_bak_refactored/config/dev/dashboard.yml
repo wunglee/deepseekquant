@@ -1,0 +1,23 @@
+# 仪表板配置
+host: 0.0.0.0
+port: 8080
+refresh_interval: 300
+max_data_points: 1000
+enable_websocket: true
+websocket_port: 8090
+
+chart_config:
+  quality_score_chart:
+    type: line
+    title: "数据质量评分趋势"
+    color: "#2196F3"
+  anomaly_chart:
+    type: bar
+    title: "异常检测统计"
+    color: "#FF5252"
+
+alert_settings:
+  show_critical_alerts: true
+  show_warnings: true
+  alert_history_length: 50
+  auto_refresh_alerts: true

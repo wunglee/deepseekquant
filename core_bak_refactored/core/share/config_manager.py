@@ -95,6 +95,8 @@ class ConfigManager:
             system_path = os.path.join(env_dir if os.path.exists(env_dir) else base_dir, 'system.yml')
             event_window_path = os.path.join(env_dir if os.path.exists(env_dir) else base_dir, 'event_window.yml')
             regional_data_source_path = os.path.join(env_dir if os.path.exists(env_dir) else base_dir, 'regional_data_source.yml')
+            dashboard_path = os.path.join(env_dir if os.path.exists(env_dir) else base_dir, 'dashboard.yml')
+            api_service_path = os.path.join(env_dir if os.path.exists(env_dir) else base_dir, 'api_service.yml')
             loaded = {}
             for path, key in [
                 (monitoring_path, 'monitoring'),
@@ -103,6 +105,8 @@ class ConfigManager:
                 (system_path, 'system'),
                 (event_window_path, 'event_window'),
                 (regional_data_source_path, 'regional_data_source'),
+                (dashboard_path, 'dashboard'),
+                (api_service_path, 'api_service'),
             ]:
                 if os.path.exists(path):
                     with open(path, 'r', encoding='utf-8') as f:
