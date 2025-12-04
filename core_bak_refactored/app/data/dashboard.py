@@ -31,7 +31,6 @@ from flask_cors import CORS
 # 导入Dashboard组件
 from core_bak_refactored.app.data.dashboard_components.aggregator import DashboardDataAggregator
 from core_bak_refactored.app.data.dashboard_components.websocket_handler import WebSocketHandler
-from core_bak_refactored.app.data.dashboard_components.renderer import DashboardRenderer
 
 # 导入应用层监控服务（替代废弃的DataQualityMonitor）
 if TYPE_CHECKING:
@@ -80,7 +79,6 @@ class DataQualityDashboard:
         # 初始化组件
         self.data_aggregator = DashboardDataAggregator(quality_monitor)
         self.websocket_handler = WebSocketHandler(quality_monitor)
-        self.renderer = DashboardRenderer(self.dashboard_config)
 
     def _load_dashboard_config(self) -> Dict[str, Any]:
         """加载仪表板配置"""
@@ -190,7 +188,8 @@ class DataQualityDashboard:
             # 设置路由
             @app.route('/')
             def index():
-                return self.renderer.render_dashboard()
+                # TODO: 实现HTML渲染逻辑，当前返回简单响应
+                return '<html><body><h1>DeepSeekQuant Dashboard</h1><p>Dashboard service is running.</p></body></html>'
 
             @app.route('/api/quality-data')
             def get_quality_data():

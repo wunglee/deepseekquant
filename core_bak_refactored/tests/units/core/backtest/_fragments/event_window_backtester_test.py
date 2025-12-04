@@ -137,7 +137,7 @@ class EventWindowBacktesterRealDataIntegrationTest(unittest.TestCase):
         factory = get_global_factory()
         factory.register('mock', MockHistoricalDataProvider)
         
-        provider = create_data_provider('auto')
+        provider = create_data_provider('mock')
         self.backtester = EventWindowBacktester(data_provider=provider)
         self.portfolio = SyntheticPortfolioBuilder.build_csi300_equal_weight()
         self.stress_tester = StressTester(config={})
@@ -178,7 +178,7 @@ class EventWindowBacktesterFiveEventsIntegrationTest(unittest.TestCase):
         factory = get_global_factory()
         factory.register('mock', MockHistoricalDataProvider)
         
-        provider = create_data_provider('auto')
+        provider = create_data_provider('mock')
         self.backtester = EventWindowBacktester(data_provider=provider)
         self.portfolio = SyntheticPortfolioBuilder.build_csi300_equal_weight()
         

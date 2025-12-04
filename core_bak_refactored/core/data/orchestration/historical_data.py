@@ -44,30 +44,23 @@ async def get_historical_data(
     
     Returns:
         包含市场数据的字典，键为符号，值为数据列表
-    
-    Example:
-        >>> data = await get_historical_data(
-        ...     fetcher, ['AAPL', 'MSFT'], '1y', '1d', 'ohlcv', True
-        ... )
-        >>> # {'AAPL': [...], 'MSFT': [...]}
     """
     start_time = time.time()
     results = {}
     failed_symbols = []
     
     try:
-        # 1. 生成缓存键（使用 fetcher 的 cache_manager）
+        # 1. 生成缓存键（要求 fetcher 必须具备 cache_manager）
         cache_manager = getattr(fetcher, 'cache_manager', None)
-        if cache_manager:
-            cache_key = cache_manager.generate_key(symbols, period, interval, data_type, adjustments)
-        else:
-            # 向后兼容：如果 fetcher 没有 cache_manager，使用旧的 generate_key 函数
-            from core_bak_refactored.infrastructure.cache.cache_manager import CacheManager
-            temp_manager = CacheManager({'cache_enabled': False})
-            cache_key = temp_manager.generate_key(symbols, period, interval, data_type, adjustments)
+        if not cache_manager:
+            raise RuntimeError(
+                "fetcher 缺少 cache_manager，请使用 DataFetcherOrchestrator 或为 fetcher 注入 CacheManager。"
+                "\n提示：DataFetcherOrchestrator 已内置 cache_manager 支持。"
+            )
+        cache_key = cache_manager.generate_key(symbols, period, interval, data_type, adjustments)
         
         # 2. 检查缓存
-        from core_bak_refactored.core.data.cache.store import get_cached_data
+        from core_bak_refactored.infrastructure.cache.store import get_cached_data
         cached_data = await get_cached_data(fetcher, cache_key)
         
         if cached_data and fetcher.cache_enabled:
@@ -115,7 +108,7 @@ async def get_historical_data(
         
         # 6. 缓存结果
         if results and fetcher.cache_enabled:
-            from core_bak_refactored.core.data.cache.store import cache_data
+            from core_bak_refactored.infrastructure.cache.store import cache_data
             await cache_data(fetcher, cache_key, results)
         
         # 7. 更新性能指标

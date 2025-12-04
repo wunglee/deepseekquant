@@ -81,58 +81,6 @@ def market_data_to_dataframe(data: List, symbol_filter: Optional[str] = None) ->
     return df
 
 
-def dataframe_to_market_data(df: pd.DataFrame, 
-                             market_data_class,
-                             symbol: str = 'unknown',
-                             data_source: str = 'converted') -> List:
-    """将DataFrame转换为MarketData列表（反向转换，如需要）
-    
-    Args:
-        df: 数据DataFrame
-        market_data_class: MarketData类（需传入，避免循环依赖）
-        symbol: 默认标的代码
-        data_source: 数据源标识
-    
-    Returns:
-        MarketData对象列表
-        
-    注意:
-        - 此方法较少使用，主要用于兼容旧接口
-        - 推荐直接使用DataFrame进行质量检查
-    """
-    if df.empty:
-        return []
-    
-    data_list = []
-    
-    for _, row in df.iterrows():
-        market_data = market_data_class(
-            symbol=row.get('symbol', symbol),
-            timestamp=row.get('date', datetime.now()),
-            open=float(row.get('open', 0.0)) if pd.notna(row.get('open')) else 0.0,
-            high=float(row.get('high', 0.0)) if pd.notna(row.get('high')) else 0.0,
-            low=float(row.get('low', 0.0)) if pd.notna(row.get('low')) else 0.0,
-            close=float(row.get('close', 0.0)) if pd.notna(row.get('close')) else 0.0,
-            volume=float(row.get('volume', 0.0)) if pd.notna(row.get('volume')) else 0.0,
-            metadata={
-                'data_source': data_source,
-                'converted_from': 'dataframe'
-            }
-        )
-        
-        # 可选字段
-        if 'adj_close' in row and pd.notna(row['adj_close']):
-            market_data.adj_close = float(row['adj_close'])
-        if 'turnover' in row and pd.notna(row['turnover']):
-            market_data.turnover = float(row['turnover'])
-        if 'vwap' in row and pd.notna(row['vwap']):
-            market_data.vwap = float(row['vwap'])
-        
-        data_list.append(market_data)
-    
-    logger.debug(f"DataFrame -> MarketData: {len(df)}行 -> {len(data_list)}条")
-    
-    return data_list
 
 
 def aggregate_multi_symbol_data(data: List, 

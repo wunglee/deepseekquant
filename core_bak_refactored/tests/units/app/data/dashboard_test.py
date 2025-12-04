@@ -63,10 +63,9 @@ class TestDataQualityDashboardFlaskApp:
         
         dashboard = DataQualityDashboard(quality_monitor=mock_monitor)
         
-        # 验证组件已初始化
+        # 验证组件已初始化（renderer 已删除，不再验证）
         assert dashboard.data_aggregator is not None
         assert dashboard.websocket_handler is not None
-        assert dashboard.renderer is not None
     
     def test_flask_routes_registered(self):
         """测试start_dashboard会创建Flask应用并注册路由（不实际启动）"""
