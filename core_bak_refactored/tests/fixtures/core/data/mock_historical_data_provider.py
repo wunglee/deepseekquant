@@ -3,7 +3,11 @@ import pandas as pd
 from typing import Dict, Any
 import logging
 
-from core_bak_refactored.core.share.config import HISTORICAL_EVENT_PARAMS
+from core_bak_refactored.core.share.config_manager import ConfigManager
+
+# 加载历史事件配置
+config_manager = ConfigManager()
+HISTORICAL_EVENT_PARAMS = config_manager.get('event_window.historical_events', {})
 
 logger = logging.getLogger('DeepSeekQuant.Tests.MockData')
 

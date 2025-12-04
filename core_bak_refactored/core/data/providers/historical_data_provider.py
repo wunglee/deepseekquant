@@ -20,9 +20,13 @@ import logging
 
 from core_bak_refactored.core.data.quality import DataQualityChecker
 from core_bak_refactored.core.share import MarketCode
-from core_bak_refactored.core.share.config import EVENT_WINDOW_CONFIGS
-from core_bak_refactored.core.share.config.data_source_configs import REGIONAL_DATA_SOURCE_PRIORITY
+from core_bak_refactored.core.share.config_manager import ConfigManager
 from core_bak_refactored.core.share.market.market_enums import DataSource
+
+# 加载配置
+config_manager = ConfigManager()
+EVENT_WINDOW_CONFIGS = config_manager.get('event_window', {})
+REGIONAL_DATA_SOURCE_PRIORITY = config_manager.get('regional_data_source', {})
 
 logger = logging.getLogger('DeepSeekQuant.DataProviders')
 

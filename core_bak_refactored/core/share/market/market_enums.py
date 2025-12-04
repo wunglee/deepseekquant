@@ -96,6 +96,7 @@ class DataSource(str, Enum):
 
 # 数据源区域优先级映射（基于专家answer.md第2轮5.1节）
 # 已迁移至 core_bak_refactored/config/regional_data_source.yml
-# 为了向后兼容，这里导入配置管理器并加载配置
-from core_bak_refactored.core.share.config.data_source_configs import REGIONAL_DATA_SOURCE_PRIORITY as CONFIG_REGIONAL_DATA_SOURCE_PRIORITY
-REGIONAL_DATA_SOURCE_PRIORITY = CONFIG_REGIONAL_DATA_SOURCE_PRIORITY
+# 直接从配置管理器加载
+from core_bak_refactored.core.share.config_manager import ConfigManager
+config_manager = ConfigManager()
+REGIONAL_DATA_SOURCE_PRIORITY = config_manager.get('regional_data_source', {})
