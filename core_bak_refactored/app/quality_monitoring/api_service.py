@@ -57,16 +57,16 @@ from flask_cors import CORS
 from flask_socketio import SocketIO, emit
 
 # 从组件导入
-from core_bak_refactored.app.data.api.controllers import DataQualityControllers
-from core_bak_refactored.app.data.api.health import HealthChecker
-from core_bak_refactored.app.data.api.system_metrics import MetricsCollector
-from core_bak_refactored.app.data.api.diagnostics import DiagnosticsRunner
+from core_bak_refactored.app.quality_monitoring.api.controllers import DataQualityControllers
+from core_bak_refactored.app.quality_monitoring.api.health import HealthChecker
+from core_bak_refactored.app.quality_monitoring.api.system_metrics import MetricsCollector
+from core_bak_refactored.app.quality_monitoring.api.diagnostics import DiagnosticsRunner
 from core_bak_refactored.core.share.config_manager import ConfigManager
-from core_bak_refactored.app.data.api.exporter import DataExporter
-from core_bak_refactored.app.data.api.system_status import SystemStatusManager
+from core_bak_refactored.app.quality_monitoring.api.exporter import DataExporter
+from core_bak_refactored.app.quality_monitoring.api.system_status import SystemStatusManager
 
 if TYPE_CHECKING:
-    from core_bak_refactored.app.data.monitoring_service import QualityMonitoringService
+    from core_bak_refactored.app.quality_monitoring.monitoring_service import QualityMonitoringService
 
 logger = logging.getLogger('DeepSeekQuant.App.APIService')
 
@@ -548,6 +548,91 @@ class DataQualityAPIService:
                     'message': str(e),
                     'error_code': 'TRIGGER_CHECK_FAILED'
                 }), 500
+
+        # ============================================================
+        # 数据提供者能力暴露（补充接口）
+        # ============================================================
+        @self.app.route('/api/v1/data/index-prices')
+        def get_index_prices_api():
+            """获取指数价格数据（直接来自当前数据提供者）"""
+            try:
+                index_id = request.args.get('index_id', type=str)
+                start_date = request.args.get('start_date', type=str)
+                end_date = request.args.get('end_date', type=str)
+                if not all([index_id, start_date, end_date]):
+                    return jsonify({'status': 'error', 'message': '缺少必要参数', 'error_code': 'MISSING_PARAMS'}), 400
+                provider = getattr(self.quality_monitor, 'data_provider', None)
+                if not provider or not hasattr(provider, 'get_index_prices'):
+                    return jsonify({'status': 'error', 'message': '数据提供者不可用', 'error_code': 'DATA_PROVIDER_UNAVAILABLE'}), 503
+                df = provider.get_index_prices(index_id, start_date, end_date)
+                data = df.to_dict(orient='records') if hasattr(df, 'to_dict') else []
+                return jsonify({'status': 'success', 'data': data, 'count': len(data), 'timestamp': datetime.now().isoformat()})
+            except Exception as e:
+                logger.error(f"获取指数价格失败: {e}")
+                return jsonify({'status': 'error', 'message': str(e), 'error_code': 'INDEX_PRICES_FETCH_FAILED'}), 500
+
+        @self.app.route('/api/v1/data/index-returns')
+        def get_index_returns_api():
+            """获取指数收益率序列（排除异常日）"""
+            try:
+                index_id = request.args.get('index_id', type=str)
+                start_date = request.args.get('start_date', type=str)
+                end_date = request.args.get('end_date', type=str)
+                if not all([index_id, start_date, end_date]):
+                    return jsonify({'status': 'error', 'message': '缺少必要参数', 'error_code': 'MISSING_PARAMS'}), 400
+                provider = getattr(self.quality_monitor, 'data_provider', None)
+                if not provider or not hasattr(provider, 'get_index_returns'):
+                    return jsonify({'status': 'error', 'message': '数据提供者不可用', 'error_code': 'DATA_PROVIDER_UNAVAILABLE'}), 503
+                series = provider.get_index_returns(index_id, start_date, end_date)
+                data = [{'date': str(idx), 'return': float(val)} for idx, val in (series.items() if hasattr(series, 'items') else [])]
+                return jsonify({'status': 'success', 'data': data, 'count': len(data), 'timestamp': datetime.now().isoformat()})
+            except Exception as e:
+                logger.error(f"获取指数收益率失败: {e}")
+                return jsonify({'status': 'error', 'message': str(e), 'error_code': 'INDEX_RETURNS_FETCH_FAILED'}), 500
+
+        @self.app.route('/api/v1/data/event-window')
+        def get_event_window_api():
+            """获取事件窗口数据（窗口+基准期）"""
+            try:
+                index_id = request.args.get('index_id', type=str)
+                event_date = request.args.get('event_date', type=str)
+                event_type = request.args.get('event_type', default='market_crash', type=str)
+                window_days = request.args.get('window_days', type=int)
+                baseline_days = request.args.get('baseline_days', type=int)
+                if not all([index_id, event_date]):
+                    return jsonify({'status': 'error', 'message': '缺少必要参数', 'error_code': 'MISSING_PARAMS'}), 400
+                provider = getattr(self.quality_monitor, 'data_provider', None)
+                if not provider or not hasattr(provider, 'get_event_window_data'):
+                    return jsonify({'status': 'error', 'message': '数据提供者不可用', 'error_code': 'DATA_PROVIDER_UNAVAILABLE'}), 503
+                result = provider.get_event_window_data(index_id, event_date, event_type, window_days, baseline_days)
+                # 仅返回统计信息与样本，避免过大payload
+                event_records = result.get('event_window')
+                baseline_records = result.get('baseline')
+                event_data = event_records.head(200).to_dict(orient='records') if hasattr(event_records, 'to_dict') else []
+                baseline_data = baseline_records.head(200).to_dict(orient='records') if hasattr(baseline_records, 'to_dict') else []
+                return jsonify({
+                    'status': 'success',
+                    'event_window': {'count': len(event_records) if hasattr(event_records, '__len__') else 0, 'samples': event_data},
+                    'baseline': {'count': len(baseline_records) if hasattr(baseline_records, '__len__') else 0, 'samples': baseline_data},
+                    'config': result.get('config', {}),
+                    'timestamp': datetime.now().isoformat()
+                })
+            except Exception as e:
+                logger.error(f"获取事件窗口数据失败: {e}")
+                return jsonify({'status': 'error', 'message': str(e), 'error_code': 'EVENT_WINDOW_FETCH_FAILED'}), 500
+
+        @self.app.route('/api/v1/data/cross-validation-log')
+        def get_cross_validation_log_api():
+            """获取数据源交叉验证日志"""
+            try:
+                provider = getattr(self.quality_monitor, 'data_provider', None)
+                if not provider or not hasattr(provider, 'get_cross_validation_log'):
+                    return jsonify({'status': 'error', 'message': '数据提供者不可用', 'error_code': 'DATA_PROVIDER_UNAVAILABLE'}), 503
+                log = provider.get_cross_validation_log()
+                return jsonify({'status': 'success', 'log': log, 'count': len(log), 'timestamp': datetime.now().isoformat()})
+            except Exception as e:
+                logger.error(f"获取交叉验证日志失败: {e}")
+                return jsonify({'status': 'error', 'message': str(e), 'error_code': 'CROSS_VALIDATION_LOG_FETCH_FAILED'}), 500
 
         # ============================================================
         # 错误处理中间件
