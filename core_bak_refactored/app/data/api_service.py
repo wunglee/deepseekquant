@@ -507,21 +507,9 @@ class DataQualityAPIService:
         
         @self.app.route('/api/dashboard/performance')
         def get_dashboard_performance():
-            """获取仪表板性能数据"""
+            """获取仪表板性能数据（严格模式）"""
             try:
-                # 兼容不同实现：优先使用方法，其次使用属性
-                stats = None
-                if hasattr(self.quality_monitor, 'get_performance_stats'):
-                    stats = self.quality_monitor.get_performance_stats()
-                elif hasattr(self.quality_monitor, '_performance_stats'):
-                    stats = getattr(self.quality_monitor, '_performance_stats', {})
-                else:
-                    stats = {
-                        'uptime_human': '未知',
-                        'throughput': 0,
-                        'success_rate': 1.0
-                    }
-                
+                stats = self.quality_monitor.get_performance_stats()
                 return jsonify({
                     'status': 'success',
                     'performance': stats,

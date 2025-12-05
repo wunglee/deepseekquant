@@ -262,20 +262,19 @@
                 .then(response => response.json())
                 .then(data => {
                     console.log('收到性能数据:', data);
-                    if (data.stats) {
-                        updateSystemStatus(data.stats);
-                    } else if (data.performance) {
+                    if (data.status === 'success' && data.performance) {
                         updateSystemStatus(data.performance);
+                    } else {
+                        document.getElementById('uptimeValue').textContent = '接口不可用';
+                        document.getElementById('throughputValue').textContent = '--';
+                        document.getElementById('successRateValue').textContent = '--';
                     }
                 })
                 .catch(error => {
                     console.error('加载性能数据失败:', error);
-                    // 性能数据失败不影响主功能，使用默认值
-                    updateSystemStatus({
-                        uptime_human: '未知',
-                        throughput: 0,
-                        success_rate: 0
-                    });
+                    document.getElementById('uptimeValue').textContent = '接口不可用';
+                    document.getElementById('throughputValue').textContent = '--';
+                    document.getElementById('successRateValue').textContent = '--';
                 });
         }
         
@@ -350,9 +349,6 @@
         }
 
         function updateSystemStatus(stats) {
-            // 兼容空或异常数据
-            stats = stats || { uptime_human: '未知', throughput: 0, success_rate: 0 };
-            
             document.getElementById('uptimeValue').textContent = stats.uptime_human || '未知';
             document.getElementById('throughputValue').textContent = Number(stats.throughput || 0).toFixed(2);
             document.getElementById('successRateValue').textContent = Number((stats.success_rate || 0) * 100).toFixed(1) + '%';
