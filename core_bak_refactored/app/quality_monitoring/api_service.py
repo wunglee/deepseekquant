@@ -462,6 +462,97 @@ class DataQualityAPIService:
                     'message': f'仪表板服务不可用: {str(e)}',
                     'error_code': 'DASHBOARD_UNAVAILABLE'
                 }), 500
+
+        @self.app.route('/explorer')
+        def data_explorer():
+            """数据浏览器 - 指数价格/收益率/事件窗口"""
+            try:
+                return render_template('data_explorer.html')
+            except Exception as e:
+                logger.error(f"数据浏览器页面访问失败: {e}")
+                return jsonify({
+                    'status': 'error',
+                    'message': f'页面不可用: {str(e)}',
+                    'error_code': 'EXPLORER_UNAVAILABLE'
+                }), 500
+
+        @self.app.route('/rules')
+        def rules_manager():
+            """质量规则管理 - 查看/启停/编辑规则"""
+            try:
+                return render_template('rules_manager.html')
+            except Exception as e:
+                logger.error(f"质量规则管理页面访问失败: {e}")
+                return jsonify({
+                    'status': 'error',
+                    'message': f'页面不可用: {str(e)}',
+                    'error_code': 'RULES_UNAVAILABLE'
+                }), 500
+
+        @self.app.route('/scheduler')
+        def scheduler_console():
+            """调度与作业控制台 - 查看作业/手动执行/暂停恢复"""
+            try:
+                return render_template('scheduler_console.html')
+            except Exception as e:
+                logger.error(f"调度控制台页面访问失败: {e}")
+                return jsonify({
+                    'status': 'error',
+                    'message': f'页面不可用: {str(e)}',
+                    'error_code': 'SCHEDULER_CONSOLE_UNAVAILABLE'
+                }), 500
+
+        @self.app.route('/alerts-center')
+        def alerts_center():
+            """警报中心 - 历史警报、过滤与批量操作"""
+            try:
+                return render_template('alerts_center.html')
+            except Exception as e:
+                logger.error(f"警报中心页面访问失败: {e}")
+                return jsonify({
+                    'status': 'error',
+                    'message': f'页面不可用: {str(e)}',
+                    'error_code': 'ALERTS_CENTER_UNAVAILABLE'
+                }), 500
+
+        @self.app.route('/providers')
+        def providers_credentials():
+            """数据来源与凭证管理 - 配置数据源与凭证"""
+            try:
+                return render_template('providers_credentials.html')
+            except Exception as e:
+                logger.error(f"数据来源与凭证页面访问失败: {e}")
+                return jsonify({
+                    'status': 'error',
+                    'message': f'页面不可用: {str(e)}',
+                    'error_code': 'PROVIDERS_UNAVAILABLE'
+                }), 500
+
+        @self.app.route('/validation')
+        def validation_reports():
+            """交叉验证与质量报告 - 查看验证日志与报告"""
+            try:
+                return render_template('validation_reports.html')
+            except Exception as e:
+                logger.error(f"验证报告页面访问失败: {e}")
+                return jsonify({
+                    'status': 'error',
+                    'message': f'页面不可用: {str(e)}',
+                    'error_code': 'VALIDATION_UNAVAILABLE'
+                }), 500
+
+        @self.app.route('/realtime')
+        def realtime_monitor():
+            """实时数据监控 - 订阅推送并可视化"""
+            try:
+                return render_template('realtime_monitor.html')
+            except Exception as e:
+                logger.error(f"实时监控页面访问失败: {e}")
+                return jsonify({
+                    'status': 'error',
+                    'message': f'页面不可用: {str(e)}',
+                    'error_code': 'REALTIME_UNAVAILABLE'
+                }), 500
         
         @self.app.route('/api/dashboard/quality-data')
         def get_dashboard_quality_data():

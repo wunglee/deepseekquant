@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>实时监控 | DeepSeekQuant</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/socket.io-client@4/dist/socket.io.min.js"></script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif; margin: 0; background: #f7f8fa; }
+        header { background: #1f2937; color: #fff; padding: 14px 20px; }
+        .container { padding: 16px; }
+        .grid { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; }
+        .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; }
+        .card-header { padding: 10px 12px; border-bottom: 1px solid #e5e7eb; font-weight: 600; }
+        .card-body { padding: 8px; }
+        #qualityChart { height: 340px; }
+        #log { height: 340px; overflow: auto; font-size: 12px; background: #111827; color: #d1d5db; padding: 8px; }
+    </style>
+</head>
+<body>
+<header>
+    <h2>实时数据监控</h2>
+</header>
+<div class="container">
+    <div class="grid">
+        <div class="card">
+            <div class="card-header">质量得分实时曲线</div>
+            <div class="card-body"><div id="qualityChart"></div></div>
+        </div>
+        <div class="card">
+            <div class="card-header">实时日志</div>
+            <div class="card-body"><div id="log"></div></div>
+        </div>
+    </div>
+</div>
+<script>
+    const qualityChart = echarts.init(document.getElementById('qualityChart'))
+    const logView = document.getElementById('log')
+    function showEmpty(chart, text) { chart.setOption({ series: [], graphic: [{ type: 'text', left: 'center', top: 'center', style: { text: text || '等待数据...', fontSize: 16, fill: '#999' } }] }, true) }
+    showEmpty(qualityChart, '等待数据...')
+    const socket = io()
+    socket.on('connection_response', (msg) => { log(`连接状态: ${msg.status}`) })
+    socket.on('quality_update', (msg) => {
+        const data = msg.data || {}
+        const time = (data.timestamp || msg.timestamp || new Date().toISOString())
+        const score = (data.quality_score || data.score || 0) * 100
+        updateChart(time, score)
+        log(`质量更新 ${time} => ${score.toFixed(2)}%`)
+    })
+    socket.on('error', (err) => { log(`Socket错误: ${err.message || err}`) })
+
+    function updateChart(time, score) {
+        const option = qualityChart.getOption()
+        const times = (option.xAxis && option.xAxis[0].data) || []
+        const scores = (option.series && option.series[0].data) || []
+        times.push(time); scores.push(score)
+        if (times.length > 100) { times.shift(); scores.shift() }
+        qualityChart.setOption({ tooltip: { trigger: 'axis' }, xAxis: { type: 'category', data: times }, yAxis: { type: 'value', min: 0, max: 100 }, series: [{ type: 'line', data: scores, smooth: true, itemStyle: { color: '#22c55e' } }] }, true)
+    }
+    function log(text) { const line = document.createElement('div'); line.textContent = text; logView.appendChild(line); logView.scrollTop = logView.scrollHeight }
+</script>
+</body>
+</html>

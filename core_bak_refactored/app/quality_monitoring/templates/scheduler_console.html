@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>调度控制台 | DeepSeekQuant</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif; margin: 0; background: #f9fafb; }
+        header { background: #1f2937; color: #fff; padding: 14px 20px; }
+        .container { padding: 16px; }
+        .toolbar { display: flex; gap: 8px; margin-bottom: 12px; }
+        .btn { padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; background: #fff; cursor: pointer; }
+        .btn.primary { background: #10b981; color: #fff; border-color: #10b981; }
+        .grid { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; }
+        .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; }
+        .card-header { padding: 10px 12px; border-bottom: 1px solid #e5e7eb; font-weight: 600; }
+        .card-body { padding: 8px; }
+        #jobsChart { height: 340px; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        th, td { border: 1px solid #e5e7eb; padding: 6px 8px; }
+        th { background: #f3f4f6; text-align: left; }
+    </style>
+</head>
+<body>
+<header>
+    <h2>调度与作业控制台</h2>
+</header>
+<div class="container">
+    <div class="toolbar">
+        <button class="btn" onclick="refreshJobs()">刷新</button>
+        <button class="btn" onclick="triggerNow()">立即执行</button>
+        <button class="btn primary" onclick="toggleMaintenance()">维护模式开/关</button>
+    </div>
+    <div class="grid">
+        <div class="card">
+            <div class="card-header">作业列表</div>
+            <div class="card-body">
+                <table id="jobsTable">
+                    <thead>
+                        <tr><th>作业ID</th><th>名称</th><th>状态</th><th>计划</th><th>上次执行</th></tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-header">近24小时执行概览</div>
+            <div class="card-body"><div id="jobsChart"></div></div>
+        </div>
+    </div>
+</div>
+<script>
+    const jobsChart = echarts.init(document.getElementById('jobsChart'))
+    function showEmpty(chart, text) { chart.setOption({ series: [], graphic: [{ type: 'text', left: 'center', top: 'center', style: { text: text || '暂无数据', fontSize: 16, fill: '#999' } }] }, true) }
+    function refreshJobs() {
+        fetch('/api/v1/status').then(r => r.json()).then(res => {
+            const jobs = (res.system_status && res.system_status.scheduler && res.system_status.scheduler.jobs) || []
+            const tbody = document.querySelector('#jobsTable tbody')
+            tbody.innerHTML = jobs.map(j => `<tr><td>${j.id}</td><td>${j.name || ''}</td><td>${j.status || ''}</td><td>${j.schedule || ''}</td><td>${j.last_run || ''}</td></tr>`).join('')
+            const grouped = jobs.reduce((acc, j) => { acc[j.status] = (acc[j.status] || 0) + 1; return acc }, {})
+            const labels = Object.keys(grouped)
+            const values = labels.map(k => grouped[k])
+            if (!labels.length) return showEmpty(jobsChart)
+            jobsChart.setOption({ tooltip: {}, xAxis: { type: 'category', data: labels }, yAxis: { type: 'value' }, series: [{ type: 'bar', data: values, itemStyle: { color: '#ef4444' } }] }, true)
+        }).catch(() => showEmpty(jobsChart, '加载失败'))
+    }
+    function triggerNow() { fetch('/api/v1/trigger-check', { method: 'POST' }).then(() => refreshJobs()) }
+    function toggleMaintenance() {
+        fetch('/api/v1/maintenance?action=enable&duration=1800', { method: 'POST' }).then(() => setTimeout(() => fetch('/api/v1/maintenance?action=disable', { method: 'POST' }), 3000))
+    }
+    refreshJobs()
+</script>
+</body>
+</html>

@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>警报中心 | DeepSeekQuant</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif; margin: 0; background: #f7f8fa; }
+        header { background: #111827; color: #fff; padding: 14px 20px; }
+        .container { padding: 16px; }
+        .filters { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 12px; }
+        .filters input, .filters select, .filters button { padding: 8px; border: 1px solid #d1d5db; border-radius: 6px; }
+        .grid { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; }
+        .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; }
+        .card-header { padding: 10px 12px; border-bottom: 1px solid #e5e7eb; font-weight: 600; }
+        .card-body { padding: 8px; }
+        #alertsChart { height: 340px; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        th, td { border: 1px solid #e5e7eb; padding: 6px 8px; }
+        th { background: #f3f4f6; text-align: left; }
+    </style>
+</head>
+<body>
+<header>
+    <h2>警报中心</h2>
+</header>
+<div class="container">
+    <div class="filters">
+        <select id="level"><option value="">级别(全部)</option><option>INFO</option><option>WARN</option><option>ERROR</option></select>
+        <select id="severity"><option value="">严重性(全部)</option><option>LOW</option><option>MEDIUM</option><option>HIGH</option></select>
+        <input id="source" placeholder="数据源">
+        <input id="hours" type="number" value="24" placeholder="最近小时数">
+        <button onclick="loadAlerts()">查询</button>
+    </div>
+    <div class="grid">
+        <div class="card">
+            <div class="card-header">警报列表</div>
+            <div class="card-body">
+                <table id="alertsTable">
+                    <thead>
+                        <tr><th>时间</th><th>级别</th><th>严重性</th><th>来源</th><th>消息</th></tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-header">警报分布</div>
+            <div class="card-body"><div id="alertsChart"></div></div>
+        </div>
+    </div>
+</div>
+<script>
+    const alertsChart = echarts.init(document.getElementById('alertsChart'))
+    function showEmpty(chart, text) { chart.setOption({ series: [], graphic: [{ type: 'text', left: 'center', top: 'center', style: { text: text || '暂无数据', fontSize: 16, fill: '#999' } }] }, true) }
+    function loadAlerts() {
+        const params = new URLSearchParams()
+        const level = document.getElementById('level').value
+        const severity = document.getElementById('severity').value
+        const source = document.getElementById('source').value
+        const hours = document.getElementById('hours').value
+        if (level) params.append('level', level)
+        if (severity) params.append('severity', severity)
+        if (source) params.append('data_source', source)
+        params.append('hours', hours || 24)
+        params.append('page', 1)
+        params.append('per_page', 200)
+        fetch('/api/v1/alerts?' + params.toString())
+            .then(r => r.json()).then(res => {
+                const alerts = res.items || res.alerts || []
+                const tbody = document.querySelector('#alertsTable tbody')
+                tbody.innerHTML = alerts.map(a => `<tr><td>${a.timestamp || ''}</td><td>${a.level || ''}</td><td>${a.severity || ''}</td><td>${a.source || ''}</td><td>${a.message || ''}</td></tr>`).join('')
+                if (!alerts.length) return showEmpty(alertsChart)
+                const grouped = alerts.reduce((acc, a) => { acc[a.severity] = (acc[a.severity] || 0) + 1; return acc }, {})
+                const labels = Object.keys(grouped)
+                const values = labels.map(k => grouped[k])
+                alertsChart.setOption({ tooltip: {}, legend: {}, series: [{ type: 'pie', radius: '65%', data: labels.map((l, i) => ({ name: l, value: values[i] })) }] }, true)
+            }).catch(() => showEmpty(alertsChart, '加载失败'))
+    }
+    loadAlerts()
+</script>
+</body>
+</html>
