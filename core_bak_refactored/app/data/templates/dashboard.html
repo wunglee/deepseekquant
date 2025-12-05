@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+o嗨哟<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
@@ -449,21 +449,38 @@
         function updateAnomalyChart(anomalyHistory) {
             const times = anomalyHistory.map(item => new Date(item.timestamp).toLocaleTimeString());
             const counts = anomalyHistory.map(item => item.count);
+            const hasData = anomalyHistory.length > 0;
             
             const option = {
-                tooltip: {
+                tooltip: hasData ? {
                     trigger: 'axis'
-                },
-                xAxis: {
+                } : {},
+                xAxis: hasData ? {
                     type: 'category',
-                    data: times.length > 0 ? times : ['暂无数据']
+                    data: times
+                } : {
+                    type: 'category',
+                    show: false
                 },
-                yAxis: {
+                yAxis: hasData ? {
                     type: 'value',
                     name: '异常数量'
+                } : {
+                    type: 'value',
+                    show: false
                 },
-                series: [{
-                    data: counts.length > 0 ? counts : [0],
+                graphic: !hasData ? [{
+                    type: 'text',
+                    left: 'center',
+                    top: 'center',
+                    style: {
+                        text: '暂无数据',
+                        fontSize: 16,
+                        fill: '#999'
+                    }
+                }] : [],
+                series: hasData ? [{
+                    data: counts,
                     type: 'line',
                     smooth: true,
                     itemStyle: {
@@ -471,79 +488,88 @@
                     },
                     areaStyle: {
                         color: 'rgba(255, 82, 82, 0.2)'
-                    },
-                    label: counts.length === 0 ? {
-                        show: true,
-                        position: 'inside',
-                        formatter: '暂无数据'
-                    } : {}
-                }]
+                    }
+                }] : []
             };
-            anomalyChart.setOption(option);
+            anomalyChart.setOption(option, true);
         }
         
         function updatePerformanceChart(performanceMetrics) {
             const times = performanceMetrics.map(item => new Date(item.timestamp).toLocaleTimeString());
             const scores = performanceMetrics.map(item => item.score * 100);
+            const hasData = performanceMetrics.length > 0;
             
             const option = {
-                tooltip: {
+                tooltip: hasData ? {
                     trigger: 'axis',
                     formatter: function(params) {
-                        if (params.length === 0) return '暂无数据';
                         return params[0].name + '<br/>' + '质量得分: ' + params[0].value.toFixed(2) + '%';
                     }
-                },
-                xAxis: {
+                } : {},
+                xAxis: hasData ? {
                     type: 'category',
-                    data: times.length > 0 ? times : ['暂无数据']
+                    data: times
+                } : {
+                    type: 'category',
+                    show: false
                 },
-                yAxis: {
+                yAxis: hasData ? {
                     type: 'value',
                     name: '质量得分(%)',
                     min: 0,
                     max: 100
+                } : {
+                    type: 'value',
+                    show: false
                 },
-                series: [{
-                    data: scores.length > 0 ? scores : [0],
+                graphic: !hasData ? [{
+                    type: 'text',
+                    left: 'center',
+                    top: 'center',
+                    style: {
+                        text: '暂无数据',
+                        fontSize: 16,
+                        fill: '#999'
+                    }
+                }] : [],
+                series: hasData ? [{
+                    data: scores,
                     type: 'bar',
                     itemStyle: {
                         color: '#2196F3'
-                    },
-                    label: scores.length === 0 ? {
-                        show: true,
-                        position: 'inside',
-                        formatter: '暂无数据'
-                    } : {}
-                }]
+                    }
+                }] : []
             };
-            performanceChart.setOption(option);
+            performanceChart.setOption(option, true);
         }
         
         function updateErrorDistributionChart(errorDistribution) {
             const hasData = Object.values(errorDistribution).some(v => v > 0);
             
             const option = {
-                tooltip: {
+                tooltip: hasData ? {
                     trigger: 'item',
                     formatter: function(params) {
                         return params.name + ': ' + (params.value * 100).toFixed(2) + '%';
                     }
-                },
-                legend: {
+                } : {},
+                legend: hasData ? {
                     bottom: '5%',
                     left: 'center'
+                } : {
+                    show: false
                 },
-                title: !hasData ? {
-                    text: '暂无数据',
+                graphic: !hasData ? [{
+                    type: 'text',
                     left: 'center',
                     top: 'center',
-                    textStyle: {
-                        color: '#999',
-                        fontSize: 16
+                    style: {
+                        text: '暂无数据',
+                        fontSize: 16,
+                        fill: '#999'
                     }
-                } : {},
-                series: [{
+                }] : [],
+                series: hasData ? [{
                     name: '错误类型',
                     type: 'pie',
                     radius: ['40%', '70%'],
@@ -567,17 +593,15 @@
                     labelLine: {
                         show: false
                     },
-                    data: hasData ? [
+                    data: [
                         {value: errorDistribution.completeness || 0, name: '完整性'},
                         {value: errorDistribution.consistency || 0, name: '一致性'},
                         {value: errorDistribution.continuity || 0, name: '连续性'},
                         {value: errorDistribution.reasonableness || 0, name: '合理性'}
-                    ] : [
-                        {value: 1, name: '暂无数据', itemStyle: {color: '#e0e0e0'}}
                     ]
-                }]
+                }] : []
             };
-            errorDistributionChart.setOption(option);
+            errorDistributionChart.setOption(option, true);
         }
         
         // 刷新特定图表的函数
