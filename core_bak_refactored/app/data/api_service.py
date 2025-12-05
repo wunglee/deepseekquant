@@ -48,18 +48,20 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 from typing import Dict, Any, List, TYPE_CHECKING
+import os
 
 import numpy as np
 import psutil
-from flask import Flask, jsonify, request, Response
+from flask import Flask, jsonify, request, Response, render_template, send_from_directory
 from flask_cors import CORS
+from flask_socketio import SocketIO, emit
 
 # 从组件导入
 from core_bak_refactored.app.data.api.controllers import DataQualityControllers
 from core_bak_refactored.app.data.api.health import HealthChecker
 from core_bak_refactored.app.data.api.system_metrics import MetricsCollector
 from core_bak_refactored.app.data.api.diagnostics import DiagnosticsRunner
-from core_bak_refactored.app.data.api.config_manager import ConfigManager
+from core_bak_refactored.core.share.config_manager import ConfigManager
 from core_bak_refactored.app.data.api.exporter import DataExporter
 from core_bak_refactored.app.data.api.system_status import SystemStatusManager
 
@@ -78,20 +80,45 @@ class DataQualityAPIService:
     - 职责分离：API组件专注于各自职责（健康检查、指标、诊断等）
     """
 
-    def __init__(self, quality_monitor: QualityMonitoringService):
+    def __init__(self, quality_monitor: QualityMonitoringService, scheduler=None):
         self.quality_monitor = quality_monitor
-        self.app = Flask(__name__)
+        self.scheduler = scheduler  # 调度器实例（可选）
+        
+        # 获取当前文件所在目录
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        template_dir = os.path.join(current_dir, 'templates')
+        static_dir = os.path.join(current_dir, 'static')
+        
+        self.app = Flask(
+            __name__,
+            template_folder=template_dir,  # 指定模板目录
+            static_folder=static_dir  # 指定静态文件目录
+        )
+        
+        # 启用CORS
+        CORS(self.app)
+        
+        # 初始化Socket.IO（支持实时推送）
+        self.socketio = SocketIO(
+            self.app,
+            cors_allowed_origins="*",
+            async_mode='threading',
+            logger=False,
+            engineio_logger=False
+        )
+        logger.info("Socket.IO服务已初始化")
         
         # 初始化组件
         self.controllers = DataQualityControllers(quality_monitor)
         self.health_checker = HealthChecker(quality_monitor)
         self.metrics_collector = MetricsCollector(quality_monitor)
         self.diagnostics_runner = DiagnosticsRunner(quality_monitor)
-        self.config_manager = ConfigManager(quality_monitor)
+        self.config_manager = ConfigManager()  # 核心层配置管理器不需要 quality_monitor
         self.data_exporter = DataExporter(quality_monitor)
         self.system_status_manager = SystemStatusManager(quality_monitor)
         
         self._setup_routes()
+        self._setup_socketio_handlers()
 
     def _setup_routes(self):
         """设置API路由 - 完整生产实现"""
@@ -279,11 +306,17 @@ class DataQualityAPIService:
 
         @self.app.route('/api/v1/config', methods=['GET', 'PUT'])
         def manage_config():
-            """管理配置 - 委派到config_manager"""
+            """管理配置 - 使用核心层 ConfigManager"""
             try:
                 if request.method == 'GET':
-                    # 获取当前配置
-                    config = self.config_manager.get_current_config()
+                    # 获取当前配置（聚合 API 服务相关配置）
+                    config = {
+                        'monitoring': self.config_manager.get('monitoring', {}),
+                        'api_settings': self.config_manager.get('api_service', {}),
+                        'alerting': self.config_manager.get('alerting', {}),
+                        'data': self.config_manager.get('data', {}),
+                        'system': self.config_manager.get('system', {})
+                    }
                     return jsonify({
                         'status': 'success',
                         'config': config,
@@ -299,19 +332,13 @@ class DataQualityAPIService:
                             'error_code': 'INVALID_CONFIG'
                         }), 400
 
-                    success = self.config_manager.update_config(new_config)
-                    if success:
-                        return jsonify({
-                            'status': 'success',
-                            'message': '配置更新成功',
-                            'timestamp': datetime.now().isoformat()
-                        })
-                    else:
-                        return jsonify({
-                            'status': 'error',
-                            'message': '配置更新失败',
-                            'error_code': 'CONFIG_UPDATE_FAILED'
-                        }), 500
+                    # 使用核心层 ConfigManager 的 update 方法
+                    self.config_manager.update(new_config)
+                    return jsonify({
+                        'status': 'success',
+                        'message': '配置更新成功',
+                        'timestamp': datetime.now().isoformat()
+                    })
 
             except Exception as e:
                 logger.error(f"配置管理失败: {e}")
@@ -417,7 +444,126 @@ class DataQualityAPIService:
                     'error_code': 'MAINTENANCE_MODE_FAILED'
                 }), 500
 
+        # ============================================================
+        # Web 仪表板路由
+        # ============================================================
+        
+        @self.app.route('/')
+        @self.app.route('/dashboard')
+        def dashboard():
+            """数据质量仪表板 - 渲染HTML页面"""
+            try:
+                # 渲染仪表板模板
+                return render_template('dashboard.html')
+            except Exception as e:
+                logger.error(f"仪表板访问失败: {e}")
+                return jsonify({
+                    'status': 'error',
+                    'message': f'仪表板服务不可用: {str(e)}',
+                    'error_code': 'DASHBOARD_UNAVAILABLE'
+                }), 500
+        
+        @self.app.route('/api/dashboard/quality-data')
+        def get_dashboard_quality_data():
+            """获取仪表板质量数据"""
+            try:
+                history = self.quality_monitor.get_quality_history(hours=24)
+                current = history[-1] if history else None
+                
+                return jsonify({
+                    'status': 'success',
+                    'current_quality': current,
+                    'history': history[-100:],  # 最近100条记录
+                    'timestamp': datetime.now().isoformat()
+                })
+            except Exception as e:
+                logger.error(f"获取仪表板数据失败: {e}")
+                return jsonify({
+                    'status': 'error',
+                    'message': str(e),
+                    'error_code': 'DASHBOARD_DATA_FETCH_FAILED'
+                }), 500
+        
+        @self.app.route('/api/dashboard/alerts')
+        def get_dashboard_alerts():
+            """获取仪表板告警数据"""
+            try:
+                hours = request.args.get('hours', 24, type=int)
+                alerts = self.quality_monitor.get_alert_history(hours=hours)
+                
+                return jsonify({
+                    'status': 'success',
+                    'alerts': alerts,
+                    'total_count': len(alerts),
+                    'timestamp': datetime.now().isoformat()
+                })
+            except Exception as e:
+                logger.error(f"获取仪表板告警失败: {e}")
+                return jsonify({
+                    'status': 'error',
+                    'message': str(e),
+                    'error_code': 'DASHBOARD_ALERTS_FETCH_FAILED'
+                }), 500
+        
+        @self.app.route('/api/dashboard/performance')
+        def get_dashboard_performance():
+            """获取仪表板性能数据"""
+            try:
+                # 兼容不同实现：优先使用方法，其次使用属性
+                stats = None
+                if hasattr(self.quality_monitor, 'get_performance_stats'):
+                    stats = self.quality_monitor.get_performance_stats()
+                elif hasattr(self.quality_monitor, '_performance_stats'):
+                    stats = getattr(self.quality_monitor, '_performance_stats', {})
+                else:
+                    stats = {
+                        'uptime_human': '未知',
+                        'throughput': 0,
+                        'success_rate': 1.0
+                    }
+                
+                return jsonify({
+                    'status': 'success',
+                    'performance': stats,
+                    'timestamp': datetime.now().isoformat()
+                })
+            except Exception as e:
+                logger.error(f"获取仪表板性能数据失败: {e}")
+                return jsonify({
+                    'status': 'error',
+                    'message': str(e),
+                    'error_code': 'DASHBOARD_PERFORMANCE_FETCH_FAILED'
+                }), 500
+        
+        @self.app.route('/api/v1/trigger-check', methods=['POST'])
+        def trigger_quality_check():
+            """手动触发数据质量检查"""
+            try:
+                if self.scheduler:
+                    logger.info("手动触发质量检查")
+                    self.scheduler.execute_now()
+                    return jsonify({
+                        'status': 'success',
+                        'message': '质量检查已触发',
+                        'timestamp': datetime.now().isoformat()
+                    })
+                else:
+                    return jsonify({
+                        'status': 'error',
+                        'message': '调度器未配置，无法触发检查',
+                        'error_code': 'SCHEDULER_NOT_CONFIGURED'
+                    }), 503
+            except Exception as e:
+                logger.error(f"触发质量检查失败: {e}")
+                return jsonify({
+                    'status': 'error',
+                    'message': str(e),
+                    'error_code': 'TRIGGER_CHECK_FAILED'
+                }), 500
+
+        # ============================================================
         # 错误处理中间件
+        # ============================================================
         @self.app.errorhandler(404)
         def not_found(error):
             return jsonify({
@@ -462,9 +608,9 @@ class DataQualityAPIService:
     # - _generate_diagnostics_recommendations -> diagnostics_runner.generate_diagnostics_recommendations
     # - _calculate_diagnostics_duration -> diagnostics_runner.calculate_diagnostics_duration
     #
-    # 已迁移到 config_manager:
-    # - _get_current_config -> config_manager.get_current_config
-    # - _update_config -> config_manager.update_config
+    # 已迁移到 config_manager (已合并到核心层 core.share.config_manager):
+    # - _get_current_config -> config_manager.get()
+    # - _update_config -> config_manager.update()
     #
     # 已迁移到 data_exporter:
     # - _export_alert_data -> data_exporter.export_alert_data
@@ -543,6 +689,60 @@ class DataQualityAPIService:
                 'message': '内部服务器错误',
                 'error_code': 'INTERNAL_ERROR'
             }), 500
+    
+    def _setup_socketio_handlers(self):
+        """设置Socket.IO事件处理器 - 实时推送支持"""
+        
+        @self.socketio.on('connect')
+        def handle_connect():
+            """客户端连接事件"""
+            logger.info(f"Socket.IO客户端已连接: {request.sid}")
+            emit('connection_response', {
+                'status': 'connected',
+                'message': '已连接到数据质量监控服务',
+                'timestamp': datetime.now().isoformat()
+            })
+        
+        @self.socketio.on('disconnect')
+        def handle_disconnect():
+            """客户端断开连接事件"""
+            logger.info(f"Socket.IO客户端已断开: {request.sid}")
+        
+        @self.socketio.on('request_quality_data')
+        def handle_quality_request():
+            """客户端请求质量数据"""
+            try:
+                result = self.controllers.get_quality_current(hours=24)
+                emit('quality_update', {
+                    'status': 'success',
+                    'data': result,
+                    'timestamp': datetime.now().isoformat()
+                })
+            except Exception as e:
+                logger.error(f"Socket.IO获取质量数据失败: {e}")
+                emit('error', {
+                    'status': 'error',
+                    'message': str(e)
+                })
+    
+    def broadcast_quality_update(self, quality_data: Dict[str, Any]):
+        """广播质量数据更新到所有连接的客户端
+        
+        Args:
+            quality_data: 质量数据字典
+        
+        Note:
+            在监控服务完成质量检查后调用此方法，实时推送数据到Dashboard
+        """
+        try:
+            self.socketio.emit('quality_update', {
+                'status': 'success',
+                'data': quality_data,
+                'timestamp': datetime.now().isoformat()
+            })
+            logger.debug("已广播质量数据更新到所有客户端")
+        except Exception as e:
+            logger.error(f"广播质量数据失败: {e}")
 
     def stop_api_service(self):
         """停止API服务"""

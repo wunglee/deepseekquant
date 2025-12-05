@@ -41,12 +41,22 @@ class DataQualityApplication:
     - DataQualityAPIService: REST API服务
     """
     
-    def __init__(self, strategy: str = 'apscheduler'):
+    def __init__(self, strategy: str = 'apscheduler', api_host: str = '0.0.0.0', api_port: int = 5001):
         """初始化应用
         
         Args:
             strategy: 调度策略（thread/apscheduler/celery）
+            api_host: API 服务监听地址（默认：0.0.0.0）
+            api_port: API 服务监听端口（默认：5001）
+        
+        Note:
+            数据源类型通过配置文件 config/dev/data.yml 中的 primary_source 控制
+            - mock: 使用模拟数据（不调用外部API）
+            - yahoo: 使用Yahoo Finance真实数据
+            - tushare: 使用Tushare数据
         """
+        self.api_host = api_host
+        self.api_port = api_port
         logger.info("初始化数据质量监控应用")
         
         # 1. 创建告警配置
@@ -56,7 +66,7 @@ class DataQualityApplication:
             max_alerts_per_hour=50
         )
         
-        # 2. 创建监控服务
+        # 2. 创建监控服务（数据源由配置文件控制）
         self.monitoring_service = QualityMonitoringService(alert_config=alert_config)
         logger.info("监控服务已创建")
         
@@ -66,16 +76,22 @@ class DataQualityApplication:
             'max_retries': 3,
             'retry_delay': 60
         }
+        
+        # 4. 创建API服务（先创建，以便调度器可以引用）
+        self.api_service = DataQualityAPIService(self.monitoring_service, scheduler=None)
+        logger.info("API服务已创建")
+        
+        # 5. 创建调度器（传入api_service以支持Socket.IO实时推送）
         self.scheduler = MonitoringScheduler(
             self.monitoring_service,
             strategy=strategy,
-            config=scheduler_config
+            config=scheduler_config,
+            api_service=self.api_service  # 传递API服务实例
         )
         logger.info(f"调度器已创建（策略：{strategy}）")
         
-        # 4. 创建API服务
-        self.api_service = DataQualityAPIService(self.monitoring_service)
-        logger.info("API服务已创建")
+        # 更新API服务的scheduler引用（用于手动触发）
+        self.api_service.scheduler = self.scheduler
         
         # 5. 注册信号处理
         signal.signal(signal.SIGINT, self._signal_handler)
@@ -95,13 +111,15 @@ class DataQualityApplication:
         
         # 2. 启动API服务（可选）
         if enable_api:
-            logger.info("启动API服务在 http://0.0.0.0:5000")
-            # 注意：生产环境应使用gunicorn或uwsgi
-            self.api_service.app.run(
-                host='0.0.0.0',
-                port=5000,
+            logger.info(f"启动API服务在 http://{self.api_host}:{self.api_port}")
+            # 使用socketio.run支持WebSocket
+            self.api_service.socketio.run(
+                self.api_service.app,
+                host=self.api_host,
+                port=self.api_port,
                 debug=False,
-                use_reloader=False  # 重要：避免重复启动调度器
+                use_reloader=False,  # 重要：避免重复启动调度器
+                allow_unsafe_werkzeug=True  # 开发环境允许
             )
         else:
             logger.info("API服务未启动（仅运行调度器）")
@@ -148,7 +166,7 @@ def main():
     
     args = parser.parse_args()
     
-    # 创建应用
+    # 创建应用（数据源由配置文件 config/dev/data.yml 控制）
     app = DataQualityApplication(strategy=args.strategy)
     
     if args.once:

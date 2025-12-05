@@ -67,19 +67,47 @@ class SystemConfig:
 
 class ConfigManager:
     """
-    配置管理器
+    配置管理器（单例模式）
     
     职责：提供标准化的配置管理接口
+    
+    Note:
+        使用单例模式确保全局只有一个实例，避免多个watchdog监听器冲突
     """
     
+    _instance = None
+    _lock = None
+    _observer = None  # 全局watchdog observer
+    
+    def __new__(cls, config_file: Optional[str] = None, environment: Optional[str] = None):
+        """单例模式实现"""
+        if cls._instance is None:
+            if cls._lock is None:
+                import threading
+                cls._lock = threading.Lock()
+            
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super(ConfigManager, cls).__new__(cls)
+                    cls._instance._initialized = False
+        
+        return cls._instance
+    
     def __init__(self, config_file: Optional[str] = None, environment: Optional[str] = None):
+        # 避免重复初始化
+        if self._initialized:
+            return
+        
         self.config_file = config_file
         self.environment = environment or os.getenv('DEEPSEEK_ENV', 'dev')  # dev/test/prod
         self._config = {}
         self._load_config()
-        # 启动热加载监听（仅在非测试环境）
-        if self.environment != 'test':
+        
+        # 启动热加载监听（仅在非测试环境且尚未启动）
+        if self.environment != 'test' and ConfigManager._observer is None:
             self._start_hot_reload_watcher()
+        
+        self._initialized = True
     
     def _load_config(self):
         """加载配置（优先从 core_bak_refactored/config/*.yml 读取，找不到则回退默认）"""
@@ -165,7 +193,7 @@ class ConfigManager:
         return SystemConfig(**config_dict)
     
     def _start_hot_reload_watcher(self):
-        """启动热加载监听器（仅在非测试环境）"""
+        """启动热加载监听器（全局单例）"""
         try:
             import threading
             import time
@@ -189,17 +217,19 @@ class ConfigManager:
                 watch_path = env_dir if os.path.exists(env_dir) else base_dir
                 
                 event_handler = ConfigReloadHandler(self)
-                observer = Observer()
-                observer.schedule(event_handler, watch_path, recursive=False)
-                observer.start()
+                ConfigManager._observer = Observer()
+                ConfigManager._observer.schedule(event_handler, watch_path, recursive=False)
+                ConfigManager._observer.start()
                 logger.info(f"启动配置热加载监听: {watch_path}")
                 
                 try:
                     while True:
                         time.sleep(1)
                 except KeyboardInterrupt:
-                    observer.stop()
-                observer.join()
+                    if ConfigManager._observer:
+                        ConfigManager._observer.stop()
+                if ConfigManager._observer:
+                    ConfigManager._observer.join()
             
             watcher = threading.Thread(target=watch_thread, daemon=True, name='ConfigHotReload')
             watcher.start()

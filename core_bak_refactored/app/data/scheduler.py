@@ -57,7 +57,8 @@ class MonitoringScheduler:
     def __init__(self,
                  monitoring_service,
                  strategy: str = 'apscheduler',
-                 config: Optional[Dict[str, Any]] = None):
+                 config: Optional[Dict[str, Any]] = None,
+                 api_service=None):
         """
         初始化调度器
         
@@ -68,10 +69,12 @@ class MonitoringScheduler:
                 - check_interval: 检查间隔（秒，默认300=5分钟）
                 - max_retries: 最大重试次数（默认3）
                 - retry_delay: 重试延迟（秒，默认60）
+            api_service: API服务实例（用于广播数据更新）
         """
         self.monitoring_service = monitoring_service
         self.strategy = ScheduleStrategy(strategy)
         self.config = config or {}
+        self.api_service = api_service  # API服务实例
         
         # 配置参数
         self.check_interval = self.config.get('check_interval', 300)  # 5分钟
@@ -192,9 +195,7 @@ class MonitoringScheduler:
         try:
             # 调用监控服务执行完整检查周期
             summary = self.monitoring_service.run_check_cycle()
-            
-            # 更新监控周期计数
-            self.monitoring_service._performance_stats['monitoring_cycles'] += 1
+            # run_check_cycle 已经内部更新了 monitoring_cycles 计数
             
             # 记录日志
             cycle_duration = (datetime.now() - cycle_start).total_seconds()
@@ -205,6 +206,13 @@ class MonitoringScheduler:
                 f"异常: {summary.get('anomalies_detected', 0)} | "
                 f"告警: {summary.get('alerts_triggered', 0)}"
             )
+            
+            # 广播数据更新到Socket.IO客户端
+            if self.api_service and hasattr(self.api_service, 'broadcast_quality_update'):
+                try:
+                    self.api_service.broadcast_quality_update(summary)
+                except Exception as broadcast_error:
+                    logger.error(f"Socket.IO广播失败: {broadcast_error}")
         
         except Exception as e:
             logger.error(f"监控循环失败: {e}", exc_info=True)

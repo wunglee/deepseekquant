@@ -234,52 +234,302 @@
         });
 
         // 初始化仪表板
-        fetch('/api/quality-data')
-            .then(response => response.json())
-            .then(data => updateDashboard(data));
+        function loadInitialData() {
+            // 加载质量数据
+            fetch('/api/dashboard/quality-data')
+                .then(response => response.json())
+                .then(data => {
+                    console.log('收到质量数据:', data);
+                    if (data.current_quality) {
+                        updateDashboard(data);
+                    }
+                })
+                .catch(error => console.error('加载质量数据失败:', error));
 
-        fetch('/api/alerts?hours=24')
-            .then(response => response.json())
-            .then(alerts => updateAlerts(alerts));
+            // 加载告警数据
+            fetch('/api/dashboard/alerts?hours=24')
+                .then(response => response.json())
+                .then(data => {
+                    console.log('收到告警数据:', data);
+                    if (data.alerts) {
+                        updateAlerts(data.alerts);
+                    }
+                })
+                .catch(error => console.error('加载告警数据失败:', error));
 
-        fetch('/api/performance-stats')
-            .then(response => response.json())
-            .then(stats => updateSystemStatus(stats));
+            // 加载性能数据
+            fetch('/api/dashboard/performance')
+                .then(response => response.json())
+                .then(data => {
+                    console.log('收到性能数据:', data);
+                    if (data.stats) {
+                        updateSystemStatus(data.stats);
+                    } else if (data.performance) {
+                        updateSystemStatus(data.performance);
+                    }
+                })
+                .catch(error => {
+                    console.error('加载性能数据失败:', error);
+                    // 性能数据失败不影响主功能，使用默认值
+                    updateSystemStatus({
+                        uptime_human: '未知',
+                        throughput: 0,
+                        success_rate: 0
+                    });
+                });
+        }
+        
+        // 页面加载完成后初始化
+        loadInitialData();
+        
+        // 每5秒刷新一次数据
+        setInterval(loadInitialData, 5000);
 
         // 更新仪表板函数
         function updateDashboard(data) {
-            updateQualityGauge(data.overall_score);
-            updateAnomalyChart(data.anomaly_history);
-            updatePerformanceChart(data.performance_metrics);
-            updateErrorDistributionChart(data.error_distribution);
+            console.log('更新Dashboard:', data);
+            
+            // API返回的数据格式：{current_quality: {...}, history: [...]}
+            const current = data.current_quality || data;
+            const history = data.history || [];
+            
+            // 更新总体质量评分
+            const overallScore = current.overall_score || 0;
+            if (typeof updateQualityGauge === 'function') {
+                updateQualityGauge(overallScore);
+            }
+            
+            // 更新异常统计（从历史数据中提取）
+            const anomalyHistory = history.map(item => ({
+                timestamp: item.timestamp,
+                count: item.anomaly_count || 0
+            }));
+            updateAnomalyChart(anomalyHistory);
+            
+            // 更新错误分布
+            const errorDistribution = {
+                completeness: 1 - (current.completeness || 1),
+                consistency: 1 - (current.consistency || 1),
+                continuity: 1 - (current.continuity || 1),
+                reasonableness: 1 - (current.reasonableness || 1)
+            };
+            updateErrorDistributionChart(errorDistribution);
+            
+            // 更新性能指标（从历史数据）
+            if (history.length > 0) {
+                const performanceMetrics = history.map(item => ({
+                    timestamp: item.timestamp,
+                    score: item.overall_score || 0
+                }));
+                updatePerformanceChart(performanceMetrics);
+            }
         }
 
         function updateAlerts(alerts) {
             const alertList = document.getElementById('alertList');
             alertList.innerHTML = '';
 
-            alerts.slice(0, 10).forEach(alert => {
+            // 兼容不同数据结构
+            if (!Array.isArray(alerts)) {
+                alerts = alerts?.alerts || alerts?.items || [];
+            }
+
+            (alerts || []).slice(0, 10).forEach(alert => {
                 const alertElement = document.createElement('div');
-                alertElement.className = `alert-item alert-${alert.level}`;
+                alertElement.className = `alert-item alert-${alert.level || 'low'}`;
                 alertElement.innerHTML = `
-                    <strong>${new Date(alert.timestamp).toLocaleString()}</strong>
-                    <br>${alert.message}
+                    <strong>${new Date(alert.timestamp || Date.now()).toLocaleString()}</strong>
+                    <br>${alert.message || ''}
                 `;
                 alertList.appendChild(alertElement);
             });
 
-            if (alerts.length === 0) {
+            if (!alerts || alerts.length === 0) {
                 alertList.innerHTML = '<p>暂无警报</p>';
             }
         }
 
         function updateSystemStatus(stats) {
-            document.getElementById('uptimeValue').textContent = stats.uptime_human;
-            document.getElementById('throughputValue').textContent = stats.throughput.toFixed(2);
-            document.getElementById('successRateValue').textContent = (stats.success_rate * 100).toFixed(1) + '%';
+            // 兼容空或异常数据
+            stats = stats || { uptime_human: '未知', throughput: 0, success_rate: 0 };
+            
+            document.getElementById('uptimeValue').textContent = stats.uptime_human || '未知';
+            document.getElementById('throughputValue').textContent = Number(stats.throughput || 0).toFixed(2);
+            document.getElementById('successRateValue').textContent = Number((stats.success_rate || 0) * 100).toFixed(1) + '%';
         }
 
-        // 这里实现具体的图表更新逻辑...
+        // 图表更新函数实现
+        function updateQualityGauge(score) {
+            const option = {
+                series: [{
+                    type: 'gauge',
+                    startAngle: 180,
+                    endAngle: 0,
+                    min: 0,
+                    max: 1,
+                    splitNumber: 10,
+                    axisLine: {
+                        lineStyle: {
+                            width: 6,
+                            color: [
+                                [0.3, '#FF5252'],
+                                [0.7, '#FFB300'],
+                                [1, '#4CAF50']
+                            ]
+                        }
+                    },
+                    pointer: {
+                        itemStyle: {
+                            color: 'auto'
+                        }
+                    },
+                    axisTick: {
+                        distance: -30,
+                        length: 8,
+                        lineStyle: {
+                            color: '#fff',
+                            width: 2
+                        }
+                    },
+                    splitLine: {
+                        distance: -30,
+                        length: 30,
+                        lineStyle: {
+                            color: '#fff',
+                            width: 4
+                        }
+                    },
+                    axisLabel: {
+                        color: 'auto',
+                        distance: 40,
+                        fontSize: 12,
+                        formatter: function(value) {
+                            return (value * 100).toFixed(0) + '%';
+                        }
+                    },
+                    detail: {
+                        valueAnimation: true,
+                        formatter: function(value) {
+                            return (value * 100).toFixed(2) + '%';
+                        },
+                        color: 'auto',
+                        fontSize: 24
+                    },
+                    data: [{value: score}]
+                }]
+            };
+            qualityGauge.setOption(option);
+        }
+        
+        function updateAnomalyChart(anomalyHistory) {
+            const times = anomalyHistory.map(item => new Date(item.timestamp).toLocaleTimeString());
+            const counts = anomalyHistory.map(item => item.count);
+            
+            const option = {
+                tooltip: {
+                    trigger: 'axis'
+                },
+                xAxis: {
+                    type: 'category',
+                    data: times.length > 0 ? times : ['无数据']
+                },
+                yAxis: {
+                    type: 'value',
+                    name: '异常数量'
+                },
+                series: [{
+                    data: counts.length > 0 ? counts : [0],
+                    type: 'line',
+                    smooth: true,
+                    itemStyle: {
+                        color: '#FF5252'
+                    },
+                    areaStyle: {
+                        color: 'rgba(255, 82, 82, 0.2)'
+                    }
+                }]
+            };
+            anomalyChart.setOption(option);
+        }
+        
+        function updatePerformanceChart(performanceMetrics) {
+            const times = performanceMetrics.map(item => new Date(item.timestamp).toLocaleTimeString());
+            const scores = performanceMetrics.map(item => item.score * 100);
+            
+            const option = {
+                tooltip: {
+                    trigger: 'axis',
+                    formatter: function(params) {
+                        return params[0].name + '<br/>' + '质量得分: ' + params[0].value.toFixed(2) + '%';
+                    }
+                },
+                xAxis: {
+                    type: 'category',
+                    data: times.length > 0 ? times : ['无数据']
+                },
+                yAxis: {
+                    type: 'value',
+                    name: '质量得分(%)',
+                    min: 0,
+                    max: 100
+                },
+                series: [{
+                    data: scores.length > 0 ? scores : [0],
+                    type: 'bar',
+                    itemStyle: {
+                        color: '#2196F3'
+                    }
+                }]
+            };
+            performanceChart.setOption(option);
+        }
+        
+        function updateErrorDistributionChart(errorDistribution) {
+            const option = {
+                tooltip: {
+                    trigger: 'item',
+                    formatter: function(params) {
+                        return params.name + ': ' + (params.value * 100).toFixed(2) + '%';
+                    }
+                },
+                legend: {
+                    bottom: '5%',
+                    left: 'center'
+                },
+                series: [{
+                    name: '错误类型',
+                    type: 'pie',
+                    radius: ['40%', '70%'],
+                    avoidLabelOverlap: false,
+                    itemStyle: {
+                        borderRadius: 10,
+                        borderColor: '#fff',
+                        borderWidth: 2
+                    },
+                    label: {
+                        show: false,
+                        position: 'center'
+                    },
+                    emphasis: {
+                        label: {
+                            show: true,
+                            fontSize: '18',
+                            fontWeight: 'bold'
+                        }
+                    },
+                    labelLine: {
+                        show: false
+                    },
+                    data: [
+                        {value: errorDistribution.completeness || 0, name: '完整性'},
+                        {value: errorDistribution.consistency || 0, name: '一致性'},
+                        {value: errorDistribution.continuity || 0, name: '连续性'},
+                        {value: errorDistribution.reasonableness || 0, name: '合理性'}
+                    ]
+                }]
+            };
+            errorDistributionChart.setOption(option);
+        }
     </script>
 </body>
 </html>
