@@ -245,9 +245,16 @@
                     console.log('收到质量数据:', data);
                     if (data.current_quality) {
                         updateDashboard(data);
+                    } else {
+                        // 即使没有数据也初始化图表为空状态
+                        console.log('暂无质量数据，初始化空图表');
+                        initEmptyCharts();
                     }
                 })
-                .catch(error => console.error('加载质量数据失败:', error));
+                .catch(error => {
+                    console.error('加载质量数据失败:', error);
+                    initEmptyCharts();
+                });
 
             // 加载告警数据
             fetch('/api/dashboard/alerts?hours=24')
@@ -256,9 +263,14 @@
                     console.log('收到告警数据:', data);
                     if (data.alerts) {
                         updateAlerts(data.alerts);
+                    } else {
+                        updateAlerts([]);
                     }
                 })
-                .catch(error => console.error('加载告警数据失败:', error));
+                .catch(error => {
+                    console.error('加载告警数据失败:', error);
+                    updateAlerts([]);
+                });
 
             // 加载性能数据
             fetch('/api/dashboard/performance')
@@ -268,17 +280,35 @@
                     if (data.status === 'success' && data.performance) {
                         updateSystemStatus(data.performance);
                     } else {
-                        document.getElementById('uptimeValue').textContent = '接口不可用';
-                        document.getElementById('throughputValue').textContent = '--';
-                        document.getElementById('successRateValue').textContent = '--';
+                        updateSystemStatus({
+                            uptime_human: '未启动',
+                            throughput: 0,
+                            success_rate: 0
+                        });
                     }
                 })
                 .catch(error => {
                     console.error('加载性能数据失败:', error);
-                    document.getElementById('uptimeValue').textContent = '接口不可用';
-                    document.getElementById('throughputValue').textContent = '--';
-                    document.getElementById('successRateValue').textContent = '--';
+                    updateSystemStatus({
+                        uptime_human: '接口不可用',
+                        throughput: 0,
+                        success_rate: 0
+                    });
                 });
+        }
+        
+        // 初始化空图表
+        function initEmptyCharts() {
+            console.log('初始化空图表状态');
+            updateQualityGauge(0);
+            updateAnomalyChart([]);
+            updatePerformanceChart([]);
+            updateErrorDistributionChart({
+                completeness: 0,
+                consistency: 0,
+                continuity: 0,
+                reasonableness: 0
+            });
         }
         
         // 页面加载完成后初始化
@@ -297,9 +327,7 @@
             
             // 更新总体质量评分
             const overallScore = current.overall_score || 0;
-            if (typeof updateQualityGauge === 'function') {
-                updateQualityGauge(overallScore);
-            }
+            updateQualityGauge(overallScore);
             
             // 更新异常统计（从历史数据中提取）
             const anomalyHistory = history.map(item => ({
@@ -318,13 +346,11 @@
             updateErrorDistributionChart(errorDistribution);
             
             // 更新性能指标（从历史数据）
-            if (history.length > 0) {
-                const performanceMetrics = history.map(item => ({
-                    timestamp: item.timestamp,
-                    score: item.overall_score || 0
-                }));
-                updatePerformanceChart(performanceMetrics);
-            }
+            const performanceMetrics = history.map(item => ({
+                timestamp: item.timestamp,
+                score: item.overall_score || 0
+            }));
+            updatePerformanceChart(performanceMetrics);
         }
 
         function updateAlerts(alerts) {
@@ -430,7 +456,7 @@
                 },
                 xAxis: {
                     type: 'category',
-                    data: times.length > 0 ? times : ['无数据']
+                    data: times.length > 0 ? times : ['暂无数据']
                 },
                 yAxis: {
                     type: 'value',
@@ -445,7 +471,12 @@
                     },
                     areaStyle: {
                         color: 'rgba(255, 82, 82, 0.2)'
-                    }
+                    },
+                    label: counts.length === 0 ? {
+                        show: true,
+                        position: 'inside',
+                        formatter: '暂无数据'
+                    } : {}
                 }]
             };
             anomalyChart.setOption(option);
@@ -459,12 +490,13 @@
                 tooltip: {
                     trigger: 'axis',
                     formatter: function(params) {
+                        if (params.length === 0) return '暂无数据';
                         return params[0].name + '<br/>' + '质量得分: ' + params[0].value.toFixed(2) + '%';
                     }
                 },
                 xAxis: {
                     type: 'category',
-                    data: times.length > 0 ? times : ['无数据']
+                    data: times.length > 0 ? times : ['暂无数据']
                 },
                 yAxis: {
                     type: 'value',
@@ -477,13 +509,20 @@
                     type: 'bar',
                     itemStyle: {
                         color: '#2196F3'
-                    }
+                    },
+                    label: scores.length === 0 ? {
+                        show: true,
+                        position: 'inside',
+                        formatter: '暂无数据'
+                    } : {}
                 }]
             };
             performanceChart.setOption(option);
         }
         
         function updateErrorDistributionChart(errorDistribution) {
+            const hasData = Object.values(errorDistribution).some(v => v > 0);
+            
             const option = {
                 tooltip: {
                     trigger: 'item',
@@ -495,6 +534,15 @@
                     bottom: '5%',
                     left: 'center'
                 },
+                title: !hasData ? {
+                    text: '暂无数据',
+                    left: 'center',
+                    top: 'center',
+                    textStyle: {
+                        color: '#999',
+                        fontSize: 16
+                    }
+                } : {},
                 series: [{
                     name: '错误类型',
                     type: 'pie',
@@ -519,11 +567,13 @@
                     labelLine: {
                         show: false
                     },
-                    data: [
+                    data: hasData ? [
                         {value: errorDistribution.completeness || 0, name: '完整性'},
                         {value: errorDistribution.consistency || 0, name: '一致性'},
                         {value: errorDistribution.continuity || 0, name: '连续性'},
                         {value: errorDistribution.reasonableness || 0, name: '合理性'}
+                    ] : [
+                        {value: 1, name: '暂无数据', itemStyle: {color: '#e0e0e0'}}
                     ]
                 }]
             };
