@@ -1,4 +1,4 @@
-o嗨哟<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
@@ -6,144 +6,20 @@ o嗨哟<!DOCTYPE html>
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    <title>DeepSeekQuant - 数据质量仪表板 v1.1</title>
+    <title>数据质量仪表板 | DeepSeekQuant</title>
+    <link rel="stylesheet" href="/static/css/common.css">
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/socket.io-client@4.7.2/dist/socket.io.min.js"></script>
     <style>
-        :root {
-            --primary-color: #2196F3;
-            --success-color: #4CAF50;
-            --warning-color: #FFB300;
-            --danger-color: #FF5252;
-            --bg-color: #f5f5f5;
-            --card-bg: #ffffff;
-            --text-color: #333333;
-            --border-color: #e0e0e0;
-        }
-
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            margin: 0;
-            padding: 0;
-            background-color: var(--bg-color);
-            color: var(--text-color);
-        }
-
-        .dashboard-header {
-            background: linear-gradient(135deg, var(--primary-color), #1976D2);
-            color: white;
-            padding: 20px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }
-
-        .dashboard-title {
-            margin: 0;
-            font-size: 24px;
-            font-weight: 300;
-        }
-
-        .dashboard-subtitle {
-            margin: 5px 0 0;
-            font-size: 14px;
-            opacity: 0.9;
-        }
-
-        .dashboard-content {
-            padding: 20px;
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 20px;
-        }
-
-        .dashboard-card {
-            background: var(--card-bg);
-            border-radius: 8px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-            padding: 20px;
-            transition: transform 0.2s;
-        }
-
-        .dashboard-card:hover {
-            transform: translateY(-2px);
-        }
-
-        .card-header {
-            border-bottom: 1px solid var(--border-color);
-            padding-bottom: 10px;
-            margin-bottom: 15px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .card-title {
-            margin: 0;
-            font-size: 16px;
-            font-weight: 600;
-        }
-
-        .chart-container {
-            height: 300px;
-            width: 100%;
-        }
-
-        .metric-value {
-            font-size: 32px;
-            font-weight: 300;
-            text-align: center;
-            margin: 20px 0;
-        }
-
-        .metric-label {
-            text-align: center;
-            color: #666;
-            font-size: 14px;
-        }
-
-        .status-indicator {
-            display: inline-block;
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            margin-right: 8px;
-        }
-
-        .status-critical { background-color: var(--danger-color); }
-        .status-warning { background-color: var(--warning-color); }
-        .status-normal { background-color: var(--success-color); }
-
-        .alert-list {
-            max-height: 300px;
-            overflow-y: auto;
-        }
-
-        .alert-item {
-            padding: 10px;
-            border-left: 3px solid;
-            margin-bottom: 10px;
-            background: #fff9f9;
-        }
-
+        .chart-container { height: 300px; width: 100%; }
+        .metric-value { font-size: 32px; font-weight: 300; text-align: center; margin: 20px 0; }
+        .metric-label { text-align: center; color: #666; font-size: 14px; }
+        .alert-list { max-height: 300px; overflow-y: auto; }
+        .alert-item { padding: 10px; border-left: 3px solid; margin-bottom: 10px; background: #fff9f9; border-radius: 4px; }
         .alert-critical { border-left-color: var(--danger-color); }
         .alert-high { border-left-color: var(--warning-color); }
         .alert-medium { border-left-color: var(--primary-color); }
         .alert-low { border-left-color: #9E9E9E; }
-
-        .refresh-button {
-            background: var(--primary-color);
-            color: white;
-            border: none;
-            padding: 8px 16px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 14px;
-        }
-
-        @media (max-width: 768px) {
-            .dashboard-content {
-                grid-template-columns: 1fr;
-            }
-        }
     </style>
 </head>
 <body>
@@ -151,9 +27,7 @@ o嗨哟<!DOCTYPE html>
 <header class="app-header">
     <div class="header-container">
         <div class="header-brand">
-            <a href="/dashboard" class="brand-logo">
-                📊 DeepSeekQuant
-            </a>
+            <a href="/dashboard" class="brand-logo">📊 DeepSeekQuant</a>
         </div>
         <nav class="header-nav">
             <a href="/dashboard" class="nav-link">Dashboard</a>
@@ -173,77 +47,82 @@ o嗨哟<!DOCTYPE html>
         </div>
     </div>
 </header>
-    <div class="dashboard-header">
-        <h1 class="dashboard-title">DeepSeekQuant 数据质量仪表板</h1>
-        <p class="dashboard-subtitle">实时监控系统数据质量与性能指标</p>
-    </div>
 
-    <div class="dashboard-content">
+<div class="container">
+    <div class="grid">
         <!-- 总体质量卡片 -->
-        <div class="dashboard-card">
+        <div class="card">
             <div class="card-header">
-                <h2 class="card-title">总体质量评分</h2>
-                <span class="status-indicator status-normal"></span>
+                总体质量评分
+                <span class="badge badge-success">正常</span>
             </div>
-            <div id="qualityGauge" class="chart-container"></div>
+            <div class="card-body">
+                <div id="qualityGauge" class="chart-container"></div>
+            </div>
         </div>
 
         <!-- 异常统计卡片 -->
-        <div class="dashboard-card">
+        <div class="card">
             <div class="card-header">
-                <h2 class="card-title">异常检测统计</h2>
-                <button class="refresh-button" onclick="refreshChart('anomalyChart')">刷新</button>
+                异常检测统计
+                <button class="btn btn-sm btn-primary" onclick="refreshChart('anomalyChart')">刷新</button>
             </div>
-            <div id="anomalyChart" class="chart-container"></div>
+            <div class="card-body">
+                <div id="anomalyChart" class="chart-container"></div>
+            </div>
         </div>
 
         <!-- 性能指标卡片 -->
-        <div class="dashboard-card">
+        <div class="card">
             <div class="card-header">
-                <h2 class="card-title">性能指标</h2>
+                性能指标
+                <button class="btn btn-sm btn-primary" onclick="refreshChart('performanceChart')">刷新</button>
             </div>
-            <div id="performanceChart" class="chart-container"></div>
+            <div class="card-body">
+                <div id="performanceChart" class="chart-container"></div>
+            </div>
         </div>
 
-        <!-- 错误分布卡片 -->
-        <div class="dashboard-card">
-            <div class="card-header">
-                <h2 class="card-title">错误类型分布</h2>
-            </div>
-            <div id="errorDistributionChart" class="chart-container"></div>
-        </div>
-
-        <!-- 实时警报卡片 -->
-        <div class="dashboard-card">
-            <div class="card-header">
-                <h2 class="card-title">实时警报</h2>
-                <span class="status-indicator status-normal"></span>
-            </div>
-            <div class="alert-list" id="alertList">
-                <p>正在加载警报数据...</p>
+        <!-- 错误类型分布卡片 -->
+        <div class="card">
+            <div class="card-header">错误类型分布</div>
+            <div class="card-body">
+                <div id="errorDistributionChart" class="chart-container"></div>
             </div>
         </div>
 
         <!-- 系统状态卡片 -->
-        <div class="dashboard-card">
-            <div class="card-header">
-                <h2 class="card-title">系统状态</h2>
-            </div>
-            <div id="systemStatus">
-                <div class="metric-value" id="uptimeValue">--</div>
-                <div class="metric-label">系统运行时间</div>
+        <div class="card">
+            <div class="card-header">系统状态</div>
+            <div class="card-body">
+                <div id="systemStatus">
+                    <div class="metric-value" id="uptimeValue">--</div>
+                    <div class="metric-label">系统运行时间</div>
 
-                <div class="metric-value" id="throughputValue">--</div>
-                <div class="metric-label">数据处理吞吐量 (points/sec)</div>
+                    <div class="metric-value" id="throughputValue">--</div>
+                    <div class="metric-label">数据处理吞吐量 (points/sec)</div>
 
-                <div class="metric-value" id="successRateValue">--</div>
-                <div class="metric-label">成功率</div>
+                    <div class="metric-value" id="successRateValue">--</div>
+                    <div class="metric-label">成功率</div>
+                </div>
             </div>
         </div>
     </div>
 
-    <script src="/static/js/common.js"></script>
-    <script>
+    <!-- 警报列表（单独行） -->
+    <div class="card" style="margin-top: var(--spacing-lg);">
+        <div class="card-header">
+            实时警报
+            <button class="btn btn-sm btn-primary" onclick="loadAlerts()">刷新</button>
+        </div>
+        <div class="card-body">
+            <div id="alertsList" class="alert-list"></div>
+        </div>
+    </div>
+</div>
+
+<script src="/static/js/common.js"></script>
+<script>
         // 初始化ECharts实例
         const qualityGauge = echarts.init(document.getElementById('qualityGauge'));
         const anomalyChart = echarts.init(document.getElementById('anomalyChart'));
