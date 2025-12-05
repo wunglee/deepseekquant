@@ -1,7 +1,14 @@
 # 系统配置 - 数据模块
-primary_source: yahoo
-default_index: AAPL
-backup_sources: []
+primary_source: mock  # 数据源类型: yahoo, tushare, mock（mock用于演示和测试）
+default_index: ^GSPC  # 标普500指数（Yahoo Finance 支持）
+backup_sources: []  # 备用数据源
 cache_enabled: true
 cache_ttl: 3600
 max_retries: 3
+
+# 数据源说明：
+# - mock: 使用模拟数据提供者（位于 tests/fixtures/core/data/mock_historical_data_provider.py）
+#         不调用外部API，完全本地生成，适合开发和演示
+# - yahoo: 使用Yahoo Finance真实数据源（可能遇到限流）
+# - tushare: 使用Tushare数据源（需要配置API Token）
+# - real: 使用RealHistoricalDataProvider（会根据primary_source自动选择）

@@ -71,7 +71,8 @@ dependencies:
     - optuna>=3.0.0
     - wandb>=0.13.0
     - mlflow>=2.0.0
-
+    - slack-sdk>=3.39.0
+    - twilio>=9.8.8
 variables:
   DEEPSEEKQUANT_ENV: "development"
   PYTHONPATH: "."

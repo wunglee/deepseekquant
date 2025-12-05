@@ -31,7 +31,7 @@ from flask import Flask, jsonify, request, send_file
 from flask_cors import CORS
 
 if TYPE_CHECKING:
-    from core_bak_refactored.core.data.data_fetcher import DataQualityMonitor
+    from core_bak.data_fetcher import DataQualityMonitor
 
 logger = logging.getLogger('DeepSeekQuant.App.Dashboard')
 

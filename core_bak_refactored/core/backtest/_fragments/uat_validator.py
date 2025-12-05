@@ -936,21 +936,16 @@ class UATValidator:
             (关键行业代码集合, 配置加载成功标志, 配置内容)
         """
         try:
-            config_path = Path(__file__).parent.parent.parent.parent / 'config' / 'critical_industries_config.json'
-            with open(config_path, 'r', encoding='utf-8') as f:
-                config = json.load(f)
+            # 使用ConfigManager加载配置
+            from core_bak_refactored.core.share.config_manager import ConfigManager
+            config_manager = ConfigManager()
+            config = config_manager.get('critical_industries', {})
             
             industries = {industry['code'] for industry in config.get('critical_industries', [])}
             logger.info(f"成功从配置文件加载{len(industries)}个关键行业")
             return industries, True, config
-        except FileNotFoundError:
-            logger.warning("关键行业配置文件不存在，使用硬编码列表")
-            return {'semiconductor', 'new_energy', 'ai_tech'}, False, None
-        except json.JSONDecodeError as e:
-            logger.error(f"关键行业配置文件JSON解析失败: {e}，使用硬编码列表")
-            return {'semiconductor', 'new_energy', 'ai_tech'}, False, None
         except Exception as e:
-            logger.error(f"关键行业配置文件加载失败: {e}，使用硬编码列表")
+            logger.warning(f"关键行业配置加载失败: {e}，使用硬编码列表")
             return {'semiconductor', 'new_energy', 'ai_tech'}, False, None
     
     def validate_industry_parameter_enhanced(self, industry_data: Dict[str, Any]) -> UATResult:

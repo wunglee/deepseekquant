@@ -25,12 +25,12 @@ import uuid
 
 # 导入内部模块
 from config.config_manager import ConfigManager
-from core.data_fetcher import DataFetcher
-from core.signal_engine import SignalEngine, Signal, SignalType
-from core.portfolio_manager import PortfolioManager, AllocationMethod
-from core.risk_manager import RiskManager, RiskLevel, RiskAssessment
-from core.execution_engine import ExecutionEngine, ExecutionStrategy, TradeCost
-from core.bayesian_optimizer import BayesianOptimizer
+from core_bak.data_fetcher import DataFetcher
+from core_bak.signal_engine import SignalEngine, Signal, SignalType
+from core_bak.portfolio_manager import PortfolioManager, AllocationMethod
+from core_bak.risk_manager import RiskManager, RiskLevel, RiskAssessment
+from core_bak.execution_engine import ExecutionEngine, ExecutionStrategy, TradeCost
+from core_bak.bayesian_optimizer import BayesianOptimizer
 from analytics.backtesting import BacktestingEngine
 from analytics.performance import PerformanceAnalyzer
 from infrastructure.monitoring import MonitoringSystem

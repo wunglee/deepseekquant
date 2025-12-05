@@ -5,12 +5,11 @@
 """
 import pytest
 from datetime import datetime, timedelta
-from core_bak_refactored.core.data.data_fetcher import (
+from core_bak.data_fetcher import (
     DataFetcher,
     DataValidator,
-    DataQualityMonitorBasic
+    DataQualityMonitorBasic, MarketData, DataSourceType
 )
-from core_bak_refactored.core.share import MarketData, DataSourceType
 from core_bak_refactored.tests.fixtures.core.data.mock_historical_data_provider import MockHistoricalDataProvider
 
 

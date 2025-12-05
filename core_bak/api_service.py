@@ -37,7 +37,8 @@ TODO: 专家提供的完整实现，已验收可用
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+import time
+from datetime import datetime, timedelta
 from typing import Dict, Any, List, TYPE_CHECKING
 
 import numpy as np
@@ -46,7 +47,7 @@ from flask import Flask, jsonify, request, Response
 from flask_cors import CORS
 
 if TYPE_CHECKING:
-    from core_bak_refactored.core.data.data_fetcher import DataQualityMonitor
+    from core_bak.data_fetcher import DataQualityMonitor
 
 logger = logging.getLogger('DeepSeekQuant.App.APIService')
 
