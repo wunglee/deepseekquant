@@ -421,7 +421,14 @@ select.form-control {
 }
 
 /* ========== 响应式适配 ========== */
+
+/* 平板设备 (1024px 以下) */
 @media (max-width: 1024px) {
+    :root {
+        --font-size-base: 15px;
+        --spacing-lg: 14px;
+    }
+    
     .header-nav {
         display: none;
     }
@@ -429,17 +436,155 @@ select.form-control {
     .container {
         padding: var(--spacing-md);
     }
+    
+    .grid-3, .grid-4 {
+        grid-template-columns: repeat(2, 1fr);
+    }
 }
 
+/* 移动设备 (768px 以下) */
 @media (max-width: 768px) {
+    :root {
+        --font-size-base: 14px;
+        --spacing-md: 10px;
+        --spacing-lg: 12px;
+    }
+    
+    body {
+        font-size: var(--font-size-base);
+    }
+    
+    /* 头部导航 */
     .header-container {
         flex-direction: column;
         gap: var(--spacing-sm);
+        padding: var(--spacing-sm) var(--spacing-md);
+    }
+    
+    .header-brand {
+        width: 100%;
+        justify-content: space-between;
+    }
+    
+    .brand-logo {
+        font-size: var(--font-size-lg);
     }
     
     .header-actions {
         width: 100%;
         justify-content: flex-end;
+    }
+    
+    .header-status {
+        font-size: var(--font-size-xs);
+        padding: 4px var(--spacing-sm);
+    }
+    
+    /* 容器 */
+    .container {
+        padding: var(--spacing-sm);
+    }
+    
+    /* 网格布局 - 移动端全部单列 */
+    .grid-2, .grid-3, .grid-4, .grid {
+        grid-template-columns: 1fr;
+        gap: var(--spacing-md);
+    }
+    
+    /* 卡片 */
+    .card {
+        border-radius: var(--border-radius-sm);
+    }
+    
+    .card-header {
+        padding: var(--spacing-sm) var(--spacing-md);
+        font-size: var(--font-size-sm);
+    }
+    
+    .card-body {
+        padding: var(--spacing-md);
+    }
+    
+    /* 工具栏 */
+    .toolbar {
+        flex-direction: column;
+        gap: var(--spacing-sm);
+    }
+    
+    .toolbar > * {
+        width: 100%;
+    }
+    
+    /* 按钮 */
+    .btn {
+        padding: var(--spacing-md);
+        font-size: var(--font-size-base);
+    }
+    
+    .btn-sm {
+        padding: var(--spacing-sm);
+        font-size: var(--font-size-sm);
+    }
+    
+    /* 表单 */
+    .form-control {
+        font-size: 16px; /* 防止 iOS 缩放 */
+        padding: var(--spacing-md);
+    }
+    
+    /* 表格 */
+    .table-responsive {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    
+    .table {
+        font-size: var(--font-size-xs);
+    }
+    
+    .table th,
+    .table td {
+        padding: var(--spacing-sm);
+    }
+}
+
+/* 小屏手机 (480px 以下) */
+@media (max-width: 480px) {
+    :root {
+        --font-size-base: 13px;
+        --spacing-sm: 6px;
+        --spacing-md: 8px;
+        --spacing-lg: 10px;
+    }
+    
+    .brand-logo {
+        font-size: var(--font-size-base);
+    }
+    
+    .card-header {
+        font-size: var(--font-size-xs);
+    }
+    
+    .table {
+        font-size: 11px;
+    }
+}
+
+/* 触摸设备优化 */
+@media (hover: none) and (pointer: coarse) {
+    .btn,
+    .nav-link {
+        min-height: 44px;
+    }
+    
+    .btn:hover,
+    .nav-link:hover {
+        transform: none;
+    }
+    
+    .btn:active,
+    .nav-link:active {
+        opacity: 0.7;
     }
 }
 

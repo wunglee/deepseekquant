@@ -643,6 +643,449 @@ class DataQualityAPIService:
         # ============================================================
         # 数据提供者能力暴露（补充接口）
         # ============================================================
+        
+        @self.app.route('/api/v1/providers', methods=['GET'])
+        def get_providers():
+            """获取所有数据源配置"""
+            try:
+                config = self.config_manager.get('data', {})
+                providers = config.get('providers', [])
+                primary_source = config.get('primary_source', 'mock')
+                
+                return jsonify({
+                    'status': 'success',
+                    'providers': providers,
+                    'primary_source': primary_source,
+                    'total': len(providers),
+                    'timestamp': datetime.now().isoformat()
+                })
+            except Exception as e:
+                logger.error(f"获取数据源列表失败: {e}")
+                return jsonify({
+                    'status': 'error',
+                    'message': str(e),
+                    'error_code': 'PROVIDERS_FETCH_FAILED'
+                }), 500
+        
+        @self.app.route('/api/v1/providers/<provider_id>', methods=['GET'])
+        def get_provider(provider_id):
+            """获取指定数据源配置"""
+            try:
+                config = self.config_manager.get('data', {})
+                providers = config.get('providers', [])
+                
+                provider = next((p for p in providers if p.get('id') == provider_id or p.get('name') == provider_id), None)
+                
+                if not provider:
+                    return jsonify({
+                        'status': 'error',
+                        'message': f'数据源不存在: {provider_id}',
+                        'error_code': 'PROVIDER_NOT_FOUND'
+                    }), 404
+                
+                return jsonify({
+                    'status': 'success',
+                    'provider': provider,
+                    'timestamp': datetime.now().isoformat()
+                })
+            except Exception as e:
+                logger.error(f"获取数据源配置失败: {e}")
+                return jsonify({
+                    'status': 'error',
+                    'message': str(e),
+                    'error_code': 'PROVIDER_FETCH_FAILED'
+                }), 500
+        
+        @self.app.route('/api/v1/providers', methods=['POST'])
+        def create_provider():
+            """创建新数据源"""
+            try:
+                new_provider = request.get_json()
+                if not new_provider:
+                    return jsonify({
+                        'status': 'error',
+                        'message': '无效的数据源配置',
+                        'error_code': 'INVALID_PROVIDER_DATA'
+                    }), 400
+                
+                # 验证必填字段
+                required_fields = ['name', 'type']
+                for field in required_fields:
+                    if field not in new_provider:
+                        return jsonify({
+                            'status': 'error',
+                            'message': f'缺少必填字段: {field}',
+                            'error_code': 'MISSING_REQUIRED_FIELD'
+                        }), 400
+                
+                config = self.config_manager.get('data', {})
+                providers = config.get('providers', [])
+                
+                # 检查是否已存在
+                if any(p.get('name') == new_provider['name'] for p in providers):
+                    return jsonify({
+                        'status': 'error',
+                        'message': f'数据源已存在: {new_provider["name"]}',
+                        'error_code': 'PROVIDER_ALREADY_EXISTS'
+                    }), 409
+                
+                # 添加默认字段
+                new_provider.setdefault('enabled', True)
+                new_provider.setdefault('priority', len(providers) + 1)
+                new_provider.setdefault('created_at', datetime.now().isoformat())
+                
+                providers.append(new_provider)
+                config['providers'] = providers
+                
+                self.config_manager.update({'data': config})
+                logger.info(f"创建数据源成功: {new_provider['name']}")
+                
+                return jsonify({
+                    'status': 'success',
+                    'message': '数据源创建成功',
+                    'provider': new_provider,
+                    'timestamp': datetime.now().isoformat()
+                }), 201
+            except Exception as e:
+                logger.error(f"创建数据源失败: {e}")
+                return jsonify({
+                    'status': 'error',
+                    'message': str(e),
+                    'error_code': 'PROVIDER_CREATE_FAILED'
+                }), 500
+        
+        @self.app.route('/api/v1/providers/<provider_id>', methods=['PUT'])
+        def update_provider(provider_id):
+            """更新数据源配置"""
+            try:
+                updated_data = request.get_json()
+                if not updated_data:
+                    return jsonify({
+                        'status': 'error',
+                        'message': '无效的更新数据',
+                        'error_code': 'INVALID_UPDATE_DATA'
+                    }), 400
+                
+                config = self.config_manager.get('data', {})
+                providers = config.get('providers', [])
+                
+                provider_index = next((i for i, p in enumerate(providers) if p.get('id') == provider_id or p.get('name') == provider_id), None)
+                
+                if provider_index is None:
+                    return jsonify({
+                        'status': 'error',
+                        'message': f'数据源不存在: {provider_id}',
+                        'error_code': 'PROVIDER_NOT_FOUND'
+                    }), 404
+                
+                # 更新字段
+                providers[provider_index].update(updated_data)
+                providers[provider_index]['updated_at'] = datetime.now().isoformat()
+                
+                config['providers'] = providers
+                self.config_manager.update({'data': config})
+                logger.info(f"更新数据源成功: {provider_id}")
+                
+                return jsonify({
+                    'status': 'success',
+                    'message': '数据源更新成功',
+                    'provider': providers[provider_index],
+                    'timestamp': datetime.now().isoformat()
+                })
+            except Exception as e:
+                logger.error(f"更新数据源失败: {e}")
+                return jsonify({
+                    'status': 'error',
+                    'message': str(e),
+                    'error_code': 'PROVIDER_UPDATE_FAILED'
+                }), 500
+        
+        @self.app.route('/api/v1/providers/<provider_id>', methods=['DELETE'])
+        def delete_provider(provider_id):
+            """删除数据源"""
+            try:
+                config = self.config_manager.get('data', {})
+                providers = config.get('providers', [])
+                
+                provider_index = next((i for i, p in enumerate(providers) if p.get('id') == provider_id or p.get('name') == provider_id), None)
+                
+                if provider_index is None:
+                    return jsonify({
+                        'status': 'error',
+                        'message': f'数据源不存在: {provider_id}',
+                        'error_code': 'PROVIDER_NOT_FOUND'
+                    }), 404
+                
+                deleted_provider = providers.pop(provider_index)
+                config['providers'] = providers
+                
+                self.config_manager.update({'data': config})
+                logger.info(f"删除数据源成功: {provider_id}")
+                
+                return jsonify({
+                    'status': 'success',
+                    'message': '数据源删除成功',
+                    'deleted_provider': deleted_provider,
+                    'timestamp': datetime.now().isoformat()
+                })
+            except Exception as e:
+                logger.error(f"删除数据源失败: {e}")
+                return jsonify({
+                    'status': 'error',
+                    'message': str(e),
+                    'error_code': 'PROVIDER_DELETE_FAILED'
+                }), 500
+        
+        @self.app.route('/api/v1/providers/<provider_id>/test', methods=['POST'])
+        def test_provider(provider_id):
+            """测试数据源连接"""
+            try:
+                config = self.config_manager.get('data', {})
+                providers = config.get('providers', [])
+                
+                provider = next((p for p in providers if p.get('id') == provider_id or p.get('name') == provider_id), None)
+                
+                if not provider:
+                    return jsonify({
+                        'status': 'error',
+                        'message': f'数据源不存在: {provider_id}',
+                        'error_code': 'PROVIDER_NOT_FOUND'
+                    }), 404
+                
+                # TODO: 实现实际的连接测试逻辑
+                # 这里返回模拟结果
+                test_result = {
+                    'connected': True,
+                    'latency_ms': 150,
+                    'message': '连接成功',
+                    'tested_at': datetime.now().isoformat()
+                }
+                
+                return jsonify({
+                    'status': 'success',
+                    'provider': provider['name'],
+                    'test_result': test_result,
+                    'timestamp': datetime.now().isoformat()
+                })
+            except Exception as e:
+                logger.error(f"测试数据源连接失败: {e}")
+                return jsonify({
+                    'status': 'error',
+                    'message': str(e),
+                    'error_code': 'PROVIDER_TEST_FAILED'
+                }), 500
+        
+        # ============================================================
+        # 凭证管理端点（Credentials Management）
+        # ============================================================
+        
+        @self.app.route('/api/v1/credentials', methods=['GET'])
+        def get_credentials():
+            """获取所有凭证列表（敏感信息脱敏）"""
+            try:
+                config = self.config_manager.get('credentials', {})
+                credentials_list = []
+                
+                for key, cred in config.items():
+                    # 脱敏处理
+                    sanitized_cred = {
+                        'id': key,
+                        'type': cred.get('type', 'unknown'),
+                        'provider': cred.get('provider', ''),
+                        'username': cred.get('username', ''),
+                        'api_key': '***' + cred.get('api_key', '')[-4:] if cred.get('api_key') else '',
+                        'enabled': cred.get('enabled', True),
+                        'created_at': cred.get('created_at', ''),
+                        'updated_at': cred.get('updated_at', '')
+                    }
+                    credentials_list.append(sanitized_cred)
+                
+                return jsonify({
+                    'status': 'success',
+                    'credentials': credentials_list,
+                    'total': len(credentials_list),
+                    'timestamp': datetime.now().isoformat()
+                })
+            except Exception as e:
+                logger.error(f"获取凭证列表失败: {e}")
+                return jsonify({
+                    'status': 'error',
+                    'message': str(e),
+                    'error_code': 'CREDENTIALS_FETCH_FAILED'
+                }), 500
+        
+        @self.app.route('/api/v1/credentials/<credential_id>', methods=['GET'])
+        def get_credential(credential_id):
+            """获取指定凭证（脱敏）"""
+            try:
+                config = self.config_manager.get('credentials', {})
+                cred = config.get(credential_id)
+                
+                if not cred:
+                    return jsonify({
+                        'status': 'error',
+                        'message': f'凭证不存在: {credential_id}',
+                        'error_code': 'CREDENTIAL_NOT_FOUND'
+                    }), 404
+                
+                # 脱敏处理
+                sanitized_cred = {
+                    'id': credential_id,
+                    'type': cred.get('type', 'unknown'),
+                    'provider': cred.get('provider', ''),
+                    'username': cred.get('username', ''),
+                    'api_key': '***' + cred.get('api_key', '')[-4:] if cred.get('api_key') else '',
+                    'enabled': cred.get('enabled', True),
+                    'created_at': cred.get('created_at', ''),
+                    'updated_at': cred.get('updated_at', '')
+                }
+                
+                return jsonify({
+                    'status': 'success',
+                    'credential': sanitized_cred,
+                    'timestamp': datetime.now().isoformat()
+                })
+            except Exception as e:
+                logger.error(f"获取凭证失败: {e}")
+                return jsonify({
+                    'status': 'error',
+                    'message': str(e),
+                    'error_code': 'CREDENTIAL_FETCH_FAILED'
+                }), 500
+        
+        @self.app.route('/api/v1/credentials', methods=['POST'])
+        def create_credential():
+            """创建新凭证"""
+            try:
+                new_cred = request.get_json()
+                if not new_cred:
+                    return jsonify({
+                        'status': 'error',
+                        'message': '无效的凭证数据',
+                        'error_code': 'INVALID_CREDENTIAL_DATA'
+                    }), 400
+                
+                # 验证必填字段
+                required_fields = ['id', 'type']
+                for field in required_fields:
+                    if field not in new_cred:
+                        return jsonify({
+                            'status': 'error',
+                            'message': f'缺少必填字段: {field}',
+                            'error_code': 'MISSING_REQUIRED_FIELD'
+                        }), 400
+                
+                config = self.config_manager.get('credentials', {})
+                
+                # 检查是否已存在
+                if new_cred['id'] in config:
+                    return jsonify({
+                        'status': 'error',
+                        'message': f'凭证已存在: {new_cred["id"]}',
+                        'error_code': 'CREDENTIAL_ALREADY_EXISTS'
+                    }), 409
+                
+                # 添加默认字段
+                new_cred.setdefault('enabled', True)
+                new_cred.setdefault('created_at', datetime.now().isoformat())
+                
+                config[new_cred['id']] = new_cred
+                self.config_manager.update({'credentials': config})
+                logger.info(f"创建凭证成功: {new_cred['id']}")
+                
+                # 返回脱敏数据
+                sanitized = {
+                    'id': new_cred['id'],
+                    'type': new_cred.get('type'),
+                    'provider': new_cred.get('provider', ''),
+                    'enabled': new_cred.get('enabled', True)
+                }
+                
+                return jsonify({
+                    'status': 'success',
+                    'message': '凭证创建成功',
+                    'credential': sanitized,
+                    'timestamp': datetime.now().isoformat()
+                }), 201
+            except Exception as e:
+                logger.error(f"创建凭证失败: {e}")
+                return jsonify({
+                    'status': 'error',
+                    'message': str(e),
+                    'error_code': 'CREDENTIAL_CREATE_FAILED'
+                }), 500
+        
+        @self.app.route('/api/v1/credentials/<credential_id>', methods=['PUT'])
+        def update_credential(credential_id):
+            """更新凭证"""
+            try:
+                updated_data = request.get_json()
+                if not updated_data:
+                    return jsonify({
+                        'status': 'error',
+                        'message': '无效的更新数据',
+                        'error_code': 'INVALID_UPDATE_DATA'
+                    }), 400
+                
+                config = self.config_manager.get('credentials', {})
+                
+                if credential_id not in config:
+                    return jsonify({
+                        'status': 'error',
+                        'message': f'凭证不存在: {credential_id}',
+                        'error_code': 'CREDENTIAL_NOT_FOUND'
+                    }), 404
+                
+                # 更新字段
+                config[credential_id].update(updated_data)
+                config[credential_id]['updated_at'] = datetime.now().isoformat()
+                
+                self.config_manager.update({'credentials': config})
+                logger.info(f"更新凭证成功: {credential_id}")
+                
+                return jsonify({
+                    'status': 'success',
+                    'message': '凭证更新成功',
+                    'timestamp': datetime.now().isoformat()
+                })
+            except Exception as e:
+                logger.error(f"更新凭证失败: {e}")
+                return jsonify({
+                    'status': 'error',
+                    'message': str(e),
+                    'error_code': 'CREDENTIAL_UPDATE_FAILED'
+                }), 500
+        
+        @self.app.route('/api/v1/credentials/<credential_id>', methods=['DELETE'])
+        def delete_credential(credential_id):
+            """删除凭证"""
+            try:
+                config = self.config_manager.get('credentials', {})
+                
+                if credential_id not in config:
+                    return jsonify({
+                        'status': 'error',
+                        'message': f'凭证不存在: {credential_id}',
+                        'error_code': 'CREDENTIAL_NOT_FOUND'
+                    }), 404
+                
+                del config[credential_id]
+                self.config_manager.update({'credentials': config})
+                logger.info(f"删除凭证成功: {credential_id}")
+                
+                return jsonify({
+                    'status': 'success',
+                    'message': '凭证删除成功',
+                    'timestamp': datetime.now().isoformat()
+                })
+            except Exception as e:
+                logger.error(f"删除凭证失败: {e}")
+                return jsonify({
+                    'status': 'error',
+                    'message': str(e),
+                    'error_code': 'CREDENTIAL_DELETE_FAILED'
+                }), 500
+        
         @self.app.route('/api/v1/data/index-prices')
         def get_index_prices_api():
             """获取指数价格数据（直接来自当前数据提供者）"""
