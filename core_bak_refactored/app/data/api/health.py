@@ -118,8 +118,3 @@ class HealthChecker:
         }
 
 
-# 兼容性函数（为了保持原有接口）
-def check_health(monitor: Any) -> Dict[str, Any]:
-    """健康检查（简化版本）"""
-    checker = HealthChecker(monitor)
-    return checker.run_health_check()

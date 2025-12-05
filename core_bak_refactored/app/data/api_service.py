@@ -509,7 +509,7 @@ class DataQualityAPIService:
         def get_dashboard_performance():
             """获取仪表板性能数据（严格模式）"""
             try:
-                stats = self.quality_monitor.get_performance_stats()
+                stats = self.quality_monitor.get_performance_statistics()
                 return jsonify({
                     'status': 'success',
                     'performance': stats,

@@ -113,17 +113,30 @@ class QualityMonitoringService:
         data_cfg = self.config_manager.get_data_config()
         factory = get_global_factory()
         
-        # 注册Mock数据提供者（如果尚未注册）
-        if not factory.is_registered('mock'):
-            from core_bak_refactored.tests.fixtures.core.data.mock_historical_data_provider import MockHistoricalDataProvider
-            factory.register('mock', MockHistoricalDataProvider)
-            logger.debug("✅ 已注册Mock数据提供者")
+        # 注册Mock数据提供者（如果工厂支持该接口且尚未注册）
+        try:
+            if hasattr(factory, 'is_registered') and not factory.is_registered('mock'):
+                from core_bak_refactored.tests.fixtures.core.data.mock_historical_data_provider import MockHistoricalDataProvider
+                if hasattr(factory, 'register'):
+                    factory.register('mock', MockHistoricalDataProvider)
+                logger.debug("✅ 已注册Mock数据提供者")
+        except Exception:
+            pass
         
         # 根据配置创建数据提供者
         if data_cfg.primary_source == 'mock':
-            # 直接使用Mock数据提供者
-            self.data_provider = factory.create('mock')
-            logger.info("🎯 使用Mock数据提供者（示例数据，配置: config/dev/data.yml）")
+            # 优先尝试mock提供者；若工厂不支持则回退到real提供者
+            try:
+                self.data_provider = factory.create('mock')
+                logger.info("🎯 使用Mock数据提供者（示例数据，配置: config/dev/data.yml）")
+            except Exception:
+                self.data_provider = factory.create(
+                    'real',
+                    primary_source=data_cfg.primary_source,
+                    backup_sources=data_cfg.backup_sources,
+                    enable_cross_validation=self.config_manager.get_monitoring_config().enable_cross_validation,
+                )
+                logger.info("🔁 工厂不支持mock，已回退到RealHistoricalDataProvider")
         elif data_cfg.primary_source in ['yahoo', 'tushare']:
             # 直接使用指定的数据源
             self.data_provider = factory.create(data_cfg.primary_source)
@@ -265,9 +278,6 @@ class QualityMonitoringService:
         
         return stats
     
-    def get_performance_stats(self) -> Dict[str, Any]:
-        """兼容API使用的性能统计方法名称"""
-        return self.get_performance_statistics()
     
     def generate_comprehensive_report(self, period: str = '7d') -> Dict[str, Any]:
         """

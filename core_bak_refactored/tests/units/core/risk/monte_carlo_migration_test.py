@@ -142,52 +142,6 @@ class TestMonteCarloMigration:
         
         assert np.isnan(var), "数据不足时应返回NaN"
     
-    def test_calculator_delegation_with_deprecation_warning(self, basic_config, sample_market_data, sample_portfolio_state):
-        """测试RiskCalculator委托调用并验证deprecation警告"""
-        calculator = RiskCalculator(basic_config)
-        
-        # 捕获警告
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            
-            var = calculator.calculate_var_monte_carlo(
-                portfolio_state=sample_portfolio_state,
-                market_data=sample_market_data,
-                confidence_level=0.95
-            )
-            
-            # 验证警告触发
-            assert len(w) >= 1, "应触发deprecation警告"
-            assert issubclass(w[0].category, DeprecationWarning), "应为DeprecationWarning"
-            assert "迁移至 RiskMetricsService" in str(w[0].message), "警告消息应提示迁移"
-        
-        # 验证结果有效
-        assert not np.isnan(var)
-        assert var >= 0
-    
-    def test_calculator_delegation_result_consistency(self, basic_config, sample_market_data, sample_portfolio_state):
-        """测试RiskCalculator委托结果与服务层一致"""
-        calculator = RiskCalculator(basic_config)
-        service = RiskMetricsService(basic_config)
-        
-        # 抑制警告
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            
-            var_calc = calculator.calculate_var_monte_carlo(
-                portfolio_state=sample_portfolio_state,
-                market_data=sample_market_data,
-                confidence_level=0.95
-            )
-        
-        var_service = service.calculate_var_monte_carlo(
-            portfolio_state=sample_portfolio_state,
-            market_data=sample_market_data,
-            confidence_level=0.95
-        )
-        
-        # 由于使用相同的随机种子（从config），结果应相同
-        assert abs(var_calc - var_service) < 1e-10, "委托调用应与直接调用服务层结果一致"
     
     def test_monte_carlo_confidence_level_impact(self, basic_config, sample_market_data, sample_portfolio_state):
         """测试不同置信水平对VaR的影响"""

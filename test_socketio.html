@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Socket.IO 实时测试</title>
+    <script src="https://cdn.jsdelivr.net/npm/socket.io-client@4.7.2/dist/socket.io.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .status {
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 18px;
+            font-weight: bold;
+        }
+        .connected { background-color: #4CAF50; color: white; }
+        .disconnected { background-color: #FF5252; color: white; }
+        .data-box {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .quality-score {
+            font-size: 48px;
+            text-align: center;
+            color: #2196F3;
+            margin: 20px 0;
+        }
+        #log {
+            background: #263238;
+            color: #00FF00;
+            padding: 15px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        button {
+            background: #2196F3;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-right: 10px;
+        }
+        button:hover {
+            background: #1976D2;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔌 Socket.IO 实时数据推送测试</h1>
+    
+    <div id="status" class="status disconnected">
+        🔴 未连接
+    </div>
+    
+    <div class="data-box">
+        <h2>📊 实时质量数据</h2>
+        <div class="quality-score" id="qualityScore">--</div>
+        <div id="dataInfo" style="text-align: center; color: #666;">
+            等待数据推送...
+        </div>
+    </div>
+    
+    <div>
+        <button onclick="requestData()">📡 请求数据</button>
+        <button onclick="triggerCheck()">🔄 触发检查</button>
+        <button onclick="clearLog()">🗑️ 清空日志</button>
+    </div>
+    
+    <h3>📝 实时日志</h3>
+    <div id="log"></div>
+    
+    <script>
+        const socket = io('http://localhost:5001');
+        const logDiv = document.getElementById('log');
+        const statusDiv = document.getElementById('status');
+        const scoreDiv = document.getElementById('qualityScore');
+        const infoDiv = document.getElementById('dataInfo');
+        
+        function log(message) {
+            const timestamp = new Date().toLocaleTimeString();
+            logDiv.innerHTML += `[${timestamp}] ${message}<br>`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+        
+        socket.on('connect', () => {
+            log('✅ Socket.IO 已连接');
+            statusDiv.textContent = '🟢 已连接';
+            statusDiv.className = 'status connected';
+        });
+        
+        socket.on('disconnect', () => {
+            log('❌ Socket.IO 已断开');
+            statusDiv.textContent = '🔴 已断开';
+            statusDiv.className = 'status disconnected';
+        });
+        
+        socket.on('connection_response', (data) => {
+            log(`📨 连接响应: ${data.message}`);
+        });
+        
+        socket.on('quality_data_update', (data) => {
+            log('📊 收到质量数据更新');
+            if (data.status === 'success' && data.data) {
+                const qualityScore = data.data.quality_score || data.data.overall_score || 0;
+                const dataPoints = data.data.data_points_checked || 0;
+                const anomalies = data.data.anomalies_detected || 0;
+                
+                scoreDiv.textContent = `${(qualityScore * 100).toFixed(2)}%`;
+                scoreDiv.style.color = qualityScore > 0.9 ? '#4CAF50' : qualityScore > 0.7 ? '#FFB300' : '#FF5252';
+                
+                infoDiv.innerHTML = `
+                    <strong>数据点:</strong> ${dataPoints} | 
+                    <strong>异常:</strong> ${anomalies} | 
+                    <strong>时间:</strong> ${new Date(data.timestamp).toLocaleString()}
+                `;
+                
+                log(`✨ 质量得分: ${(qualityScore * 100).toFixed(2)}% | 数据点: ${dataPoints}`);
+            }
+        });
+        
+        socket.on('error', (data) => {
+            log(`⚠️ 错误: ${data.message}`);
+        });
+        
+        function requestData() {
+            log('📡 请求质量数据...');
+            socket.emit('request_quality_data');
+        }
+        
+        async function triggerCheck() {
+            log('🔄 触发质量检查...');
+            try {
+                const response = await fetch('http://localhost:5001/api/v1/trigger-check', {
+                    method: 'POST'
+                });
+                const result = await response.json();
+                log(`✅ ${result.message}`);
+            } catch (error) {
+                log(`❌ 触发失败: ${error.message}`);
+            }
+        }
+        
+        function clearLog() {
+            logDiv.innerHTML = '';
+            log('日志已清空');
+        }
+        
+        log('🚀 页面已加载，等待连接...');
+    </script>
+</body>
+</html>

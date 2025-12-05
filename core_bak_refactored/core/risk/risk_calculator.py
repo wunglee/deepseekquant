@@ -136,27 +136,6 @@ class RiskCalculator:
         return self.risk_metrics_service.calculate_value_at_risk(returns, confidence_level, 'parametric')
 
 
-    def calculate_var_monte_carlo(self, portfolio_state: 'PortfolioState', market_data: 'MarketData', confidence_level: float) -> float:
-        """
-        蒙特卡洛法VaR（委托给服务层）
-        
-        @deprecated: 迁移至 RiskMetricsService.calculate_var_monte_carlo
-        此处保留兼容性调用，建议直接使用服务层方法
-        """
-        import warnings
-        warnings.warn(
-            "RiskCalculator.calculate_var_monte_carlo 已迁移至 RiskMetricsService，请直接调用服务层方法",
-            DeprecationWarning,
-            stacklevel=2
-        )
-        logger.info(f"委托蒙特卡洛VaR至服务层，市场{self.market_type}")
-        
-        # 委托给服务层
-        return self.risk_metrics_service.calculate_var_monte_carlo(
-            portfolio_state=portfolio_state,
-            market_data=market_data,
-            confidence_level=confidence_level
-        )
 
 
     def calculate_max_drawdown(self, returns: pd.Series) -> float:
