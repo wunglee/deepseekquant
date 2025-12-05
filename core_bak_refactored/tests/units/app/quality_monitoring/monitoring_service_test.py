@@ -4,7 +4,7 @@
 """
 import pytest
 from unittest.mock import Mock
-from core_bak_refactored.app.data.monitoring_service import QualityMonitoringService
+from core_bak_refactored.app.quality_monitoring.monitoring_service import QualityMonitoringService
 from core_bak_refactored.core.monitoring.alert_manager import AlertConfig
 from unittest.mock import patch
 import pandas as pd
@@ -39,7 +39,7 @@ class StubFactory:
 
 @pytest.fixture(autouse=True)
 def patch_global_factory(monkeypatch):
-    monkeypatch.setattr('core_bak_refactored.app.data.monitoring_service.get_global_factory', lambda: StubFactory())
+    monkeypatch.setattr('core_bak_refactored.app.quality_monitoring.monitoring_service.get_global_factory', lambda: StubFactory())
 
 
 class TestQualityMonitoringServiceRunCheckCycle:

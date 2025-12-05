@@ -147,6 +147,32 @@ o嗨哟<!DOCTYPE html>
     </style>
 </head>
 <body>
+<!-- 顶部导航栏 -->
+<header class="app-header">
+    <div class="header-container">
+        <div class="header-brand">
+            <a href="/dashboard" class="brand-logo">
+                📊 DeepSeekQuant
+            </a>
+        </div>
+        <nav class="header-nav">
+            <a href="/dashboard" class="nav-link">Dashboard</a>
+            <a href="/explorer" class="nav-link">Explorer</a>
+            <a href="/rules" class="nav-link">Rules</a>
+            <a href="/scheduler" class="nav-link">Scheduler</a>
+            <a href="/alerts-center" class="nav-link">Alerts</a>
+            <a href="/providers" class="nav-link">Providers</a>
+            <a href="/validation" class="nav-link">Validation</a>
+            <a href="/realtime" class="nav-link">Realtime</a>
+        </nav>
+        <div class="header-actions">
+            <div class="header-status">
+                <span class="status-indicator"></span>
+                <span>系统运行中</span>
+            </div>
+        </div>
+    </div>
+</header>
     <div class="dashboard-header">
         <h1 class="dashboard-title">DeepSeekQuant 数据质量仪表板</h1>
         <p class="dashboard-subtitle">实时监控系统数据质量与性能指标</p>
@@ -216,6 +242,7 @@ o嗨哟<!DOCTYPE html>
         </div>
     </div>
 
+    <script src="/static/js/common.js"></script>
     <script>
         // 初始化ECharts实例
         const qualityGauge = echarts.init(document.getElementById('qualityGauge'));

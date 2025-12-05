@@ -5,7 +5,7 @@
 """
 import pytest
 from unittest.mock import Mock, MagicMock
-from core_bak_refactored.app.data.dashboard import DataQualityDashboard
+from core_bak_refactored.app.quality_monitoring.dashboard import DataQualityDashboard
 
 
 class TestDataQualityDashboardBasic:

@@ -7,34 +7,37 @@
     <meta http-equiv="Expires" content="0">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>警报中心 | DeepSeekQuant</title>
+    <link rel="stylesheet" href="/static/css/common.css">
     <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif; margin: 0; background: #f7f8fa; }
-        header { background: #111827; color: #fff; padding: 14px 20px; }
-        .container { padding: 16px; }
-        .filters { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 12px; }
-        .filters input, .filters select, .filters button { padding: 8px; border: 1px solid #d1d5db; border-radius: 6px; }
-        .grid { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; }
-        .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; }
-        .card-header { padding: 10px 12px; border-bottom: 1px solid #e5e7eb; font-weight: 600; }
-        .card-body { padding: 8px; }
         #alertsChart { height: 340px; }
-        table { width: 100%; border-collapse: collapse; font-size: 13px; }
-        th, td { border: 1px solid #e5e7eb; padding: 6px 8px; }
-        th { background: #f3f4f6; text-align: left; }
+        .filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 12px; }
     </style>
 </head>
 <body>
-<header>
-    <h2>警报中心</h2>
+<header class="app-header">
+    <div class="header-container">
+        <div class="header-brand"><a href="/dashboard" class="brand-logo">📊 DeepSeekQuant</a></div>
+        <nav class="header-nav">
+            <a href="/dashboard" class="nav-link">Dashboard</a>
+            <a href="/explorer" class="nav-link">Explorer</a>
+            <a href="/rules" class="nav-link">Rules</a>
+            <a href="/scheduler" class="nav-link">Scheduler</a>
+            <a href="/alerts-center" class="nav-link">Alerts</a>
+            <a href="/providers" class="nav-link">Providers</a>
+            <a href="/validation" class="nav-link">Validation</a>
+            <a href="/realtime" class="nav-link">Realtime</a>
+        </nav>
+        <div class="header-actions"><div class="header-status"><span class="status-indicator"></span><span>系统运行中</span></div></div>
+    </div>
 </header>
 <div class="container">
     <div class="filters">
-        <select id="level"><option value="">级别(全部)</option><option>INFO</option><option>WARN</option><option>ERROR</option></select>
-        <select id="severity"><option value="">严重性(全部)</option><option>LOW</option><option>MEDIUM</option><option>HIGH</option></select>
-        <input id="source" placeholder="数据源">
-        <input id="hours" type="number" value="24" placeholder="最近小时数">
-        <button onclick="loadAlerts()">查询</button>
+        <select id="level" class="form-control"><option value="">级别(全部)</option><option>INFO</option><option>WARN</option><option>ERROR</option></select>
+        <select id="severity" class="form-control"><option value="">严重性(全部)</option><option>LOW</option><option>MEDIUM</option><option>HIGH</option></select>
+        <input id="source" class="form-control" placeholder="数据源">
+        <input id="hours" class="form-control" type="number" value="24" placeholder="最近小时数">
+        <button class="btn btn-primary" onclick="loadAlerts()">查询</button>
     </div>
     <div class="grid">
         <div class="card">
@@ -54,9 +57,10 @@
         </div>
     </div>
 </div>
+<script src="/static/js/common.js"></script>
 <script>
     const alertsChart = echarts.init(document.getElementById('alertsChart'))
-    function showEmpty(chart, text) { chart.setOption({ series: [], graphic: [{ type: 'text', left: 'center', top: 'center', style: { text: text || '暂无数据', fontSize: 16, fill: '#999' } }] }, true) }
+    function showEmpty(chart, text) { AppUtils.showEmptyChart(chart, text || '暂无数据'); }
     function loadAlerts() {
         const params = new URLSearchParams()
         const level = document.getElementById('level').value

@@ -8,7 +8,7 @@
 """
 
 import pytest
-from core_bak_refactored.app.data.api.controllers import DataQualityControllers
+from core_bak_refactored.app.quality_monitoring.api.controllers import DataQualityControllers
 
 
 class DummyMonitor:

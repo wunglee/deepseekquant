@@ -7,7 +7,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from core_bak_refactored.app.data.api_service import DataQualityAPIService
+from core_bak_refactored.app.quality_monitoring.api_service import DataQualityAPIService
 
 
 class TestDataQualityAPIService:

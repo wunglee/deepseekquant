@@ -8,7 +8,7 @@
 """
 
 import pytest
-from core_bak_refactored.app.data.api.system_metrics import MetricsCollector
+from core_bak_refactored.app.quality_monitoring.api.system_metrics import MetricsCollector
 
 
 class DummyMonitor:

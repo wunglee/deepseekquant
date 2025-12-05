@@ -14,7 +14,7 @@
 import argparse
 import signal
 import sys
-from core_bak_refactored.app.data.app_example import DataQualityApplication
+from core_bak_refactored.app.quality_monitoring.app_example import DataQualityApplication
 
 
 def main():

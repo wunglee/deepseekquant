@@ -29,12 +29,12 @@ from flask import Flask, jsonify, request, send_file
 from flask_cors import CORS
 
 # 导入Dashboard组件
-from core_bak_refactored.app.data.dashboard_components.aggregator import DashboardDataAggregator
-from core_bak_refactored.app.data.dashboard_components.websocket_handler import WebSocketHandler
+from core_bak_refactored.app.quality_monitoring.dashboard_components.aggregator import DashboardDataAggregator
+from core_bak_refactored.app.quality_monitoring.dashboard_components.websocket_handler import WebSocketHandler
 
 # 导入应用层监控服务（替代废弃的DataQualityMonitor）
 if TYPE_CHECKING:
-    from core_bak_refactored.app.data.monitoring_service import MonitoringService
+    from core_bak_refactored.app.quality_monitoring.monitoring_service import MonitoringService
 
 logger = logging.getLogger('DeepSeekQuant.App.Dashboard')
 
@@ -54,12 +54,12 @@ class DataQualityDashboard:
         ```python
         # 旧代码（已废弃）
         # from core_bak_refactored.core.data.data_fetcher import DataQualityMonitor
-        # from core_bak_refactored.app.data.dashboard import DataQualityDashboard
+        # from core_bak_refactored.app.quality_monitoring.dashboard import DataQualityDashboard
         # monitor = DataQualityMonitor(config)
         # dashboard = DataQualityDashboard(monitor)
         
         # 新代码
-        from core_bak_refactored.app.data.monitoring_service import MonitoringService
+        from core_bak_refactored.app.quality_monitoring.monitoring_service import MonitoringService
         from core_bak_refactored.core.data.quality import DataQualityChecker
         
         checker = DataQualityChecker()

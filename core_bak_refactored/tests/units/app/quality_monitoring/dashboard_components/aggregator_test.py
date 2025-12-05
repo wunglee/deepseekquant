@@ -3,7 +3,7 @@
 测试 DashboardDataAggregator 组件
 """
 
-from core_bak_refactored.app.data.dashboard_components.aggregator import DashboardDataAggregator
+from core_bak_refactored.app.quality_monitoring.dashboard_components.aggregator import DashboardDataAggregator
 
 
 class DummyMonitor:

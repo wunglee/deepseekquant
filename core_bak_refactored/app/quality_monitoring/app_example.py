@@ -19,9 +19,9 @@ import signal
 import sys
 from datetime import datetime
 
-from core_bak_refactored.app.data.monitoring_service import QualityMonitoringService
-from core_bak_refactored.app.data.scheduler import MonitoringScheduler
-from core_bak_refactored.app.data.api_service import DataQualityAPIService
+from core_bak_refactored.app.quality_monitoring.monitoring_service import QualityMonitoringService
+from core_bak_refactored.app.quality_monitoring.scheduler import MonitoringScheduler
+from core_bak_refactored.app.quality_monitoring.api_service import DataQualityAPIService
 from core_bak_refactored.core.monitoring.alert_manager import AlertConfig
 
 # 配置日志

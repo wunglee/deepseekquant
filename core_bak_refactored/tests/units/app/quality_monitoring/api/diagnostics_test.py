@@ -9,7 +9,7 @@
 """
 
 import pytest
-from core_bak_refactored.app.data.api.diagnostics import DiagnosticsRunner
+from core_bak_refactored.app.quality_monitoring.api.diagnostics import DiagnosticsRunner
 
 
 class DummyMonitor:

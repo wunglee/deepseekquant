@@ -5,7 +5,7 @@
 
 import pytest
 from flask import Flask, Response
-from core_bak_refactored.app.data.api.route_decorators import handle_api_errors, api_response
+from core_bak_refactored.app.quality_monitoring.api.route_decorators import handle_api_errors, api_response
 
 
 @pytest.fixture
