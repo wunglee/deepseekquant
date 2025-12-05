@@ -526,6 +526,13 @@
             };
             errorDistributionChart.setOption(option);
         }
+        
+        // 刷新特定图表的函数
+        function refreshChart(chartId) {
+            console.log('刷新图表:', chartId);
+            // 重新加载数据
+            loadInitialData();
+        }
     </script>
 </body>
 </html>
