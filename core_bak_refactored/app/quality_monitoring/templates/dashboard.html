@@ -260,7 +260,12 @@
         }
 
         function updateAlerts(alerts) {
-            const alertList = document.getElementById('alertList');
+            const alertList = document.getElementById('alertsList');
+            if (!alertList) {
+                console.error('告警列表容器元素不存在');
+                return;
+            }
+            
             alertList.innerHTML = '';
 
             // 兼容不同数据结构
