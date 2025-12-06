@@ -103,7 +103,7 @@ class TushareDataProvider:
             DataFrame with columns: ['date', 'close', 'volume']
             
         Raises:
-            ValueError: 数据不可用（fallback禁用时）
+            ValueError: 数据不可用
         """
         if not self.available or self.ts_pro is None:
             raise RuntimeError("Tushare API不可用，请配置 TUSHARE_TOKEN")

@@ -16,7 +16,7 @@
 使用示例：
     # 基本使用
     factory = DataProviderFactory()
-    provider = factory.create('yahoo', fallback_to_mock=True)
+    provider = factory.create('yahoo')
     data = provider.get_index_prices('000300.SH', '2020-01-01', '2020-12-31')
     
     # 注入自定义provider
@@ -91,7 +91,7 @@ class DataProviderFactory:
         创建数据提供者实例
         
         Args:
-            name: provider名称（'yahoo', 'tushare', 'mock', 'real', 或自定义名称）
+            name: provider名称（'yahoo', 'tushare', 'akshare', 'real', 或自定义名称）
             **kwargs: 传递给provider构造函数的参数
         
         Returns:
@@ -102,7 +102,7 @@ class DataProviderFactory:
         
         Example:
             >>> factory = DataProviderFactory()
-            >>> provider = factory.create('yahoo', fallback_to_mock=True)
+            >>> provider = factory.create('akshare')
             >>> data = provider.get_index_prices('000300.SH', '2020-01-01', '2020-12-31')
         """
         if name not in self._providers:

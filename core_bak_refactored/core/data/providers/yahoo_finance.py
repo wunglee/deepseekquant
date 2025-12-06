@@ -9,14 +9,13 @@ Yahoo Finance数据提供者 - 整合版
 - 实现HistoricalDataProvider接口（get_index_prices, get_index_returns）
 - 支持灵活的时间参数（period/interval 或 start_date/end_date）
 - 支持多种数据类型（ohlcv, dividends, splits, all）
-- 失败时自动回退到Mock数据
 - 数据质量验证与标准化
 - 异常处理与日志记录
 
 设计原则：
 - 接口优先：实现HistoricalDataProvider统一接口
 - 功能增强：整合DataFetcher的灵活参数支持
-- 健壮性：内置fallback机制和质量验证
+- 健壮性：完整的错误处理和质量验证
 - 可扩展：支持指数、个股、波动率等多种数据
 """
 
@@ -45,16 +44,16 @@ class DataQualityReport:
 
 class YahooFinanceDataProvider:
     """
-    雅虎财经数据提供者（Phase 3B）
+    雅虎财经数据提供者（实现HistoricalDataProvider接口）
     
     功能：
     - 通过yfinance API获取真实历史指数价格数据
     - 自动映射国内指数代码到Yahoo Finance ticker
     - 数据质量验证与清洗
-    - 失败时回退到Mock数据（可选）
+    - 完整的错误处理与日志记录
     
     示例：
-        provider = YahooFinanceDataProvider(fallback_to_mock=True)
+        provider = YahooFinanceDataProvider()
         data = provider.get_index_prices('000300.SH', '2015-06-01', '2015-09-01')
     """
     
@@ -115,7 +114,7 @@ class YahooFinanceDataProvider:
             - include_ohlcv=True: ['date', 'open', 'high', 'low', 'close', 'volume']
             
         Raises:
-            ValueError: 日期格式错误或数据不可用（fallback禁用时）
+            ValueError: 日期格式错误或数据不可用
         """
         # Convert datetime objects to string format if needed
         if isinstance(start_date, datetime):
@@ -184,7 +183,7 @@ class YahooFinanceDataProvider:
             DataFrame with columns: ['date', 'close', 'volume']
             
         Raises:
-            ValueError: 日期格式错误或数据不可用（fallback禁用时）
+            ValueError: 日期格式错误或数据不可用
         """
         # Convert datetime objects to string format if needed
         if isinstance(start_date, datetime):
