@@ -27,7 +27,7 @@ providers:
     name: Yahoo Finance
     type: yahoo
     description: 全球市场数据源
-    status: active
+    status: inactive
     markets: [全球股票, 指数, 外汇]
     requires_auth: false
     rate_limit: 2000次/小时（可能限流）
