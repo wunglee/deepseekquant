@@ -53,15 +53,13 @@ class TushareDataProvider:
         'HSCEI': 'HSCEI',              # 国企指数
     }
     
-    def __init__(self, token: Optional[str] = None, fallback_to_mock: bool = True):
+    def __init__(self, token: Optional[str] = None):
         """
         初始化Tushare数据提供者
         
         Args:
             token: Tushare Pro API token（可从环境变量TUSHARE_TOKEN读取）
-            fallback_to_mock: 是否在失败时回退到Mock数据（默认True）
         """
-        self.fallback = fallback_to_mock
         self.token = token
         self.available = False
         
@@ -74,9 +72,9 @@ class TushareDataProvider:
             final_token = token or os.getenv('TUSHARE_TOKEN')
             
             if not final_token:
-                logger.warning("Tushare token未配置，请设置TUSHARE_TOKEN环境变量或传入token参数")
+                logger.error("Tushare token未配置，请设置TUSHARE_TOKEN环境变量或传入token参数")
                 self.ts_pro = None
-                return
+                raise RuntimeError("Tushare token未配置")
             
             ts.set_token(final_token)
             self.ts_pro = ts.pro_api()
@@ -84,11 +82,13 @@ class TushareDataProvider:
             logger.info("Tushare API initialized successfully")
             
         except ImportError:
-            logger.warning("tushare库未安装，请运行: pip install tushare")
+            logger.error("tushare库未安装，请运行: pip install tushare")
             self.ts_pro = None
+            raise RuntimeError("tushare library not available")
         except Exception as e:
-            logger.warning(f"Tushare初始化失败: {e}")
+            logger.error(f"Tushare初始化失败: {e}")
             self.ts_pro = None
+            raise
     
     def get_index_prices(self, index_id: str, start_date: Union[str, datetime], end_date: Union[str, datetime]) -> pd.DataFrame:
         """
@@ -106,10 +106,7 @@ class TushareDataProvider:
             ValueError: 数据不可用（fallback禁用时）
         """
         if not self.available or self.ts_pro is None:
-            if self.fallback:
-                return self._fallback_to_mock(index_id, start_date, end_date)
-            else:
-                raise RuntimeError("Tushare API不可用且fallback禁用")
+            raise RuntimeError("Tushare API不可用，请配置 TUSHARE_TOKEN")
         
         # 转换日期格式为Tushare要求的YYYYMMDD
         if isinstance(start_date, datetime):
@@ -157,13 +154,8 @@ class TushareDataProvider:
             return standardized_data
             
         except Exception as e:
-            logger.warning(f"Tushare failed for {index_id}: {e}")
-            
-            if self.fallback:
-                logger.info(f"Falling back to Mock data for {index_id}")
-                return self._fallback_to_mock(index_id, start_date, end_date)
-            else:
-                raise ValueError(f"Failed to fetch data for {index_id}: {e}")
+            logger.error(f"Tushare failed for {index_id}: {e}")
+            raise ValueError(f"Failed to fetch data for {index_id}: {e}")
     
     def get_index_returns(self, index_id: str, start_date: Union[str, datetime], end_date: Union[str, datetime]) -> pd.Series:
         """
@@ -201,10 +193,7 @@ class TushareDataProvider:
             DataFrame with columns: ['date', 'close', 'volume']
         """
         if not self.available or self.ts_pro is None:
-            if self.fallback:
-                return self._fallback_to_mock(symbol, start_date, end_date)
-            else:
-                raise RuntimeError("Tushare API不可用且fallback禁用")
+            raise RuntimeError("Tushare API不可用，请配置 TUSHARE_TOKEN")
         
         # 转换日期格式
         if isinstance(start_date, datetime):
@@ -246,12 +235,8 @@ class TushareDataProvider:
             return standardized_data
             
         except Exception as e:
-            logger.warning(f"Tushare failed for {symbol}: {e}")
-            
-            if self.fallback:
-                return self._fallback_to_mock(symbol, start_date, end_date)
-            else:
-                raise ValueError(f"Failed to fetch data for {symbol}: {e}")
+            logger.error(f"Tushare failed for {symbol}: {e}")
+            raise ValueError(f"Failed to fetch data for {symbol}: {e}")
     
     def _map_index_to_tushare(self, index_id: str) -> str:
         """映射指数代码到Tushare格式"""
@@ -295,24 +280,6 @@ class TushareDataProvider:
             logger.warning(f"Removed {original_len - len(standardized)} rows with missing close prices")
         
         return standardized
-    
-    def _fallback_to_mock(self, symbol: str, start_date: Union[str, datetime], end_date: Union[str, datetime]) -> pd.DataFrame:
-        """回退到Mock数据"""
-        from core_bak_refactored.tests.fixtures.core.data.mock_historical_data_provider import MockHistoricalDataProvider
-        
-        mock_provider = MockHistoricalDataProvider()
-        
-        # 转换日期格式，支持 datetime 或 字符串
-        if isinstance(start_date, datetime):
-            start_date = start_date.strftime('%Y-%m-%d')
-        elif isinstance(start_date, str) and len(start_date) == 8:  # YYYYMMDD
-            start_date = f"{start_date[:4]}-{start_date[4:6]}-{start_date[6:]}"
-        if isinstance(end_date, datetime):
-            end_date = end_date.strftime('%Y-%m-%d')
-        elif isinstance(end_date, str) and len(end_date) == 8:
-            end_date = f"{end_date[:4]}-{end_date[4:6]}-{end_date[6:]}"
-        
-        return mock_provider.get_index_prices(symbol, start_date, end_date)
     
     def test_connection(self) -> bool:
         """测试API连接"""

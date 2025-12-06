@@ -110,23 +110,17 @@ class EventWindowBacktester:
     - 可能作为 BacktestEngine 的子类或策略模式实现
     """
     
-    def __init__(self, data_provider: Optional[HistoricalDataProvider] = None):
+    def __init__(self, data_provider: HistoricalDataProvider):
         """
         初始化回测引擎
         
         Args:
-            data_provider: 历史数据提供者（依赖注入）；为空则使用Mock数据提供者
+            data_provider: 历史数据提供者（依赖注入，必须提供）
         """
         if data_provider is None:
-            try:
-                from core_bak_refactored.tests.fixtures.core.data.mock_historical_data_provider import MockHistoricalDataProvider
-                self.data_provider = MockHistoricalDataProvider()
-                logger.info("未提供数据源，已自动使用MockHistoricalDataProvider")
-            except Exception as e:
-                logger.error(f"加载MockHistoricalDataProvider失败: {e}")
-                raise
-        else:
-            self.data_provider = data_provider
+            raise ValueError("必须提供 data_provider 参数，使用 factory.create('akshare') 或 factory.create('yahoo') 创建")
+        
+        self.data_provider = data_provider
         self.events = self._load_events()
     
     def _load_events(self) -> List[BacktestEvent]:

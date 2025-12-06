@@ -80,7 +80,7 @@ class RealHistoricalDataProvider:
         # Yahoo Finance适配器
         try:
             from core_bak_refactored.core.data.providers.yahoo_finance import YahooFinanceDataProvider
-            adapters[DataSource.YAHOO.value] = YahooFinanceDataProvider(fallback_to_mock=False)
+            adapters[DataSource.YAHOO.value] = YahooFinanceDataProvider()
             logger.info("Yahoo Finance适配器已加载")
         except Exception as e:
             logger.warning(f"Yahoo Finance适配器加载失败: {e}")
@@ -96,7 +96,7 @@ class RealHistoricalDataProvider:
         # Tushare适配器（实际API实现，A股/港股备用数据源）
         try:
             from core_bak_refactored.core.data.providers.tushare import TushareDataProvider
-            tushare_adapter = TushareDataProvider(fallback_to_mock=False)
+            tushare_adapter = TushareDataProvider()
             if tushare_adapter.available:
                 adapters[DataSource.TUSHARE.value] = tushare_adapter
                 logger.info("Tushare适配器已加载（实际API）")
@@ -108,7 +108,7 @@ class RealHistoricalDataProvider:
         # AKShare适配器（免费、无限制、数据全面）
         try:
             from core_bak_refactored.core.data.providers.akshare_provider import AKShareDataProvider
-            akshare_adapter = AKShareDataProvider(fallback_to_mock=False)
+            akshare_adapter = AKShareDataProvider()
             if akshare_adapter.available:
                 adapters[DataSource.AKSHARE.value] = akshare_adapter
                 logger.info("AKShare适配器已加载（完全免费，无限制）")
@@ -429,14 +429,19 @@ class RealHistoricalDataProvider:
             index_id: 指数代码
             start_date: 开始日期
             end_date: 结束日期
-            sources: 待验证数据源列表（默认使用primary + mock）
+            sources: 待验证数据源列表（默认使用primary + 备用源）
         
         Returns:
             交叉验证报告
         """
         if sources is None:
-            # 默认对比primary数据源与mock
-            sources = [self.primary_source, DataSource.MOCK.value]
+            # 默认对比primary数据源与备用源（移除mock）
+            sources = [self.primary_source]
+            # 添加备用源中的第一个真实数据源
+            for backup in self.backup_sources:
+                if backup != DataSource.MOCK.value:
+                    sources.append(backup)
+                    break  # 只需要一个备用源
         
         # 获取多个数据源的数据
         data_by_source = {}

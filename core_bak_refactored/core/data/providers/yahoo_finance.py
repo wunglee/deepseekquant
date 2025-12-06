@@ -77,14 +77,10 @@ class YahooFinanceDataProvider:
         'HSCEI': '^HSCEI',             # 国企指数
     }
     
-    def __init__(self, fallback_to_mock: bool = True):
+    def __init__(self):
         """
         初始化Yahoo Finance数据提供者
-        
-        Args:
-            fallback_to_mock: 是否在失败时回退到Mock数据（默认True）
         """
-        self.fallback = fallback_to_mock
         self._session = None
         
         # 延迟导入yfinance（避免环境依赖问题）
@@ -93,10 +89,9 @@ class YahooFinanceDataProvider:
             self.yf = yf
             logger.info("YahooFinanceDataProvider initialized successfully")
         except ImportError:
-            logger.warning("yfinance not installed, will fallback to Mock if enabled")
+            logger.error("yfinance not installed. Please run: pip install yfinance")
             self.yf = None
-            if not self.fallback:
-                raise RuntimeError("yfinance library not available and fallback disabled")
+            raise RuntimeError("yfinance library not available. Please install: pip install yfinance")
     
     def get_index_prices(
         self,

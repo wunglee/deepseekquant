@@ -41,7 +41,7 @@ class AKShareDataProvider:
     - 实现HistoricalDataProvider标准接口
     
     使用示例：
-        provider = AKShareDataProvider(fallback_to_mock=True)
+        provider = AKShareDataProvider()
         data = provider.get_index_prices('000300.SH', '2024-01-01', '2024-12-01')
         returns = provider.get_index_returns('000300.SH', '2024-01-01', '2024-12-01')
     """
@@ -69,14 +69,10 @@ class AKShareDataProvider:
         '^IXIC': '^IXIC',              # 纳斯达克
     }
     
-    def __init__(self, fallback_to_mock: bool = True):
+    def __init__(self):
         """
         初始化AKShare数据提供者
-        
-        Args:
-            fallback_to_mock: 是否在失败时回退到Mock数据（默认True）
         """
-        self.fallback = fallback_to_mock
         self.available = False
         
         # 延迟导入akshare（避免环境依赖问题）
@@ -86,10 +82,9 @@ class AKShareDataProvider:
             self.available = True
             logger.info("AKShareDataProvider initialized successfully")
         except ImportError:
-            logger.warning("akshare not installed, will fallback to Mock if enabled")
+            logger.error("akshare not installed. Please run: pip install akshare")
             self.ak = None
-            if not self.fallback:
-                raise RuntimeError("akshare library not available and fallback disabled")
+            raise RuntimeError("akshare library not available. Please install: pip install akshare")
     
     def get_index_prices(
         self,
@@ -112,10 +107,7 @@ class AKShareDataProvider:
             ValueError: 数据不可用（fallback禁用时）
         """
         if not self.available or self.ak is None:
-            if self.fallback:
-                return self._fallback_to_mock(index_id, start_date, end_date)
-            else:
-                raise RuntimeError("AKShare API不可用且fallback禁用")
+            raise RuntimeError("AKShare API不可用，请安装: pip install akshare")
         
         # 转换日期格式
         if isinstance(start_date, datetime):
@@ -155,12 +147,8 @@ class AKShareDataProvider:
             return standardized_data
             
         except Exception as e:
-            logger.warning(f"AKShare failed for {index_id}: {e}")
-            
-            if self.fallback:
-                return self._fallback_to_mock(index_id, start_date, end_date)
-            else:
-                raise ValueError(f"Failed to fetch data for {index_id}: {e}")
+            logger.error(f"AKShare failed for {index_id}: {e}")
+            raise ValueError(f"Failed to fetch data for {index_id}: {e}")
     
     def get_index_returns(
         self,
@@ -205,10 +193,7 @@ class AKShareDataProvider:
             ValueError: 日期格式错误或数据不可用（fallback禁用时）
         """
         if not self.available or self.ak is None:
-            if self.fallback:
-                return self._fallback_to_mock(symbol, start_date, end_date)
-            else:
-                raise RuntimeError("AKShare API不可用且fallback禁用")
+            raise RuntimeError("AKShare API不可用，请安装: pip install akshare")
         
         # 转换日期格式
         if isinstance(start_date, datetime):
@@ -247,12 +232,8 @@ class AKShareDataProvider:
             return standardized_data
             
         except Exception as e:
-            logger.warning(f"AKShare failed for {symbol}: {e}")
-            
-            if self.fallback:
-                return self._fallback_to_mock(symbol, start_date, end_date)
-            else:
-                raise ValueError(f"Failed to fetch data for {symbol}: {e}")
+            logger.error(f"AKShare failed for {symbol}: {e}")
+            raise ValueError(f"Failed to fetch data for {symbol}: {e}")
     
     def _map_index_to_akshare(self, index_id: str) -> str:
         """
@@ -347,30 +328,3 @@ class AKShareDataProvider:
         standardized = standardized.sort_values('date').reset_index(drop=True)
         
         return standardized
-    
-    def _fallback_to_mock(
-        self,
-        symbol: str,
-        start_date: Union[str, datetime],
-        end_date: Union[str, datetime]
-    ) -> pd.DataFrame:
-        """
-        回退到Mock数据提供者
-        
-        Args:
-            symbol: 股票或指数代码
-            start_date: 开始日期
-            end_date: 结束日期
-        
-        Returns:
-            Mock数据
-        """
-        logger.warning(f"Falling back to Mock data for {symbol}")
-        
-        try:
-            from tests.fixtures.core.data.mock_historical_data_provider import MockHistoricalDataProvider
-            mock = MockHistoricalDataProvider()
-            return mock.get_index_prices(symbol, start_date, end_date)
-        except Exception as e:
-            logger.error(f"Mock fallback also failed: {e}")
-            raise ValueError(f"Both AKShare and Mock failed for {symbol}")

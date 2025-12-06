@@ -10,7 +10,26 @@ from enum import Enum
 
 
 class DataSourceType(Enum):
-    """数据源类型枚举"""
+    """
+    数据源类型枚举（生产环境）
+    
+    支持的真实数据源：
+    - YAHOO_FINANCE: Yahoo Finance（全球市场）
+    - ALPHA_VANTAGE: Alpha Vantage API
+    - IEX_CLOUD: IEX Cloud API
+    - POLYGON: Polygon.io API
+    - TWELVE_DATA: Twelve Data API
+    - FINNHUB: Finnhub API
+    - TIINGO: Tiingo API
+    - QUANDL: Quandl/NASDAQ Data Link
+    - INTRINIO: Intrinio API
+    - EOD_HISTORICAL: EOD Historical Data API
+    - CUSTOM_API: 自定义API
+    - DATABASE: 数据库
+    - BROKER_API: 券商API
+    
+    注：Mock数据源已移至测试模块，仅用于单元测试
+    """
     YAHOO_FINANCE = "yahoo"
     ALPHA_VANTAGE = "alpha_vantage"
     IEX_CLOUD = "iex_cloud"
@@ -24,7 +43,6 @@ class DataSourceType(Enum):
     CUSTOM_API = "custom_api"
     DATABASE = "database"
     BROKER_API = "broker_api"
-    MOCK = "mock"  # 测试mock
 
 
 class DataFrequency(Enum):

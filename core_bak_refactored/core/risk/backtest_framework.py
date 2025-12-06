@@ -89,7 +89,7 @@ class HistoricalDataProvider(Protocol):
 from core_bak_refactored.core.data.providers.factory import DataProviderFactory, get_global_factory
 
 
-def create_data_provider(provider_type: str = 'yahoo', **kwargs) -> HistoricalDataProvider:
+def create_data_provider(provider_type: str = 'akshare', **kwargs) -> HistoricalDataProvider:
     """
     创建历史数据提供者（使用工厂模式）
     
@@ -97,9 +97,9 @@ def create_data_provider(provider_type: str = 'yahoo', **kwargs) -> HistoricalDa
         provider_type: 数据提供者类型
             - 'yahoo': Yahoo Finance真实数据
             - 'tushare': Tushare A股数据
-            - 'mock': Mock模拟数据
+            - 'akshare': AKShare数据源（推荐）
             - 'real': 真实数据提供者（多源）
-            - 'auto': 自动选择（优先yahoo）
+            - 'auto': 自动选择（优先akshare）
             - 或通过 factory.register() 注册的自定义provider
         **kwargs: 传递给数据提供者的额外参数
     
@@ -108,7 +108,7 @@ def create_data_provider(provider_type: str = 'yahoo', **kwargs) -> HistoricalDa
     
     Example:
         >>> # 基本使用
-        >>> provider = create_data_provider('yahoo', fallback_to_mock=True)
+        >>> provider = create_data_provider('akshare')
         >>> 
         >>> # 使用自定义provider（需先注册）
         >>> factory = get_global_factory()
@@ -117,16 +117,20 @@ def create_data_provider(provider_type: str = 'yahoo', **kwargs) -> HistoricalDa
     """
     factory = get_global_factory()
     
-    # 处理 'auto' 模式：优先使用yahoo
+    # 处理 'auto' 模式：优先使用akshare
     if provider_type == 'auto':
-        logger.info("Auto-selecting data provider (优先yahoo)")
+        logger.info("Auto-selecting data provider (优先akshare)")
         try:
-            return factory.create('yahoo', fallback_to_mock=False)
+            return factory.create('akshare')
         except Exception as e:
-            logger.error(f"Yahoo provider创建失败，尝试使用mock: {e}")
-            return factory.create('mock')
+            logger.warning(f"AKShare provider创建失败，尝试yahoo: {e}")
+            try:
+                return factory.create('yahoo')
+            except Exception as e2:
+                logger.error(f"Yahoo provider也创建失败: {e2}")
+                raise RuntimeError("无法创建任何数据提供者，请安装 akshare 或 yfinance")
     
-    # 使用工厂创建provider
+    # 使用工厂创建 provider
     try:
         logger.info(f"Creating data provider: {provider_type}")
         return factory.create(provider_type, **kwargs)
