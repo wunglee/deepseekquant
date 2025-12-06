@@ -243,6 +243,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // ========== 导出工具函数 ==========
 window.AppUtils = {
+    setActiveNav,
     apiRequest,
     showToast,
     showEmptyChart,
