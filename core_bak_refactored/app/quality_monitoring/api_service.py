@@ -916,6 +916,60 @@ class DataQualityAPIService:
                     'error_code': 'PROVIDER_TEST_FAILED'
                 }), 500
         
+        @self.app.route('/api/v1/providers/<provider_id>/activate', methods=['POST'])
+        def activate_provider(provider_id):
+            """
+            激活指定数据源（同时停用其他所有数据源）
+            设计原则：同一时刻只能有一个活跃的数据源
+            """
+            try:
+                config = self.config_manager.get('data', {})
+                providers = config.get('providers', [])
+                
+                # 查找目标数据源
+                target_provider = None
+                for p in providers:
+                    if p.get('id') == provider_id or p.get('name') == provider_id:
+                        target_provider = p
+                        break
+                
+                if not target_provider:
+                    return jsonify({
+                        'status': 'error',
+                        'message': f'数据源不存在: {provider_id}',
+                        'error_code': 'PROVIDER_NOT_FOUND'
+                    }), 404
+                
+                # 停用所有数据源
+                for p in providers:
+                    p['status'] = 'inactive'
+                    p['updated_at'] = datetime.now().isoformat()
+                
+                # 激活目标数据源
+                target_provider['status'] = 'active'
+                target_provider['updated_at'] = datetime.now().isoformat()
+                
+                # 更新配置文件中的 primary_source
+                config['primary_source'] = provider_id
+                config['providers'] = providers
+                self.config_manager.update({'data': config})
+                
+                logger.info(f"已激活数据源: {provider_id}，其他数据源已自动停用")
+                
+                return jsonify({
+                    'status': 'success',
+                    'message': f'已切换到 {target_provider.get("name", provider_id)}',
+                    'active_provider': provider_id,
+                    'timestamp': datetime.now().isoformat()
+                })
+            except Exception as e:
+                logger.error(f"激活数据源失败: {e}")
+                return jsonify({
+                    'status': 'error',
+                    'message': str(e),
+                    'error_code': 'PROVIDER_ACTIVATE_FAILED'
+                }), 500
+        
         # ============================================================
         # 凭证管理端点（Credentials Management）
         # ============================================================
