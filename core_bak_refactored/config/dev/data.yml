@@ -6,6 +6,53 @@ cache_enabled: true
 cache_ttl: 3600
 max_retries: 3
 
+# 数据源列表（用于 Providers 页面展示）
+providers:
+  - id: akshare
+    name: AKShare
+    type: akshare
+    description: 完全免费、无调用限制的数据源（推荐）
+    status: active
+    markets: [A股, 港股, 美股, 期货, 基金]
+    requires_auth: false
+    rate_limit: 无限制
+    features:
+      - 实时数据
+      - 历史数据
+      - 基本面数据
+      - 宏观数据
+    installation: pip install akshare
+    
+  - id: yahoo
+    name: Yahoo Finance
+    type: yahoo
+    description: 全球市场数据源
+    status: active
+    markets: [全球股票, 指数, 外汇]
+    requires_auth: false
+    rate_limit: 2000次/小时（可能限流）
+    features:
+      - 实时数据
+      - 历史数据
+      - 期权数据
+    installation: pip install yfinance
+    
+  - id: tushare
+    name: Tushare Pro
+    type: tushare
+    description: A股和港股数据源（需要注册）
+    status: inactive
+    markets: [A股, 港股, 期货]
+    requires_auth: true
+    auth_type: token
+    rate_limit: 200次/天（免费用户）
+    features:
+      - 历史数据
+      - 基本面数据
+      - 财务数据
+    installation: pip install tushare
+    registration: https://tushare.pro/register
+
 # 数据源说明：
 # - akshare: 使用AKShare数据源（完全免费，无调用限制，数据全面）【推荐】
 #         支持：A股、港股、美股、期货、基金等
