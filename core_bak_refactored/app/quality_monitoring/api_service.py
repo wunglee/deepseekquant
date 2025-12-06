@@ -856,8 +856,12 @@ class DataQualityAPIService:
                     }), 404
                 
                 # 实际测试数据源连接
-                provider_type = provider.get('type') or provider.get('id')
+                # 注意：使用 id 字段而非 type 字段，因为 type 现在是分类标签（如“免费开源”）
+                provider_type = provider.get('id')  # 使用 id 字段（akshare, yahoo, tushare）
                 factory = get_global_factory()
+                
+                # 导入 datetime 模块（在函数开头，避免作用域问题）
+                from datetime import datetime, timedelta
                 
                 start_time = time.time()
                 try:
@@ -865,7 +869,6 @@ class DataQualityAPIService:
                     data_provider = factory.create(provider_type)
                     
                     # 尝试获取少量测试数据（最近3天的沪深300数据）
-                    from datetime import datetime, timedelta
                     end_date = datetime.now()
                     start_date = end_date - timedelta(days=3)
                     
