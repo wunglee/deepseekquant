@@ -47,33 +47,30 @@ class DataProviderFactory:
         self._register_builtin_providers()
     
     def _register_builtin_providers(self):
-        """注册内置数据提供者"""
-        try:
-            # 延迟导入，避免循环依赖
-            from core_bak_refactored.core.data.providers.yahoo_finance import YahooFinanceDataProvider
-            from core_bak_refactored.core.data.providers.tushare import TushareDataProvider
-            from core_bak_refactored.core.data.providers.historical_data_provider import RealHistoricalDataProvider
-            
-            self._providers['yahoo'] = YahooFinanceDataProvider
-            self._providers['tushare'] = TushareDataProvider
-            self._providers['real'] = RealHistoricalDataProvider
-            
-            # 尝试注册AKShare（如果akshare已安装）
+        """注册内置数据提供者（统一处理异常）"""
+        # 定义内置providers列表：(name, module_path, class_name)
+        builtin_providers = [
+            ('yahoo', 'core_bak_refactored.core.data.providers.yahoo_finance', 'YahooFinanceDataProvider'),
+            ('tushare', 'core_bak_refactored.core.data.providers.tushare', 'TushareDataProvider'),
+            ('real', 'core_bak_refactored.core.data.providers.historical_data_provider', 'RealHistoricalDataProvider'),
+            ('akshare', 'core_bak_refactored.core.data.providers.akshare_provider', 'AKShareDataProvider'),
+        ]
+        
+        for name, module_path, class_name in builtin_providers:
             try:
-                from core_bak_refactored.core.data.providers.akshare_provider import AKShareDataProvider
-                self._providers['akshare'] = AKShareDataProvider
-                logger.info("AKShare provider registered")
+                # 动态导入模块
+                module = __import__(module_path, fromlist=[class_name])
+                provider_class = getattr(module, class_name)
+                self._providers[name] = provider_class
+                logger.debug(f"成功注册 {name} provider")
             except Exception as e:
-                logger.warning(f"AKShare provider not available: {e}")
-            
-            # Mock数据提供者仅在测试中使用，不在生产工厂中注册
-            # 如需在测试中使用，请手动注册：
-            # factory.register('mock', MockHistoricalDataProvider)
-            
-            logger.info(f"已注册 {len(self._providers)} 个内置数据提供者: {list(self._providers.keys())}")
-            
-        except ImportError as e:
-            logger.warning(f"部分内置provider导入失败: {e}")
+                logger.warning(f"{name} provider 注册失败: {e}")
+        
+        # Mock数据提供者仅在测试中使用，不在生产工厂中注册
+        # 如需在测试中使用，请手动注册：
+        # factory.register('mock', MockHistoricalDataProvider)
+        
+        logger.info(f"已注册 {len(self._providers)} 个内置数据提供者: {list(self._providers.keys())}")
     
     def register(self, name: str, provider_class: Type):
         """

@@ -841,7 +841,7 @@ class DataQualityAPIService:
             """测试数据源连接（真实测试）"""
             try:
                 import time
-                from core_bak_refactored.core.data.providers.historical_data_provider import get_global_factory
+                from core_bak_refactored.core.data.providers.factory import get_global_factory
                 
                 config = self.config_manager.get('data', {})
                 providers = config.get('providers', [])
