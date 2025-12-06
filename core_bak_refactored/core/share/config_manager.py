@@ -49,10 +49,13 @@ class DataConfig:
     cache_enabled: bool = True
     cache_ttl: int = 3600  # 缓存过期时间（秒）
     max_retries: int = 3  # 最大重试次数
+    providers: list = None  # 数据源列表（用于 Providers 页面展示）
     
     def __post_init__(self):
         if self.backup_sources is None:
             self.backup_sources = ["mock"]
+        if self.providers is None:
+            self.providers = []
 
 
 @dataclass

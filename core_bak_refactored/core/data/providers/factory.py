@@ -58,6 +58,14 @@ class DataProviderFactory:
             self._providers['tushare'] = TushareDataProvider
             self._providers['real'] = RealHistoricalDataProvider
             
+            # 尝试注册AKShare（如果akshare已安装）
+            try:
+                from core_bak_refactored.core.data.providers.akshare_provider import AKShareDataProvider
+                self._providers['akshare'] = AKShareDataProvider
+                logger.info("AKShare provider registered")
+            except Exception as e:
+                logger.warning(f"AKShare provider not available: {e}")
+            
             # Mock数据提供者仅在测试中使用，不在生产工厂中注册
             # 如需在测试中使用，请手动注册：
             # factory.register('mock', MockHistoricalDataProvider)

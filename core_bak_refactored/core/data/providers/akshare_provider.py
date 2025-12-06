@@ -81,10 +81,10 @@ class AKShareDataProvider:
             self.ak = ak
             self.available = True
             logger.info("AKShareDataProvider initialized successfully")
-        except ImportError:
-            logger.error("akshare not installed. Please run: pip install akshare")
+        except ImportError as e:
+            logger.warning(f"akshare not installed: {e}. Install with: pip install akshare")
             self.ak = None
-            raise RuntimeError("akshare library not available. Please install: pip install akshare")
+            # 不抛出异常，允许优雅降级
     
     def get_index_prices(
         self,
