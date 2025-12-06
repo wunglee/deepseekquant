@@ -10,7 +10,7 @@ max_retries: 3
 providers:
   - id: akshare
     name: AKShare
-    type: akshare
+    type: 免费开源
     description: 完全免费、无调用限制的数据源（推荐）
     status: active
     markets: [A股, 港股, 美股, 期货, 基金]
@@ -25,7 +25,7 @@ providers:
     
   - id: yahoo
     name: Yahoo Finance
-    type: yahoo
+    type: 商业API
     description: 全球市场数据源
     status: inactive
     markets: [全球股票, 指数, 外汇]
@@ -39,7 +39,7 @@ providers:
     
   - id: tushare
     name: Tushare Pro
-    type: tushare
+    type: 社区数据
     description: A股和港股数据源（需要注册）
     status: inactive
     markets: [A股, 港股, 期货]
