@@ -838,8 +838,11 @@ class DataQualityAPIService:
         
         @self.app.route('/api/v1/providers/<provider_id>/test', methods=['POST'])
         def test_provider(provider_id):
-            """测试数据源连接"""
+            """测试数据源连接（真实测试）"""
             try:
+                import time
+                from core_bak_refactored.core.data.providers.historical_data_provider import get_global_factory
+                
                 config = self.config_manager.get('data', {})
                 providers = config.get('providers', [])
                 
@@ -852,17 +855,55 @@ class DataQualityAPIService:
                         'error_code': 'PROVIDER_NOT_FOUND'
                     }), 404
                 
-                # TODO: 实现实际的连接测试逻辑
-                # 这里返回模拟结果
-                test_result = {
-                    'connected': True,
-                    'latency_ms': 150,
-                    'message': '连接成功',
-                    'tested_at': datetime.now().isoformat()
-                }
+                # 实际测试数据源连接
+                provider_type = provider.get('type') or provider.get('id')
+                factory = get_global_factory()
+                
+                start_time = time.time()
+                try:
+                    # 尝试创建数据提供者实例
+                    data_provider = factory.create(provider_type)
+                    
+                    # 尝试获取少量测试数据（最近3天的沪深300数据）
+                    from datetime import datetime, timedelta
+                    end_date = datetime.now()
+                    start_date = end_date - timedelta(days=3)
+                    
+                    test_data = data_provider.get_index_prices(
+                        '000300.SH',
+                        start_date.strftime('%Y-%m-%d'),
+                        end_date.strftime('%Y-%m-%d')
+                    )
+                    
+                    latency_ms = int((time.time() - start_time) * 1000)
+                    
+                    # 验证数据有效性
+                    if test_data is None or len(test_data) == 0:
+                        raise ValueError("数据源返回空数据")
+                    
+                    test_result = {
+                        'connected': True,
+                        'latency_ms': latency_ms,
+                        'message': f'连接成功，获取到 {len(test_data)} 条数据',
+                        'data_points': len(test_data),
+                        'tested_at': datetime.now().isoformat()
+                    }
+                    
+                    logger.info(f"数据源 {provider_id} 测试成功: {latency_ms}ms, {len(test_data)} 条数据")
+                    
+                except Exception as test_error:
+                    latency_ms = int((time.time() - start_time) * 1000)
+                    test_result = {
+                        'connected': False,
+                        'latency_ms': latency_ms,
+                        'message': f'连接失败: {str(test_error)}',
+                        'error': str(test_error),
+                        'tested_at': datetime.now().isoformat()
+                    }
+                    logger.warning(f"数据源 {provider_id} 测试失败: {test_error}")
                 
                 return jsonify({
-                    'status': 'success',
+                    'status': 'success' if test_result['connected'] else 'error',
                     'provider': provider['name'],
                     'test_result': test_result,
                     'timestamp': datetime.now().isoformat()
