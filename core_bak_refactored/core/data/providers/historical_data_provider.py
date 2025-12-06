@@ -105,9 +105,21 @@ class RealHistoricalDataProvider:
         except Exception as e:
             logger.warning(f"Tushare适配器加载失败: {e}")
         
+        # AKShare适配器（免费、无限制、数据全面）
+        try:
+            from core_bak_refactored.core.data.providers.akshare_provider import AKShareDataProvider
+            akshare_adapter = AKShareDataProvider(fallback_to_mock=False)
+            if akshare_adapter.available:
+                adapters[DataSource.AKSHARE.value] = akshare_adapter
+                logger.info("AKShare适配器已加载（完全免费，无限制）")
+            else:
+                logger.warning("AKShare适配器未配置（库不可用）")
+        except Exception as e:
+            logger.warning(f"AKShare适配器加载失败: {e}")
+        
         # 至少需要一个真实数据源已就绪
         if not adapters:
-            raise RuntimeError("无可用数据源；请配置至少一个真实API（例如：Yahoo、Tushare）。")
+            raise RuntimeError("无可用数据源；请配置至少一个真实API（例如：Yahoo、Tushare、AKShare）。")
         return adapters
     
     def get_index_prices(self, index_id: str, start_date: str, end_date: str) -> pd.DataFrame:

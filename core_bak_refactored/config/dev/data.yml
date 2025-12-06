@@ -1,14 +1,17 @@
 # 系统配置 - 数据模块
-primary_source: mock  # 数据源类型: yahoo, tushare, mock（mock用于演示和测试）
-default_index: ^GSPC  # 标普500指数（Yahoo Finance 支持）
-backup_sources: []  # 备用数据源
+primary_source: akshare  # 数据源类型: akshare, yahoo, tushare, mock（akshare免费无限制，推荐）
+default_index: 000300.SH  # 沪深300指数（AKShare 支持）
+backup_sources: [yahoo, tushare, mock]  # 备用数据源
 cache_enabled: true
 cache_ttl: 3600
 max_retries: 3
 
 # 数据源说明：
+# - akshare: 使用AKShare数据源（完全免费，无调用限制，数据全面）【推荐】
+#         支持：A股、港股、美股、期货、基金等
+#         安装：pip install akshare
 # - mock: 使用模拟数据提供者（位于 tests/fixtures/core/data/mock_historical_data_provider.py）
 #         不调用外部API，完全本地生成，适合开发和演示
 # - yahoo: 使用Yahoo Finance真实数据源（可能遇到限流）
-# - tushare: 使用Tushare数据源（需要配置API Token）
+# - tushare: 使用Tushare数据源（需要配置API Token，免费用户200次/天）
 # - real: 使用RealHistoricalDataProvider（会根据primary_source自动选择）

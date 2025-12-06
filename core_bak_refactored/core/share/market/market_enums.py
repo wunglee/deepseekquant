@@ -75,6 +75,7 @@ class DataSource(str, Enum):
     JOINQUANT = 'joinquant'      # 聚宽（A股优先）
     WIND = 'wind'                # Wind金融终端（港股、A股）
     TUSHARE = 'tushare'          # Tushare（A股、港股）
+    AKSHARE = 'akshare'          # AKShare（全市场，免费无限制）
     ALPHA_VANTAGE = 'alpha_vantage'  # Alpha Vantage（美股）
     IEX = 'iex'                  # IEX Cloud（美股）
     MOCK = 'mock'                # 模拟数据源（测试）
