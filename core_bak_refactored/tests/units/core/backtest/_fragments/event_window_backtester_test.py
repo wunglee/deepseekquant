@@ -76,7 +76,7 @@ class EventWindowBacktesterEnhancedInterfaceTest(unittest.TestCase):
         self.assertTrue(callable(self.mock_provider.validate_data_quality))
 
     def test_yahoo_finance_provider_enhanced_features(self):
-        provider = YahooFinanceDataProvider(fallback_to_mock=False)
+        provider = YahooFinanceDataProvider()
         
         self.assertTrue(hasattr(provider, 'get_stock_prices'))
         self.assertTrue(hasattr(provider, 'get_volatility_index'))

@@ -58,6 +58,14 @@ from .cache import (
 # 连接管理基础设施（2025-11-28 从core/data/connection迁移）
 from .connection import DataConnectionManager
 
+# 数据库层（2025-12-03新增）
+from .database import (
+    get_database,
+    SQLiteDatabase,
+    MarketDataRepository,
+    DatabaseProtocol
+)
+
 # 注意：MarketData业务验证已迁移到 core.data.validation
 # 通用技术验证请使用 type_validators（LengthValidator, TypeValidator等）
 
@@ -119,4 +127,10 @@ __all__ = [
     
     # 连接管理
     'DataConnectionManager',
+    
+    # 数据库（2025-12-03新增）
+    'get_database',
+    'SQLiteDatabase',
+    'MarketDataRepository',
+    'DatabaseProtocol',
 ]

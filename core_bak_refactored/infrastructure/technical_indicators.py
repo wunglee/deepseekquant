@@ -79,7 +79,8 @@ class TimeSeriesCalculator:
     def calculate_dual_ema_oscillator(values: pd.Series,
                                       fast_period: int,
                                       slow_period: int,
-                                      signal_period: int) -> Tuple[pd.Series, pd.Series, pd.Series]:
+                                      signal_period: int,
+                                      histogram_multiplier: float = 1.0) -> Tuple[pd.Series, pd.Series, pd.Series]:
         """
         计算双EMA震荡器（通用算法，无业务概念）
         
@@ -88,25 +89,28 @@ class TimeSeriesCalculator:
         2. 慢线 = EMA(values, slow_period)
         3. 主线 = 快线 - 慢线
         4. 信号线 = EMA(主线, signal_period)
-        5. 柱状图 = 主线 - 信号线
+        5. 柱状图 = (主线 - 信号线) × histogram_multiplier
         
         Args:
             values: 数值序列
             fast_period: 快速EMA周期
             slow_period: 慢速EMA周期
             signal_period: 信号线周期
+            histogram_multiplier: 柱状图放大倍数（中国市场习惯用2，国际标准用1）
         
         Returns:
             (主线, 信号线, 柱状图)
         
         Note:
             业务层将此映射为MACD等具体指标
+            - 中国标准：histogram_multiplier=2 (DIFF/DEA/MACD柱)
+            - 国际标准：histogram_multiplier=1 (MACD/Signal/Histogram)
         """
         ema_fast = TimeSeriesCalculator.calculate_ema(values, fast_period)
         ema_slow = TimeSeriesCalculator.calculate_ema(values, slow_period)
         main_line = ema_fast - ema_slow
         signal_line = main_line.ewm(span=signal_period, adjust=False).mean()
-        histogram = main_line - signal_line
+        histogram = (main_line - signal_line) * histogram_multiplier
         return main_line, signal_line, histogram
     
     @staticmethod

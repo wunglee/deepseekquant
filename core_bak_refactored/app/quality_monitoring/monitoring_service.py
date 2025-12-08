@@ -119,14 +119,13 @@ class QualityMonitoringService:
             self.data_provider = factory.create(data_cfg.primary_source)
             logger.info(f"🌐 使用真实数据源: {data_cfg.primary_source}（配置: config/dev/data.yml）")
         else:
-            # 使用RealHistoricalDataProvider（带备用源和交叉验证）
+            # 使用RealHistoricalDataProvider
             self.data_provider = factory.create(
                 'real',
                 primary_source=data_cfg.primary_source,
-                backup_sources=data_cfg.backup_sources,
                 enable_cross_validation=self.config_manager.get_monitoring_config().enable_cross_validation,
             )
-            logger.info(f"🌐 使用RealHistoricalDataProvider: primary={data_cfg.primary_source}, backups={data_cfg.backup_sources}（配置: config/dev/data.yml）")
+            logger.info(f"🌐 使用RealHistoricalDataProvider: primary={data_cfg.primary_source}（配置: config/dev/data.yml）")
         
         # 质量历史记录（从DataQualityChecker的check_history转换而来）
         self._quality_history: List[Dict[str, Any]] = []

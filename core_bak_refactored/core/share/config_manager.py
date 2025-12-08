@@ -45,15 +45,12 @@ class DataConfig:
     """数据配置数据类"""
     primary_source: str = "yahoo"
     default_index: str = "SPX"
-    backup_sources: list = None
     cache_enabled: bool = True
     cache_ttl: int = 3600  # 缓存过期时间（秒）
     max_retries: int = 3  # 最大重试次数
     providers: list = None  # 数据源列表（用于 Providers 页面展示）
     
     def __post_init__(self):
-        if self.backup_sources is None:
-            self.backup_sources = ["mock"]
         if self.providers is None:
             self.providers = []
 
@@ -97,12 +94,19 @@ class ConfigManager:
         return cls._instance
     
     def __init__(self, config_file: Optional[str] = None, environment: Optional[str] = None):
-        # 避免重复初始化
+        # 避免重复初始化，但允许environment参数变更时重新加载
+        requested_env = environment or os.getenv('DEEPSEEK_ENV', 'dev')
+        
         if self._initialized:
+            # 如果environment参数与当前环境不同，重新加载配置
+            if requested_env != self.environment:
+                logger.info(f"检测到环境变更: {self.environment} -> {requested_env}，重新加载配置")
+                self.environment = requested_env
+                self._load_config()
             return
         
         self.config_file = config_file
-        self.environment = environment or os.getenv('DEEPSEEK_ENV', 'dev')  # dev/test/prod
+        self.environment = requested_env
         self._config = {}
         self._load_config()
         
@@ -125,7 +129,6 @@ class ConfigManager:
             data_path = os.path.join(env_dir if os.path.exists(env_dir) else base_dir, 'data.yml')
             system_path = os.path.join(env_dir if os.path.exists(env_dir) else base_dir, 'system.yml')
             event_window_path = os.path.join(env_dir if os.path.exists(env_dir) else base_dir, 'event_window.yml')
-            regional_data_source_path = os.path.join(env_dir if os.path.exists(env_dir) else base_dir, 'regional_data_source.yml')
             dashboard_path = os.path.join(env_dir if os.path.exists(env_dir) else base_dir, 'dashboard.yml')
             api_service_path = os.path.join(env_dir if os.path.exists(env_dir) else base_dir, 'api_service.yml')
             critical_industries_path = os.path.join(env_dir if os.path.exists(env_dir) else base_dir, 'critical_industries.yml')
@@ -136,7 +139,6 @@ class ConfigManager:
                 (data_path, 'data'),
                 (system_path, 'system'),
                 (event_window_path, 'event_window'),
-                (regional_data_source_path, 'regional_data_source'),
                 (dashboard_path, 'dashboard'),
                 (api_service_path, 'api_service'),
                 (critical_industries_path, 'critical_industries'),

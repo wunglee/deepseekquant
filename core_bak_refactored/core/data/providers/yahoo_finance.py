@@ -1,30 +1,31 @@
 """
 Yahoo Finance数据提供者 - 整合版
+实现HistoricalDataProvider接口
 
-整合来源：
-1. yahoo_finance.py (HistoricalDataProvider体系) - 主体
-2. yahoo.py (DataFetcher体系) - 增强功能
+职责：
+- 通过yfinance API获取全球市场历史数据
+- 支持指数、个股、波动率等多种数据类型
+- 数据标准化和质量验证
+- 实现统一的HistoricalDataProvider接口
 
-功能范围：
-- 实现HistoricalDataProvider接口（get_index_prices, get_index_returns）
-- 支持灵活的时间参数（period/interval 或 start_date/end_date）
-- 支持多种数据类型（ohlcv, dividends, splits, all）
-- 数据质量验证与标准化
-- 异常处理与日志记录
+依赖：
+pip install yfinance
 
-设计原则：
-- 接口优先：实现HistoricalDataProvider统一接口
-- 功能增强：整合DataFetcher的灵活参数支持
-- 健壮性：完整的错误处理和质量验证
-- 可扩展：支持指数、个股、波动率等多种数据
+优势：
+- 全球市场覆盖广泛
+- 免费使用（有速率限制）
+- 数据质量较高
 """
 
 import pandas as pd
 import numpy as np
-from typing import Dict, Optional, Union, Any
+from typing import Dict, Optional, Union, Any, List
 from datetime import datetime, timedelta
 import logging
 from dataclasses import dataclass, field
+
+# 导入新的数据结构
+from core_bak_refactored.core.data.providers.protocols import PriceData, OHLCVRecord
 
 logger = logging.getLogger('DeepSeekQuant.YahooFinanceProvider')
 
@@ -39,7 +40,10 @@ class DataQualityReport:
     outliers_detected: int
     total_rows: int
     missing_values: int
-    overall_score: float
+    overall_score: float = field(init=False)
+    
+    def __post_init__(self):
+        self.overall_score = (self.completeness_score + self.consistency_score + self.accuracy_score) / 3
 
 
 class YahooFinanceDataProvider:
@@ -51,6 +55,7 @@ class YahooFinanceDataProvider:
     - 自动映射国内指数代码到Yahoo Finance ticker
     - 数据质量验证与清洗
     - 完整的错误处理与日志记录
+    - 完全符合HistoricalDataProvider协议标准
     
     示例：
         provider = YahooFinanceDataProvider()
@@ -96,22 +101,18 @@ class YahooFinanceDataProvider:
         self,
         index_id: str,
         start_date: Union[str, datetime],
-        end_date: Union[str, datetime],
-        include_ohlcv: bool = False
-    ) -> pd.DataFrame:
+        end_date: Union[str, datetime]
+    ) -> PriceData:
         """
-        获取指数价格数据
+        获取指数价格数据（实现HistoricalDataProvider接口）
         
         Args:
             index_id: 指数代码（如'000300.SH'沪深300）
             start_date: 开始日期 'YYYY-MM-DD' 或 datetime 对象
             end_date: 结束日期 'YYYY-MM-DD' 或 datetime 对象
-            include_ohlcv: 是否包含完整OHLCV数据（默认False，仅返回close和volume）
         
         Returns:
-            DataFrame with columns:
-            - 默认: ['date', 'close', 'volume']
-            - include_ohlcv=True: ['date', 'open', 'high', 'low', 'close', 'volume']
+            PriceData: 包含标准OHLCV数据的结构化对象
             
         Raises:
             ValueError: 日期格式错误或数据不可用
@@ -138,10 +139,11 @@ class YahooFinanceDataProvider:
                 raise ValueError(f"No data returned for {ticker}")
             
             # 4. 标准化格式
-            standardized_data = self._standardize_format(data, include_ohlcv=include_ohlcv)
+            standardized_data = self._standardize_format(data)
             
             logger.info(f"Successfully fetched {len(standardized_data)} rows for {index_id}")
-            return standardized_data
+            # 返回PriceData对象而不是原始DataFrame
+            return PriceData.from_dataframe(standardized_data, index_id)
             
         except Exception as e:
             logger.warning(f"Yahoo Finance failed for {index_id}: {e}")
@@ -149,7 +151,7 @@ class YahooFinanceDataProvider:
     
     def get_index_returns(self, index_id: str, start_date: Union[str, datetime], end_date: Union[str, datetime]) -> pd.Series:
         """
-        获取指数收益率序列
+        获取指数收益率序列（实现HistoricalDataProvider接口）
         
         Args:
             index_id: 指数代码
@@ -165,14 +167,14 @@ class YahooFinanceDataProvider:
         if isinstance(end_date, datetime):
             end_date = end_date.strftime('%Y-%m-%d')
             
-        prices = self.get_index_prices(index_id, start_date, end_date)
-        prices = prices.set_index('date')
+        price_data = self.get_index_prices(index_id, start_date, end_date)
+        prices = price_data.to_dataframe().set_index('date')
         returns = prices['close'].pct_change().dropna()
         return returns
     
-    def get_stock_prices(self, symbol: str, start_date: Union[str, datetime], end_date: Union[str, datetime]) -> pd.DataFrame:
+    def get_stock_prices(self, symbol: str, start_date: Union[str, datetime], end_date: Union[str, datetime]) -> PriceData:
         """
-        获取个股价格数据
+        获取个股价格数据（实现HistoricalDataProvider接口）
         
         Args:
             symbol: 股票代码（如'600036.SS'招商银行）
@@ -180,7 +182,7 @@ class YahooFinanceDataProvider:
             end_date: 结束日期 'YYYY-MM-DD' 或 datetime 对象
         
         Returns:
-            DataFrame with columns: ['date', 'close', 'volume']
+            PriceData: 包含标准OHLCV数据的结构化对象
             
         Raises:
             ValueError: 日期格式错误或数据不可用
@@ -208,7 +210,8 @@ class YahooFinanceDataProvider:
             standardized_data = self._standardize_format(data)
             
             logger.info(f"Successfully fetched {len(standardized_data)} rows for {symbol}")
-            return standardized_data
+            # 返回PriceData对象而不是原始DataFrame
+            return PriceData.from_dataframe(standardized_data, symbol)
             
         except Exception as e:
             logger.warning(f"Yahoo Finance failed for {symbol}: {e}")
@@ -216,7 +219,7 @@ class YahooFinanceDataProvider:
     
     def get_volatility_index(self, index_id: str, start_date: Union[str, datetime], end_date: Union[str, datetime]) -> pd.Series:
         """
-        获取波动率指数（如VIX）
+        获取波动率指数（如VIX）（实现HistoricalDataProvider接口）
         
         Args:
             index_id: 指数代码
@@ -288,18 +291,23 @@ class YahooFinanceDataProvider:
         logger.warning(f"Unknown index code {index_id}, trying as-is")
         return index_id
     
-    def _standardize_format(self, data: pd.DataFrame, include_ohlcv: bool = False) -> pd.DataFrame:
+    def _standardize_format(self, data: pd.DataFrame) -> pd.DataFrame:
         """
-        标准化yfinance数据格式
+        标准化yfinance数据格式（实现HistoricalDataProvider协议标准）
         
         Args:
             data: yfinance返回的原始DataFrame
-            include_ohlcv: 是否包含完整OHLCV数据
         
         Returns:
-            标准化DataFrame with columns:
-            - 默认: ['date', 'close', 'volume']
-            - include_ohlcv=True: ['date', 'open', 'high', 'low', 'close', 'volume']
+            标准化DataFrame with columns: ['date', 'open', 'high', 'low', 'close', 'volume']
+            
+        数据标准：
+        - date: pd.Timestamp 类型，交易日期时间
+        - open: float，开盘价
+        - high: float，最高价
+        - low: float，最低价
+        - close: float，收盘价
+        - volume: float，成交量
         """
         # yfinance返回的列名可能是大写或小写
         standardized = pd.DataFrame()
@@ -307,31 +315,29 @@ class YahooFinanceDataProvider:
         # 提取date（从index）
         standardized['date'] = data.index
         
-        # 如果需要完整OHLCV数据
-        if include_ohlcv:
-            # 提取Open
-            if 'Open' in data.columns:
-                standardized['open'] = data['Open'].values
-            elif 'open' in data.columns:
-                standardized['open'] = data['open'].values
-            else:
-                standardized['open'] = np.nan
-            
-            # 提取High
-            if 'High' in data.columns:
-                standardized['high'] = data['High'].values
-            elif 'high' in data.columns:
-                standardized['high'] = data['high'].values
-            else:
-                standardized['high'] = np.nan
-            
-            # 提取Low
-            if 'Low' in data.columns:
-                standardized['low'] = data['Low'].values
-            elif 'low' in data.columns:
-                standardized['low'] = data['low'].values
-            else:
-                standardized['low'] = np.nan
+        # 提取Open
+        if 'Open' in data.columns:
+            standardized['open'] = data['Open'].values
+        elif 'open' in data.columns:
+            standardized['open'] = data['open'].values
+        else:
+            standardized['open'] = np.nan
+        
+        # 提取High
+        if 'High' in data.columns:
+            standardized['high'] = data['High'].values
+        elif 'high' in data.columns:
+            standardized['high'] = data['high'].values
+        else:
+            standardized['high'] = np.nan
+        
+        # 提取Low
+        if 'Low' in data.columns:
+            standardized['low'] = data['Low'].values
+        elif 'low' in data.columns:
+            standardized['low'] = data['low'].values
+        else:
+            standardized['low'] = np.nan
         
         # 提取close价格（处理多种列名格式）
         if 'Close' in data.columns:
@@ -359,11 +365,16 @@ class YahooFinanceDataProvider:
         if len(standardized) < original_len:
             logger.warning(f"Removed {original_len - len(standardized)} rows with missing close prices")
         
+        # 确保所有数值列为float类型
+        for col in ['open', 'high', 'low', 'close', 'volume']:
+            if col in standardized.columns:
+                standardized[col] = standardized[col].astype(float)
+        
         return standardized
     
     def validate_data_quality(self, data: pd.DataFrame) -> DataQualityReport:
         """
-        数据质量验证报告
+        数据质量验证报告（实现HistoricalDataProvider接口）
         
         Args:
             data: 待验证的数据DataFrame
@@ -587,8 +598,8 @@ class YahooFinanceDataProvider:
             
             data = self.get_index_prices(sample_index, start_date, end_date)
             
-            if len(data) > 0:
-                logger.info(f"Connection test passed: fetched {len(data)} rows for {sample_index}")
+            if len(data.records) > 0:
+                logger.info(f"Connection test passed: fetched {len(data.records)} rows for {sample_index}")
                 return True
             else:
                 logger.warning("Connection test failed: no data returned")

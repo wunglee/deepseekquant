@@ -1,7 +1,154 @@
-# 系统配置 - 数据模块 (生产环境-热加载测试V2)
-primary_source: yahoo
-default_index: NDX
-backup_sources: [tushare]
+# 系统配置 - 数据模块
+primary_source: akshare  # 数据源类型: akshare, yahoo, tushare（akshare免费无限制，推荐）
+default_index: 000300.SH  # 沪深300指数（AKShare 支持）
 cache_enabled: true
-cache_ttl: 7200
-max_retries: 5
+cache_ttl: 3600
+max_retries: 3
+
+# 数据源列表（用于 Providers 页面展示）
+providers:
+  - id: akshare
+    name: AKShare
+    type: 免费开源
+    description: 完全免费、无调用限制的数据源（推荐）
+    status: active
+    markets: [CN, HK, US]  # 支持的市场代码（对应MarketCode枚举）
+    requires_auth: false
+    rate_limit: 无限制
+    features:
+      - 实时数据
+      - 历史数据
+      - 基本面数据
+      - 宏观数据
+    installation: pip install akshare
+    
+  - id: yahoo
+    name: Yahoo Finance
+    type: 商业API
+    description: 全球市场数据源
+    status: inactive
+    markets: [US, EU, JP, SG]  # 支持的市场代码
+    requires_auth: false
+    rate_limit: 2000次/小时（可能限流）
+    features:
+      - 实时数据
+      - 历史数据
+      - 期权数据
+    installation: pip install yfinance
+    
+  - id: tushare
+    name: Tushare Pro
+    type: 社区数据
+    description: A股和港股数据源（需要注册）
+    status: inactive
+    markets: [CN, HK]  # 支持的市场代码
+    requires_auth: true
+    auth_type: token
+    rate_limit: 200次/天（免费用户）
+    features:
+      - 历史数据
+      - 基本面数据
+      - 财务数据
+    installation: pip install tushare
+    registration: https://tushare.pro/register
+
+  # 新增商业数据源配置
+  - id: alpha_vantage
+    name: Alpha Vantage
+    type: 商业API
+    description: 全球金融市场数据API
+    status: inactive
+    markets: [US, EU, CN]  # 支持的市场代码
+    requires_auth: true
+    auth_type: api_key
+    rate_limit: 5次/分钟（免费版）
+    features:
+      - 实时数据
+      - 历史数据
+      - 技术指标
+      - 外汇数据
+      - 加密货币
+    installation: pip install aiohttp
+    registration: https://www.alphavantage.co/support/#api-key
+
+  - id: polygon
+    name: Polygon.io
+    type: 商业API
+    description: 实时和历史金融市场数据
+    status: inactive
+    markets: [US]  # 主要支持美国市场
+    requires_auth: true
+    auth_type: api_key
+    rate_limit: 5次/分钟（免费版）
+    features:
+      - 实时数据
+      - 历史数据
+      - 股票、期权、外汇、加密货币
+      - 聚合数据API
+    installation: pip install aiohttp
+    registration: https://polygon.io/
+
+  - id: iex_cloud
+    name: IEX Cloud
+    type: 商业API
+    description: 美国金融市场数据API
+    status: inactive
+    markets: [US]  # 主要支持美国市场
+    requires_auth: true
+    auth_type: api_key
+    rate_limit: 100次/天（免费版）
+    features:
+      - 实时数据
+      - 历史数据
+      - 财务数据
+      - 基本面数据
+    installation: pip install aiohttp
+    registration: https://iexcloud.io/
+
+  - id: finnhub
+    name: Finnhub
+    type: 商业API
+    description: 全球金融市场数据和新闻API
+    status: inactive
+    markets: [US, CN, EU, HK]  # 支持全球多个市场
+    requires_auth: true
+    auth_type: api_key
+    rate_limit: 60次/分钟（免费版）
+    features:
+      - 实时数据
+      - 历史数据
+      - 财经新闻
+      - 社交情绪分析
+    installation: pip install aiohttp
+    registration: https://finnhub.io/
+
+  - id: twelve_data
+    name: Twelve Data
+    type: 商业API
+    description: 全球股票、外汇、加密货币数据API
+    status: inactive
+    markets: [US, EU, CN, HK, JP]  # 支持全球多个市场
+    requires_auth: true
+    auth_type: api_key
+    rate_limit: 8次/分钟（免费版）
+    features:
+      - 实时数据
+      - 历史数据
+      - 外汇数据
+      - 加密货币
+      - 技术指标
+    installation: pip install aiohttp
+    registration: https://twelvedata.com/
+
+# 数据源说明：
+# - akshare: 使用AKShare数据源（完全免费，无调用限制，数据全面）【推荐】
+#         支持：A股、港股、美股、期货、基金等
+#         安装：pip install akshare
+# - yahoo: 使用Yahoo Finance真实数据源（可能遇到限流）
+# - tushare: 使用Tushare数据源（需要配置API Token，免费用户200次/天）
+# - alpha_vantage: 使用Alpha Vantage数据源（需要API Key）
+# - polygon: 使用Polygon.io数据源（需要API Key）
+# - iex_cloud: 使用IEX Cloud数据源（需要API Key）
+# - finnhub: 使用Finnhub数据源（需要API Key）
+# - twelve_data: 使用Twelve Data数据源（需要API Key）
+# - real: 使用RealHistoricalDataProvider（会根据primary_source自动选择）

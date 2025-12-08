@@ -56,14 +56,45 @@ class DataProviderFactoryTest(unittest.TestCase):
         self.assertIn('tushare', providers)
         self.assertIn('mock', providers)  # 在setUp中注册
         self.assertIn('real', providers)
+        self.assertIn('akshare', providers)
+    
+    def test_factory_registers_new_providers(self):
+        """测试工厂能注册新的商业数据源providers"""
+        
+        # 验证新添加的providers已注册
+        providers = self.factory.list_providers()
+        self.assertIn('alpha_vantage', providers)
+        self.assertIn('polygon', providers)
+        self.assertIn('iex_cloud', providers)
+        self.assertIn('finnhub', providers)
+        self.assertIn('twelve_data', providers)
     
     def test_create_yahoo_provider(self):
         """测试创建Yahoo provider"""
-        provider = self.factory.create('yahoo', fallback_to_mock=False)
+        provider = self.factory.create('yahoo')
         
         # 验证provider有正确的方法
         self.assertTrue(hasattr(provider, 'get_index_prices'))
         self.assertTrue(hasattr(provider, 'get_index_returns'))
+    
+    def test_create_akshare_provider(self):
+        """测试创建AKShare provider"""
+        provider = self.factory.create('akshare')
+        
+        # 验证provider有正确的方法
+        self.assertTrue(hasattr(provider, 'get_index_prices'))
+        self.assertTrue(hasattr(provider, 'get_index_returns'))
+    
+    def test_create_alpha_vantage_provider(self):
+        """测试创建Alpha Vantage provider"""
+        # Alpha Vantage需要API密钥，这里只是测试能否创建实例
+        try:
+            provider = self.factory.create('alpha_vantage')
+            # 验证provider有正确的方法
+            self.assertTrue(hasattr(provider, '_fetch_fn'))
+        except Exception as e:
+            # 如果没有安装依赖或没有API密钥，应该抛出相应的错误
+            self.assertIn('not installed', str(e).lower()) or self.assertIn('api key', str(e).lower())
     
     def test_create_mock_provider(self):
         """测试创建Mock provider"""

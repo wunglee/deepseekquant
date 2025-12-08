@@ -7,7 +7,7 @@
 """
 
 from .market.market_config import MarketConfigManager, MarketCode
-from .market.market_enums import DataSource, REGIONAL_DATA_SOURCE_PRIORITY
+from .market.market_enums import DataSource
 from .exchange_rates import MockExchangeRateAdapter, CurrencyConverter
 from .models import MarketData
 from .config_manager import ConfigManager, MonitoringConfig, AlertingConfig, DataConfig, SystemConfig
@@ -20,7 +20,6 @@ __all__ = [
     
     # 市场枚举
     'DataSource',
-    'REGIONAL_DATA_SOURCE_PRIORITY',
     
     # 汇率管理
     'MockExchangeRateAdapter',

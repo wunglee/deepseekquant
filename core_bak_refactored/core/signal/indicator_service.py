@@ -143,31 +143,41 @@ class TechnicalIndicators:
                       prices: pd.Series,
                       fast: int = None,
                       slow: int = None,
-                      signal: int = None) -> Tuple[pd.Series, pd.Series, pd.Series]:
+                      signal_period: int = None,  # 🔧 重命名避免与返回值冲突
+                      use_china_standard: bool = True) -> Tuple[pd.Series, pd.Series, pd.Series]:
         """
         计算MACD指标（Moving Average Convergence Divergence）
         
         业务含义：
         - 趋势跟踪动量指标
-        - MACD线穿越信号线产生买卖信号
-        - 柱状图表示两线差值
+        - DIFF穿越DEA产生买卖信号
+        - MACD柱状图表示两线差值
+        
+        命名体系：
+        - 中国标准：DIFF（快慢线差）、DEA（信号线）、MACD柱（差值×2）
+        - 国际标准：MACD、Signal、Histogram（无放大）
         
         Args:
             prices: 价格序列
             fast: 快线周期（默认使用市场参数）
             slow: 慢线周期（默认使用市场参数）
-            signal: 信号线周期（默认使用市场参数）
+            signal_period: 信号线周期（默认使用市场参数）
+            use_china_standard: 是否使用中国标准（柱状图×2）
         
         Returns:
-            (macd_line, signal_line, histogram)
+            (DIFF, DEA, MACD柱) - 中国标准
+            或 (MACD, Signal, Histogram) - 国际标准
         """
         params = self.params['macd']
         fast = fast or params['fast']
         slow = slow or params['slow']
-        signal = signal or params['signal']
+        signal_period = signal_period or params['signal']  # 🔧 使用重命名后的参数
+        
+        # 中国市场习惯：柱状图放大2倍
+        histogram_multiplier = 2.0 if use_china_standard else 1.0
         
         return self.calculator.calculate_dual_ema_oscillator(
-            prices, fast, slow, signal
+            prices, fast, slow, signal_period, histogram_multiplier  # 🔧 传入正确的参数
         )
     
     def calculate_rsi(self, 

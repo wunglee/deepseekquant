@@ -46,12 +46,14 @@ API端点:
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, Any, List, TYPE_CHECKING
 import os
 
 import numpy as np
 import psutil
+import yaml
+import pandas as pd
 from flask import Flask, jsonify, request, Response, render_template, send_from_directory
 from flask_cors import CORS
 from flask_socketio import SocketIO, emit
@@ -64,6 +66,7 @@ from core_bak_refactored.app.quality_monitoring.api.diagnostics import Diagnosti
 from core_bak_refactored.core.share.config_manager import ConfigManager
 from core_bak_refactored.app.quality_monitoring.api.exporter import DataExporter
 from core_bak_refactored.app.quality_monitoring.api.system_status import SystemStatusManager
+from core_bak_refactored.app.quality_monitoring.api.chart_data import ChartDataAssembler
 
 if TYPE_CHECKING:
     from core_bak_refactored.app.quality_monitoring.monitoring_service import QualityMonitoringService
@@ -116,6 +119,14 @@ class DataQualityAPIService:
         self.config_manager = ConfigManager()  # 核心层配置管理器不需要 quality_monitor
         self.data_exporter = DataExporter(quality_monitor)
         self.system_status_manager = SystemStatusManager(quality_monitor)
+        
+        # 初始化图表数据组装器（依赖领域层服务）
+        from core_bak_refactored.core.signal.indicator_service import TechnicalIndicators
+        indicator_service = TechnicalIndicators(market='CN', timeframe='daily')
+        self.chart_data_assembler = ChartDataAssembler(
+            data_provider=quality_monitor.data_provider,  # 🔧 修正：使用 data_provider 而不是 data_fetcher
+            indicator_service=indicator_service
+        )
         
         self._setup_routes()
         self._setup_socketio_handlers()
@@ -302,6 +313,132 @@ class DataQualityAPIService:
                     'status': 'error',
                     'message': str(e),
                     'error_code': 'EXPORT_FAILED'
+                }), 500
+
+        @self.app.route('/api/v1/chart/data', methods=['GET'])
+        def get_chart_data():
+            """获取合并的图表数据（K线+技术指标+事件）
+            
+            查询参数：
+                - index_id: 股票/指数代码（必需）
+                - period: 周期（daily/weekly/monthly，默认 daily）
+                - count: 数据条数（默认 120）
+                - before: 获取此日期之前的数据（YYYY-MM-DD，可选）
+                - indicators: 需要的指标，逗号分隔（默认 'all'）
+                               支持: vol, macd, rsi, kdj, obv
+            
+            返回示例：
+            {
+                "status": "success",
+                "data": {
+                    "kline": [
+                        {
+                            "date": "2024-01-01",
+                            "open": 100.0,
+                            "high": 105.0,
+                            "low": 99.0,
+                            "close": 103.0,
+                            "volume": 1000000,
+                            "ma5": 102.0,
+                            "ma10": 101.5,
+                            "ma20": 100.8
+                        }
+                    ],
+                    "indicators": {
+                        "vol": [{"date": "2024-01-01", "value": 1000000}],
+                        "macd": [{"date": "2024-01-01", "macd": 0.5, "signal": 0.3, "histogram": 0.2}],
+                        "rsi": [{"date": "2024-01-01", "value": 60.0}],
+                        "kdj": [{"date": "2024-01-01", "k": 70.0, "d": 65.0, "j": 75.0}],
+                        "obv": [{"date": "2024-01-01", "value": 5000000}]
+                    },
+                    "events": [
+                        {
+                            "date": "2024-01-05",
+                            "type": "market_crash",
+                            "title": "暴跌 5.2%",
+                            "decline_pct": -5.2,
+                            "price": 98.0,
+                            "impact": "negative",
+                            "severity": "high"
+                        }
+                    ]
+                }
+            }
+            """
+            try:
+                # 获取查询参数
+                index_id = request.args.get('index_id')
+                if not index_id:
+                    return jsonify({
+                        'status': 'error',
+                        'message': '缺少必需参数: index_id',
+                        'error_code': 'MISSING_PARAMETER'
+                    }), 400
+                
+                period = request.args.get('period', 'daily')
+                count = request.args.get('count', 120, type=int)
+                before = request.args.get('before')  # 可选
+                indicators = request.args.get('indicators', 'all')
+                
+                # 参数验证
+                if period not in ['daily', 'weekly', 'monthly']:
+                    return jsonify({
+                        'status': 'error',
+                        'message': f'无效的周期参数: {period}，支持: daily/weekly/monthly',
+                        'error_code': 'INVALID_PERIOD'
+                    }), 400
+                
+                if count <= 0 or count > 1000:
+                    return jsonify({
+                        'status': 'error',
+                        'message': f'数据条数必须在 1-1000 之间，当前: {count}',
+                        'error_code': 'INVALID_COUNT'
+                    }), 400
+                
+                # 调用组装器
+                chart_data = self.chart_data_assembler.assemble_chart_data(
+                    index_id=index_id,
+                    period=period,
+                    count=count,
+                    before=before,
+                    indicators=indicators
+                )
+                
+                return jsonify({
+                    'status': 'success',
+                    'data': chart_data,
+                    'metadata': {
+                        'index_id': index_id,
+                        'period': period,
+                        'count': len(chart_data.get('kline', [])),
+                        'indicators': list(chart_data.get('indicators', {}).keys()),
+                        'events_count': len(chart_data.get('events', []))
+                    },
+                    'timestamp': datetime.now().isoformat()
+                })
+            
+            except ValueError as e:
+                logger.error(f"图表数据获取参数错误: {e}")
+                return jsonify({
+                    'status': 'error',
+                    'message': str(e),
+                    'error_code': 'INVALID_PARAMETER'
+                }), 400
+            
+            except RuntimeError as e:
+                logger.error(f"图表数据组装失败: {e}")
+                return jsonify({
+                    'status': 'error',
+                    'message': str(e),
+                    'error_code': 'CHART_DATA_ASSEMBLY_FAILED'
+                }), 500
+            
+            except Exception as e:
+                logger.error(f"获取图表数据失败: {e}")
+                return jsonify({
+                    'status': 'error',
+                    'message': str(e),
+                    'error_code': 'CHART_DATA_FETCH_FAILED'
                 }), 500
 
         @self.app.route('/api/v1/config', methods=['GET', 'PUT'])
@@ -1233,9 +1370,37 @@ class DataQualityAPIService:
                 baseline_days = request.args.get('baseline_days', type=int)
                 if not all([index_id, event_date]):
                     return jsonify({'status': 'error', 'message': '缺少必要参数', 'error_code': 'MISSING_PARAMS'}), 400
+                
+                # 检查 quality_monitor 是否存在
+                if not hasattr(self, 'quality_monitor') or self.quality_monitor is None:
+                    logger.error("quality_monitor 未初始化")
+                    return jsonify({
+                        'status': 'error',
+                        'message': '监控服务未初始化，请检查应用启动状态',
+                        'error_code': 'MONITOR_NOT_INITIALIZED'
+                    }), 503
+                
+                # 检查 data_provider 是否存在
                 provider = getattr(self.quality_monitor, 'data_provider', None)
-                if not provider or not hasattr(provider, 'get_event_window_data'):
-                    return jsonify({'status': 'error', 'message': '数据提供者不可用', 'error_code': 'DATA_PROVIDER_UNAVAILABLE'}), 503
+                if not provider:
+                    logger.error(f"data_provider 不存在。quality_monitor 属性: {dir(self.quality_monitor)}")
+                    return jsonify({
+                        'status': 'error',
+                        'message': '数据提供者未初始化，请检查数据源配置（config/dev/data.yml）',
+                        'error_code': 'DATA_PROVIDER_NOT_FOUND',
+                        'hint': '确保 primary_source 已配置且有效（如 tushare, yahoo, akshare）'
+                    }), 503
+                
+                # 检查方法是否存在
+                if not hasattr(provider, 'get_event_window_data'):
+                    logger.error(f"provider 类型: {type(provider).__name__}, 方法: {dir(provider)}")
+                    return jsonify({
+                        'status': 'error',
+                        'message': f'数据提供者（{type(provider).__name__}）不支持 get_event_window_data 方法',
+                        'error_code': 'METHOD_NOT_SUPPORTED'
+                    }), 503
+                
+                logger.info(f"调用 get_event_window_data: index_id={index_id}, event_date={event_date}, event_type={event_type}")
                 result = provider.get_event_window_data(index_id, event_date, event_type, window_days, baseline_days)
                 # 仅返回统计信息与样本，避免过大payload
                 event_records = result.get('event_window')
@@ -1265,6 +1430,222 @@ class DataQualityAPIService:
             except Exception as e:
                 logger.error(f"获取交叉验证日志失败: {e}")
                 return jsonify({'status': 'error', 'message': str(e), 'error_code': 'CROSS_VALIDATION_LOG_FETCH_FAILED'}), 500
+
+        # 新增：返回数据源支持的市场与默认指数
+        @self.app.route('/api/v1/markets/config')
+        def get_markets_config():
+            try:
+                data_cfg = self.config_manager.get_data_config()
+                provider_id = getattr(data_cfg, 'primary_source', 'akshare')
+                # 读取配置文件以获取支持市场
+                config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'config', 'dev', 'data.yml')
+                if not os.path.exists(config_path):
+                    # 兼容路径（core_bak_refactored/config/dev/data.yml）
+                    config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'core_bak_refactored', 'config', 'dev', 'data.yml')
+                markets = []
+                try:
+                    with open(config_path, 'r', encoding='utf-8') as f:
+                        cfg = yaml.safe_load(f)
+                    provider_cfg = next((p for p in cfg.get('providers', []) if p.get('id') == provider_id), {})
+                    supported = provider_cfg.get('markets', [])
+                except Exception:
+                    supported = ['A股']
+                # 默认指数与代表股票（界面展示用途）
+                cn_indices = [
+                    {'id': '000300.SH', 'name': '沪深300', 'type': 'index'},
+                    {'id': '000001.SH', 'name': '上证指数', 'type': 'index'},
+                    {'id': '399001.SZ', 'name': '深证成指', 'type': 'index'},
+                    {'id': '399006.SZ', 'name': '创业板指', 'type': 'index'},
+                    {'id': '601318.SH', 'name': '中国平安', 'type': 'stock'},
+                    {'id': '600519.SH', 'name': '贵州茅台', 'type': 'stock'},
+                    {'id': '000001.SZ', 'name': '平安银行', 'type': 'stock'},
+                    {'id': '000651.SZ', 'name': '格力电器', 'type': 'stock'},
+                    {'id': '300750.SZ', 'name': '宁德时代', 'type': 'stock'},
+                    {'id': '000852.SH', 'name': '中证1000', 'type': 'index'}
+                ]
+                hk_indices = [
+                    {'id': 'HSI', 'name': '恒生指数', 'type': 'index'},
+                    {'id': 'HSCEI', 'name': '国企指数', 'type': 'index'},
+                    {'id': 'HSTECH', 'name': '恒生科技', 'type': 'index'},
+                    {'id': '0700.HK', 'name': '腾讯控股', 'type': 'stock'},
+                    {'id': '0939.HK', 'name': '建设银行', 'type': 'stock'},
+                    {'id': '2318.HK', 'name': '中国平安', 'type': 'stock'}
+                ]
+                us_indices = [
+                    {'id': '^GSPC', 'name': 'S&P 500', 'type': 'index'},
+                    {'id': '^DJI', 'name': '道琼斯', 'type': 'index'},
+                    {'id': '^IXIC', 'name': '纳斯达克', 'type': 'index'},
+                    {'id': 'AAPL', 'name': 'Apple', 'type': 'stock'},
+                    {'id': 'MSFT', 'name': 'Microsoft', 'type': 'stock'},
+                    {'id': 'AMZN', 'name': 'Amazon', 'type': 'stock'},
+                    {'id': 'GOOGL', 'name': 'Alphabet', 'type': 'stock'},
+                    {'id': 'TSLA', 'name': 'Tesla', 'type': 'stock'}
+                ]
+                if 'A股' in supported or provider_id == 'akshare':
+                    markets.append({'id': 'cn_stock', 'name': 'A股', 'icon': '📈', 'supported': True, 'default_indices': cn_indices})
+                if '港股' in supported or provider_id == 'akshare':
+                    markets.append({'id': 'hk_stock', 'name': '港股', 'icon': '🇭🇰', 'supported': True, 'default_indices': hk_indices})
+                if '美股' in supported or provider_id == 'akshare':
+                    markets.append({'id': 'us_stock', 'name': '美股', 'icon': '🇺🇸', 'supported': True, 'default_indices': us_indices})
+                return jsonify({'status': 'success', 'current_provider': provider_id, 'markets': markets})
+            except Exception as e:
+                logger.error(f"获取市场配置失败: {e}")
+                return jsonify({'status': 'error', 'message': str(e), 'error_code': 'MARKETS_CONFIG_FAILED'}), 500
+
+        # 新增：K线数据（周期切换 + 最近30周期 + 事件标注 + 无限滚动支持）
+        @self.app.route('/api/v1/data/kline')
+        def get_kline_data():
+            try:
+                index_id = request.args.get('index_id', type=str)
+                period = request.args.get('period', default='daily', type=str)
+                count = request.args.get('count', default=30, type=int)
+                before = request.args.get('before', type=str)  # 新增：获取此日期之前的数据
+                mock_flag = request.args.get('mock', default='0', type=str)
+                if not index_id:
+                    return jsonify({'status': 'error', 'message': '缺少index_id', 'error_code': 'MISSING_PARAMS'}), 400
+                # 若启用模拟数据，则在应用层生成K线数据（不依赖真实数据源）
+                if mock_flag.lower() in ('1', 'true', 'yes'):
+                    try:
+                        # 使用 MockHistoricalDataProvider 生成逼真的K线数据
+                        from core_bak_refactored.tests.fixtures.core.data.mock_historical_data_provider import MockHistoricalDataProvider
+                        mock_provider = MockHistoricalDataProvider()
+                        
+                        # 计算日期范围
+                        multiplier = {'daily': 1, 'weekly': 7, 'monthly': 30}.get(period, 1)
+                        days_needed = count * multiplier * 2
+                        end_date = datetime.now()
+                        start_date = end_date - timedelta(days=days_needed)
+                        
+                        # 获取原始日线数据
+                        df = mock_provider.get_index_prices(index_id, start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'))
+                        if hasattr(df, 'empty') and df.empty:
+                            return jsonify({'status': 'error', 'message': '无数据', 'error_code': 'NO_DATA'}), 404
+                        
+                        # 补齐OHLC（基于close生成逼真的OHLC）
+                        df = df.copy()
+                        if 'open' not in df.columns:
+                            df['open'] = df['close'].shift(1).fillna(df['close'])
+                        if 'high' not in df.columns or 'low' not in df.columns:
+                            # 基于收益率波动生成high/low
+                            returns = df['close'].pct_change().fillna(0)
+                            volatility = returns.rolling(5, min_periods=1).std().fillna(0.01)
+                            df['high'] = df['close'] * (1 + volatility * np.random.uniform(0.3, 0.8, len(df)))
+                            df['low'] = df['close'] * (1 - volatility * np.random.uniform(0.3, 0.8, len(df)))
+                            # 确保 high >= close >= low 和 high >= open >= low
+                            df['high'] = df[['high', 'close', 'open']].max(axis=1)
+                            df['low'] = df[['low', 'close', 'open']].min(axis=1)
+                        
+                        # 周期转换
+                        df2 = df.copy()
+                        df2['date'] = pd.to_datetime(df2['date'])
+                        df2 = df2.set_index('date')
+                        if period == 'weekly':
+                            df2 = df2.resample('W').agg({'open':'first','high':'max','low':'min','close':'last','volume':'sum'})
+                        elif period == 'monthly':
+                            df2 = df2.resample('M').agg({'open':'first','high':'max','low':'min','close':'last','volume':'sum'})
+                        df2 = df2.reset_index()
+                        df2 = df2.tail(count)
+                        
+                        # 事件检测（最小规则）
+                        df2['pct_change'] = df2['close'].pct_change() * 100
+                        events = []
+                        for i in range(len(df2)):
+                            chg = float(df2.loc[df2.index[i], 'pct_change']) if not pd.isna(df2.loc[df2.index[i], 'pct_change']) else 0.0
+                            dt = df2.loc[df2.index[i], 'date']
+                            cl = float(df2.loc[df2.index[i], 'close'])
+                            if chg <= -5.0:
+                                events.append({'date': dt.strftime('%Y-%m-%d'), 'type': 'market_crash', 'title': f'暴跌 {abs(chg):.2f}%', 'decline_pct': chg, 'price': cl, 'impact': 'negative', 'severity': 'high' if chg > -7 else 'critical'})
+                            elif chg >= 5.0:
+                                events.append({'date': dt.strftime('%Y-%m-%d'), 'type': 'rally', 'title': f'暴涨 {chg:.2f}%', 'rise_pct': chg, 'price': cl, 'impact': 'positive', 'severity': 'high'})
+                        
+                        # 转换为dict并处理NaN值（替换为null以确保JSON有效）
+                        data = df2.to_dict(orient='records')
+                        # 将所有NaN替换为None（JSON序列化时会变成null）
+                        for record in data:
+                            for key, value in record.items():
+                                if pd.isna(value):
+                                    record[key] = None
+                                elif key == 'date' and hasattr(value, 'strftime'):
+                                    record[key] = value.strftime('%Y-%m-%d')
+                        return jsonify({'status': 'success', 'data': data, 'period': period, 'count': len(data), 'events': events, 'timestamp': datetime.now().isoformat()})
+                    except Exception as e:
+                        logger.error(f"模拟K线数据生成失败: {e}")
+                        return jsonify({'status': 'error', 'message': str(e), 'error_code': 'MOCK_KLINE_FAILED'}), 500
+                # 否则走真实数据源路径
+                provider = getattr(self.quality_monitor, 'data_provider', None)
+                if not provider or not hasattr(provider, 'get_index_prices'):
+                    # 生产环境：数据提供者不可用时返回错误，不降级为Mock
+                    return jsonify({'status': 'error', 'message': '数据提供者不可用', 'error_code': 'DATA_PROVIDER_UNAVAILABLE'}), 503
+                
+                try:
+                    multiplier = {'daily': 1, 'weekly': 7, 'monthly': 30}.get(period, 1)
+                    days_needed = count * multiplier * 2
+                    
+                    if before:
+                        end_date = datetime.strptime(before, '%Y-%m-%d')
+                    else:
+                        end_date = datetime.now()
+                    
+                    start_date = end_date - timedelta(days=days_needed)
+                    df = provider.get_index_prices(index_id, start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'))
+                    if hasattr(df, 'empty') and df.empty:
+                        # 生产环境：真实数据为空时返回错误，不降级为Mock
+                        return jsonify({'status': 'error', 'message': '无数据', 'error_code': 'NO_DATA'}), 404
+                except Exception as e:
+                    logger.error(f"获取真实数据失败: {e}")
+                    # 生产环境：获取数据失败时返回错误，不降级为Mock
+                    return jsonify({'status': 'error', 'message': f'数据获取失败: {str(e)}', 'error_code': 'DATA_FETCH_FAILED'}), 500
+                    
+                # 处理真实数据：补齐OHLC、周期转换、事件检测
+                # 补齐OHLC
+                if 'open' not in df.columns or 'high' not in df.columns or 'low' not in df.columns:
+                    df = df.copy()
+                    df['open'] = df['close'].shift(1).fillna(df['close'])
+                    df['high'] = df['close'] * 1.005
+                    df['low'] = df['close'] * 0.995
+                
+                # 周期转换
+                df2 = df.copy()
+                df2['date'] = pd.to_datetime(df2['date'])
+                df2 = df2.set_index('date')
+                if period == 'weekly':
+                    df2 = df2.resample('W').agg({'open':'first','high':'max','low':'min','close':'last','volume':'sum'})
+                elif period == 'monthly':
+                    df2 = df2.resample('M').agg({'open':'first','high':'max','low':'min','close':'last','volume':'sum'})
+                else:
+                    # 保持日线
+                    pass
+                df2 = df2.reset_index()
+                df2 = df2.tail(count)
+                
+                # 事件检测（最小规则）
+                try:
+                    df2['pct_change'] = df2['close'].pct_change() * 100
+                    events = []
+                    for i in range(len(df2)):
+                        chg = float(df2.loc[df2.index[i], 'pct_change']) if not pd.isna(df2.loc[df2.index[i], 'pct_change']) else 0.0
+                        dt = df2.loc[df2.index[i], 'date']
+                        cl = float(df2.loc[df2.index[i], 'close'])
+                        if chg <= -5.0:
+                            events.append({'date': dt.strftime('%Y-%m-%d'), 'type': 'market_crash', 'title': f'暴跌 {abs(chg):.2f}%', 'decline_pct': chg, 'price': cl, 'impact': 'negative', 'severity': 'high' if chg > -7 else 'critical'})
+                        elif chg >= 5.0:
+                            events.append({'date': dt.strftime('%Y-%m-%d'), 'type': 'rally', 'title': f'暴涨 {chg:.2f}%', 'rise_pct': chg, 'price': cl, 'impact': 'positive', 'severity': 'high'})
+                except Exception:
+                    events = []
+                
+                # 转换为dict并处理NaN值（替换为null以确保JSON有效）
+                data = df2.to_dict(orient='records')
+                # 将所有NaN替换为None（JSON序列化时会变成null）
+                for record in data:
+                    for key, value in record.items():
+                        if pd.isna(value):
+                            record[key] = None
+                        elif key == 'date' and hasattr(value, 'strftime'):
+                            record[key] = value.strftime('%Y-%m-%d')
+                return jsonify({'status': 'success', 'data': data, 'period': period, 'count': len(data), 'events': events, 'timestamp': datetime.now().isoformat()})
+            except Exception as e:
+                logger.error(f"获取K线数据失败: {e}")
+                return jsonify({'status': 'error', 'message': str(e), 'error_code': 'KLINE_FETCH_FAILED'}), 500
 
         # ============================================================
         # 错误处理中间件

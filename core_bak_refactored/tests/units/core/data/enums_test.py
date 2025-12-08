@@ -17,7 +17,6 @@ class TestDataSourceType(unittest.TestCase):
         """测试所有数据源类型都存在"""
         self.assertEqual(DataSourceType.YAHOO_FINANCE.value, "yahoo")
         self.assertEqual(DataSourceType.ALPHA_VANTAGE.value, "alpha_vantage")
-        self.assertEqual(DataSourceType.MOCK.value, "mock")
         self.assertEqual(DataSourceType.DATABASE.value, "database")
     
     def test_enum_values_unique(self):

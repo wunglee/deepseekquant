@@ -1,14 +1,24 @@
-"""[专家碎片] 数据质量增强器 - 第6轮专家指导(迁移至 quality 子域)
+"""[专家碎片] 数据质量验证器 - 第6轮专家指导(迁移至 quality 子域)
+
+架构变更说明（2025-12-06）：
+- 原名：DataQualityEnhancer（数据质量增强器）
+- 原职责：多源数据智能切换、质量驱动切换、主源优先备源降级
+- 新职责：单纯的数据质量验证与评分，不再负责数据源切换
+- 设计原则：单一职责原则（SRP），仅评估数据质量，不参与数据获取决策
+
+新架构规则（2025-12-06）：
+- 用户指定单一数据源（primary_source），不再自动切换
+- 本类仅负责数据质量评分，返回质量报告供调用方决策
+- 移除了backup_sources参数和多源切换逻辑
 
 职责:
-- 多源数据智能切换(基于质量评分)
 - 数据质量验证与评分
-- 质量对比选择(选择质量最高的源)
-
-设计原则:
-- 主源优先, 备源降级
-- 质量驱动切换(阈值可配置)
 - 完整的质量评分体系(完整性+一致性+准确性+异常检测)
+- 提供标准化的质量报告
+
+设计模式:
+- 策略模式: 支持多种质量评估策略
+- 报告模式: 标准化的质量报告输出
 """
 
 import logging
@@ -46,153 +56,39 @@ class DataQualityReport:
     overall_score: float
 
 class DataQualityEnhancer:
-    """数据质量增强器
+    """数据质量验证器
+    
+    新架构设计（2025-12-06）：
+    - 仅负责对数据进行质量评估
+    - 返回DataQualityReport供调用方决策
     
     职责:
-    - 从多个数据源获取数据
-    - 基于质量评分选择最佳数据源
-    - 主源质量不足时自动切换到备源
-    
-    设计模式:
-    - 策略模式: 支持多种数据源策略
-    - 责任链模式: 主源失败逐级尝试备源
+    - 数据质量验证与评分
+    - 提供标准化的质量报告
     
     Args:
-        primary_source: 主数据源(实现HistoricalDataProvider接口)
-        backup_sources: 备用数据源列表
-        quality_threshold: 质量阈值(默认0.8),低于此值触发备源切换
+        quality_threshold: 质量阈值(默认0.8)，仅用于报告对比
     """
 
     def __init__(
         self,
-        primary_source,
-        backup_sources: List = None,
         quality_threshold: float = DEFAULT_QUALITY_THRESHOLD
     ):
-        """初始化数据质量增强器
+        """初始化数据质量验证器
         
         Args:
-            primary_source: 主数据源提供者
-            backup_sources: 备用数据源列表
             quality_threshold: 质量阈值(0-1)
         """
         if quality_threshold < 0 or quality_threshold > 1:
             raise ValueError(f"quality_threshold必须在0-1之间,当前值: {quality_threshold}")
         
-        self.primary = primary_source
-        self.backups = backup_sources or []
         self.quality_threshold = quality_threshold
         
         logger.info(
-            f"DataQualityEnhancer初始化: 主源={type(primary_source).__name__}, "
-            f"备源数量={len(self.backups)}, 质量阈值={quality_threshold}"
+            f"DataQualityEnhancer初始化: 质量阈值={quality_threshold} "
+            "(仅用于报告对比)"
         )
-    
-    def get_enhanced_prices(
-        self,
-        index_id: str,
-        start_date: Union[str, datetime],
-        end_date: Union[str, datetime]
-    ) -> Tuple[pd.DataFrame, DataQualityReport]:
-        """获取质量增强的价格数据
-        
-        流程:
-        1. 从主源获取数据
-        2. 评估数据质量
-        3. 质量不足时尝试备源
-        4. 返回最佳质量的数据+质量报告
-        
-        Args:
-            index_id: 指数代码
-            start_date: 开始日期
-            end_date: 结束日期
-        
-        Returns:
-            (数据DataFrame, 质量报告DataQualityReport)元组
-        
-        Raises:
-            ValueError: 所有数据源都无法获取数据
-        """
-        logger.info(f"开始获取{index_id}数据: {start_date} 到 {end_date}")
-        
-        # 尝试从主数据源获取
-        primary_data = None
-        primary_quality = None
-        
-        try:
-            primary_data = self.primary.get_index_prices(index_id, start_date, end_date)
-            if primary_data is not None and not primary_data.empty:
-                primary_quality = self.validate_data_quality(primary_data)
-                logger.info(
-                    f"主源数据: {len(primary_data)}行, 质量评分={primary_quality.overall_score:.3f}"
-                )
-            else:
-                logger.warning("主数据源返回空数据")
-        except Exception as e:
-            logger.error(f"主数据源获取失败: {type(e).__name__}: {e}")
-        
-        # 如果主源质量达标,直接返回
-        if primary_data is not None and not primary_data.empty:
-            if primary_quality.overall_score >= self.quality_threshold:
-                logger.info(f"主源质量达标({primary_quality.overall_score:.3f}>={self.quality_threshold}),直接使用")
-                return primary_data, primary_quality
-            else:
-                logger.warning(
-                    f"主源质量不足({primary_quality.overall_score:.3f}<{self.quality_threshold}),尝试备源"
-                )
-                # 尝试备选数据源
-                best_backup_data = None
-                best_backup_quality = primary_quality
-                
-                for i, backup in enumerate(self.backups):
-                    try:
-                        backup_data = backup.get_index_prices(index_id, start_date, end_date)
-                        if backup_data is None or backup_data.empty:
-                            logger.debug(f"备源{i+1}返回空数据")
-                            continue
-                        
-                        backup_quality = self.validate_data_quality(backup_data)
-                        logger.info(
-                            f"备源{i+1}: {len(backup_data)}行, 质量={backup_quality.overall_score:.3f}"
-                        )
-                        
-                        # 选择质量最高的备源
-                        if backup_quality.overall_score > best_backup_quality.overall_score:
-                            best_backup_data = backup_data
-                            best_backup_quality = backup_quality
-                            logger.info(f"备源{i+1}质量更优,暂存为最佳备源")
-                    except Exception as e:
-                        logger.error(f"备源{i+1}获取失败: {type(e).__name__}: {e}")
-                        continue
-                
-                # 如果找到更好的备源,使用备源数据
-                if best_backup_data is not None and best_backup_quality.overall_score > primary_quality.overall_score:
-                    logger.info(
-                        f"使用备源数据(质量{best_backup_quality.overall_score:.3f} > "
-                        f"主源{primary_quality.overall_score:.3f})"
-                    )
-                    return best_backup_data, best_backup_quality
-        
-        # 主源可用(即使质量不足),优先返回主源
-        if primary_data is not None:
-            return primary_data, primary_quality if primary_quality else self.validate_data_quality(primary_data)
-        # 主源失败,逐个尝试备源
-        logger.warning("主源失败,逐个尝试备源")
-        for i, backup in enumerate(self.backups):
-            try:
-                backup_data = backup.get_index_prices(index_id, start_date, end_date)
-                if backup_data is not None and not backup_data.empty:
-                    backup_quality = self.validate_data_quality(backup_data)
-                    logger.info(f"备源{i+1}成功: {len(backup_data)}行, 质量={backup_quality.overall_score:.3f}")
-                    return backup_data, backup_quality
-            except Exception as e:
-                logger.error(f"备源{i+1}失败: {type(e).__name__}: {e}")
-                continue
-        
-        # 所有数据源都失败
-        error_msg = f"所有数据源({1 + len(self.backups)})都无法获取{index_id}的数据"
-        logger.error(error_msg)
-        raise ValueError(error_msg)
+
     
     def validate_data_quality(self, data: pd.DataFrame) -> DataQualityReport:
         """验证数据质量

@@ -29,7 +29,7 @@ class TestDataProviderIntegration:
     
     def test_create_yahoo_provider(self):
         """测试：创建Yahoo Finance数据提供者"""
-        provider = create_data_provider('yahoo', fallback_to_mock=False)
+        provider = create_data_provider('yahoo')
         
         # 验证返回Yahoo实例
         assert provider is not None
@@ -64,7 +64,7 @@ class TestDataProviderIntegration:
     
     def test_yahoo_provider_fallback(self):
         """测试：Yahoo提供者不再fallback，失败应抛异常"""
-        provider = create_data_provider('yahoo', fallback_to_mock=False)
+        provider = create_data_provider('yahoo')
         
         # 真实场景下数据不可用应抛异常
         try:

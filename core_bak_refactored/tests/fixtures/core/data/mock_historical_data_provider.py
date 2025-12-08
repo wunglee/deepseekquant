@@ -111,12 +111,22 @@ class MockHistoricalDataProvider:
         return prices
 
     def get_index_prices(self, index_id: str, start_date: str, end_date: str) -> pd.DataFrame:
+        """
+        获取指数价格数据
+        
+        Returns:
+            DataFrame with columns: ['date', 'open', 'high', 'low', 'close', 'volume']
+            符合 HistoricalDataProvider 协议标准
+        """
         start = pd.to_datetime(start_date)
         end = pd.to_datetime(end_date)
         dates = pd.date_range(start, end, freq='B')
         n_days = len(dates)
         initial_price = 3000.0
         base_volatility = 0.015
+        
+        # 生成seed字符串（在两个分支之前）
+        seed_str = str(start_date) + str(end_date)
 
         # 事件期匹配（交集判定）
         event_decline = 0.0
@@ -148,8 +158,6 @@ class MockHistoricalDataProvider:
             )
         else:
             # 非事件期：随机游走
-            # 支持datetime参数：转换为字符串再进行seed
-            seed_str = str(start_date) + str(end_date)
             np.random.seed(hash(seed_str) % 2**32)
             daily_returns = np.random.normal(0, base_volatility, n_days)
             prices = initial_price * np.cumprod(1 + daily_returns)
@@ -159,8 +167,28 @@ class MockHistoricalDataProvider:
         base_volume = 100000000
         volumes = base_volume * (1 + 3.0 * np.clip(np.abs(daily_returns), 0, 0.2) + np.random.uniform(-0.1, 0.1, n_days))
         volumes = np.clip(volumes, 0, None)
+        
+        # 生成 OHLC 数据（基于 close 价格）
+        # 使用随机波动生成 high/low，open 使用前一天 close
+        np.random.seed(hash(seed_str + 'ohlc') % 2**32)
+        high_ratio = 1 + np.abs(np.random.normal(0, base_volatility * 0.5, n_days))
+        low_ratio = 1 - np.abs(np.random.normal(0, base_volatility * 0.5, n_days))
+        
+        highs = prices * high_ratio
+        lows = prices * low_ratio
+        
+        # open 价格：第一天等于 initial_price，其余天等于前一天的 close
+        opens = np.roll(prices, 1)
+        opens[0] = initial_price
 
-        return pd.DataFrame({'date': dates, 'close': prices, 'volume': volumes})
+        return pd.DataFrame({
+            'date': dates,
+            'open': opens,
+            'high': highs,
+            'low': lows,
+            'close': prices,
+            'volume': volumes
+        })
 
     def get_index_returns(self, index_id: str, start_date: str, end_date: str) -> pd.Series:
         df = self.get_index_prices(index_id, start_date, end_date)
@@ -171,7 +199,10 @@ class MockHistoricalDataProvider:
     def get_stock_prices(self, symbol: str, start_date, end_date) -> pd.DataFrame:
         """
         获取个股价格数据（Mock实现，接口与YahooFinanceDataProvider一致）
-        返回列: ['date', 'close', 'volume']
+        
+        Returns:
+            DataFrame with columns: ['date', 'open', 'high', 'low', 'close', 'volume']
+            符合 HistoricalDataProvider 协议标准
         """
         # 支持 str 和 datetime
         start = pd.to_datetime(start_date)
@@ -195,7 +226,25 @@ class MockHistoricalDataProvider:
         )
         volumes = np.clip(volumes, 0, None)
         
-        return pd.DataFrame({'date': dates, 'close': prices, 'volume': volumes})
+        # 生成 OHLC 数据
+        seed_str = str(start) + str(end) + symbol
+        np.random.seed(hash(seed_str + 'ohlc') % 2**32)
+        high_ratio = 1 + np.abs(np.random.normal(0, base_volatility * 0.5, n_days))
+        low_ratio = 1 - np.abs(np.random.normal(0, base_volatility * 0.5, n_days))
+        
+        highs = prices * high_ratio
+        lows = prices * low_ratio
+        opens = np.roll(prices, 1)
+        opens[0] = initial_price
+        
+        return pd.DataFrame({
+            'date': dates,
+            'open': opens,
+            'high': highs,
+            'low': lows,
+            'close': prices,
+            'volume': volumes
+        })
     
     def get_volatility_index(self, index_id: str, start_date, end_date) -> pd.Series:
         """

@@ -13,7 +13,7 @@ class TestDataQualityEnhancer(unittest.TestCase):
     def setUp(self):
         """设置测试环境"""
         self.mock_provider = MockHistoricalDataProvider()
-        self.enhancer = DataQualityEnhancer(primary_source=self.mock_provider)
+        self.enhancer = DataQualityEnhancer()  # 不再需要primary_source参数
 
     def test_validate_data_quality_with_good_data(self):
         """测试高质量数据的质量验证"""
@@ -79,24 +79,16 @@ class TestDataQualityEnhancer(unittest.TestCase):
         # 验证准确性评分应该较低
         self.assertLess(report.accuracy_score, 1.0)
 
-    def test_get_enhanced_prices_with_primary_source(self):
-        """测试从主数据源获取增强数据"""
-        start_date = '2015-06-15'
-        end_date = '2015-08-26'
+    def test_get_enhanced_prices_deprecated(self):
+        """测试get_enhanced_prices已被删除
         
-        # 使用主数据源获取数据（现在返回元组）
-        data, quality_report = self.enhancer.get_enhanced_prices('000300.SH', start_date, end_date)
-        
-        # 验证返回了数据
-        self.assertIsInstance(data, pd.DataFrame)
-        self.assertGreater(len(data), 0)
-        self.assertIn('date', data.columns)
-        self.assertIn('close', data.columns)
-        self.assertIn('volume', data.columns)
-        
-        # 验证质量报告
-        self.assertIsInstance(quality_report, DataQualityReport)
-        self.assertGreater(quality_report.overall_score, 0.0)
+        架构变更（2025-12-06）：
+        - get_enhanced_prices()方法已完全删除
+        - DataQualityEnhancer不再有该方法
+        """
+        # 验证方法不存在
+        self.assertFalse(hasattr(self.enhancer, 'get_enhanced_prices'),
+                        "get_enhanced_prices方法应该已被完全删除")
 
     def test_data_quality_report_structure(self):
         """测试数据质量报告结构"""

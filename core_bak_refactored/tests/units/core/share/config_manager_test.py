@@ -45,10 +45,12 @@ class TestConfigManager(unittest.TestCase):
     
     def test_get_data_config(self):
         """测试获取数据配置"""
+        # 默认环境是dev，使用dev/data.yml中的配置
         manager = ConfigManager()
         config = manager.get_data_config()
         self.assertIsInstance(config, DataConfig)
-        self.assertEqual(config.primary_source, "yahoo")
+        # dev环境主数据源为akshare
+        self.assertEqual(config.primary_source, "akshare")
     
     def test_get_system_config(self):
         """测试获取系统配置"""

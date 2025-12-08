@@ -54,6 +54,11 @@ class DataProviderFactory:
             ('tushare', 'core_bak_refactored.core.data.providers.tushare', 'TushareDataProvider'),
             ('real', 'core_bak_refactored.core.data.providers.historical_data_provider', 'RealHistoricalDataProvider'),
             ('akshare', 'core_bak_refactored.core.data.providers.akshare_provider', 'AKShareDataProvider'),
+            ('alpha_vantage', 'core_bak_refactored.core.data.providers.alpha_vantage', 'AlphaVantageProvider'),
+            ('polygon', 'core_bak_refactored.core.data.providers.polygon', 'fetch_polygon_data'),
+            ('iex_cloud', 'core_bak_refactored.core.data.providers.iex_cloud', 'fetch_iex_cloud_data'),
+            ('finnhub', 'core_bak_refactored.core.data.providers.finnhub', 'fetch_finnhub_data'),
+            ('twelve_data', 'core_bak_refactored.core.data.providers.twelve_data', 'fetch_twelve_data'),
         ]
         
         for name, module_path, class_name in builtin_providers:

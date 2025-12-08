@@ -10,8 +10,154 @@
     <link rel="stylesheet" href="/static/css/common.css">
     <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
     <style>
-        #priceChart, #returnChart { height: 360px; }
-        #eventWindowChart { height: 300px; }
+        /* Explorer 专用样式 */
+        .two-columns {
+            display: flex;
+            gap: 16px;
+            align-items: flex-start;
+        }
+        .left-panel {
+            flex-shrink: 0;
+            background: #fff;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 12px;
+        }
+        .right-panel {
+            flex: 1;
+            background: #fff;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 12px;
+        }
+        .panel-header {
+            font-size: 14px;
+            font-weight: 600;
+            color: #374151;
+            margin-bottom: 8px;
+        }
+        .segmented-control {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        
+        /* ECharts 容器样式 */
+        #klineChart,
+        #indicatorChart {
+            cursor: default;
+        }
+        
+        .btn-segment {
+            padding: 6px 14px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            background: #fff;
+            color: #4b5563;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-segment:hover {
+            background: #f3f4f6;
+            border-color: #9ca3af;
+        }
+        .btn-segment.active {
+            background: #2563eb;
+            color: #fff;
+            border-color: #2563eb;
+        }
+        .list {
+            max-height: 500px;
+            overflow-y: auto;
+        }
+        .list-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 12px;
+            border-bottom: 1px solid #f3f4f6;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .list-item:hover {
+            background: #f9fafb;
+        }
+        .list-item.active {
+            background: #eff6ff;
+            border-left: 3px solid #2563eb;
+        }
+        .list-item-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+        .list-item-name {
+            font-size: 14px;
+            font-weight: 500;
+            color: #1f2937;
+        }
+        .list-item-code {
+            font-size: 12px;
+            color: #6b7280;
+        }
+        .list-item-actions {
+            display: flex;
+            gap: 4px;
+        }
+        .btn-icon {
+            padding: 4px 8px;
+            border: none;
+            background: transparent;
+            color: #9ca3af;
+            font-size: 12px;
+            cursor: pointer;
+            transition: color 0.2s;
+        }
+        .btn-icon:hover {
+            color: #ef4444;
+        }
+        .indicator-area {
+            margin-top: 12px;
+        }
+        #klineChart, #indicatorChart {
+            width: 100%;
+        }
+        /* 模态框样式 */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+        }
+        .modal-content {
+            background: #fff;
+            border-radius: 8px;
+            padding: 20px;
+            width: 90%;
+            max-width: 400px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+        }
+        .modal-header {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            color: #1f2937;
+        }
+        .modal-footer {
+            display: flex;
+            gap: 8px;
+            justify-content: flex-end;
+            margin-top: 16px;
+        }
     </style>
 </head>
 <body>
@@ -43,109 +189,1547 @@
 </header>
 
 <div class="container">
-    <div class="toolbar">
-        <input id="indexId" class="form-control" placeholder="指数ID (如: CSI300)" style="width: 200px;">
-        <input id="startDate" class="form-control" placeholder="开始日期 YYYY-MM-DD" style="width: 200px;">
-        <input id="endDate" class="form-control" placeholder="结束日期 YYYY-MM-DD" style="width: 200px;">
-        <select id="eventType" class="form-control" style="width: 150px;">
-            <option value="market_crash">market_crash</option>
-            <option value="policy_change">policy_change</option>
-        </select>
-        <button class="btn btn-primary" onclick="loadData()">加载数据</button>
+    <!-- 市场单选（横向） -->
+    <div id="marketSelector" class="segmented-control" style="margin-bottom:12px;">
+        <!-- (●) A股  (○) 港股  (○) 美股  (○) 期货  (○) 基金 -->
     </div>
 
-    <div class="grid">
-        <div class="card">
-            <div class="card-header">指数价格</div>
-            <div class="card-body"><div id="priceChart"></div></div>
-        </div>
-        <div class="card">
-            <div class="card-header">收益率序列</div>
-            <div class="card-body"><div id="returnChart"></div></div>
-        </div>
-    </div>
+    <div class="grid two-columns">
+        <!-- 左列：十大指数/股票（可增减） -->
+        <aside class="left-panel" style="width:280px;">
+            <div class="panel-header" style="display:flex; justify-content:space-between; align-items:center;">
+                <span>市场主要指数/股票</span>
+                <button id="indexAddButton" class="btn btn-secondary btn-sm">+ 添加</button>
+            </div>
+            <div id="indexList" class="list">
+                <!-- 纵向列表：名称 + 代码 + 删除按钮 -->
+            </div>
+        </aside>
 
-    <div class="card" style="margin-top:16px;">
-        <div class="card-header">事件窗口样本</div>
-        <div class="card-body">
-            <div id="eventWindowChart"></div>
-            <table class="table" id="eventSamples">
-                <thead><tr><th>日期</th><th>价格</th><th>来源</th></tr></thead>
-                <tbody></tbody>
-            </table>
-        </div>
+        <!-- 右列：K线区域 -->
+        <section class="right-panel" style="width:75%;">
+            <!-- 顶部：周期切换（单选） -->
+            <div id="periodSelector" class="segmented-control" style="margin-bottom:8px;">
+                <!-- (●) 日  (○) 周  (○) 月 | 最近30周期 -->
+            </div>
+
+            <!-- 中部：K线（含MA5/MA10/MA20 + 事件标注） -->
+            <div id="klineChart" style="height:420px;"></div>
+
+            <!-- 技术指标区域 -->
+            <div class="indicator-area" style="margin-top:8px;">
+                <div id="indicatorSelector" class="segmented-control" style="margin-bottom:8px;">
+                    <!-- (●) VOL  (○) MACD  (○) RSI  (○) KDJ  (○) OBV -->
+                </div>
+                <div id="indicatorChart" style="height:200px;"></div>
+            </div>
+
+            <!-- 底部：数据窗口控制条 -->
+            <div id="dataZoomContainer" style="margin-top:12px; height:60px; position:relative;">
+                <!-- ECharts 的 slider dataZoom 将渲染到这里 -->
+            </div>
+        </section>
     </div>
 </div>
 
     <script src="/static/js/common.js"></script>
     <script>
-    const priceChart = echarts.init(document.getElementById('priceChart'))
-    const returnChart = echarts.init(document.getElementById('returnChart'))
-    const eventWindowChart = echarts.init(document.getElementById('eventWindowChart'))
+const klineChart = echarts.init(document.getElementById('klineChart'))
+const indicatorChart = echarts.init(document.getElementById('indicatorChart'))
+const dataZoomChart = echarts.init(document.getElementById('dataZoomContainer'))  // 🔧 新增：数据窗口控制条图表
 
-    function showEmpty(chart, text) {
-        AppUtils.showEmptyChart(chart, text || '暂无数据');
-    }
+// 🔧 使用 ECharts connect API 实现三个图表的自动同步（共享 dataZoom）
+echarts.connect([klineChart, indicatorChart, dataZoomChart])
 
-    function loadData() {
-        const indexId = document.getElementById('indexId').value
-        const startDate = document.getElementById('startDate').value
-        const endDate = document.getElementById('endDate').value
-        if (!indexId || !startDate || !endDate) {
-            showEmpty(priceChart, '请输入必要参数')
-            showEmpty(returnChart, '请输入必要参数')
-            showEmpty(eventWindowChart, '请输入必要参数')
-            return
+// ==================== 无限滚动触发逻辑 ====================
+var isLoadingMore = false  // 加载状态标志
+var hasMoreData = true      // 是否还有更多数据
+var lastLoadPosition = -1   // 上次触发加载的位置（避免重复触发）
+var lastStartValue = 100    // 记录上次的 start 值，用于检测用户是否在拖动
+var userIsMoving = false    // 用户是否正在拖动
+var movingResetTimer = null // 拖动重置定时器
+var isAdjustingBySystem = false // 标记系统是否正在自动调整（避免误判为用户拖动）
+
+// 暴露给 adjustDataZoomAfterPrepend 使用的标志
+window.__dataZoomAdjusting = function(isAdjusting) {
+    isAdjustingBySystem = isAdjusting
+}
+
+// 监听 K 线图、技术指标图、数据窗口控制条的 dataZoom 事件（触发无限滚动）
+function startInfiniteScrollDetection() {
+    window.setInterval(function() {
+        try {
+            // 🔧 优先从 K 线图获取 dataZoom 状态（主图表）
+            let currentStart = 0
+            let hasValidZoom = false
+            
+            // 尝试从 K 线图获取
+            const kOption = klineChart.getOption()
+            if (kOption && kOption.dataZoom && kOption.dataZoom[0]) {
+                currentStart = kOption.dataZoom[0].start || 0
+                hasValidZoom = true
+            }
+            
+            // 如果 K 线图没有，尝试从技术指标图获取
+            if (!hasValidZoom) {
+                const iOption = indicatorChart.getOption()
+                if (iOption && iOption.dataZoom && iOption.dataZoom[0]) {
+                    currentStart = iOption.dataZoom[0].start || 0
+                    hasValidZoom = true
+                }
+            }
+            
+            // 如果仍然没有，尝试从数据窗口控制条获取
+            if (!hasValidZoom) {
+                const dOption = dataZoomChart.getOption()
+                if (dOption && dOption.dataZoom && dOption.dataZoom[0]) {
+                    currentStart = dOption.dataZoom[0].start || 0
+                    hasValidZoom = true
+                }
+            }
+            
+            if (!hasValidZoom) return
+            
+            // 🔧 检测用户是否在向左拖动（start 值减小）
+            // ⚠️ 排除系统自动调整导致的变化
+            if (Math.abs(currentStart - lastStartValue) > 0.5 && !isAdjustingBySystem) {
+                userIsMoving = true
+                
+                // 如果用户向左拖动（start 减小），允许重新触发加载
+                if (currentStart < lastStartValue) {
+                    if (lastLoadPosition !== -1) {
+                        console.log('🔄 用户继续向左拖动，重置加载标记')
+                        lastLoadPosition = -1
+                    }
+                }
+                
+                // 清除之前的定时器
+                if (movingResetTimer) {
+                    clearTimeout(movingResetTimer)
+                }
+                
+                // 500ms 后认为用户停止拖动
+                movingResetTimer = setTimeout(function() {
+                    userIsMoving = false
+                    console.log('⏸️ 用户停止拖动，当前 start =', currentStart.toFixed(2) + '%')
+                }, 500)
+            }
+            
+            lastStartValue = currentStart
+            
+            // 🎯 渐进式预加载机制（仅在用户正在拖动时才允许触发加载）
+            // 🔧 优化：提前预加载阈值，避免数据延迟和窗口跳跃
+            if (hasMoreData && !isLoadingMore && userIsMoving) {
+                var shouldLoad = false
+                var triggerReason = ''
+                
+                if (currentStart < 40 && lastLoadPosition !== 40) {
+                    shouldLoad = true
+                    triggerReason = '预加载1(start < 40%)'
+                    lastLoadPosition = 40
+                } else if (currentStart < 60 && currentStart >= 40 && lastLoadPosition !== 60) {
+                    shouldLoad = true
+                    triggerReason = '预加载2(start < 60%)'
+                    lastLoadPosition = 60
+                }
+                
+                if (shouldLoad) {
+                    console.log('🚀 触发加载更多：' + triggerReason + '，当前 start =', currentStart.toFixed(2) + '%')
+                    isLoadingMore = true
+                    loadMoreHistoryData(function(success) {
+                        isLoadingMore = false
+                        if (!success) {
+                            hasMoreData = false
+                            console.log('✅ 已到达最早数据')
+                        }
+                    })
+                }
+            }
+        } catch(e) {
+            // 忽略
         }
-        fetch(`/api/v1/data/index-prices?index_id=${encodeURIComponent(indexId)}&start_date=${startDate}&end_date=${endDate}`)
-            .then(r => r.json()).then(res => {
-                const data = res.data || []
-                if (!data.length) return showEmpty(priceChart)
-                const dates = data.map(d => d.date || d.Date || d.timestamp)
-                const prices = data.map(d => d.price || d.close || d.value)
-                priceChart.setOption({
-                    tooltip: { trigger: 'axis' },
-                    xAxis: { type: 'category', data: dates },
-                    yAxis: { type: 'value' },
-                    series: [{ type: 'line', data: prices, smooth: true, itemStyle: { color: '#2563eb' } }]
-                }, true)
-            }).catch(() => showEmpty(priceChart, '加载失败'))
+    }, 100)
+}
 
-        fetch(`/api/v1/data/index-returns?index_id=${encodeURIComponent(indexId)}&start_date=${startDate}&end_date=${endDate}`)
-            .then(r => r.json()).then(res => {
-                const data = res.data || []
-                if (!data.length) return showEmpty(returnChart)
-                const dates = data.map(d => d.date)
-                const returns = data.map(d => d.return)
-                returnChart.setOption({
-                    tooltip: { trigger: 'axis' },
-                    xAxis: { type: 'category', data: dates },
-                    yAxis: { type: 'value' },
-                    series: [{ type: 'bar', data: returns, itemStyle: { color: '#10b981' } }]
-                }, true)
-            }).catch(() => showEmpty(returnChart, '加载失败'))
+// 页面加载完成后启动无限滚动检测
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', startInfiniteScrollDetection)
+} else {
+    startInfiniteScrollDetection()
+}
 
-        fetch(`/api/v1/data/event-window?index_id=${encodeURIComponent(indexId)}&event_date=${endDate}&event_type=${document.getElementById('eventType').value}&window_days=10&baseline_days=20`)
-            .then(r => r.json()).then(res => {
-                const samples = (res.event_window && res.event_window.samples) || []
-                if (!samples.length) return showEmpty(eventWindowChart)
-                const dates = samples.map(s => s.date || s.Date)
-                const prices = samples.map(s => s.price || s.close || s.value)
-                eventWindowChart.setOption({
-                    tooltip: { trigger: 'axis' },
-                    xAxis: { type: 'category', data: dates },
-                    yAxis: { type: 'value' },
-                    series: [{ type: 'line', data: prices, itemStyle: { color: '#f59e0b' } }]
-                }, true)
-                const tbody = document.querySelector('#eventSamples tbody')
-                tbody.innerHTML = samples.map(s => `<tr><td>${s.date || ''}</td><td>${s.price ?? s.close ?? ''}</td><td>${s.source || ''}</td></tr>`).join('')
-            }).catch(() => showEmpty(eventWindowChart, '加载失败'))
+// ==================== 无限滚动加载逻辑 ====================
+
+/**
+ * 加载更多历史数据（真实API版本）
+ * @param {Function} callback - 回调函数(success)
+ */
+function loadMoreHistoryData(callback) {
+    console.log('开始加载更多历史数据...')
+    
+    // 检查是否有当前数据
+    if (!allKlineData || allKlineData.length === 0) {
+        console.warn('没有当前数据，无法加载更多')
+        callback(false)
+        return
     }
+    
+    // 获取最早的日期
+    const earliestData = allKlineData[0]
+    const beforeDate = earliestData.date  // 'YYYY-MM-DD' 格式
+    
+    // 构建API URL（增加批量大小：每次60条，减少请求次数）
+    // 🔧 使用新的 /api/v1/chart/data API，获取后端计算的指标
+    const url = `/api/v1/chart/data?index_id=${encodeURIComponent(currentIndex.id)}&period=${currentPeriod}&count=60&before=${beforeDate}&indicators=all`
+    console.log('📡 加载更多URL:', url)
+    
+    // 调用API
+    fetch(url)
+        .then(r => r.json())
+        .then(res => {
+            if (res.status !== 'success') {
+                console.error('加载失败:', res.message)
+                callback(false)
+                return
+            }
+            
+            const chartData = res.data || {}
+            const newData = chartData.kline || []
+            const newEvents = chartData.events || []
+            const newIndicators = chartData.indicators || {}  // 🔧 新加载的指标数据
+            
+            // 检查是否有新数据
+            if (newData.length === 0) {
+                console.log('已到达最早数据')
+                callback(false)
+                return
+            }
+            
+            // 合并数据（新数据插入到前面）
+            const oldLength = allKlineData.length
+            allKlineData = newData.concat(allKlineData)
+            allEvents = newEvents.concat(allEvents)
+            
+            // 🔧 合并技术指标数据（将新指标插入到前面）
+            for (const indicatorName in newIndicators) {
+                if (allIndicatorsData[indicatorName]) {
+                    allIndicatorsData[indicatorName] = newIndicators[indicatorName].concat(allIndicatorsData[indicatorName])
+                } else {
+                    allIndicatorsData[indicatorName] = newIndicators[indicatorName]
+                }
+            }
+            
+            console.log('✅ 加载成功：新增', newData.length, '条数据，总计', allKlineData.length, '条')
+            
+            // 🔧 仅更新图表数据，不重新渲染（避免视觉跳动）
+            updateChartData(allKlineData, allEvents)
+            
+            // 调整 dataZoom 位置（保持视图不跳跃）
+            adjustDataZoomAfterPrepend(oldLength, newData.length)
+            
+            callback(true)
+        })
+        .catch(err => {
+            console.error('加载更多数据失败:', err)
+            callback(false)
+        })
+}
 
-    // 初始空态
-    showEmpty(priceChart)
-    showEmpty(returnChart)
-    showEmpty(eventWindowChart)
+/**
+ * 仅更新图表数据（不重新渲染，避免视觉跳动）
+ * @param {Array} data - K线数据
+ * @param {Array} events - 事件数据
+ */
+function updateChartData(data, events) {
+    try {
+        // 处理日期格式
+        const processedData = data.map(d => {
+            let dateStr = d.date
+            if (typeof dateStr === 'string' && dateStr.includes('GMT')) {
+                const dt = new Date(dateStr)
+                dateStr = dt.toISOString().split('T')[0]
+            }
+            return { ...d, date: dateStr }
+        })
+        
+        const displayEvents = events || []
+        const ohlc = processedData.map(d => [d.open, d.close, d.low, d.high])
+        const dates = processedData.map(d => d.date)
+        
+        // 🔧 关键优化：使用 lazyUpdate: true 延迟更新，不立即重绘
+        klineChart.setOption({
+            xAxis: { data: dates },
+            series: [
+                {
+                    name: 'K线',
+                    data: ohlc,
+                    markPoint: {
+                        data: displayEvents.map(e => {
+                            let evtDate = e.date
+                            if (typeof evtDate === 'string' && evtDate.includes('GMT')) {
+                                evtDate = new Date(evtDate).toISOString().split('T')[0]
+                            }
+                            return {
+                                name: e.title,
+                                xAxis: evtDate,
+                                yAxis: e.price || 0,
+                                symbolSize: e.severity === 'critical' ? 60 : 40,
+                                itemStyle: { color: e.impact === 'negative' ? '#ef4444' : '#10b981' }
+                            }
+                        })
+                    }
+                },
+                { name: 'MA5', data: calcMA(processedData, 5) },
+                { name: 'MA10', data: calcMA(processedData, 10) },
+                { name: 'MA20', data: calcMA(processedData, 20) }
+            ]
+        }, { notMerge: false, lazyUpdate: true })  // 🔧 lazyUpdate: true 延迟更新
+        
+        // 同步更新指标图
+        updateIndicatorData(processedData)
+        
+        // 🔧 同步更新数据窗口控制条的 xAxis 数据
+        dataZoomChart.setOption({
+            xAxis: { data: dates }
+        }, { notMerge: false, lazyUpdate: true })
+        
+        console.log('🔄 已更新图表数据（延迟重绘），总计', processedData.length, '条')
+    } catch(e) {
+        console.error('更新图表数据失败:', e)
+    }
+}
+
+/**
+ * 仅更新指标图数据
+ * @param {Array} processedData - 处理后的K线数据（仅用于 VOL）
+ */
+function updateIndicatorData(processedData) {
+    try {
+        const dates = processedData.map(d => d.date)
+        
+        if (currentIndicator === 'VOL') {
+            indicatorChart.setOption({
+                xAxis: { data: dates },
+                series: [{ data: processedData.map(d => d.volume) }]
+            }, { notMerge: false, lazyUpdate: true })
+        } else if (currentIndicator === 'MACD') {
+            // 🔧 使用后端计算的MACD数据
+            const macdData = allIndicatorsData.macd || []
+            const macdDates = macdData.map(d => d.date)
+            const macdLine = macdData.map(d => d.macd)
+            const signalLine = macdData.map(d => d.signal)
+            const histogram = macdData.map(d => d.histogram)
+            indicatorChart.setOption({
+                xAxis: { data: macdDates },
+                series: [
+                    { name: 'DIFF', data: macdLine },
+                    { name: 'DEA', data: signalLine },
+                    { name: 'MACD柱', data: histogram }
+                ]
+            }, { notMerge: false, lazyUpdate: true })
+        } else if (currentIndicator === 'RSI') {
+            // 🔧 使用后端计算的RSI数据
+            const rsiData = allIndicatorsData.rsi || []
+            const rsiDates = rsiData.map(d => d.date)
+            const rsi = rsiData.map(d => d.value)
+            indicatorChart.setOption({
+                xAxis: { data: rsiDates },
+                series: [{ data: rsi }]
+            }, { notMerge: false, lazyUpdate: true })
+        } else if (currentIndicator === 'KDJ') {
+            // 🔧 使用后端计算的KDJ数据
+            const kdjData = allIndicatorsData.kdj || []
+            const kdjDates = kdjData.map(d => d.date)
+            const k = kdjData.map(d => d.k)
+            const d = kdjData.map(d => d.d)
+            const j = kdjData.map(d => d.j)
+            indicatorChart.setOption({
+                xAxis: { data: kdjDates },
+                series: [
+                    { name: 'K', data: k },
+                    { name: 'D', data: d },
+                    { name: 'J', data: j }
+                ]
+            }, { notMerge: false, lazyUpdate: true })
+        } else if (currentIndicator === 'OBV') {
+            // 🔧 使用后端计算的OBV数据
+            const obvData = allIndicatorsData.obv || []
+            const obvDates = obvData.map(d => d.date)
+            const obv = obvData.map(d => d.value)
+            indicatorChart.setOption({
+                xAxis: { data: obvDates },
+                series: [{ data: obv }]
+            }, { notMerge: false, lazyUpdate: true })
+        }
+    } catch(e) {
+        console.error('更新指标图数据失败:', e)
+    }
+}
+
+// ⚠️ 已废弃前端计算函数，100%使用后端API返回的专业指标数据
+// 原因：
+// 1. 前端简化算法存在误差（EMA初始值、RSI平滑法、KDJ初始值等）
+// 2. 数据不连续（初期null值导致图表断裂）
+// 3. 与后端计算结果不一致，造成用户困惑
+// 解决方案：所有技术指标由后端 indicator_service.py 统一计算（使用pandas专业库）
+
+/**
+ * 调整 dataZoom 位置（在数据前置后保持视图不跳跃）
+ * @param {number} oldLength - 原数据长度
+ * @param {number} prependLength - 前置数据长度
+ */
+function adjustDataZoomAfterPrepend(oldLength, prependLength) {
+    try {
+        const option = klineChart.getOption()
+        if (!option.dataZoom || !option.dataZoom[0]) return
+        
+        const oldZoom = option.dataZoom[0]
+        const newLength = oldLength + prependLength
+        
+        // 计算新的 start 和 end（百分比）
+        // 原来的数据区间在新数组中的位置向后偏移
+        const oldStartIndex = Math.floor((oldZoom.start || 0) / 100 * oldLength)
+        const oldEndIndex = Math.floor((oldZoom.end || 100) / 100 * oldLength)
+        
+        const newStartIndex = oldStartIndex + prependLength
+        const newEndIndex = oldEndIndex + prependLength
+        
+        const newStart = (newStartIndex / newLength) * 100
+        const newEnd = (newEndIndex / newLength) * 100
+        
+        console.log('🎯 调整 dataZoom:', {
+            old: { start: oldZoom.start?.toFixed(2) + '%', end: oldZoom.end?.toFixed(2) + '%', length: oldLength },
+            new: { start: newStart.toFixed(2) + '%', end: newEnd.toFixed(2) + '%', length: newLength }
+        })
+        
+        // 🔧 标记开始系统调整（避免被误判为用户拖动）
+        if (typeof window.__dataZoomAdjusting === 'function') {
+            window.__dataZoomAdjusting(true)
+        }
+        
+        // 更新 dataZoom
+        klineChart.dispatchAction({
+            type: 'dataZoom',
+            dataZoomIndex: 0,
+            start: newStart,
+            end: newEnd
+        })
+        
+        // 同步到指标图
+        indicatorChart.dispatchAction({
+            type: 'dataZoom',
+            dataZoomIndex: 0,
+            start: newStart,
+            end: newEnd
+        })
+        
+        // 🔧 同步到数据窗口控制条
+        dataZoomChart.dispatchAction({
+            type: 'dataZoom',
+            dataZoomIndex: 0,
+            start: newStart,
+            end: newEnd
+        })
+        
+        // 🔧 150ms 后结束系统调整标记（给足够时间让轮询检测到）
+        setTimeout(function() {
+            if (typeof window.__dataZoomAdjusting === 'function') {
+                window.__dataZoomAdjusting(false)
+            }
+        }, 150)
+    } catch(e) {
+        console.error('调整 dataZoom 失败:', e)
+    }
+}
+
+let currentMarket = null
+let currentIndex = null
+let currentPeriod = 'daily'
+let currentIndicator = 'VOL'
+
+// 全局数据存储（用于无限滚动）
+let allKlineData = []  // 所有K线数据
+let allEvents = []      // 所有事件数据
+let allIndicatorsData = {}  // 🔧 所有技术指标数据（后端API计算）
+let isLoadingNewStock = false  // 🔧 标记是否正在加载新股票（需要复位 dataZoom）
+
+function showEmpty(chart, text) {
+    AppUtils.showEmptyChart(chart, text || '暂无数据')
+}
+
+function init() {
+    fetch('/api/v1/markets/config')
+        .then(r => r.json()).then(res => {
+            if (res.status !== 'success') { showEmpty(klineChart, '加载失败'); return }
+            const markets = res.markets || []
+            // 为界面验证：若返回市场数量不足，注入港股/美股的模拟市场（仅应用层展示）
+            if (markets.length < 3) {
+                const hk = {
+                    id: 'hk_stock', name: '港股', default_indices: [
+                        {id: 'HSI', name: '恒生指数', type: 'index'},
+                        {id: 'HSCEI', name: '国企指数', type: 'index'},
+                        {id: 'HSTECH', name: '恒生科技', type: 'index'},
+                        {id: '0700.HK', name: '腾讯控股', type: 'stock'},
+                        {id: '0939.HK', name: '建设银行', type: 'stock'}
+                    ]
+                }
+                const us = {
+                    id: 'us_stock', name: '美股', default_indices: [
+                        {id: '^GSPC', name: 'S&P 500', type: 'index'},
+                        {id: '^DJI', name: '道琼斯', type: 'index'},
+                        {id: '^IXIC', name: '纳斯达克', type: 'index'},
+                        {id: 'AAPL', name: 'Apple', type: 'stock'},
+                        {id: 'MSFT', name: 'Microsoft', type: 'stock'}
+                    ]
+                }
+                // 保持A股在最前，其次港股与美股
+                const hasCN = markets.find(m => m.id === 'cn_stock')
+                const others = markets.filter(m => m.id !== 'cn_stock')
+                const final = []
+                if (hasCN) final.push(hasCN)
+                final.push(hk, us, ...others)
+                markets.splice(0, markets.length, ...final)
+            }
+            buildMarketSelector(markets)
+            if (markets.length) {
+                selectMarket(markets[0])
+            }
+        }).catch(() => showEmpty(klineChart, '加载失败'))
+    buildPeriodSelector()
+    buildIndicatorSelector()
+}
+
+function buildMarketSelector(markets) {
+    const container = document.getElementById('marketSelector')
+    container.innerHTML = ''
+    markets.forEach((m, idx) => {
+        const btn = document.createElement('button')
+        btn.className = 'btn btn-segment'
+        if (idx === 0) btn.classList.add('active')
+        btn.textContent = m.name
+        btn.onclick = () => {
+            container.querySelectorAll('.btn-segment').forEach(b => b.classList.remove('active'))
+            btn.classList.add('active')
+            selectMarket(m)
+        }
+        container.appendChild(btn)
+    })
+}
+
+function selectMarket(market) {
+    currentMarket = market.id
+    const indices = (market.default_indices || [])
+    buildIndexList(indices)
+    if (indices.length) selectIndex(indices[0])
+}
+
+function buildIndexList(indices) {
+    const list = document.getElementById('indexList')
+    list.innerHTML = ''
+    indices.forEach((item, idx) => {
+        const row = document.createElement('div')
+        row.className = 'list-item'
+        if (idx === 0) row.classList.add('active')
+        const content = document.createElement('div')
+        content.className = 'list-item-content'
+        const name = document.createElement('div')
+        name.className = 'list-item-name'
+        name.textContent = item.name
+        const code = document.createElement('div')
+        code.className = 'list-item-code'
+        code.textContent = item.id
+        content.appendChild(name)
+        content.appendChild(code)
+        row.appendChild(content)
+        const actions = document.createElement('div')
+        actions.className = 'list-item-actions'
+        const delBtn = document.createElement('button')
+        delBtn.className = 'btn-icon'
+        delBtn.innerHTML = '✕'
+        delBtn.title = '删除'
+        delBtn.onclick = (e) => {
+            e.stopPropagation()
+            row.remove()
+            if (currentIndex && currentIndex.id === item.id) {
+                const remaining = list.querySelectorAll('.list-item')
+                if (remaining.length) remaining[0].click()
+                else showEmpty(klineChart, '暂无数据')
+            }
+        }
+        actions.appendChild(delBtn)
+        row.appendChild(actions)
+        row.onclick = () => {
+            list.querySelectorAll('.list-item').forEach(r => r.classList.remove('active'))
+            row.classList.add('active')
+            selectIndex(item)
+        }
+        list.appendChild(row)
+    })
+}
+
+function buildPeriodSelector() {
+    const container = document.getElementById('periodSelector')
+    container.innerHTML = ''
+    ;['daily','weekly','monthly'].forEach((p, idx) => {
+        const btn = document.createElement('button')
+        btn.className = 'btn btn-segment'
+        if (idx === 0) btn.classList.add('active')
+        btn.textContent = ({daily:'日',weekly:'周',monthly:'月'})[p]
+        btn.onclick = () => {
+            container.querySelectorAll('.btn-segment').forEach(b => b.classList.remove('active'))
+            btn.classList.add('active')
+            currentPeriod = p
+            if (currentIndex) loadKline(currentIndex.id)
+        }
+        container.appendChild(btn)
+    })
+    const tip = document.createElement('span')
+    tip.style.marginLeft = '8px'
+    tip.style.color = '#6b7280'
+    tip.style.fontSize = '13px'
+    tip.textContent = '最近30周期'
+    container.appendChild(tip)
+}
+
+function buildIndicatorSelector() {
+    const container = document.getElementById('indicatorSelector')
+    container.innerHTML = ''
+    ;['VOL','MACD','RSI','KDJ','OBV'].forEach((ind, idx) => {
+        const btn = document.createElement('button')
+        btn.className = 'btn btn-segment'
+        if (idx === 0) btn.classList.add('active')
+        btn.textContent = ind
+        btn.onclick = () => {
+            container.querySelectorAll('.btn-segment').forEach(b => b.classList.remove('active'))
+            btn.classList.add('active')
+            currentIndicator = ind
+            // 🔧 仅重新渲染指标图，不重新加载数据（使用 allKlineData）
+            if (allKlineData && allKlineData.length > 0) {
+                renderIndicator(allKlineData)
+            }
+        }
+        container.appendChild(btn)
+    })
+}
+
+function selectIndex(item) {
+    currentIndex = item
+    loadKline(item.id)
+}
+
+function calcMA(data, period) {
+    const result = []
+    for (let i = 0; i < data.length; i++) {
+        if (i < period - 1) { result.push('-'); continue }
+        let sum = 0
+        for (let j = i - period + 1; j <= i; j++) sum += data[j].close
+        result.push((sum / period).toFixed(2))
+    }
+    return result
+}
+
+function renderIndicator(data) {
+    console.log('renderIndicator called with data:', data)
+    if (!data || !data.length) {
+        showEmpty(indicatorChart, '暂无数据')
+        return
+    }
+    
+    // 处理日期格式
+    const processedData = data.map(d => {
+        let dateStr = d.date
+        if (typeof dateStr === 'string' && dateStr.includes('GMT')) {
+            const dt = new Date(dateStr)
+            dateStr = dt.toISOString().split('T')[0]
+        }
+        return { ...d, date: dateStr }
+    })
+    
+    // 🔧 获取当前 K 线图的 dataZoom 位置，确保技术指标与 K 线图同步
+    let currentZoom = { start: 75, end: 100 }  // 默认值
+    try {
+        const klineOption = klineChart.getOption()
+        if (klineOption && klineOption.dataZoom && klineOption.dataZoom[0]) {
+            currentZoom = {
+                start: klineOption.dataZoom[0].start || 75,
+                end: klineOption.dataZoom[0].end || 100
+            }
+            console.log('📊 技术指标同步 K 线图 dataZoom 位置:', currentZoom)
+        }
+    } catch(e) {
+        console.warn('无法获取 K 线图 dataZoom，使用默认值')
+    }
+    
+    // 🔧 使用全局函数 calculateMACD、calculateRSI、calculateKDJ（已在前面定义）
+    
+    let option
+    
+    if (currentIndicator === 'VOL') {
+        option = {
+            title: { text: '成交量（Volume）', left: 'center', textStyle: { fontSize: 12 } },
+            tooltip: { 
+                trigger: 'axis',
+                formatter: function(params) {
+                    if (!params || params.length === 0) return ''
+                    const volume = params[0].value
+                    if (volume === null || volume === undefined) return params[0].axisValue
+                    // 格式化成交量（亿手、万手等）
+                    let displayValue = volume
+                    let unit = '手'
+                    if (volume >= 100000000) {
+                        displayValue = (volume / 100000000).toFixed(2)
+                        unit = '亿手'
+                    } else if (volume >= 10000) {
+                        displayValue = (volume / 10000).toFixed(2)
+                        unit = '万手'
+                    } else {
+                        displayValue = volume.toFixed(0)
+                    }
+                    return params[0].axisValue + '<br/>' + params[0].marker + '成交量: ' + displayValue + unit
+                }
+            },
+            grid: { left: '8%', right: '8%', top: '15%', bottom: '15%' },
+            xAxis: { 
+                type: 'category', 
+                data: processedData.map(d => d.date),
+                axisLabel: {
+                    show: true,
+                    margin: 12
+                }
+            },
+            yAxis: { 
+                type: 'value',
+                axisLabel: {
+                    formatter: function(value) {
+                        if (value >= 100000000) return (value / 100000000).toFixed(1) + '亿'
+                        if (value >= 10000) return (value / 10000).toFixed(1) + '万'
+                        return value.toFixed(0)
+                    }
+                }
+            },
+            dataZoom: [
+                { 
+                    type: 'inside',
+                    start: currentZoom.start,  // 🔧 同步 K 线图的位置
+                    end: currentZoom.end,
+                    zoomOnMouseWheel: true,
+                    moveOnMouseMove: true,
+                    moveOnMouseWheel: true,
+                    throttle: 50
+                }
+            ],
+            series: [{ 
+                type: 'bar', 
+                data: processedData.map(d => d.volume), 
+                itemStyle: { 
+                    color: (params) => {
+                        // 根据当天涨跌上色（红涨绿跌）
+                        const idx = params.dataIndex
+                        if (idx >= processedData.length) return '#64748b'
+                        const data = processedData[idx]
+                        if (!data || data.close === null || data.open === null) return '#64748b'
+                        return data.close >= data.open ? '#ef4444' : '#10b981'
+                    }
+                },
+                barWidth: '60%'
+            }]
+        }
+    } else if (currentIndicator === 'MACD') {
+        // 🔧 使用后端计算的MACD数据（中国标准：柱状图×2）
+        console.log('🗒️ 切换到MACD指标，当前 allIndicatorsData:', allIndicatorsData)
+        console.log('🗒️ allIndicatorsData 的键:', Object.keys(allIndicatorsData))
+        
+        const macdData = allIndicatorsData.macd || []
+        console.log('🎯 MACD数据:', macdData.length, '条记录', macdData.slice(0, 3))
+        
+        if (!macdData || macdData.length === 0) {
+            console.error('⚠️ MACD数据为空！')
+            console.error('   - allIndicatorsData 对象:', allIndicatorsData)
+            console.error('   - allIndicatorsData.macd:', allIndicatorsData.macd)
+            console.error('   - 可能原因: 后端API未返回 macd 数据或字段名不匹配')
+            option = {
+                title: { text: 'MACD（数据为空）', left: 'center', textStyle: { fontSize: 12, color: '#ef4444' } },
+                grid: { left: '8%', right: '8%', top: '15%', bottom: '15%' },
+                xAxis: { type: 'category', data: [] },
+                yAxis: { type: 'value' },
+                series: []
+            }
+        } else {
+            const dates = macdData.map(d => d.date)
+            const diff = macdData.map(d => d.macd)      // DIFF = EMA12 - EMA26
+            const dea = macdData.map(d => d.signal)     // DEA = EMA(DIFF, 9)
+            const macdBar = macdData.map(d => d.histogram)  // MACD柱 = (DIFF - DEA) × 2
+            
+            console.log('📊 MACD解析数据 - DIFF:', diff.filter(v => v !== null).length, 'DEA:', dea.filter(v => v !== null).length, 'MACD柱:', macdBar.filter(v => v !== null).length)
+            
+            option = {
+            title: { 
+                text: 'MACD（指数平滑异同移动平均线）', 
+                left: 'center', 
+                textStyle: { fontSize: 12 },
+                subtext: 'DIFF(12,26,9) DEA(9) MACD柱=(DIFF-DEA)×2',
+                subtextStyle: { fontSize: 10, color: '#999' }
+            },
+            tooltip: { 
+                trigger: 'axis',
+                formatter: function(params) {
+                    let result = params[0].axisValue + '<br/>'
+                    params.forEach(item => {
+                        if (item.value !== null && item.value !== undefined) {
+                            const value = item.value.toFixed(4)
+                            if (item.seriesName === 'DIFF') {
+                                result += item.marker + '<span style="color:#2563eb">DIFF: ' + value + '</span><br/>'
+                            } else if (item.seriesName === 'DEA') {
+                                result += item.marker + '<span style="color:#ef4444">DEA: ' + value + '</span><br/>'
+                            } else if (item.seriesName === 'MACD柱') {
+                                result += item.marker + 'MACD柱: ' + value + '<br/>'
+                            }
+                        }
+                    })
+                    return result
+                }
+            },
+            legend: { data: ['DIFF', 'DEA', 'MACD柱'], top: '5%', right: '8%' },
+            grid: { left: '8%', right: '8%', top: '20%', bottom: '15%' },
+            xAxis: { 
+                type: 'category', 
+                data: dates,
+                axisLabel: {
+                    show: true,
+                    margin: 12  // 增加横坐标与图表的间距
+                }
+            },
+            yAxis: { 
+                type: 'value',
+                scale: true,  // 🔧 启用自动缩放
+                axisLabel: {
+                    formatter: (value) => value.toFixed(3)
+                },
+                splitLine: {  // 🔧 添加0轴参考线
+                    show: true,
+                    lineStyle: {
+                        color: '#e5e7eb',
+                        type: 'dashed'
+                    }
+                }
+            },
+            dataZoom: [
+                { 
+                    type: 'inside',
+                    start: currentZoom.start,  // 🔧 同步 K 线图的位置
+                    end: currentZoom.end,
+                    zoomOnMouseWheel: true,
+                    moveOnMouseMove: true,
+                    moveOnMouseWheel: true,
+                    throttle: 50
+                }
+            ],
+            series: [
+                { 
+                    name: 'DIFF', 
+                    type: 'line', 
+                    data: diff, 
+                    smooth: false,  // 🔧 不平滑，保持真实
+                    symbol: 'none',
+                    lineStyle: { width: 2 },
+                    itemStyle: { color: '#2563eb' },
+                    z: 10  // 置于柱状图上方
+                },
+                { 
+                    name: 'DEA', 
+                    type: 'line', 
+                    data: dea, 
+                    smooth: false, 
+                    symbol: 'none',
+                    lineStyle: { width: 2 },
+                    itemStyle: { color: '#ef4444' },
+                    z: 10
+                },
+                { 
+                    name: 'MACD柱', 
+                    type: 'bar', 
+                    data: macdBar, 
+                    barWidth: '60%',
+                    itemStyle: { 
+                        color: (params) => {
+                            if (params.value === null || params.value === undefined) return '#cccccc'
+                            // 🔧 MACD柱中国标准：红柱(多头)、绿柱(空头)
+                            return params.value >= 0 ? '#ef4444' : '#10b981'
+                        },
+                        borderColor: (params) => {
+                            if (params.value === null || params.value === undefined) return '#cccccc'
+                            return params.value >= 0 ? '#dc2626' : '#059669'
+                        },
+                        borderWidth: 1
+                    },
+                    emphasis: {
+                        itemStyle: {
+                            opacity: 0.9,
+                            shadowBlur: 10,
+                            shadowColor: 'rgba(0,0,0,0.3)'
+                        }
+                    },
+                    z: 5  // 置于线条下方
+                },
+                // 🔧 添加0轴线
+                {
+                    type: 'line',
+                    data: Array(dates.length).fill(0),
+                    symbol: 'none',
+                    lineStyle: {
+                        color: '#6b7280',
+                        width: 1,
+                        type: 'solid'
+                    },
+                    silent: true,
+                    z: 1
+                }
+            ]
+        }
+    }
+    } else if (currentIndicator === 'RSI') {
+        // 🔧 使用后端计算的RSI数据（更专业）
+        const rsiData = allIndicatorsData.rsi || []
+        const dates = rsiData.map(d => d.date)
+        const rsi = rsiData.map(d => d.value)
+        
+        option = {
+            title: { text: 'RSI（相对强弱指标）', left: 'center', textStyle: { fontSize: 12 } },
+            tooltip: { 
+                trigger: 'axis',
+                formatter: function(params) {
+                    let result = params[0].axisValue + '<br/>'
+                    const rsiItem = params.find(p => p.seriesName === 'RSI')
+                    if (rsiItem && rsiItem.value !== null) {
+                        result += rsiItem.marker + 'RSI: ' + rsiItem.value.toFixed(2) + '<br/>'
+                        if (rsiItem.value >= 70) {
+                            result += '<span style="color:#ef4444">● 超买区（可能回调）</span><br/>'
+                        } else if (rsiItem.value <= 30) {
+                            result += '<span style="color:#10b981">● 超卖区（可能反弹）</span><br/>'
+                        }
+                    }
+                    return result
+                }
+            },
+            legend: { data: ['RSI', '超买线(70)', '超卖线(30)'], top: '5%', right: '8%' },
+            grid: { left: '8%', right: '8%', top: '15%', bottom: '15%' },
+            xAxis: { 
+                type: 'category', 
+                data: dates,
+                axisLabel: {
+                    show: true,
+                    margin: 12
+                }
+            },
+            yAxis: { 
+                type: 'value', 
+                min: 0, 
+                max: 100,
+                interval: 20,
+                axisLabel: {
+                    formatter: (value) => value.toFixed(0)
+                }
+            },
+            dataZoom: [
+                { 
+                    type: 'inside',
+                    start: currentZoom.start,  // 🔧 同步 K 线图的位置
+                    end: currentZoom.end,
+                    zoomOnMouseWheel: true,
+                    moveOnMouseMove: true,
+                    moveOnMouseWheel: true,
+                    throttle: 50
+                }
+            ],
+            series: [
+                { 
+                    name: 'RSI',
+                    type: 'line', 
+                    data: rsi, 
+                    smooth: false,  // 🔧 不平滑
+                    symbol: 'none',
+                    lineStyle: { width: 2 },
+                    itemStyle: { color: '#8b5cf6' },
+                    areaStyle: {  // 🔧 添加渐变填充，更美观
+                        color: {
+                            type: 'linear',
+                            x: 0, y: 0, x2: 0, y2: 1,
+                            colorStops: [
+                                { offset: 0, color: 'rgba(139, 92, 246, 0.3)' },
+                                { offset: 1, color: 'rgba(139, 92, 246, 0.05)' }
+                            ]
+                        }
+                    }
+                },
+                { 
+                    name: '超买线(70)',
+                    type: 'line', 
+                    data: Array(dates.length).fill(70), 
+                    lineStyle: { type: 'dashed', color: '#ef4444', width: 1, opacity: 0.6 }, 
+                    symbol: 'none',
+                    silent: true
+                },
+                { 
+                    name: '超卖线(30)',
+                    type: 'line', 
+                    data: Array(dates.length).fill(30), 
+                    lineStyle: { type: 'dashed', color: '#10b981', width: 1, opacity: 0.6 }, 
+                    symbol: 'none',
+                    silent: true
+                }
+            ]
+        }
+    } else if (currentIndicator === 'KDJ') {
+        // 🔧 使用后端计算的KDJ数据（更专业）
+        const kdjData = allIndicatorsData.kdj || []
+        const dates = kdjData.map(d => d.date)
+        const k = kdjData.map(d => d.k)
+        const d = kdjData.map(d => d.d)
+        const j = kdjData.map(d => d.j)
+        
+        // ⚠️ 计算实际数据范围，确保J线超界时也能正常显示
+        const allValues = [...k, ...d, ...j].filter(v => v !== null && v !== undefined && !isNaN(v))
+        const minVal = Math.min(...allValues, 0)  // 至少包含0
+        const maxVal = Math.max(...allValues, 100)  // 至少包含100
+        const yMin = Math.floor(minVal / 10) * 10  // 向下取整到10的倍数
+        const yMax = Math.ceil(maxVal / 10) * 10   // 向上取整到10的倍数
+        
+        option = {
+            title: { 
+                text: 'KDJ（随机指标）', 
+                left: 'center', 
+                textStyle: { fontSize: 12 },
+                subtext: 'J线可超出0-100区间（技术特征）',
+                subtextStyle: { fontSize: 10, color: '#999' }
+            },
+            tooltip: { 
+                trigger: 'axis',
+                formatter: function(params) {
+                    let result = params[0].axisValue + '<br/>'
+                    params.forEach(item => {
+                        if (item.seriesName && ['K', 'D', 'J'].includes(item.seriesName)) {
+                            const value = item.value === null || item.value === undefined ? 'N/A' : item.value.toFixed(2)
+                            result += item.marker + item.seriesName + ': ' + value + '<br/>'
+                        }
+                    })
+                    return result
+                }
+            },
+            legend: { data: ['K', 'D', 'J', '超买区', '超卖区'], top: '5%', right: '8%' },
+            grid: { left: '8%', right: '8%', top: '20%', bottom: '15%' },
+            xAxis: { 
+                type: 'category', 
+                data: dates,
+                axisLabel: {
+                    show: true,
+                    margin: 12
+                }
+            },
+            yAxis: { 
+                type: 'value', 
+                min: yMin,  // 🔧 动态范围，允许J线超界
+                max: yMax,
+                interval: 20,  // 每20个单位一个刻度
+                axisLabel: {
+                    formatter: (value) => value.toFixed(0)
+                }
+            },
+            dataZoom: [
+                { 
+                    type: 'inside',
+                    start: currentZoom.start,  // 🔧 同步 K 线图的位置
+                    end: currentZoom.end,
+                    zoomOnMouseWheel: true,
+                    moveOnMouseMove: true,
+                    moveOnMouseWheel: true,
+                    throttle: 50
+                }
+            ],
+            series: [
+                { 
+                    name: 'K', 
+                    type: 'line', 
+                    data: k, 
+                    smooth: false,  // 🔧 不平滑，保持真实
+                    symbol: 'none',
+                    lineStyle: { width: 2 },
+                    itemStyle: { color: '#2563eb' } 
+                },
+                { 
+                    name: 'D', 
+                    type: 'line', 
+                    data: d, 
+                    smooth: false, 
+                    symbol: 'none',
+                    lineStyle: { width: 2 },
+                    itemStyle: { color: '#ef4444' } 
+                },
+                { 
+                    name: 'J', 
+                    type: 'line', 
+                    data: j, 
+                    smooth: false, 
+                    symbol: 'none',
+                    lineStyle: { width: 1.5, type: 'dashed' },  // 🔧 虚线，区分J线
+                    itemStyle: { color: '#8b5cf6' } 
+                },
+                { 
+                    name: '超买区',
+                    type: 'line', 
+                    data: Array(dates.length).fill(80), 
+                    lineStyle: { type: 'dashed', color: '#ef4444', width: 1, opacity: 0.5 }, 
+                    symbol: 'none',
+                    silent: true  // 不响应鼠标事件
+                },
+                { 
+                    name: '超卖区',
+                    type: 'line', 
+                    data: Array(dates.length).fill(20), 
+                    lineStyle: { type: 'dashed', color: '#10b981', width: 1, opacity: 0.5 }, 
+                    symbol: 'none',
+                    silent: true
+                }
+            ]
+        }
+    } else if (currentIndicator === 'OBV') {
+        // 🔧 使用后端计算的OBV数据（更专业）
+        const obvData = allIndicatorsData.obv || []
+        const dates = obvData.map(d => d.date)
+        const obv = obvData.map(d => d.value)
+        
+        option = {
+            title: { 
+                text: 'OBV（能量潮指标）', 
+                left: 'center', 
+                textStyle: { fontSize: 12 },
+                subtext: '累积方向性成交量',
+                subtextStyle: { fontSize: 10, color: '#999' }
+            },
+            tooltip: { 
+                trigger: 'axis',
+                formatter: function(params) {
+                    if (!params || params.length === 0) return ''
+                    const value = params[0].value
+                    if (value === null || value === undefined) return params[0].axisValue
+                    // 格式化OBV值
+                    let displayValue = value
+                    let unit = ''
+                    if (Math.abs(value) >= 100000000) {
+                        displayValue = (value / 100000000).toFixed(2)
+                        unit = '亿'
+                    } else if (Math.abs(value) >= 10000) {
+                        displayValue = (value / 10000).toFixed(2)
+                        unit = '万'
+                    } else {
+                        displayValue = value.toFixed(0)
+                    }
+                    return params[0].axisValue + '<br/>' + params[0].marker + 'OBV: ' + displayValue + unit
+                }
+            },
+            grid: { left: '8%', right: '8%', top: '18%', bottom: '15%' },
+            xAxis: { 
+                type: 'category', 
+                data: dates,
+                axisLabel: {
+                    show: true,
+                    margin: 12
+                }
+            },
+            yAxis: { 
+                type: 'value',
+                axisLabel: {
+                    formatter: function(value) {
+                        if (Math.abs(value) >= 100000000) return (value / 100000000).toFixed(1) + '亿'
+                        if (Math.abs(value) >= 10000) return (value / 10000).toFixed(1) + '万'
+                        return value.toFixed(0)
+                    }
+                }
+            },
+            dataZoom: [
+                { 
+                    type: 'inside',
+                    start: currentZoom.start,  // 🔧 同步 K 线图的位置
+                    end: currentZoom.end,
+                    zoomOnMouseWheel: true,
+                    moveOnMouseMove: true,
+                    moveOnMouseWheel: true,
+                    throttle: 50
+                }
+            ],
+            series: [{ 
+                type: 'line', 
+                data: obv, 
+                smooth: false,  // 🔧 不平滑
+                symbol: 'none',
+                lineStyle: { width: 2 },
+                itemStyle: { color: '#f59e0b' },
+                areaStyle: {  // 🔧 添加填充，显示累积趋势
+                    color: {
+                        type: 'linear',
+                        x: 0, y: 0, x2: 0, y2: 1,
+                        colorStops: [
+                            { offset: 0, color: 'rgba(245, 158, 11, 0.3)' },
+                            { offset: 1, color: 'rgba(245, 158, 11, 0.05)' }
+                        ]
+                    }
+                }
+            }]
+        }
+    } else {
+        option = {
+            title: { text: currentIndicator, left: 'center', textStyle: { fontSize: 12 } },
+            tooltip: { trigger: 'axis' },
+            grid: { left: '8%', right: '8%', top: '15%', bottom: '8%' },
+            xAxis: { type:'category', data: processedData.map(d=>d.date) },
+            yAxis: { type:'value' },
+            dataZoom: [
+                { 
+                    type: 'inside',
+                    // 🔧 移除 start/end，让 echarts.connect 自动同步
+                    zoomOnMouseWheel: true,
+                    moveOnMouseMove: true,
+                    moveOnMouseWheel: true,
+                    throttle: 50
+                }
+            ],
+            series: [{ type:'line', data: processedData.map(d=>d.close), smooth:true, itemStyle:{ color:'#94a3b8' } }]
+        }
+    }
+    console.log('Setting indicatorChart option:', option)
+    // 🔧 使用 true 强制清除旧配置，避免切换指标时数据累积和图形走样
+    indicatorChart.setOption(option, true)
+}
+
+/**
+ * 渲染数据窗口控制条（统一放在页面底部）
+ * @param {Array} dates - 日期数组
+ * @param {Object} currentZoom - 当前缩放位置 {start, end}
+ */
+function renderDataZoom(dates, currentZoom) {
+    const option = {
+        grid: {
+            left: '8%',
+            right: '8%',
+            top: '0%',
+            bottom: '0%',
+            height: '100%'
+        },
+        xAxis: {
+            type: 'category',
+            data: dates,
+            show: false  // 隐藏坐标轴，只显示 dataZoom 滑块
+        },
+        yAxis: {
+            type: 'value',
+            show: false
+        },
+        series: [
+            {
+                type: 'line',
+                data: [],  // 空数据，只用于 dataZoom 的基础
+                show: false
+            }
+        ],
+        dataZoom: [
+            {
+                type: 'slider',
+                start: currentZoom.start,
+                end: currentZoom.end,
+                top: '50%',  // 垂直居中
+                height: '35px',
+                zoomLock: false,
+                realtime: true,
+                brushSelect: false,
+                handleIcon: 'path://M10.7,11.9v-1.3H9.3v1.3c-4.9,0.3-8.8,4.4-8.8,9.4c0,5,3.9,9.1,8.8,9.4v1.3h1.3v-1.3c4.9-0.3,8.8-4.4,8.8-9.4C19.5,16.3,15.6,12.2,10.7,11.9z M13.3,24.4H6.7V23h6.6V24.4z M13.3,19.6H6.7v-1.4h6.6V19.6z',
+                handleSize: '80%',
+                handleStyle: {
+                    color: '#fff',
+                    shadowBlur: 3,
+                    shadowColor: 'rgba(0, 0, 0, 0.6)',
+                    shadowOffsetX: 2,
+                    shadowOffsetY: 2
+                },
+                textStyle: {
+                    color: '#333'
+                },
+                borderColor: '#e5e7eb',
+                fillerColor: 'rgba(37, 99, 235, 0.2)',  // 选中区域颜色
+                dataBackground: {
+                    lineStyle: {
+                        color: '#cbd5e1'
+                    },
+                    areaStyle: {
+                        color: '#f1f5f9'
+                    }
+                }
+            }
+        ]
+    }
+    
+    dataZoomChart.setOption(option, false)
+    console.log('🎯 数据窗口控制条已渲染，start:', currentZoom.start, 'end:', currentZoom.end)
+}
+
+function renderKline(data, events) {
+    console.log('renderKline called with data:', data, 'events:', events)
+    if (!data || !data.length) {
+        showEmpty(klineChart, '暂无数据')
+        return
+    }
+    // 处理日期格式（后端返回 GMT 格式，需转换为 YYYY-MM-DD）
+    const processedData = data.map(d => {
+        let dateStr = d.date
+        if (typeof dateStr === 'string' && dateStr.includes('GMT')) {
+            // 转换 "Wed, 03 Dec 2025 00:00:00 GMT" 为 "2025-12-03"
+            const dt = new Date(dateStr)
+            dateStr = dt.toISOString().split('T')[0]
+        }
+        return { ...d, date: dateStr }
+    })
+    
+    // 🔧 保存当前 dataZoom 位置（避免重新渲染时复位）
+    // ⚠️ 关键：如果是加载新股票，使用默认位置；如枟是无限滚动，保留当前位置
+    let currentZoom = { start: 75, end: 100 }  // 默认值
+    
+    if (!isLoadingNewStock) {
+        // 仅在非新股票加载时才保留位置（如无限滚动、切换指标等）
+        try {
+            const currentOption = klineChart.getOption()
+            if (currentOption && currentOption.dataZoom && currentOption.dataZoom[0]) {
+                currentZoom = {
+                    start: currentOption.dataZoom[0].start || 75,
+                    end: currentOption.dataZoom[0].end || 100
+                }
+                console.log('📍 保留当前 dataZoom 位置:', currentZoom)
+            }
+        } catch(e) {
+            // 首次渲染时 getOption 可能失败，使用默认值
+        }
+    } else {
+        console.log('🆕 加载新股票，使用默认 dataZoom 位置:', currentZoom)
+        isLoadingNewStock = false  // 重置标志
+    }
+    
+    // 默认显示全部120个周期的数据，但通过dataZoom控制初始视图
+    const displayData = processedData
+    const displayEvents = events || []
+    
+    const ohlc = displayData.map(d => [d.open, d.close, d.low, d.high])
+    const dates = displayData.map(d => d.date)
+    console.log('Processed dates:', dates)
+    console.log('OHLC data:', ohlc)
+    const option = {
+        title: { text: `${currentIndex?.name || ''} K线图`, left: 'center', textStyle: { fontSize: 14 } },
+        tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
+        legend: { data: ['K线', 'MA5', 'MA10', 'MA20'], bottom: 0 },
+        grid: { left: '8%', right: '8%', top: '15%', bottom: '12%' },
+        xAxis: { type: 'category', data: dates, boundaryGap: true },
+        yAxis: { scale: true },
+        dataZoom: [
+            { 
+                type: 'inside',
+                start: currentZoom.start,  // 🔧 使用保留的位置
+                end: currentZoom.end,
+                zoomOnMouseWheel: true,
+                moveOnMouseMove: true,
+                moveOnMouseWheel: true,
+                throttle: 50
+            }
+            // 🔧 移除 slider 类型的 dataZoom，改为统一放在页面底部
+        ],
+        series: [
+            {
+                name:'K线',
+                type:'candlestick',
+                data: ohlc,
+                itemStyle:{
+                    color:'#ef4444',
+                    color0:'#10b981',
+                    borderColor:'#ef4444',
+                    borderColor0:'#10b981'
+                },
+                markPoint: {
+                    data: (displayEvents||[]).map(e => {
+                        let evtDate = e.date
+                        if (typeof evtDate === 'string' && evtDate.includes('GMT')) {
+                            evtDate = new Date(evtDate).toISOString().split('T')[0]
+                        }
+                        return {
+                            name: e.title,
+                            xAxis: evtDate,
+                            yAxis: e.price || 0,
+                            symbolSize: e.severity==='critical'?60:40,
+                            itemStyle: { color: e.impact === 'negative' ? '#ef4444' : '#10b981' }
+                        }
+                    })
+                }
+            },
+            { 
+                name:'MA5', 
+                type:'line', 
+                data: calcMA(displayData,5), 
+                smooth:true, 
+                symbol: 'none',  // 🔧 移除圆点
+                lineStyle:{ opacity:0.6, color:'#f59e0b', width: 1.5 } 
+            },
+            { 
+                name:'MA10', 
+                type:'line', 
+                data: calcMA(displayData,10), 
+                smooth:true, 
+                symbol: 'none',  // 🔧 移除圆点
+                lineStyle:{ opacity:0.6, color:'#6366f1', width: 1.5 } 
+            },
+            { 
+                name:'MA20', 
+                type:'line', 
+                data: calcMA(displayData,20), 
+                smooth:true, 
+                symbol: 'none',  // 🔧 移除圆点
+                lineStyle:{ opacity:0.6, color:'#22c55e', width: 1.5 } 
+            }
+        ]
+    }
+    console.log('Setting klineChart option:', option)
+    klineChart.setOption(option, false)  // 🔧 改为false，保留未指定的选项（如事件监听器）
+    renderIndicator(displayData)
+    renderDataZoom(dates, currentZoom)  // 🔧 渲染数据窗口控制条
+}
+
+function loadKline(indexId) {
+    console.log('loadKline called with indexId:', indexId, 'period:', currentPeriod)
+    
+    // 🔧 标记正在加载新股票（需要复位 dataZoom 到默认位置）
+    isLoadingNewStock = true
+    
+    // 🔧 使用后端API的专业技术指标计算，而不是前端自己算
+    const url = `/api/v1/chart/data?index_id=${encodeURIComponent(indexId)}&period=${currentPeriod}&count=120&indicators=all`
+    console.log('Fetching:', url)
+    fetch(url)
+        .then(r => {
+            console.log('Response received:', r.status)
+            return r.json()
+        })
+        .then(res => {
+            console.log('JSON parsed:', res)
+            if (res.status !== 'success') {
+                console.error('API returned error:', res)
+                showEmpty(klineChart, '加载失败: ' + (res.message || '未知错误'))
+                return
+            }
+            const chartData = res.data || {}
+            const data = chartData.kline || []
+            console.log('Data length:', data.length)
+            if (!data.length) {
+                showEmpty(klineChart, '暂无数据')
+                return
+            }
+            
+            // 存储到全局变量（用于无限滚动）
+            allKlineData = data
+            allEvents = chartData.events || []
+            allIndicatorsData = chartData.indicators || {}  // 🔧 保存后端计算的指标数据
+            
+            console.log('🎯 后端指标数据:', allIndicatorsData)
+            
+            renderKline(allKlineData, allEvents)
+        })
+        .catch(err => {
+            console.error('Fetch error:', err)
+            showEmpty(klineChart, '加载失败: ' + err.message)
+        })
+}
+
+// 初始化
+init()
+
+// 绑定添加按钮
+document.getElementById('indexAddButton').onclick = () => {
+    const overlay = document.createElement('div')
+    overlay.className = 'modal-overlay'
+    const modal = document.createElement('div')
+    modal.className = 'modal-content'
+    modal.innerHTML = `
+        <div class="modal-header">添加指数/股票</div>
+        <div class="form-group">
+            <label class="form-label">代码</label>
+            <input type="text" id="modalIndexId" class="form-control" placeholder="例: 000300.SH">
+            <small style="color:#6b7280;margin-top:4px;display:block;">名称将自动识别，也可手动输入</small>
+        </div>
+        <div class="form-group">
+            <label class="form-label">名称（可选）</label>
+            <input type="text" id="modalIndexName" class="form-control" placeholder="留空将自动识别">
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-sm" id="modalCancel">取消</button>
+            <button class="btn btn-primary btn-sm" id="modalConfirm">确定</button>
+        </div>
+    `
+    overlay.appendChild(modal)
+    document.body.appendChild(overlay)
+    overlay.onclick = (e) => { if (e.target === overlay) overlay.remove() }
+    document.getElementById('modalCancel').onclick = () => overlay.remove()
+    document.getElementById('modalConfirm').onclick = () => {
+        const id = document.getElementById('modalIndexId').value.trim()
+        let name = document.getElementById('modalIndexName').value.trim()
+        if (!id) { alert('请输入代码'); return }
+        // 自动识别名称（简单映射）
+        if (!name) {
+            const nameMap = {
+                '000300.SH': '沪深300', '000001.SH': '上证指数', '399001.SZ': '深证成指', '399006.SZ': '创业板指',
+                '601318.SH': '中国平安', '600519.SH': '贵州茅台', '000001.SZ': '平安银行', '000651.SZ': '格力电器',
+                '300750.SZ': '宁德时代', 'HSI': '恒生指数', 'HSCEI': '国企指数', 'HSTECH': '恒生科技',
+                '0700.HK': '腾讯控股', '0939.HK': '建设银行', '2318.HK': '中国平安',
+                '^GSPC': 'S&P 500', '^DJI': '道琼斯', '^IXIC': '纳斯达克',
+                'AAPL': 'Apple', 'MSFT': 'Microsoft', 'AMZN': 'Amazon', 'GOOGL': 'Alphabet', 'TSLA': 'Tesla'
+            }
+            name = nameMap[id] || id
+        }
+        const newItem = { id, name, type: 'custom' }
+        const list = document.getElementById('indexList')
+        const existing = Array.from(list.querySelectorAll('.list-item')).find(r => r.querySelector('.list-item-code').textContent === id)
+        if (existing) { alert('该代码已存在'); return }
+        // 复用 buildIndexList 的逻辑构造单个 item
+        const row = document.createElement('div')
+        row.className = 'list-item'
+        const content = document.createElement('div')
+        content.className = 'list-item-content'
+        const nameEl = document.createElement('div')
+        nameEl.className = 'list-item-name'
+        nameEl.textContent = name
+        const codeEl = document.createElement('div')
+        codeEl.className = 'list-item-code'
+        codeEl.textContent = id
+        content.appendChild(nameEl)
+        content.appendChild(codeEl)
+        row.appendChild(content)
+        const actions = document.createElement('div')
+        actions.className = 'list-item-actions'
+        const delBtn = document.createElement('button')
+        delBtn.className = 'btn-icon'
+        delBtn.innerHTML = '✕'
+        delBtn.title = '删除'
+        delBtn.onclick = (e) => {
+            e.stopPropagation()
+            row.remove()
+            if (currentIndex && currentIndex.id === id) {
+                const remaining = list.querySelectorAll('.list-item')
+                if (remaining.length) remaining[0].click()
+                else showEmpty(klineChart, '暂无数据')
+            }
+        }
+        actions.appendChild(delBtn)
+        row.appendChild(actions)
+        row.onclick = () => {
+            list.querySelectorAll('.list-item').forEach(r => r.classList.remove('active'))
+            row.classList.add('active')
+            selectIndex(newItem)
+        }
+        list.appendChild(row)
+        overlay.remove()
+        row.click()
+    }
+}
 </script>
 </body>
 </html>
