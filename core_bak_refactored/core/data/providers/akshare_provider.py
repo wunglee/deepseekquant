@@ -109,7 +109,7 @@ class AKShareDataProvider:
             logger.info(f"Fetching price data for {symbol} from {start_date} to {end_date}")
             
             # 根据代码格式自动判断市场，调用对应的AKShare API
-            df = self._fetch_index_by_market(symbol)
+            df = self._fetch_by_market(symbol)
             
             if df is None or df.empty:
                 raise ValueError(f"No data returned for {symbol}")
@@ -244,7 +244,7 @@ class AKShareDataProvider:
                 logger.warning(f"Primary source failed for {symbol}: {e}")
                 # 直接使用备选数据源
                 logger.info(f"Trying backup source for {symbol}")
-                return self._fetch_index_by_market(symbol)
+                return self._fetch_by_market(symbol)
                         
         # 2. 港股个股API（.HK 结尾）
         if symbol.endswith('.HK'):
@@ -268,7 +268,7 @@ class AKShareDataProvider:
                 logger.warning(f"Primary source failed for {symbol}: {e}")
                 # 直接使用备选数据源
                 logger.info(f"Trying backup source for {symbol}")
-                return self._fetch_index_by_market(symbol)
+                return self._fetch_by_market(symbol)
                         
         # 3. 美股个股API（包含.但不以.HK/.SH/.SZ结尾）
         if '.' in symbol and not symbol.endswith(('.HK', '.SH', '.SZ')):
@@ -290,7 +290,7 @@ class AKShareDataProvider:
                 logger.warning(f"Primary source failed for {symbol}: {e}")
                 # 直接使用备选数据源
                 logger.info(f"Trying backup source for {symbol}")
-                return self._fetch_index_by_market(symbol)
+                return self._fetch_by_market(symbol)
                         
         # 4. 默认使用A股个股API（不带后缀的代码）
         logger.debug(f"默认调用A股个股API: stock_zh_a_hist({symbol})")
@@ -311,19 +311,19 @@ class AKShareDataProvider:
             logger.warning(f"Primary source failed for {symbol}: {e}")
             # 直接使用备选数据源
             logger.info(f"Trying backup source for {symbol}")
-            return self._fetch_index_by_market(symbol)
+            return self._fetch_by_market(symbol)
 
     # 已废弃的方法，保留空实现以避免破坏现有代码
     def _fetch_stock_from_backup_source(self, symbol: str, start_date_str: str, end_date_str: str) -> pd.DataFrame:
         """已废弃的方法"""
-        return self._fetch_index_by_market(symbol)
+        return self._fetch_by_market(symbol)
 
-    def _map_index_to_akshare(self, symbol: str) -> str:
+    def _map_to_akshare(self, symbol: str) -> str:
         """
-        映射指数代码到AKShare格式（基于规则自动转换）
+        映射代码到AKShare格式（基于规则自动转换）
         
         Args:
-            symbol: 统一指数代码
+            symbol: 统一代码
             
         Returns:
             AKShare API所需的代码格式
@@ -378,37 +378,37 @@ class AKShareDataProvider:
         }
         return us_to_chinese.get(us_symbol, us_symbol)
 
-    def _fetch_index_by_market(self, index_id: str) -> pd.DataFrame:
+    def _fetch_by_market(self, symbol_id: str) -> pd.DataFrame:
         """
         根据原始代码格式判断市场，调用对应的AKShare API
 
         Args:
-            index_id: 原始指数代码
+            symbol_id: 原始代码
             
         Returns:
             AKShare返回的原始DataFrame
             
         设计原则：
         - 职责单一：只负责根据市场调用对应API
-        - 代码格式转换已在 _map_index_to_akshare 完成
+        - 代码格式转换已在 _map_to_akshare 完成
         - 市场判断逻辑集中在此方法
         """
-        # 映射指数代码
-        ak_symbol = self._map_index_to_akshare(index_id)
-        logger.info(f"Fetching data for {index_id} (mapped to {ak_symbol})")
+        # 映射代码
+        ak_symbol = self._map_to_akshare(symbol_id)
+        logger.info(f"Fetching data for {symbol_id} (mapped to {ak_symbol})")
         
         # 1. A股指数API（.SH/.SZ 结尾）
-        if index_id.endswith('.SH') or index_id.endswith('.SZ'):
+        if symbol_id.endswith('.SH') or symbol_id.endswith('.SZ'):
             logger.debug(f"调用A股指数API: stock_zh_index_daily({ak_symbol})")
             return self.ak.stock_zh_index_daily(symbol=ak_symbol)
         
         # 2. 港股指数API（常见代码：HSI, HSCEI 或 .HK 结尾）
-        if index_id in ['HSI', 'HSCEI'] or index_id.endswith('.HK'):
+        if symbol_id in ['HSI', 'HSCEI'] or symbol_id.endswith('.HK'):
             logger.debug(f"调用港股指数API: stock_hk_index_daily_em({ak_symbol})")
             return self.ak.stock_hk_index_daily_em(symbol=ak_symbol)
         
         # 3. 美股/全球指数API（^开头）
-        if index_id.startswith('^'):
+        if symbol_id.startswith('^'):
             logger.debug(f"调用全球指数API: index_global_hist_em({ak_symbol})")
             return self.ak.index_global_hist_em(symbol=ak_symbol)
         
