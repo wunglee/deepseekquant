@@ -626,7 +626,8 @@ class AKShareDataProvider:
             index_symbol = self._convert_stock_to_index_format(symbol)
             if index_symbol:
                 logger.debug(f"Converting {symbol} to index format: {index_symbol}")
-                df = self.ak.stock_zh_index_daily(symbol=index_symbol)
+                # 直接使用_fetch_index_by_market方法获取数据
+                df = self._fetch_index_by_market(index_symbol)
                 if not df.empty:
                     logger.info(f"Successfully got data from index API for {symbol} (as {index_symbol})")
                     return df
