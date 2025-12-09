@@ -23,15 +23,17 @@ pip install akshare
 - 支持更多市场和数据类型
 """
 
+import time
+import akshare as ak
 import pandas as pd
+import numpy as np
+from datetime import datetime
 from typing import Union
-from datetime import datetime, timedelta
 import logging
 
-# 导入新的数据结构
-from core_bak_refactored.core.data.providers.protocols import PriceData, OHLCVRecord
+from core_bak_refactored.core.data.providers.protocols import PriceData
 
-logger = logging.getLogger('DeepSeekQuant.AKShareProvider')
+logger = logging.getLogger(__name__)
 
 
 class AKShareDataProvider:
@@ -233,52 +235,99 @@ class AKShareDataProvider:
         """
         logger.info(f"Fetching stock data for {symbol} from {start_date_str} to {end_date_str}")
         
+        # 重试次数
+        max_retries = 3
+        
         # 1. A股个股API（.SH/.SZ 结尾）
         if symbol.endswith('.SH') or symbol.endswith('.SZ'):
             # 处理股票代码格式（去掉市场后缀）
             ak_symbol = symbol[:-3]  # 移除 .SH 或 .SZ 后缀
             logger.debug(f"调用A股个股API: stock_zh_a_hist({ak_symbol})")
-            return self.ak.stock_zh_a_hist(
-                symbol=ak_symbol,
-                period="daily",
-                start_date=start_date_str,
-                end_date=end_date_str,
-                adjust="qfq"  # 前复权
-            )
-        
+            
+            # 添加重试机制
+            for attempt in range(max_retries):
+                try:
+                    # 添加延迟以避免触发反爬虫机制
+                    time.sleep(1)
+                    return self.ak.stock_zh_a_hist(
+                        symbol=ak_symbol,
+                        period="daily",
+                        start_date=start_date_str,
+                        end_date=end_date_str,
+                        adjust="qfq",  # 前复权
+                        timeout=10  # 增加超时时间
+                    )
+                except Exception as e:
+                    logger.warning(f"Attempt {attempt + 1} failed for {symbol}: {e}")
+                    if attempt == max_retries - 1:
+                        raise  # 最后一次尝试失败则抛出异常
+                        
         # 2. 港股个股API（.HK 结尾）
         if symbol.endswith('.HK'):
             # 处理股票代码格式（去掉市场后缀）
             ak_symbol = symbol[:-3]  # 移除 .HK 后缀
             logger.debug(f"调用港股个股API: stock_hk_hist({ak_symbol})")
-            return self.ak.stock_hk_hist(
-                symbol=ak_symbol,
-                period="daily",
-                start_date=start_date_str,
-                end_date=end_date_str,
-                adjust="qfq"  # 前复权
-            )
-        
+            
+            # 添加重试机制
+            for attempt in range(max_retries):
+                try:
+                    # 添加延迟以避免触发反爬虫机制
+                    time.sleep(1)
+                    return self.ak.stock_hk_hist(
+                        symbol=ak_symbol,
+                        period="daily",
+                        start_date=start_date_str,
+                        end_date=end_date_str,
+                        adjust="qfq",  # 前复权
+                        timeout=10  # 增加超时时间
+                    )
+                except Exception as e:
+                    logger.warning(f"Attempt {attempt + 1} failed for {symbol}: {e}")
+                    if attempt == max_retries - 1:
+                        raise  # 最后一次尝试失败则抛出异常
+                        
         # 3. 美股个股API（包含.但不以.HK/.SH/.SZ结尾）
         if '.' in symbol and not symbol.endswith(('.HK', '.SH', '.SZ')):
             logger.debug(f"调用美股个股API: stock_us_hist({symbol})")
-            return self.ak.stock_us_hist(
-                symbol=symbol,
-                period="daily",
-                start_date=start_date_str,
-                end_date=end_date_str,
-                adjust="qfq"  # 前复权
-            )
-        
+            
+            # 添加重试机制
+            for attempt in range(max_retries):
+                try:
+                    # 添加延迟以避免触发反爬虫机制
+                    time.sleep(1)
+                    return self.ak.stock_us_hist(
+                        symbol=symbol,
+                        period="daily",
+                        start_date=start_date_str,
+                        end_date=end_date_str,
+                        adjust="qfq",  # 前复权
+                        timeout=10  # 增加超时时间
+                    )
+                except Exception as e:
+                    logger.warning(f"Attempt {attempt + 1} failed for {symbol}: {e}")
+                    if attempt == max_retries - 1:
+                        raise  # 最后一次尝试失败则抛出异常
+                        
         # 4. 默认使用A股个股API（不带后缀的代码）
         logger.debug(f"默认调用A股个股API: stock_zh_a_hist({symbol})")
-        return self.ak.stock_zh_a_hist(
-            symbol=symbol,
-            period="daily",
-            start_date=start_date_str,
-            end_date=end_date_str,
-            adjust="qfq"  # 前复权
-        )
+        
+        # 添加重试机制
+        for attempt in range(max_retries):
+            try:
+                # 添加延迟以避免触发反爬虫机制
+                time.sleep(1)
+                return self.ak.stock_zh_a_hist(
+                    symbol=symbol,
+                    period="daily",
+                    start_date=start_date_str,
+                    end_date=end_date_str,
+                    adjust="qfq",  # 前复权
+                    timeout=10  # 增加超时时间
+                )
+            except Exception as e:
+                logger.warning(f"Attempt {attempt + 1} failed for {symbol}: {e}")
+                if attempt == max_retries - 1:
+                    raise  # 最后一次尝试失败则抛出异常
 
     def _map_index_to_akshare(self, symbol: str) -> str:
         """
@@ -552,3 +601,101 @@ class AKShareDataProvider:
             logger.warning(f"Removed {original_len - len(standardized)} rows with missing close prices")
         
         return standardized
+    
+    def _fetch_stock_from_backup_source(self, symbol: str, start_date_str: str, end_date_str: str) -> pd.DataFrame:
+        """
+        从备选数据源获取个股数据
+        
+        Args:
+            symbol: 股票代码
+            start_date_str: 开始日期字符串 YYYYMMDD
+            end_date_str: 结束日期字符串 YYYYMMDD
+            
+        Returns:
+            DataFrame格式的数据
+            
+        备选数据源优先级：
+        1. 指数API（将个股代码转换为指数格式）
+        2. 其他AKShare个股API
+        3. 个股基本信息API
+        """
+        logger.info(f"Using backup data source for {symbol}")
+        
+        # 1. 尝试使用指数API作为备选方案
+        try:
+            logger.info(f"Trying index API as backup for {symbol}")
+            
+            # 将个股代码转换为指数API格式
+            index_symbol = self._convert_stock_to_index_format(symbol)
+            if index_symbol:
+                logger.debug(f"Converting {symbol} to index format: {index_symbol}")
+                df = self.ak.stock_zh_index_daily(symbol=index_symbol)
+                if not df.empty:
+                    logger.info(f"Successfully got data from index API for {symbol} (as {index_symbol})")
+                    return df
+        except Exception as e:
+            logger.warning(f"Index API backup failed for {symbol}: {e}")
+        
+        # 2. 尝试其他AKShare个股API
+        try:
+            logger.info(f"Trying alternative stock APIs for {symbol}")
+            
+            # 尝试其他可能的个股API
+            if hasattr(self.ak, 'stock_zh_a_hist_em'):
+                logger.debug(f"Trying stock_zh_a_hist_em for {symbol}")
+                df = self.ak.stock_zh_a_hist_em(
+                    symbol=symbol,
+                    period="daily",
+                    start_date=start_date_str,
+                    end_date=end_date_str,
+                    adjust="qfq",
+                    timeout=10
+                )
+                if not df.empty:
+                    logger.info(f"Successfully got data from stock_zh_a_hist_em for {symbol}")
+                    return df
+        except Exception as e:
+            logger.warning(f"Alternative stock APIs failed for {symbol}: {e}")
+        
+        # 3. 尝试使用个股基本信息API获取相关信息
+        try:
+            logger.debug(f"Trying stock_individual_info_em for {symbol}")
+            info_df = self.ak.stock_individual_info_em(symbol=symbol)
+            if not info_df.empty:
+                logger.info(f"Got basic info for {symbol} from stock_individual_info_em")
+                # 虽然这只是基本信息，但至少证明该股票存在
+        except Exception as e:
+            logger.warning(f"stock_individual_info_em failed for {symbol}: {e}")
+        
+        # 如果所有备选方案都失败，抛出异常
+        raise ValueError(f"Unable to fetch data for {symbol} from any backup source")
+
+    def _convert_stock_to_index_format(self, symbol: str) -> str:
+        """
+        将个股代码转换为指数API所需的格式
+        
+        Args:
+            symbol: 原始股票代码
+            
+        Returns:
+            转换后的指数格式代码，如果无法转换则返回None
+        """
+        # 处理带市场后缀的代码
+        if symbol.endswith('.SH'):
+            return 'sh' + symbol[:-3]  # 移除 .SH 后缀，添加 sh 前缀
+        elif symbol.endswith('.SZ'):
+            return 'sz' + symbol[:-3]  # 移除 .SZ 后缀，添加 sz 前缀
+        elif symbol.endswith('.HK'):
+            # 港股暂不支持通过指数API获取
+            return None
+        elif '.' in symbol:
+            # 美股代码暂不支持通过指数API获取
+            return None
+        else:
+            # 不带后缀的代码，默认尝试A股
+            # 这里需要根据具体股票代码判断是上海还是深圳
+            # 简单规则：6开头的为上海，其他为深圳
+            if symbol.startswith('6'):
+                return 'sh' + symbol
+            else:
+                return 'sz' + symbol
