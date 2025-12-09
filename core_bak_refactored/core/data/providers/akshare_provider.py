@@ -85,6 +85,60 @@ class AKShareDataProvider:
         # 未来扩展：指数名称映射缓存（暂未实现）
         self._index_name_cache = None
 
+    def get_prices(self, symbol: str, start_date: Union[str, datetime], end_date: Union[str, datetime]) -> PriceData:
+        """
+        获取历史价格数据（适用于个股和指数）
+        
+        Args:
+            symbol: 股票或指数代码（支持市场后缀，如 '000001.SZ' 或 '^GSPC'）
+            start_date: 开始日期
+            end_date: 结束日期
+            
+        Returns:
+            标准化的价格数据
+            
+        设计原则：
+        - 职责单一：只负责数据获取和标准化
+        - 日期处理：统一转换为datetime对象
+        - 异常处理：网络失败直接抛出异常，符合透明失败原则
+        """
+        if not self.available or self.ak is None:
+            raise RuntimeError("AKShare API不可用，请安装: pip install akshare")
+        
+        try:
+            logger.info(f"Fetching price data for {symbol} from {start_date} to {end_date}")
+            
+            # 根据代码格式自动判断市场，调用对应的AKShare API
+            df = self._fetch_index_by_market(symbol)
+            
+            if df is None or df.empty:
+                raise ValueError(f"No data returned for {symbol}")
+            
+            # 🔧 先标准化格式（处理列名差异）
+            standardized_data = self._standardize_format(df)
+            
+            # 筛选日期范围（使用标准化后的数据）
+            if 'date' not in standardized_data.columns:
+                raise ValueError(f"Standardized data missing 'date' column. Columns: {standardized_data.columns.tolist()}")
+            
+            standardized_data['date'] = pd.to_datetime(standardized_data['date'])
+            start_dt = pd.to_datetime(start_date)
+            end_dt = pd.to_datetime(end_date)
+            standardized_data = standardized_data[
+                (standardized_data['date'] >= start_dt) & (standardized_data['date'] <= end_dt)
+            ]
+            
+            if standardized_data.empty:
+                raise ValueError(f"No data in date range {start_date} to {end_date}")
+            
+            logger.info(f"Successfully fetched {len(standardized_data)} rows for {symbol}")
+            # 返回PriceData对象而不是原始DataFrame
+            return PriceData.from_dataframe(standardized_data, symbol)
+            
+        except Exception as e:
+            logger.error(f"AKShare failed for {symbol}: {e}")
+            raise ValueError(f"Failed to fetch data for {symbol}: {e}")
+
     def get_index_prices(
         self,
         index_id: str,
@@ -92,54 +146,21 @@ class AKShareDataProvider:
         end_date: Union[str, datetime]
     ) -> PriceData:
         """
-        获取指数价格数据（实现HistoricalDataProvider接口）
-
+        获取指数历史价格数据（实现HistoricalDataProvider接口）
+        
         Args:
-            index_id: 指数代码（如'000300.SH'沪深300）
+            index_id: 指数代码
             start_date: 开始日期 'YYYY-MM-DD' 或 datetime 对象
             end_date: 结束日期 'YYYY-MM-DD' 或 datetime 对象
-
+        
         Returns:
             PriceData: 包含标准OHLCV数据的结构化对象
-
+            
         Raises:
-            ValueError: 数据不可用（fallback禁用时）
+            ValueError: 日期格式错误或数据不可用（fallback禁用时）
         """
-        if not self.available or self.ak is None:
-            raise RuntimeError("AKShare API不可用，请安装: pip install akshare")
-
-        try:
-
-            # 根据代码格式自动判断市场，调用对应的AKShare API
-            df = self._fetch_index_by_market(index_id)
-
-            if df is None or df.empty:
-                raise ValueError(f"No data returned for {index_id}")
-
-            # 🔧 先标准化格式（处理列名差异）
-            standardized_data = self._standardize_format(df)
-
-            # 筛选日期范围（使用标准化后的数据）
-            if 'date' not in standardized_data.columns:
-                raise ValueError(f"Standardized data missing 'date' column. Columns: {standardized_data.columns.tolist()}")
-
-            standardized_data['date'] = pd.to_datetime(standardized_data['date'])
-            start_dt = pd.to_datetime(start_date)
-            end_dt = pd.to_datetime(end_date)
-            standardized_data = standardized_data[
-                (standardized_data['date'] >= start_dt) & (standardized_data['date'] <= end_dt)
-            ]
-
-            if standardized_data.empty:
-                raise ValueError(f"No data in date range {start_date} to {end_date}")
-
-            logger.info(f"Successfully fetched {len(standardized_data)} rows for {index_id}")
-            # 返回PriceData对象而不是原始DataFrame
-            return PriceData.from_dataframe(standardized_data, index_id)
-
-        except Exception as e:
-            logger.error(f"AKShare failed for {index_id}: {e}")
-            raise ValueError(f"Failed to fetch data for {index_id}: {e}")
+        # 直接委托给通用方法
+        return self.get_prices(index_id, start_date, end_date)
 
     def get_index_returns(
         self,
@@ -180,43 +201,8 @@ class AKShareDataProvider:
         - 日期处理：统一转换为datetime对象
         - 异常处理：网络失败直接抛出异常，符合透明失败原则
         """
-        if not self.available or self.ak is None:
-            raise RuntimeError("AKShare API不可用，请安装: pip install akshare")
-        
-        try:
-            logger.info(f"Fetching stock data for {symbol} from {start_date} to {end_date}")
-            
-            # 根据代码格式自动判断市场，调用对应的AKShare API
-            # 注意：这里我们直接使用_fetch_index_by_market作为主要数据源
-            df = self._fetch_index_by_market(symbol)
-            
-            if df is None or df.empty:
-                raise ValueError(f"No data returned for {symbol}")
-            
-            # 🔧 先标准化格式（处理列名差异）
-            standardized_data = self._standardize_format(df)
-            
-            # 筛选日期范围（使用标准化后的数据）
-            if 'date' not in standardized_data.columns:
-                raise ValueError(f"Standardized data missing 'date' column. Columns: {standardized_data.columns.tolist()}")
-            
-            standardized_data['date'] = pd.to_datetime(standardized_data['date'])
-            start_dt = pd.to_datetime(start_date)
-            end_dt = pd.to_datetime(end_date)
-            standardized_data = standardized_data[
-                (standardized_data['date'] >= start_dt) & (standardized_data['date'] <= end_dt)
-            ]
-            
-            if standardized_data.empty:
-                raise ValueError(f"No data in date range {start_date} to {end_date}")
-            
-            logger.info(f"Successfully fetched {len(standardized_data)} rows for {symbol}")
-            # 返回PriceData对象而不是原始DataFrame
-            return PriceData.from_dataframe(standardized_data, symbol)
-            
-        except Exception as e:
-            logger.error(f"AKShare failed for {symbol}: {e}")
-            raise ValueError(f"Failed to fetch data for {symbol}: {e}")
+        # 直接委托给通用方法
+        return self.get_prices(symbol, start_date, end_date)
     
     def _fetch_stock_by_market(self, symbol: str, start_date_str: str, end_date_str: str) -> pd.DataFrame:
         """
