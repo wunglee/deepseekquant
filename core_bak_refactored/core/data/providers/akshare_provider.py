@@ -260,7 +260,9 @@ class AKShareDataProvider:
                 except Exception as e:
                     logger.warning(f"Attempt {attempt + 1} failed for {symbol}: {e}")
                     if attempt == max_retries - 1:
-                        raise  # 最后一次尝试失败则抛出异常
+                        # 所有重试都失败后，尝试使用备选数据源
+                        logger.info(f"All retries failed for {symbol}, trying backup source")
+                        return self._fetch_stock_from_backup_source(symbol, start_date_str, end_date_str)
                         
         # 2. 港股个股API（.HK 结尾）
         if symbol.endswith('.HK'):
@@ -284,7 +286,9 @@ class AKShareDataProvider:
                 except Exception as e:
                     logger.warning(f"Attempt {attempt + 1} failed for {symbol}: {e}")
                     if attempt == max_retries - 1:
-                        raise  # 最后一次尝试失败则抛出异常
+                        # 所有重试都失败后，尝试使用备选数据源
+                        logger.info(f"All retries failed for {symbol}, trying backup source")
+                        return self._fetch_stock_from_backup_source(symbol, start_date_str, end_date_str)
                         
         # 3. 美股个股API（包含.但不以.HK/.SH/.SZ结尾）
         if '.' in symbol and not symbol.endswith(('.HK', '.SH', '.SZ')):
@@ -306,7 +310,9 @@ class AKShareDataProvider:
                 except Exception as e:
                     logger.warning(f"Attempt {attempt + 1} failed for {symbol}: {e}")
                     if attempt == max_retries - 1:
-                        raise  # 最后一次尝试失败则抛出异常
+                        # 所有重试都失败后，尝试使用备选数据源
+                        logger.info(f"All retries failed for {symbol}, trying backup source")
+                        return self._fetch_stock_from_backup_source(symbol, start_date_str, end_date_str)
                         
         # 4. 默认使用A股个股API（不带后缀的代码）
         logger.debug(f"默认调用A股个股API: stock_zh_a_hist({symbol})")
@@ -327,7 +333,9 @@ class AKShareDataProvider:
             except Exception as e:
                 logger.warning(f"Attempt {attempt + 1} failed for {symbol}: {e}")
                 if attempt == max_retries - 1:
-                    raise  # 最后一次尝试失败则抛出异常
+                    # 所有重试都失败后，尝试使用备选数据源
+                    logger.info(f"All retries failed for {symbol}, trying backup source")
+                    return self._fetch_stock_from_backup_source(symbol, start_date_str, end_date_str)
 
     def _map_index_to_akshare(self, symbol: str) -> str:
         """
