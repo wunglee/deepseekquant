@@ -101,6 +101,7 @@ class AKShareProviderTest(unittest.TestCase):
             self.assertTrue(hasattr(first_record, 'volume'))
         except Exception as e:
             # 网络问题或其他原因导致的失败，我们接受这种情况
+            print(f"个股数据获取失败详情: {e}")  # 添加更多调试信息
             self.skipTest(f"个股数据获取失败: {e}")
 
     def test_get_stock_prices_with_market_suffix(self):
@@ -116,6 +117,7 @@ class AKShareProviderTest(unittest.TestCase):
             self.assertGreater(len(data.records), 0)
         except Exception as e:
             # 网络问题或其他原因导致的失败，我们接受这种情况
+            print(f"A股个股数据获取失败详情: {e}")  # 添加更多调试信息
             self.skipTest(f"A股个股数据获取失败: {e}")
         
         # 测试其他市场后缀（如果有API支持）
@@ -125,17 +127,17 @@ class AKShareProviderTest(unittest.TestCase):
         """测试指数代码映射"""
         # 测试A股指数映射
         self.assertEqual(
-            self.provider._map_index_to_akshare('000300.SH'),
+            self.provider._map_to_akshare('000300.SH'),
             'sh000300'
         )
         self.assertEqual(
-            self.provider._map_index_to_akshare('399001.SZ'),
+            self.provider._map_to_akshare('399001.SZ'),
             'sz399001'
         )
         
         # 测试自动转换
         self.assertEqual(
-            self.provider._map_index_to_akshare('000016.SH'),
+            self.provider._map_to_akshare('000016.SH'),
             'sh000016'
         )
     

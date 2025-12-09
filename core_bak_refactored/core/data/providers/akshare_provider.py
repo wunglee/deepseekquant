@@ -313,11 +313,6 @@ class AKShareDataProvider:
             logger.info(f"Trying backup source for {symbol}")
             return self._fetch_by_market(symbol)
 
-    # 已废弃的方法，保留空实现以避免破坏现有代码
-    def _fetch_stock_from_backup_source(self, symbol: str, start_date_str: str, end_date_str: str) -> pd.DataFrame:
-        """已废弃的方法"""
-        return self._fetch_by_market(symbol)
-
     def _map_to_akshare(self, symbol: str) -> str:
         """
         映射代码到AKShare格式（基于规则自动转换）
@@ -590,14 +585,3 @@ class AKShareDataProvider:
             logger.warning(f"Removed {original_len - len(standardized)} rows with missing close prices")
         
         return standardized
-
-    # 已废弃的方法，保留空实现以避免破坏现有代码
-    def _convert_stock_to_index_format(self, symbol: str) -> str:
-        """已废弃的方法"""
-        # 处理带市场后缀的代码
-        if symbol.endswith('.SH'):
-            return 'sh' + symbol[:-3]  # 移除 .SH 后缀，添加 sh 前缀
-        elif symbol.endswith('.SZ'):
-            return 'sz' + symbol[:-3]  # 移除 .SZ 后缀，添加 sz 前缀
-        else:
-            return symbol
