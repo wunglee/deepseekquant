@@ -163,51 +163,52 @@ class AKShareDataProvider:
         returns = prices['close'].pct_change().dropna()
         return returns
 
-    def get_stock_prices(
-        self,
-        symbol: str,
-        start_date: Union[str, datetime],
-        end_date: Union[str, datetime]
-    ) -> PriceData:
+    def get_stock_prices(self, symbol: str, start_date: Union[str, datetime], end_date: Union[str, datetime]) -> PriceData:
         """
-        获取个股价格数据
+        获取个股历史价格数据
         
         Args:
-            symbol: 股票代码（如'000001'平安银行或'000001.SZ'）
-            start_date: 开始日期 'YYYY-MM-DD' 或 datetime 对象
-            end_date: 结束日期 'YYYY-MM-DD' 或 datetime 对象
-        
-        Returns:
-            PriceData: 包含标准OHLCV数据的结构化对象
+            symbol: 股票代码（支持市场后缀，如 '000001.SZ'）
+            start_date: 开始日期
+            end_date: 结束日期
             
-        Raises:
-            ValueError: 日期格式错误或数据不可用（fallback禁用时）
+        Returns:
+            标准化的个股价格数据
+            
+        设计原则：
+        - 职责单一：只负责数据获取和标准化
+        - 日期处理：统一转换为datetime对象
+        - 异常处理：网络失败直接抛出异常，符合透明失败原则
         """
         if not self.available or self.ak is None:
             raise RuntimeError("AKShare API不可用，请安装: pip install akshare")
         
-        # 转换日期格式
-        if isinstance(start_date, datetime):
-            start_date_str = start_date.strftime('%Y%m%d')
-        else:
-            start_date_str = start_date.replace('-', '')
-        
-        if isinstance(end_date, datetime):
-            end_date_str = end_date.strftime('%Y%m%d')
-        else:
-            end_date_str = end_date.replace('-', '')
-        
         try:
-            logger.info(f"Fetching stock data for {symbol} from {start_date_str} to {end_date_str}")
+            logger.info(f"Fetching stock data for {symbol} from {start_date} to {end_date}")
             
             # 根据代码格式自动判断市场，调用对应的AKShare API
-            df = self._fetch_stock_by_market(symbol, start_date_str, end_date_str)
+            # 注意：这里我们直接使用_fetch_index_by_market作为主要数据源
+            df = self._fetch_index_by_market(symbol)
             
             if df is None or df.empty:
                 raise ValueError(f"No data returned for {symbol}")
             
-            # 标准化格式
-            standardized_data = self._standardize_stock_format(df)
+            # 🔧 先标准化格式（处理列名差异）
+            standardized_data = self._standardize_format(df)
+            
+            # 筛选日期范围（使用标准化后的数据）
+            if 'date' not in standardized_data.columns:
+                raise ValueError(f"Standardized data missing 'date' column. Columns: {standardized_data.columns.tolist()}")
+            
+            standardized_data['date'] = pd.to_datetime(standardized_data['date'])
+            start_dt = pd.to_datetime(start_date)
+            end_dt = pd.to_datetime(end_date)
+            standardized_data = standardized_data[
+                (standardized_data['date'] >= start_dt) & (standardized_data['date'] <= end_dt)
+            ]
+            
+            if standardized_data.empty:
+                raise ValueError(f"No data in date range {start_date} to {end_date}")
             
             logger.info(f"Successfully fetched {len(standardized_data)} rows for {symbol}")
             # 返回PriceData对象而不是原始DataFrame
@@ -216,7 +217,7 @@ class AKShareDataProvider:
         except Exception as e:
             logger.error(f"AKShare failed for {symbol}: {e}")
             raise ValueError(f"Failed to fetch data for {symbol}: {e}")
-
+    
     def _fetch_stock_by_market(self, symbol: str, start_date_str: str, end_date_str: str) -> pd.DataFrame:
         """
         根据原始代码格式判断市场，调用对应的AKShare个股API
@@ -257,7 +258,7 @@ class AKShareDataProvider:
                 logger.warning(f"Primary source failed for {symbol}: {e}")
                 # 直接使用备选数据源
                 logger.info(f"Trying backup source for {symbol}")
-                return self._fetch_stock_from_backup_source(symbol, start_date_str, end_date_str)
+                return self._fetch_index_by_market(symbol)
                         
         # 2. 港股个股API（.HK 结尾）
         if symbol.endswith('.HK'):
@@ -281,7 +282,7 @@ class AKShareDataProvider:
                 logger.warning(f"Primary source failed for {symbol}: {e}")
                 # 直接使用备选数据源
                 logger.info(f"Trying backup source for {symbol}")
-                return self._fetch_stock_from_backup_source(symbol, start_date_str, end_date_str)
+                return self._fetch_index_by_market(symbol)
                         
         # 3. 美股个股API（包含.但不以.HK/.SH/.SZ结尾）
         if '.' in symbol and not symbol.endswith(('.HK', '.SH', '.SZ')):
@@ -303,7 +304,7 @@ class AKShareDataProvider:
                 logger.warning(f"Primary source failed for {symbol}: {e}")
                 # 直接使用备选数据源
                 logger.info(f"Trying backup source for {symbol}")
-                return self._fetch_stock_from_backup_source(symbol, start_date_str, end_date_str)
+                return self._fetch_index_by_market(symbol)
                         
         # 4. 默认使用A股个股API（不带后缀的代码）
         logger.debug(f"默认调用A股个股API: stock_zh_a_hist({symbol})")
@@ -324,7 +325,12 @@ class AKShareDataProvider:
             logger.warning(f"Primary source failed for {symbol}: {e}")
             # 直接使用备选数据源
             logger.info(f"Trying backup source for {symbol}")
-            return self._fetch_stock_from_backup_source(symbol, start_date_str, end_date_str)
+            return self._fetch_index_by_market(symbol)
+
+    # 已废弃的方法，保留空实现以避免破坏现有代码
+    def _fetch_stock_from_backup_source(self, symbol: str, start_date_str: str, end_date_str: str) -> pd.DataFrame:
+        """已废弃的方法"""
+        return self._fetch_index_by_market(symbol)
 
     def _map_index_to_akshare(self, symbol: str) -> str:
         """
@@ -598,102 +604,14 @@ class AKShareDataProvider:
             logger.warning(f"Removed {original_len - len(standardized)} rows with missing close prices")
         
         return standardized
-    
-    def _fetch_stock_from_backup_source(self, symbol: str, start_date_str: str, end_date_str: str) -> pd.DataFrame:
-        """
-        从备选数据源获取个股数据
-        
-        Args:
-            symbol: 股票代码
-            start_date_str: 开始日期字符串 YYYYMMDD
-            end_date_str: 结束日期字符串 YYYYMMDD
-            
-        Returns:
-            DataFrame格式的数据
-            
-        备选数据源优先级：
-        1. 指数API（将个股代码转换为指数格式）
-        2. 其他AKShare个股API
-        3. 个股基本信息API
-        """
-        logger.info(f"Using backup data source for {symbol}")
-        
-        # 1. 尝试使用指数API作为备选方案
-        try:
-            logger.info(f"Trying index API as backup for {symbol}")
-            
-            # 将个股代码转换为指数API格式
-            index_symbol = self._convert_stock_to_index_format(symbol)
-            if index_symbol:
-                logger.debug(f"Converting {symbol} to index format: {index_symbol}")
-                # 直接使用_fetch_index_by_market方法获取数据
-                df = self._fetch_index_by_market(index_symbol)
-                if not df.empty:
-                    logger.info(f"Successfully got data from index API for {symbol} (as {index_symbol})")
-                    return df
-        except Exception as e:
-            logger.warning(f"Index API backup failed for {symbol}: {e}")
-        
-        # 2. 尝试其他AKShare个股API
-        try:
-            logger.info(f"Trying alternative stock APIs for {symbol}")
-            
-            # 尝试其他可能的个股API
-            if hasattr(self.ak, 'stock_zh_a_hist_em'):
-                logger.debug(f"Trying stock_zh_a_hist_em for {symbol}")
-                df = self.ak.stock_zh_a_hist_em(
-                    symbol=symbol,
-                    period="daily",
-                    start_date=start_date_str,
-                    end_date=end_date_str,
-                    adjust="qfq",
-                    timeout=10
-                )
-                if not df.empty:
-                    logger.info(f"Successfully got data from stock_zh_a_hist_em for {symbol}")
-                    return df
-        except Exception as e:
-            logger.warning(f"Alternative stock APIs failed for {symbol}: {e}")
-        
-        # 3. 尝试使用个股基本信息API获取相关信息
-        try:
-            logger.debug(f"Trying stock_individual_info_em for {symbol}")
-            info_df = self.ak.stock_individual_info_em(symbol=symbol)
-            if not info_df.empty:
-                logger.info(f"Got basic info for {symbol} from stock_individual_info_em")
-                # 虽然这只是基本信息，但至少证明该股票存在
-        except Exception as e:
-            logger.warning(f"stock_individual_info_em failed for {symbol}: {e}")
-        
-        # 如果所有备选方案都失败，抛出异常
-        raise ValueError(f"Unable to fetch data for {symbol} from any backup source")
 
+    # 已废弃的方法，保留空实现以避免破坏现有代码
     def _convert_stock_to_index_format(self, symbol: str) -> str:
-        """
-        将个股代码转换为指数API所需的格式
-        
-        Args:
-            symbol: 原始股票代码
-            
-        Returns:
-            转换后的指数格式代码，如果无法转换则返回None
-        """
+        """已废弃的方法"""
         # 处理带市场后缀的代码
         if symbol.endswith('.SH'):
             return 'sh' + symbol[:-3]  # 移除 .SH 后缀，添加 sh 前缀
         elif symbol.endswith('.SZ'):
             return 'sz' + symbol[:-3]  # 移除 .SZ 后缀，添加 sz 前缀
-        elif symbol.endswith('.HK'):
-            # 港股暂不支持通过指数API获取
-            return None
-        elif '.' in symbol:
-            # 美股代码暂不支持通过指数API获取
-            return None
         else:
-            # 不带后缀的代码，默认尝试A股
-            # 这里需要根据具体股票代码判断是上海还是深圳
-            # 简单规则：6开头的为上海，其他为深圳
-            if symbol.startswith('6'):
-                return 'sh' + symbol
-            else:
-                return 'sz' + symbol
+            return symbol
