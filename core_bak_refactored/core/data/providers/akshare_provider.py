@@ -23,55 +23,79 @@ pip install akshare
 - 支持更多市场和数据类型
 """
 
+import json
+import os
 import time
+import logging
+from datetime import datetime
+from typing import Union, Dict, Any
+
 import akshare as ak
 import pandas as pd
-import numpy as np
-from datetime import datetime
-from typing import Union
-import logging
 
-from core_bak_refactored.core.data.providers.protocols import PriceData
+from core_bak_refactored.core.data.providers.protocols import HistoricalDataProvider, PriceData
 
 logger = logging.getLogger(__name__)
 
-
-class AKShareDataProvider:
+class AKShareDataProvider(HistoricalDataProvider):
     """
-    AKShare数据提供者（实现HistoricalDataProvider接口）
+    基于AKShare的数据提供者
     
-    功能：
-    - A股指数/个股数据
-    - 港股指数数据
-    - 美股指数数据
-    - 期货、基金、债券数据（可扩展）
-    - 自动数据标准化
-    - 数据质量验证
-    - 实现HistoricalDataProvider标准接口
+    支持多市场数据获取：
+    - A股：个股、指数
+    - 港股：个股、指数  
+    - 美股：个股、指数
     
-    设计原则：
-    - 统一对外接口：get_index_prices() 对所有市场通用
-    - 内部自动适配：根据股票代码格式判断市场，调用对应API
-    - 失败透明：查不到数据直接抛出异常
-    - 完全符合HistoricalDataProvider协议标准
-
-    使用示例：
-        provider = AKShareDataProvider()
-        # A股
-        data = provider.get_index_prices('000300.SH', '2024-01-01', '2024-12-01')
-        # 港股
-        data = provider.get_index_prices('HSI', '2024-01-01', '2024-12-01')
-        # 美股
-        data = provider.get_index_prices('^GSPC', '2024-01-01', '2024-12-01')
+    设计特点：
+    - 自动识别代码格式并调用对应API
+    - 统一的数据标准化接口
+    - 透明失败原则（网络问题直接抛出异常）
+    - 备选数据源机制
     """
 
     def __init__(self):
-        """
-        初始化AKShare数据提供者
-        """
+        """初始化AKShare数据提供者"""
+        self.ak = None
         self.available = False
+        self._load_us_symbol_mapping()
+        self._initialize()
 
-        # 延迟导入akshare（避免环境依赖问题）
+    def _load_us_symbol_mapping(self):
+        """加载美股符号映射配置"""
+        try:
+            config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))), 'config', 'us_symbol_mapping.json')
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+                self.us_symbol_mapping = config.get('us_symbol_mapping', {})
+            logger.info(f"Loaded US symbol mapping with {len(self.us_symbol_mapping)} entries")
+        except Exception as e:
+            logger.warning(f"Failed to load US symbol mapping: {e}, using empty mapping")
+            self.us_symbol_mapping = {}
+
+    def _us_symbol_to_chinese(self, us_symbol: str) -> str:
+        """
+        将美股代码转换为AKShare全球指数API所需的中文名称
+
+        Args:
+            us_symbol: 美股代码（如 '^GSPC'）
+
+        Returns:
+            中文指数名称（如 '标普500'）或去掉前缀'^'的原始字符
+        """
+        # 从配置文件读取映射表
+        chinese_name = self.us_symbol_mapping.get(us_symbol)
+        if chinese_name:
+            return chinese_name
+        
+        # 如果配置文件中没有找到映射，返回去掉前缀'^'的原始字符
+        if us_symbol.startswith('^'):
+            return us_symbol[1:]
+        
+        # 其他情况直接返回原始字符
+        return us_symbol
+
+    def _initialize(self):
+        """初始化AKShare模块"""
         try:
             import akshare as ak
             self.ak = ak
@@ -237,32 +261,6 @@ class AKShareDataProvider:
         
         # 4. 其他：直接返回（港股、其他市场）
         return symbol
-
-    def _us_symbol_to_chinese(self, us_symbol: str) -> str:
-        """
-        将美股代码转换为AKShare全球指数API所需的中文名称
-
-        Args:
-            us_symbol: 美股代码（如 '^GSPC'）
-
-        Returns:
-            中文指数名称（如 '标普500'）或原代码
-
-        注意：
-        - 不进行大规模硬编码映射
-        - 通过AKShare提供的全球指数表实现智能映射
-        - 查询失败会抛出异常，符合透明失败原则
-        """
-        # 美股指数映射表（基于AKShare支持的指数）
-        us_to_chinese = {
-            '^GSPC': '标普500',
-            '^SPX': '标普500',
-            '^DJI': '道琼斯',
-            '^IXIC': '纳斯达克',
-            '^NDX': '纳斯达克100',
-            '^RUT': '罗素2000',
-        }
-        return us_to_chinese.get(us_symbol, us_symbol)
 
     def _fetch_by_market(self, symbol_id: str) -> pd.DataFrame:
         """
