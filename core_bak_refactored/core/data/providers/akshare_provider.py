@@ -235,34 +235,29 @@ class AKShareDataProvider:
         """
         logger.info(f"Fetching stock data for {symbol} from {start_date_str} to {end_date_str}")
         
-        # 重试次数
-        max_retries = 3
-        
         # 1. A股个股API（.SH/.SZ 结尾）
         if symbol.endswith('.SH') or symbol.endswith('.SZ'):
             # 处理股票代码格式（去掉市场后缀）
             ak_symbol = symbol[:-3]  # 移除 .SH 或 .SZ 后缀
             logger.debug(f"调用A股个股API: stock_zh_a_hist({ak_symbol})")
             
-            # 添加重试机制
-            for attempt in range(max_retries):
-                try:
-                    # 添加延迟以避免触发反爬虫机制
-                    time.sleep(1)
-                    return self.ak.stock_zh_a_hist(
-                        symbol=ak_symbol,
-                        period="daily",
-                        start_date=start_date_str,
-                        end_date=end_date_str,
-                        adjust="qfq",  # 前复权
-                        timeout=10  # 增加超时时间
-                    )
-                except Exception as e:
-                    logger.warning(f"Attempt {attempt + 1} failed for {symbol}: {e}")
-                    if attempt == max_retries - 1:
-                        # 所有重试都失败后，尝试使用备选数据源
-                        logger.info(f"All retries failed for {symbol}, trying backup source")
-                        return self._fetch_stock_from_backup_source(symbol, start_date_str, end_date_str)
+            # 直接尝试主数据源，出错则使用备选方案
+            try:
+                # 添加延迟以避免触发反爬虫机制
+                time.sleep(1)
+                return self.ak.stock_zh_a_hist(
+                    symbol=ak_symbol,
+                    period="daily",
+                    start_date=start_date_str,
+                    end_date=end_date_str,
+                    adjust="qfq",  # 前复权
+                    timeout=10  # 增加超时时间
+                )
+            except Exception as e:
+                logger.warning(f"Primary source failed for {symbol}: {e}")
+                # 直接使用备选数据源
+                logger.info(f"Trying backup source for {symbol}")
+                return self._fetch_stock_from_backup_source(symbol, start_date_str, end_date_str)
                         
         # 2. 港股个股API（.HK 结尾）
         if symbol.endswith('.HK'):
@@ -270,59 +265,33 @@ class AKShareDataProvider:
             ak_symbol = symbol[:-3]  # 移除 .HK 后缀
             logger.debug(f"调用港股个股API: stock_hk_hist({ak_symbol})")
             
-            # 添加重试机制
-            for attempt in range(max_retries):
-                try:
-                    # 添加延迟以避免触发反爬虫机制
-                    time.sleep(1)
-                    return self.ak.stock_hk_hist(
-                        symbol=ak_symbol,
-                        period="daily",
-                        start_date=start_date_str,
-                        end_date=end_date_str,
-                        adjust="qfq",  # 前复权
-                        timeout=10  # 增加超时时间
-                    )
-                except Exception as e:
-                    logger.warning(f"Attempt {attempt + 1} failed for {symbol}: {e}")
-                    if attempt == max_retries - 1:
-                        # 所有重试都失败后，尝试使用备选数据源
-                        logger.info(f"All retries failed for {symbol}, trying backup source")
-                        return self._fetch_stock_from_backup_source(symbol, start_date_str, end_date_str)
+            # 直接尝试主数据源，出错则使用备选方案
+            try:
+                # 添加延迟以避免触发反爬虫机制
+                time.sleep(1)
+                return self.ak.stock_hk_hist(
+                    symbol=ak_symbol,
+                    period="daily",
+                    start_date=start_date_str,
+                    end_date=end_date_str,
+                    adjust="qfq",  # 前复权
+                    timeout=10  # 增加超时时间
+                )
+            except Exception as e:
+                logger.warning(f"Primary source failed for {symbol}: {e}")
+                # 直接使用备选数据源
+                logger.info(f"Trying backup source for {symbol}")
+                return self._fetch_stock_from_backup_source(symbol, start_date_str, end_date_str)
                         
         # 3. 美股个股API（包含.但不以.HK/.SH/.SZ结尾）
         if '.' in symbol and not symbol.endswith(('.HK', '.SH', '.SZ')):
             logger.debug(f"调用美股个股API: stock_us_hist({symbol})")
             
-            # 添加重试机制
-            for attempt in range(max_retries):
-                try:
-                    # 添加延迟以避免触发反爬虫机制
-                    time.sleep(1)
-                    return self.ak.stock_us_hist(
-                        symbol=symbol,
-                        period="daily",
-                        start_date=start_date_str,
-                        end_date=end_date_str,
-                        adjust="qfq",  # 前复权
-                        timeout=10  # 增加超时时间
-                    )
-                except Exception as e:
-                    logger.warning(f"Attempt {attempt + 1} failed for {symbol}: {e}")
-                    if attempt == max_retries - 1:
-                        # 所有重试都失败后，尝试使用备选数据源
-                        logger.info(f"All retries failed for {symbol}, trying backup source")
-                        return self._fetch_stock_from_backup_source(symbol, start_date_str, end_date_str)
-                        
-        # 4. 默认使用A股个股API（不带后缀的代码）
-        logger.debug(f"默认调用A股个股API: stock_zh_a_hist({symbol})")
-        
-        # 添加重试机制
-        for attempt in range(max_retries):
+            # 直接尝试主数据源，出错则使用备选方案
             try:
                 # 添加延迟以避免触发反爬虫机制
                 time.sleep(1)
-                return self.ak.stock_zh_a_hist(
+                return self.ak.stock_us_hist(
                     symbol=symbol,
                     period="daily",
                     start_date=start_date_str,
@@ -331,11 +300,31 @@ class AKShareDataProvider:
                     timeout=10  # 增加超时时间
                 )
             except Exception as e:
-                logger.warning(f"Attempt {attempt + 1} failed for {symbol}: {e}")
-                if attempt == max_retries - 1:
-                    # 所有重试都失败后，尝试使用备选数据源
-                    logger.info(f"All retries failed for {symbol}, trying backup source")
-                    return self._fetch_stock_from_backup_source(symbol, start_date_str, end_date_str)
+                logger.warning(f"Primary source failed for {symbol}: {e}")
+                # 直接使用备选数据源
+                logger.info(f"Trying backup source for {symbol}")
+                return self._fetch_stock_from_backup_source(symbol, start_date_str, end_date_str)
+                        
+        # 4. 默认使用A股个股API（不带后缀的代码）
+        logger.debug(f"默认调用A股个股API: stock_zh_a_hist({symbol})")
+        
+        # 直接尝试主数据源，出错则使用备选方案
+        try:
+            # 添加延迟以避免触发反爬虫机制
+            time.sleep(1)
+            return self.ak.stock_zh_a_hist(
+                symbol=symbol,
+                period="daily",
+                start_date=start_date_str,
+                end_date=end_date_str,
+                adjust="qfq",  # 前复权
+                timeout=10  # 增加超时时间
+            )
+        except Exception as e:
+            logger.warning(f"Primary source failed for {symbol}: {e}")
+            # 直接使用备选数据源
+            logger.info(f"Trying backup source for {symbol}")
+            return self._fetch_stock_from_backup_source(symbol, start_date_str, end_date_str)
 
     def _map_index_to_akshare(self, symbol: str) -> str:
         """
