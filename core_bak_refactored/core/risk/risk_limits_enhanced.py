@@ -17,26 +17,96 @@
 """
 
 import numpy as np
+import yaml
 from typing import Dict, List, Optional, Any, Tuple
 import logging
 from enum import Enum
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 from ..share.market.market_enums import MarketCode
 
 logger = logging.getLogger('DeepSeekQuant.RiskLimitsEnhanced')
 
 
+def _load_risk_limits_config() -> Dict[str, Any]:
+    """从配置文件加载风险限额配置
+    
+    Returns:
+        Dict: 风险限额配置字典
+    
+    Raises:
+        FileNotFoundError: 配置文件不存在
+        ValueError: 配置文件格式错误或缺少必需字段
+    """
+    config_path = Path(__file__).parent.parent.parent / 'config' / 'dev' / 'risk_limits.yml'
+    
+    if not config_path.exists():
+        raise FileNotFoundError(
+            f"风险限额配置文件不存在: {config_path}\n"
+            f"请确保配置文件存在: core_bak_refactored/config/dev/risk_limits.yml"
+        )
+    
+    try:
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config = yaml.safe_load(f)
+        
+        # 验证必需字段
+        if 'threshold_tiers' not in config:
+            raise ValueError("配置文件缺少必需字段: threshold_tiers")
+        if 'priority_weights' not in config:
+            raise ValueError("配置文件缺少必需字段: priority_weights")
+        
+        return config
+    
+    except yaml.YAMLError as e:
+        raise ValueError(f"风险限额配置文件格式错误: {e}")
+
+
+def _load_market_limits_config() -> Dict[str, Any]:
+    """从配置文件加载市场特定限额配置
+    
+    Returns:
+        Dict: 市场特定限额配置字典
+    
+    Raises:
+        FileNotFoundError: 配置文件不存在
+        ValueError: 配置文件格式错误
+    """
+    config_path = Path(__file__).parent.parent.parent / 'config' / 'dev' / 'market_limits.yml'
+    
+    if not config_path.exists():
+        raise FileNotFoundError(
+            f"市场限额配置文件不存在: {config_path}\n"
+            f"请确保配置文件存在: core_bak_refactored/config/dev/market_limits.yml"
+        )
+    
+    try:
+        with open(config_path, 'r', encoding='utf-8') as f:
+            return yaml.safe_load(f)
+    
+    except yaml.YAMLError as e:
+        raise ValueError(f"市场限额配置文件格式错误: {e}")
+
+
+# 从配置文件加载配置
+_RISK_LIMITS_CONFIG = _load_risk_limits_config()
+_MARKET_LIMITS_CONFIG = _load_market_limits_config()
+
+
 # =============================================================================
-# P1-3-A: 智能阈值分层系统
+# P1-3-A: 智能阈值分层系统（从配置文件加载）
 # =============================================================================
 
 class ThresholdTier(Enum):
-    """阈值层级枚举（专家审核后的参数）"""
-    GREEN = 0.85     # 绿色区域：提前预警（从0.9调整）
-    YELLOW = 1.0     # 黄色区域：标准限额
-    ORANGE = 1.15    # 橙色区域：更敏感（从1.2调整）
-    RED = 1.3        # 红色区域：监管要求（从1.5调整）
+    """阈值层级枚举（从配置文件加载）
+    
+    配置文件: core_bak_refactored/config/dev/risk_limits.yml
+    """
+    GREEN = _RISK_LIMITS_CONFIG['threshold_tiers']['GREEN']
+    YELLOW = _RISK_LIMITS_CONFIG['threshold_tiers']['YELLOW']
+    ORANGE = _RISK_LIMITS_CONFIG['threshold_tiers']['ORANGE']
+    RED = _RISK_LIMITS_CONFIG['threshold_tiers']['RED']
 
 
 @dataclass
@@ -54,55 +124,18 @@ class ThresholdBreach:
 
 
 # =============================================================================
-# P1-3-D: 市场特定限额配置（专家审核后的参数）
+# P1-3-D: 市场特定限额配置（从配置文件加载）
 # =============================================================================
 
+# 从配置文件加载市场特定限额
+# 配置文件: core_bak_refactored/config/dev/market_limits.yml
 MARKET_SPECIFIC_LIMITS = {
-    MarketCode.CN: {
-        'description': 'A股市场特定限额（专家确认：第2轮咨询）',
-        # 🔒 监管明确要求（需法务审核）
-        'single_stock_max_weight': 0.10,      # 🔒 证监会《证券投资基金运作管理办法》第31条
-        'leverage_max': 1.0,                  # 🔒 《证券法》禁止普通账户杠杆
-        'margin_account_leverage_max': 2.0,   # 🔒 《融资融券业务管理办法》
-        
-        # ⚖️ 专家建议调整（基于风控经验）
-        'daily_turnover_limit': 0.15,         # ⚖️ 专家调整：0.20→0.15（保守估计）
-        'limit_down_exposure_max': 0.10,      # ⚖️ 专家调整：0.15→0.10（波动性考虑）
-        
-        # 🆕 专家新增建议
-        '创业板_stock_max_weight': 0.08,      # 🆕 专家建议：基于创业板波动率1.8倍
-        '科创板_stock_max_weight': 0.08,      # 🆕 专家建议：基于科创板波动率2.0倍
-        
-        # 📊 行业惯例（非强制但普遍遵守）
-        'sector_max_weight': 0.30,            # 📊 行业惯例，非强制但普遍遵守
-        'concentration_top10': 0.60,          # 📊 基金业协会自律规则
-        'st_stock_max_weight': 0.05,          # 📊 机构内部风控要求
-        
-        'regulatory_framework': 'CSRC',
-    },
-    MarketCode.US: {
-        'description': '美股市场特定限额（专家确认）',
-        'single_stock_max_weight': 0.15,
-        'sector_max_weight': 0.40,
-        'leverage_max': 4.0,
-        # PDT规则完整实现（专家补充）
-        'day_trading_min_equity': 25000,      # ✅ FINRA规则4210
-        'pattern_day_trader_limit': 4.0,      # ✅ Reg T保证金规则
-        'concentration_top10': 0.70,
-        'otc_stock_max_weight': 0.05,         # ⚠️ 调整：从0.08→0.05（专家建议更保守）
-        'penny_stock_max_weight': 0.03,       # ⚠️ 调整：从0.05→0.03（专家建议）
-        'regulatory_framework': 'SEC/FINRA',
-    },
-    MarketCode.HK: {
-        'description': '港股市场特定限额（专家确认）',
-        'single_stock_max_weight': 0.10,      # ⚠️ 调整：从0.12→0.10（符合SFC要求）
-        'sector_max_weight': 0.30,            # ⚠️ 调整：从0.35→0.30（专家建议）
-        'leverage_max': 2.0,                  # ⚠️ 调整：从2.5→2.0（专家建议更保守）
-        'concentration_top10': 0.60,          # ⚠️ 调整：从0.65→0.60（专家建议）
-        'mainland_stock_max_weight': 0.10,    # 沪深港通股票单只10%
-        'small_cap_max_weight': 0.05,         # ⚠️ 调整：从0.08→0.05（专家建议）
-        'regulatory_framework': 'SFC',
-    }
+    MarketCode.CN: _MARKET_LIMITS_CONFIG.get('CN', {}),
+    MarketCode.US: _MARKET_LIMITS_CONFIG.get('US', {}),
+    MarketCode.HK: _MARKET_LIMITS_CONFIG.get('HK', {}),
+    MarketCode.EU: _MARKET_LIMITS_CONFIG.get('EU', {}),
+    MarketCode.JP: _MARKET_LIMITS_CONFIG.get('JP', {}),
+    MarketCode.SG: _MARKET_LIMITS_CONFIG.get('SG', {}),
 }
 
 
@@ -515,23 +548,20 @@ class BreachPrioritizer:
             return breaches
     
     def _calculate_breach_priority(self, breach: Dict[str, Any]) -> float:
-        """计算违规优先级评分（专家修正：动态权重分配）"""
-        # 基础权重配置（专家确认）
-        base_weights = {
-            'severity': 0.30,           # 严重性
-            'breach_amount': 0.25,      # 违规幅度
-            'time_horizon': 0.20,       # 时间紧急性
-            'cascading_impact': 0.15,   # 级联影响
-            'regulatory_impact': 0.10   # 监管影响
-        }
+        """计算违规优先级评分（专家修正：动态权重分配）
         
-        # 根据违规类型调整权重（专家建议）
+        权重从配置文件加载: core_bak_refactored/config/dev/risk_limits.yml
+        """
+        # 基础权重配置（从配置文件加载）
+        base_weights = _RISK_LIMITS_CONFIG['priority_weights']['normal']
+        
+        # 根据违规类型调整权重（从配置文件加载）
         limit_type = breach.get('limit_type', '')
         weight_adjustments = {
-            'leverage': {'severity': 0.35, 'regulatory_impact': 0.15, 'time_horizon': 0.15},
-            'value_at_risk': {'severity': 0.35, 'time_horizon': 0.25, 'breach_amount': 0.20},
-            'liquidity': {'time_horizon': 0.30, 'breach_amount': 0.20, 'regulatory_impact': 0.15},
-            'concentration': {'breach_amount': 0.30, 'regulatory_impact': 0.15, 'severity': 0.25}
+            'leverage': _RISK_LIMITS_CONFIG['priority_weights'].get('high_volatility', base_weights),
+            'value_at_risk': _RISK_LIMITS_CONFIG['priority_weights'].get('high_volatility', base_weights),
+            'liquidity': _RISK_LIMITS_CONFIG['priority_weights'].get('high_volatility', base_weights),
+            'concentration': _RISK_LIMITS_CONFIG['priority_weights'].get('regulatory_scrutiny', base_weights)
         }
         
         # 应用权重调整

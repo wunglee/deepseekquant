@@ -34,10 +34,11 @@ import akshare as ak
 import pandas as pd
 
 from core_bak_refactored.core.data.providers.protocols import HistoricalDataProvider, PriceData
+from core_bak_refactored.core.data.providers.base_provider import BaseDataProvider
 
 logger = logging.getLogger(__name__)
 
-class AKShareDataProvider(HistoricalDataProvider):
+class AKShareDataProvider(BaseDataProvider, HistoricalDataProvider):
     """
     基于AKShare的数据提供者
     
@@ -59,6 +60,10 @@ class AKShareDataProvider(HistoricalDataProvider):
         self.available = False
         self._load_us_symbol_mapping()
         self._initialize()
+    
+    def get_test_symbol(self) -> str:
+        """获取测试符号"""
+        return '000300.SH'  # 沪深300指数
 
     def _load_us_symbol_mapping(self):
         """加载美股符号映射配置"""
@@ -281,24 +286,30 @@ class AKShareDataProvider(HistoricalDataProvider):
         ak_symbol = self._map_to_akshare(symbol_id)
         logger.info(f"Fetching data for {symbol_id} (mapped to {ak_symbol})")
         
-        # 1. A股指数API（.SH/.SZ 结尾）
-        if symbol_id.endswith('.SH') or symbol_id.endswith('.SZ'):
+        # 使用领域层工具推断市场
+        from core_bak_refactored.core.share.market import MarketUtils, MarketCode
+        market = MarketUtils.infer_market_from_symbol(symbol_id)
+        
+        # 根据市场选择 API
+        if market == MarketCode.CN:
+            # A股指数API
             logger.debug(f"调用A股指数API: stock_zh_index_daily({ak_symbol})")
             return self.ak.stock_zh_index_daily(symbol=ak_symbol)
         
-        # 2. 港股指数API（常见代码：HSI, HSCEI 或 .HK 结尾）
-        if symbol_id in ['HSI', 'HSCEI'] or symbol_id.endswith('.HK'):
+        elif market == MarketCode.HK:
+            # 港股指数API
             logger.debug(f"调用港股指数API: stock_hk_index_daily_em({ak_symbol})")
             return self.ak.stock_hk_index_daily_em(symbol=ak_symbol)
         
-        # 3. 美股/全球指数API（^开头）
-        if symbol_id.startswith('^'):
+        elif market == MarketCode.US:
+            # 美股/全球指数API
             logger.debug(f"调用全球指数API: index_global_hist_em({ak_symbol})")
             return self.ak.index_global_hist_em(symbol=ak_symbol)
         
-        # 4. 默认使用A股指数API
-        logger.debug(f"默认调用A股指数API: stock_zh_index_daily({ak_symbol})")
-        return self.ak.stock_zh_index_daily(symbol=ak_symbol)
+        else:
+            # 默认使用A股指数API
+            logger.debug(f"默认调用A股指数API: stock_zh_index_daily({ak_symbol})")
+            return self.ak.stock_zh_index_daily(symbol=ak_symbol)
     
     def _standardize_format(self, df: pd.DataFrame) -> pd.DataFrame:
         """

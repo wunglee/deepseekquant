@@ -41,68 +41,138 @@ class DataProviderFactory:
     - 类型验证和错误处理
     """
     
-    def __init__(self):
-        """初始化工厂，注册内置providers"""
-        self._providers: Dict[str, Type] = {}
-        self._register_builtin_providers()
-    
-    def _register_builtin_providers(self):
-        """注册内置数据提供者（统一处理异常）"""
-        # 定义内置providers列表：(name, module_path, class_name)
-        builtin_providers = [
-            ('yahoo', 'core_bak_refactored.core.data.providers.yahoo_finance', 'YahooFinanceDataProvider'),
-            ('tushare', 'core_bak_refactored.core.data.providers.tushare', 'TushareDataProvider'),
-            ('real', 'core_bak_refactored.core.data.providers.historical_data_provider', 'RealHistoricalDataProvider'),
-            ('akshare', 'core_bak_refactored.core.data.providers.akshare_provider', 'AKShareDataProvider'),
-            ('alpha_vantage', 'core_bak_refactored.core.data.providers.alpha_vantage', 'AlphaVantageProvider'),
-            ('polygon', 'core_bak_refactored.core.data.providers.polygon', 'fetch_polygon_data'),
-            ('iex_cloud', 'core_bak_refactored.core.data.providers.iex_cloud', 'fetch_iex_cloud_data'),
-            ('finnhub', 'core_bak_refactored.core.data.providers.finnhub', 'fetch_finnhub_data'),
-            ('twelve_data', 'core_bak_refactored.core.data.providers.twelve_data', 'fetch_twelve_data'),
-        ]
-        
-        for name, module_path, class_name in builtin_providers:
-            try:
-                # 动态导入模块
-                module = __import__(module_path, fromlist=[class_name])
-                provider_class = getattr(module, class_name)
-                self._providers[name] = provider_class
-                logger.debug(f"成功注册 {name} provider")
-            except Exception as e:
-                logger.warning(f"{name} provider 注册失败: {e}")
-        
-        # Mock数据提供者仅在测试中使用，不在生产工厂中注册
-        # 如需在测试中使用，请手动注册：
-        # factory.register('mock', MockHistoricalDataProvider)
-        
-        logger.info(f"已注册 {len(self._providers)} 个内置数据提供者: {list(self._providers.keys())}")
-    
-    def register(self, name: str, provider_class: Type):
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
         """
-        注册自定义数据提供者（依赖注入入口）
+        初始化工厂，从配置加载 providers
         
         Args:
-            name: provider名称（如'custom_mock', 'my_provider'）
-            provider_class: provider类（必须实现HistoricalDataProvider接口）
-        
-        Example:
-            >>> factory = DataProviderFactory()
-            >>> factory.register('custom', MyCustomProvider)
-            >>> provider = factory.create('custom')
+            config: 配置字典，包含 providers 列表。如果为 None，则从默认配置路径加载
         """
-        if name in self._providers:
-            logger.warning(f"覆盖已存在的provider: {name}")
-        
-        self._providers[name] = provider_class
-        logger.info(f"注册自定义provider: {name} -> {provider_class.__name__}")
+        self._instances: Dict[str, Any] = {}  # 存储单例实例
+        self._config = config or self._load_default_config()
     
-    def create(self, name: str, **kwargs) -> Any:
+    def _load_default_config(self) -> Dict[str, Any]:
         """
-        创建数据提供者实例
+        加载默认配置（从 config/dev/data.yml）
+        
+        Returns:
+            Dict: 配置字典
+        """
+        import yaml
+        import os
+        from pathlib import Path
+        
+        # 获取配置文件路径（修复：从项目根目录定位）
+        # core_bak_refactored/core/data/providers/factory.py
+        # -> core_bak_refactored/config/dev/data.yml
+        current_dir = Path(__file__).parent  # providers/
+        core_data_dir = current_dir.parent  # data/
+        core_dir = core_data_dir.parent  # core/
+        core_bak_refactored_dir = core_dir.parent  # core_bak_refactored/
+        config_dir = core_bak_refactored_dir / 'config'
+        
+        logger.debug(f"配置目录路径: {config_dir}")
+        
+        # 优先从环境变量读取环境配置
+        env = os.getenv('DEEPSEEK_ENV', 'dev')
+        env_config_file = config_dir / env / 'data.yml'
+        
+        logger.debug(f"尝试加载配置文件: {env_config_file}")
+        
+        # 如果环境配置不存在，尝试默认配置
+        if not env_config_file.exists():
+            logger.warning(f"环境配置文件不存在: {env_config_file}")
+            env_config_file = config_dir / 'data.yml'
+            logger.debug(f"尝试默认配置文件: {env_config_file}")
+        
+        if not env_config_file.exists():
+            logger.error(f"配置文件不存在: {env_config_file}，使用空配置")
+            logger.error(f"当前工作目录: {Path.cwd()}")
+            logger.error(f"factory.py位置: {Path(__file__)}")
+            return {'providers': []}
+        
+        try:
+            with open(env_config_file, 'r', encoding='utf-8') as f:
+                config = yaml.safe_load(f) or {}
+            logger.info(f"✅ 从配置文件加载: {env_config_file}")
+            logger.info(f"✅ 加载了 {len(config.get('providers', []))} 个providers")
+            return config
+        except Exception as e:
+            logger.error(f"加载配置文件失败: {e}")
+            return {'providers': []}
+    
+    def _get_provider_class(self, name: str) -> Type:
+        """
+        从配置文件动态加载 provider 类
         
         Args:
-            name: provider名称（'yahoo', 'tushare', 'akshare', 'real', 或自定义名称）
-            **kwargs: 传递给provider构造函数的参数
+            name: provider名称
+        
+        Returns:
+            Provider 类
+        
+        Raises:
+            ValueError: provider 不存在或加载失败
+        """
+        # 从配置列表中查找该 provider
+        providers_config = self._config.get('providers', [])
+        for provider_config in providers_config:
+            if provider_config.get('id') == name:
+                adapter_module = provider_config.get('adapter_module')
+                adapter_class = provider_config.get('adapter_class')
+                
+                if not adapter_module or not adapter_class:
+                    raise ValueError(f"Provider '{name}' 配置不完整：缺少 adapter_module 或 adapter_class")
+                
+                try:
+                    # 动态导入模块
+                    module = __import__(adapter_module, fromlist=[adapter_class])
+                    return getattr(module, adapter_class)
+                except Exception as e:
+                    raise ValueError(f"加载 provider '{name}' 失败: {e}")
+        
+        # 如果配置中没有找到
+        available = [p.get('id') for p in providers_config if p.get('id')]
+        raise ValueError(
+            f"未知的provider: '{name}'\n"
+            f"可用的providers: {available}\n"
+            f"提示: 请在配置文件中添加 provider 配置"
+        )
+    
+    def _get_provider_config(self, name: str) -> Dict[str, Any]:
+        """
+        从配置文件获取 provider 的初始化参数
+        
+        Args:
+            name: provider名称
+        
+        Returns:
+            Dict: provider的初始化参数
+        """
+        # 从配置列表中查找该 provider 的配置
+        providers_config = self._config.get('providers', [])
+        for provider_config in providers_config:
+            if provider_config.get('id') == name:
+                # 提取初始化参数（排除元数据字段）
+                excluded_fields = {
+                    'id', 'name', 'type', 'description', 'status',
+                    'adapter_module', 'adapter_class', 'markets',
+                    'requires_auth', 'auth_type', 'rate_limit',
+                    'features', 'installation', 'registration', 'last_test'
+                }
+                
+                kwargs = {k: v for k, v in provider_config.items() if k not in excluded_fields}
+                return kwargs
+        
+        # 如果配置中没有找到，返回空字典（使用默认参数）
+        return {}
+    
+    def _create(self, name: str) -> Any:
+        """
+        创建数据提供者实例（私有方法，每次都创建新实例）
+        
+        Args:
+            name: provider名称
         
         Returns:
             HistoricalDataProvider实例
@@ -110,20 +180,15 @@ class DataProviderFactory:
         Raises:
             ValueError: provider不存在
         
-        Example:
-            >>> factory = DataProviderFactory()
-            >>> provider = factory.create('akshare')
-            >>> data = provider.get_index_prices('000300.SH', '2020-01-01', '2020-12-31')
+        Note:
+            这是私有方法，外部应使用 get() 方法获取单例
+            创建参数从配置文件中自动读取
         """
-        if name not in self._providers:
-            available = list(self._providers.keys())
-            raise ValueError(
-                f"未知的provider: '{name}'\n"
-                f"可用的providers: {available}\n"
-                f"提示: 使用 factory.register('{name}', YourProviderClass) 注册自定义provider"
-            )
+        # 从配置动态加载 provider 类
+        provider_class = self._get_provider_class(name)
         
-        provider_class = self._providers[name]
+        # 从配置文件获取该 provider 的初始化参数
+        kwargs = self._get_provider_config(name)
         
         try:
             instance = provider_class(**kwargs)
@@ -133,42 +198,71 @@ class DataProviderFactory:
             logger.error(f"创建provider失败: {name} - {e}")
             raise RuntimeError(f"Failed to create provider '{name}': {e}") from e
     
+
+    def get(self, name: str) -> Any:
+        """
+        获取数据提供者单例实例
+        
+        如果实例已存在则返回现有实例，否则调用 _create() 创建新实例并缓存
+        
+        Args:
+            name: provider名称
+        
+        Returns:
+            HistoricalDataProvider单例实例
+        
+        Raises:
+            ValueError: provider不存在
+        
+        Example:
+            >>> factory = DataProviderFactory()
+            >>> provider1 = factory.get('real')
+            >>> provider2 = factory.get('real')
+            >>> assert provider1 is provider2  # 同一个实例
+        
+        Note:
+            - 推荐在应用程序中使用此方法获取provider实例
+            - 单例由 get() 方法内部调用 _create() 确保只创建一次
+            - 创建参数从配置文件中自动读取
+        """
+        # 如果单例已存在，直接返回
+        if name in self._instances:
+            logger.debug(f"返回已存在的单例: {name}")
+            return self._instances[name]
+        
+        # 调用 _create() 创建新实例
+        instance = self._create(name)
+        
+        # 缓存单例实例
+        self._instances[name] = instance
+        logger.debug(f"缓存单例: {name}")
+        
+        return instance
+    
     def list_providers(self) -> list:
         """
-        列出所有已注册的provider名称
+        列出所有已配置的provider名称
         
         Returns:
             provider名称列表
         """
-        return list(self._providers.keys())
+        providers = [p.get('id') for p in self._config.get('providers', []) if p.get('id')]
+        return providers
     
     def is_registered(self, name: str) -> bool:
         """
-        检查provider是否已注册
+        检查provider是否已配置
         
         Args:
             name: provider名称
         
         Returns:
-            是否已注册
+            是否已配置
         """
-        return name in self._providers
+        providers_config = self._config.get('providers', [])
+        return any(p.get('id') == name for p in providers_config)
     
-    def unregister(self, name: str):
-        """
-        移除已注册的provider
-        
-        Args:
-            name: provider名称
-        
-        Note:
-            内置provider也可以被移除（不推荐）
-        """
-        if name in self._providers:
-            del self._providers[name]
-            logger.info(f"移除provider: {name}")
-        else:
-            logger.warning(f"尝试移除不存在的provider: {name}")
+
 
 
 # 全局单例工厂（可选）
@@ -184,7 +278,7 @@ def get_global_factory() -> DataProviderFactory:
     
     Example:
         >>> factory = get_global_factory()
-        >>> provider = factory.create('yahoo')
+        >>> provider = factory.get('yahoo')
     """
     global _global_factory
     if _global_factory is None:

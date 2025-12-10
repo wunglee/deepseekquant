@@ -1,4 +1,4 @@
-"""
+""" 
 配置管理器测试
 """
 
@@ -6,9 +6,12 @@ import unittest
 import tempfile
 import json
 import os
+import yaml
+from pathlib import Path
 from core_bak_refactored.core.share.config_manager import (
     ConfigManager, MonitoringConfig, AlertingConfig, DataConfig, SystemConfig
 )
+from core_bak_refactored.core.share.market.market_enums import MarketCode
 
 
 class TestConfigManager(unittest.TestCase):

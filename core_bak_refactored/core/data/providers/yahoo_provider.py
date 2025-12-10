@@ -25,7 +25,8 @@ import logging
 from dataclasses import dataclass, field
 
 # 导入新的数据结构
-from core_bak_refactored.core.data.providers.protocols import PriceData, OHLCVRecord
+from core_bak_refactored.core.data.providers.protocols import PriceData, OHLCVRecord, HistoricalDataProvider
+from core_bak_refactored.core.data.providers.base_provider import BaseDataProvider
 
 logger = logging.getLogger('DeepSeekQuant.YahooFinanceProvider')
 
@@ -46,7 +47,7 @@ class DataQualityReport:
         self.overall_score = (self.completeness_score + self.consistency_score + self.accuracy_score) / 3
 
 
-class YahooFinanceDataProvider:
+class YahooFinanceDataProvider(BaseDataProvider,HistoricalDataProvider):
     """
     雅虎财经数据提供者（实现HistoricalDataProvider接口）
     
@@ -96,6 +97,10 @@ class YahooFinanceDataProvider:
             logger.error("yfinance not installed. Please run: pip install yfinance")
             self.yf = None
             raise RuntimeError("yfinance library not available. Please install: pip install yfinance")
+    
+    def get_test_symbol(self) -> str:
+        """获取测试符号"""
+        return '^GSPC'  # 标普500指数
     
     def get_index_prices(
         self,
@@ -297,7 +302,7 @@ class YahooFinanceDataProvider:
         
         Args:
             data: yfinance返回的原始DataFrame
-        
+            
         Returns:
             标准化DataFrame with columns: ['date', 'open', 'high', 'low', 'close', 'volume']
             
@@ -309,6 +314,12 @@ class YahooFinanceDataProvider:
         - close: float，收盘价
         - volume: float，成交量
         """
+        # 处理 MultiIndex 列结构
+        if isinstance(data.columns, pd.MultiIndex):
+            # 将 MultiIndex 列降级为简单列名
+            data = data.copy()
+            data.columns = [col[0] for col in data.columns]
+        
         # yfinance返回的列名可能是大写或小写
         standardized = pd.DataFrame()
         

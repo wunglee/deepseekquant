@@ -3,7 +3,7 @@ from unittest.mock import patch
 from datetime import datetime
 import pandas as pd
 import pytest
-from core_bak_refactored.core.data.providers.yahoo_finance import YahooFinanceDataProvider
+from core_bak_refactored.core.data.providers.yahoo_provider import YahooFinanceDataProvider
 
 
 class YahooFinanceProviderTest(unittest.TestCase):

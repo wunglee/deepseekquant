@@ -64,6 +64,7 @@ from core_bak_refactored.app.quality_monitoring.api.health import HealthChecker
 from core_bak_refactored.app.quality_monitoring.api.system_metrics import MetricsCollector
 from core_bak_refactored.app.quality_monitoring.api.diagnostics import DiagnosticsRunner
 from core_bak_refactored.core.share.config_manager import ConfigManager
+from core_bak_refactored.core.share.market.market_enums import MarketCode, DataSource
 from core_bak_refactored.app.quality_monitoring.api.exporter import DataExporter
 from core_bak_refactored.app.quality_monitoring.api.system_status import SystemStatusManager
 from core_bak_refactored.app.quality_monitoring.api.chart_data import ChartDataAssembler
@@ -120,16 +121,47 @@ class DataQualityAPIService:
         self.data_exporter = DataExporter(quality_monitor)
         self.system_status_manager = SystemStatusManager(quality_monitor)
         
-        # 初始化图表数据组装器（依赖领域层服务）
-        from core_bak_refactored.core.signal.indicator_service import TechnicalIndicators
-        indicator_service = TechnicalIndicators(market='CN', timeframe='daily')
-        self.chart_data_assembler = ChartDataAssembler(
-            data_provider=quality_monitor.data_provider,  # 🔧 修正：使用 data_provider 而不是 data_fetcher
-            indicator_service=indicator_service
-        )
+        # 初始化全局 factory（用于运行时动态获取 provider）
+        from core_bak_refactored.core.data.providers.factory import get_global_factory
+        from core_bak_refactored.core.data.providers.provider_selector import ProviderSelector
+        
+        self.provider_factory = get_global_factory()
+        self.provider_selector = ProviderSelector(self.config_manager)  # 领域层服务
         
         self._setup_routes()
         self._setup_socketio_handlers()
+
+    def _create_chart_assembler(self, index_id: str, timeframe: str = 'daily') -> ChartDataAssembler:
+        """动态创建图表数据组装器
+        
+        Args:
+            index_id: 股票/指数代码
+            timeframe: 时间周期
+        
+        Returns:
+            ChartDataAssembler: 图表数据组装器实例
+        """
+        from core_bak_refactored.core.signal.indicator_service import TechnicalIndicators
+        from core_bak_refactored.core.share.market import MarketUtils
+        
+        # 1. 使用领域层服务选择数据提供者
+        data_provider = self.provider_selector.select_provider_for_symbol(
+            symbol=index_id,
+            provider_factory=self.provider_factory
+        )
+        
+        # 2. 推断市场（用于创建指标服务）
+        market_code = MarketUtils.infer_market_from_symbol(index_id)
+        market = market_code.value
+        
+        # 3. 创建指标服务（根据市场）
+        indicator_service = TechnicalIndicators(market=market, timeframe=timeframe)
+        
+        # 4. 创建图表数据组装器
+        return ChartDataAssembler(
+            data_provider=data_provider,
+            indicator_service=indicator_service
+        )
 
     def _setup_routes(self):
         """设置API路由 - 完整生产实现"""
@@ -395,8 +427,9 @@ class DataQualityAPIService:
                         'error_code': 'INVALID_COUNT'
                     }), 400
                 
-                # 调用组装器
-                chart_data = self.chart_data_assembler.assemble_chart_data(
+                # 调用组装器（动态创建）
+                chart_assembler = self._create_chart_assembler(index_id, timeframe=period)
+                chart_data = chart_assembler.assemble_chart_data(
                     index_id=index_id,
                     period=period,
                     count=count,
@@ -778,22 +811,333 @@ class DataQualityAPIService:
                 }), 500
 
         # ============================================================
-        # 数据提供者能力暴露（补充接口）
+        # 新API：市场数据源配置（彻底改写，不向后兼容）
+        # ============================================================
+        
+        @self.app.route('/api/v1/markets/config', methods=['GET'])
+        def get_markets_config():
+            """获取所有市场配置信息（从配置文件读取）"""
+            try:
+                # 从配置文件读取真实配置
+                data_config = self.config_manager.get_data_config()
+                
+                # 市场列表（固定）
+                markets = [
+                    { 'code': 'CN', 'name': '中国 A股', 'icon': '🇨🇳' },
+                    { 'code': 'HK', 'name': '香港', 'icon': '🇭🇰' },
+                    { 'code': 'US', 'name': '美国', 'icon': '🇺🇸' },
+                    { 'code': 'EU', 'name': '欧洲', 'icon': '🇪🇺' },
+                    { 'code': 'JP', 'name': '日本', 'icon': '🇯🇵' },
+                    { 'code': 'SG', 'name': '新加坡', 'icon': '🇸🇬' }
+                ]
+                
+                # 从 data.yml 读取 providers 配置
+                providers_raw = data_config.providers or []
+                
+                # 转换为前端需要的格式（过滤掉未实现的适配器）
+                providers = []
+                for p in providers_raw:
+                    # 过滤掉未实现的适配器（adapter_module 和 adapter_class 为 null 的）
+                    adapter_module = p.get('adapter_module')
+                    adapter_class = p.get('adapter_class')
+                    if not adapter_module or not adapter_class or adapter_module == 'null' or adapter_class == 'null':
+                        continue  # 跳过未实现的适配器
+                    
+                    # 获取配置文件中的状态（已移除聚合数据源）
+                    # TODO: 实现新的测试状态获取机制
+                    provider_id = p.get('id')
+                    test_status = p.get('status', 'untested')  # 使用配置文件中的状态
+                    is_available = test_status == 'passed'
+                    
+                    provider_data = {
+                        'id': p.get('id'),
+                        'name': p.get('name'),
+                        'type': p.get('type', '未知'),
+                        'status': test_status,  # 使用实时状态
+                        'available': is_available,  # 添加 bool 字段供前端使用
+                        'markets': p.get('markets', []),
+                        'needsConfig': p.get('requires_auth', False),
+                        'params': []
+                    }
+                    
+                    # 如果需要配置，添加参数定义
+                    if p.get('requires_auth'):
+                        auth_type = p.get('auth_type', 'api_key')
+                        if auth_type == 'token':
+                            provider_data['params'] = [
+                                {
+                                    'name': 'token',
+                                    'label': f"{p.get('name')} Token",
+                                    'type': 'password',
+                                    'required': True,
+                                    'placeholder': f"在 {p.get('registration', '')} 注册获取"
+                                }
+                            ]
+                        else:  # api_key
+                            provider_data['params'] = [
+                                {
+                                    'name': 'api_key',
+                                    'label': 'API Key',
+                                    'type': 'password',
+                                    'required': True,
+                                    'placeholder': f"在 {p.get('registration', '')} 注册获取"
+                                }
+                            ]
+                    
+                    providers.append(provider_data)
+                
+                # 市场数据源配置
+                market_sources = data_config.market_sources or {}
+                
+                # 从真实凭证文件读取凭证状态
+                import os
+                import yaml
+                        # 获取 core_bak_refactored 目录（api_service.py 在 core_bak_refactored/app/quality_monitoring/）
+                current_file_dir = os.path.dirname(os.path.abspath(__file__))
+                core_bak_dir = os.path.dirname(os.path.dirname(current_file_dir))
+                config_dir = os.path.join(core_bak_dir, 'config')
+                
+                env = os.getenv('DEEPSEEK_ENV', 'dev')
+                env_dir = os.path.join(config_dir, env)
+                credentials_yml_path = os.path.join(env_dir if os.path.exists(env_dir) else config_dir, 'credentials.yml')
+                
+                # 读取凭证文件
+                credentials_data = {}
+                if os.path.exists(credentials_yml_path):
+                    try:
+                        with open(credentials_yml_path, 'r', encoding='utf-8') as f:
+                            credentials_data = yaml.safe_load(f) or {}
+                    except Exception as e:
+                        logger.warning(f"读取凭证文件失败: {e}")
+                
+                # 生成凭证状态
+                credentials = {}
+                for p in providers_raw:
+                    provider_id = p.get('id')
+                    # 免费数据源标记为已配置
+                    if not p.get('requires_auth'):
+                        credentials[provider_id] = {'configured': True}
+                    else:
+                        # 检查凭证文件中是否存在
+                        credentials[provider_id] = {
+                            'configured': provider_id in credentials_data
+                        }
+                
+                return jsonify({
+                    'status': 'success',
+                    'data': {
+                        'markets': markets,
+                        'providers': providers,
+                        'market_sources': market_sources,
+                        'credentials': credentials
+                    },
+                    'timestamp': datetime.now().isoformat()
+                })
+            except Exception as e:
+                logger.error(f"获取市场配置失败: {e}")
+                return jsonify({
+                    'status': 'error',
+                    'message': str(e),
+                    'error_code': 'MARKETS_CONFIG_FETCH_FAILED'
+                }), 500
+        
+        @self.app.route('/api/v1/markets/config', methods=['PUT'])
+        def update_markets_config():
+            """更新市场数据源配置（真实保存）"""
+            try:
+                data = request.get_json()
+                if not data or 'market_sources' not in data:
+                    return jsonify({
+                        'status': 'error',
+                        'message': '缺少 market_sources 字段',
+                        'error_code': 'INVALID_REQUEST_DATA'
+                    }), 400
+                
+                market_sources = data['market_sources']
+                
+                # 使用 ConfigManager 的验证和保存方法
+                try:
+                    self.config_manager.save_market_sources(market_sources)
+                    
+                    return jsonify({
+                        'status': 'success',
+                        'message': '市场配置已保存',
+                        'data': {
+                            'updated_markets': list(market_sources.keys()),
+                            'config_file': self.config_manager.get_config_path('data')
+                        },
+                        'timestamp': datetime.now().isoformat()
+                    })
+                except ValueError as ve:
+                    # 验证失败
+                    return jsonify({
+                        'status': 'error',
+                        'message': str(ve),
+                        'error_code': 'MARKET_VALIDATION_FAILED'
+                    }), 400
+            except Exception as e:
+                logger.error(f"更新市场配置失败: {e}")
+                return jsonify({
+                    'status': 'error',
+                    'message': str(e),
+                    'error_code': 'MARKETS_CONFIG_UPDATE_FAILED'
+                }), 500
+        
+        @self.app.route('/api/v1/providers/<provider_id>/credentials', methods=['POST'])
+        def save_provider_credentials(provider_id):
+            """保存数据源凭证（调用领域层 Provider 的保存方法）"""
+            try:
+                data = request.get_json()
+                if not data:
+                    return jsonify({
+                        'status': 'error',
+                        'message': '无效的请求数据',
+                        'error_code': 'INVALID_REQUEST_DATA'
+                    }), 400
+                
+                # 使用环境变量或默认 dev
+                import os
+                env = os.getenv('DEEPSEEK_ENV', 'dev')
+                
+                # 使用 BaseDataProvider 的通用方法保存凭证
+                from core_bak_refactored.core.data.providers.base_provider import BaseDataProvider
+                
+                success = BaseDataProvider.save_credentials(provider_id, data, env=env)
+                
+                if success:
+                    # 重新加载配置
+                    self.config_manager._load_config()
+                    
+                    return jsonify({
+                        'status': 'success',
+                        'message': f'{provider_id} 凭证已保存，请重新测试连接',
+                        'data': {
+                            'provider_id': provider_id,
+                            'configured': True,
+                            'test_status': ProviderTestStatus.UNTESTED.value
+                        },
+                        'timestamp': datetime.now().isoformat()
+                    })
+                else:
+                    return jsonify({
+                        'status': 'error',
+                        'message': '保存凭证失败',
+                        'error_code': 'CREDENTIALS_SAVE_FAILED'
+                    }), 500
+                    
+            except Exception as e:
+                logger.error(f"保存凭证失败: {e}")
+                return jsonify({
+                    'status': 'error',
+                    'message': str(e),
+                    'error_code': 'CREDENTIALS_SAVE_FAILED'
+                }), 500
+        
+        @self.app.route('/api/v1/providers/<provider_id>/credentials', methods=['DELETE'])
+        def delete_provider_credentials(provider_id):
+            """删除数据源凭证（调用领域层 Provider 的删除方法）"""
+            try:
+                # 使用环境变量或默认 dev
+                import os
+                env = os.getenv('DEEPSEEK_ENV', 'dev')
+                
+                # 使用 BaseDataProvider 的通用方法删除凭证
+                from core_bak_refactored.core.data.providers.base_provider import BaseDataProvider
+                
+                success = BaseDataProvider.delete_credentials(provider_id, env=env)
+                
+                if success:
+                    return jsonify({
+                        'status': 'success',
+                        'message': f'{provider_id} 凭证已删除',
+                        'timestamp': datetime.now().isoformat()
+                    })
+                else:
+                    return jsonify({
+                        'status': 'error',
+                        'message': '删除凭证失败',
+                        'error_code': 'CREDENTIALS_DELETE_FAILED'
+                    }), 500
+                    
+            except Exception as e:
+                logger.error(f"删除凭证失败: {e}")
+                return jsonify({
+                    'status': 'error',
+                    'message': str(e),
+                    'error_code': 'CREDENTIALS_DELETE_FAILED'
+                }), 500
+        
+        @self.app.route('/api/v1/providers/<provider_id>/test', methods=['POST'])
+        def test_provider_connection(provider_id):
+            """测试数据源连接（调用领域层 Provider 的测试方法）"""
+            try:
+                # 使用环境变量或默认 dev
+                import os
+                env = os.getenv('DEEPSEEK_ENV', 'dev')
+                
+                # 获取请求中的测试参数（如API Key）
+                test_params = request.get_json() or {}
+                
+                # 使用 factory 获取 provider 类并调用 test_provider 方法
+                from core_bak_refactored.core.data.providers.factory import get_global_factory
+                
+                factory = get_global_factory()
+                
+                try:
+                    # 创建 provider 实例
+                    provider = factory.get(provider_id)
+                    
+                    # 调用 provider 类的 test_provider 方法，传递测试参数
+                    result = provider.__class__.test_provider(provider_id, env=env, **test_params)
+                except Exception as e:
+                    result = {
+                        'status': 'error',
+                        'test_result': 'failed',
+                        'available': False,
+                        'message': str(e),
+                        'timestamp': datetime.now().isoformat()
+                    }
+                
+                # 根据结果返回 HTTP 状态码
+                if result['status'] == 'error':
+                    return jsonify(result), 500
+                else:
+                    return jsonify(result)
+                    
+            except Exception as e:
+                logger.error(f"测试连接失败: {e}")
+                return jsonify({
+                    'status': 'error',
+                    'message': str(e),
+                    'test_result': 'failed',
+                    'error_code': 'TEST_CONNECTION_FAILED'
+                }), 500
+        
+        # ============================================================
+        # 旧API：数据提供者能力暴露（保留兼容）
         # ============================================================
         
         @self.app.route('/api/v1/providers', methods=['GET'])
         def get_providers():
-            """获取所有数据源配置"""
+            """获取所有数据源配置（只返回已实现的数据源）"""
             try:
                 config = self.config_manager.get('data', {})
-                providers = config.get('providers', [])
+                all_providers = config.get('providers', [])
                 primary_source = config.get('primary_source', 'mock')
+                
+                # 过滤掉未实现的适配器（adapter_module 和 adapter_class 为 null 的）
+                implemented_providers = [
+                    p for p in all_providers
+                    if p.get('adapter_module') and p.get('adapter_class') 
+                    and p.get('adapter_module') != 'null' and p.get('adapter_class') != 'null'
+                ]
                 
                 return jsonify({
                     'status': 'success',
-                    'providers': providers,
+                    'providers': implemented_providers,
                     'primary_source': primary_source,
-                    'total': len(providers),
+                    'total': len(implemented_providers),
+                    'total_configured': len(all_providers),  # 配置文件中的总数
                     'timestamp': datetime.now().isoformat()
                 })
             except Exception as e:
@@ -975,10 +1319,9 @@ class DataQualityAPIService:
         
         @self.app.route('/api/v1/providers/<provider_id>/test', methods=['POST'])
         def test_provider(provider_id):
-            """测试数据源连接（真实测试）"""
+            """测试数据源连接（使用临时凭证）"""
             try:
                 import time
-                from core_bak_refactored.core.data.providers.factory import get_global_factory
                 
                 config = self.config_manager.get('data', {})
                 providers = config.get('providers', [])
@@ -992,62 +1335,133 @@ class DataQualityAPIService:
                         'error_code': 'PROVIDER_NOT_FOUND'
                     }), 404
                 
-                # 实际测试数据源连接
-                # 注意：使用 id 字段而非 type 字段，因为 type 现在是分类标签（如“免费开源”）
-                provider_type = provider.get('id')  # 使用 id 字段（akshare, yahoo, tushare）
-                factory = get_global_factory()
+                # 获取前端传入的临时凭证（如果有）
+                credentials = request.get_json() or {}
                 
-                # 导入 datetime 模块（在函数开头，避免作用域问题）
-                from datetime import datetime, timedelta
+                # 动态创建适配器实例（使用临时凭证）
+                adapter_module = provider.get('adapter_module')
+                adapter_class = provider.get('adapter_class')
+                requires_auth = provider.get('requires_auth', False)
+                auth_type = provider.get('auth_type', 'api_key')
                 
-                start_time = time.time()
+                if not adapter_module or not adapter_class:
+                    return jsonify({
+                        'status': 'error',
+                        'message': f'{provider_id} 适配器未实现',
+                        'error_code': 'ADAPTER_NOT_IMPLEMENTED'
+                    }), 400
+                
                 try:
-                    # 尝试创建数据提供者实例
-                    data_provider = factory.create(provider_type)
+                    # 动态导入类
+                    module = __import__(adapter_module, fromlist=[adapter_class])
+                    provider_class = getattr(module, adapter_class)
                     
-                    # 尝试获取少量测试数据（最近3天的沪深300数据）
-                    end_date = datetime.now()
-                    start_date = end_date - timedelta(days=3)
+                    # 准备初始化参数（使用临时凭证）
+                    init_kwargs = {}
+                    if requires_auth and credentials:
+                        if auth_type == 'token':
+                            init_kwargs['token'] = credentials.get('token')
+                        elif auth_type == 'api_key':
+                            init_kwargs['api_key'] = credentials.get('api_key')
                     
-                    test_data = data_provider.get_index_prices(
-                        '000300.SH',
-                        start_date.strftime('%Y-%m-%d'),
-                        end_date.strftime('%Y-%m-%d')
-                    )
+                    # 创建临时实例
+                    adapter = provider_class(**init_kwargs)
+                    
+                    # 移除了对 adapter.available 的检查
+                    # 允许测试时即使没有有效凭证也能继续执行
+                    # 直到真正调用API时才会失败
+                    
+                    # 使用适配器自定义的测试符号
+                    if hasattr(adapter, 'get_test_symbol'):
+                        test_symbol = adapter.get_test_symbol()
+                    else:
+                        test_symbol = '^GSPC'
+                    
+                    from datetime import datetime, timedelta
+                    end_date = datetime.now().strftime('%Y-%m-%d')
+                    start_date = (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')
+                    
+                    start_time = time.time()
+                    
+                    # 执行测试查询（这里会真正测试API Key的有效性）
+                    test_data = adapter.get_index_prices(test_symbol, start_date, end_date)
                     
                     latency_ms = int((time.time() - start_time) * 1000)
                     
-                    # 验证数据有效性
-                    if test_data is None or len(test_data) == 0:
-                        raise ValueError("数据源返回空数据")
+                    # 处理PriceData对象
+                    if hasattr(test_data, 'to_dataframe'):
+                        test_data_df = test_data.to_dataframe()
+                        is_empty = test_data_df.empty
+                        data_count = len(test_data_df)
+                    else:
+                        is_empty = test_data.empty if test_data is not None else True
+                        data_count = len(test_data) if test_data is not None else 0
                     
-                    test_result = {
-                        'connected': True,
-                        'latency_ms': latency_ms,
-                        'message': f'连接成功，获取到 {len(test_data)} 条数据',
-                        'data_points': len(test_data),
-                        'tested_at': datetime.now().isoformat()
-                    }
+                    if test_data is None or is_empty:
+                        # 测试失败：连接成功但返回空数据
+                        is_available = False
+                        message = f'{provider_id} 连接成功，但返回空数据'
+                        logger.warning(f"{provider_id} 测试警告: {message}")
+                        
+                        result_data = {
+                            'status': 'error',
+                            'test_result': 'failed',
+                            'available': is_available,
+                            'message': message,
+                            'details': {
+                                'test_symbol': test_symbol,
+                                'date_range': f'{start_date} to {end_date}',
+                                'latency_ms': latency_ms
+                            }
+                        }
+                    else:
+                        # 测试成功
+                        is_available = True
+                        message = f'{provider_id} 连接测试通过'
+                        logger.info(f"{provider_id} 测试成功: {data_count} 条数据, {latency_ms}ms")
+                        
+                        result_data = {
+                            'status': 'success',
+                            'test_result': 'passed',
+                            'available': is_available,
+                            'message': message,
+                            'details': {
+                                'test_symbol': test_symbol,
+                                'data_count': data_count,
+                                'date_range': f'{start_date} to {end_date}',
+                                'latency_ms': latency_ms
+                            },
+                            'timestamp': datetime.now().isoformat()
+                        }
+                        
+                        # 测试成功后，保存凭证到文件
+                        if requires_auth and credentials:
+                            from core_bak_refactored.core.data.providers.base_provider import BaseDataProvider
+                            import os
+                            env = os.getenv('DEEPSEEKQUANT_ENV', 'dev')
+                            BaseDataProvider.save_credentials(provider_id, credentials, env=env)
+                            logger.info(f"{provider_id} 凭证已保存")
+                        
+                        # 注意：不再保存测试状态到配置文件
+                        # 状态由前端在内存中维护，下次启动时重新测试
                     
-                    logger.info(f"数据源 {provider_id} 测试成功: {latency_ms}ms, {len(test_data)} 条数据")
+                    return jsonify(result_data)
                     
                 except Exception as test_error:
-                    latency_ms = int((time.time() - start_time) * 1000)
-                    test_result = {
-                        'connected': False,
-                        'latency_ms': latency_ms,
-                        'message': f'连接失败: {str(test_error)}',
-                        'error': str(test_error),
-                        'tested_at': datetime.now().isoformat()
-                    }
-                    logger.warning(f"数据源 {provider_id} 测试失败: {test_error}")
-                
-                return jsonify({
-                    'status': 'success' if test_result['connected'] else 'error',
-                    'provider': provider['name'],
-                    'test_result': test_result,
-                    'timestamp': datetime.now().isoformat()
-                })
+                    # 测试失败
+                    logger.error(f"{provider_id} 测试失败: {test_error}")
+                    
+                    # 注意：不再保存失败状态到配置文件
+                    # 状态由前端在内存中维护
+                    
+                    return jsonify({
+                        'status': 'error',
+                        'test_result': 'failed',
+                        'available': False,
+                        'message': f'{provider_id} 连接测试失败: {str(test_error)}',
+                        'error_code': 'CONNECTION_TEST_FAILED'
+                    })
+                    
             except Exception as e:
                 logger.error(f"测试数据源连接失败: {e}")
                 return jsonify({
@@ -1430,67 +1844,6 @@ class DataQualityAPIService:
             except Exception as e:
                 logger.error(f"获取交叉验证日志失败: {e}")
                 return jsonify({'status': 'error', 'message': str(e), 'error_code': 'CROSS_VALIDATION_LOG_FETCH_FAILED'}), 500
-
-        # 新增：返回数据源支持的市场与默认指数
-        @self.app.route('/api/v1/markets/config')
-        def get_markets_config():
-            try:
-                data_cfg = self.config_manager.get_data_config()
-                provider_id = getattr(data_cfg, 'primary_source', 'akshare')
-                # 读取配置文件以获取支持市场
-                config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'config', 'dev', 'data.yml')
-                if not os.path.exists(config_path):
-                    # 兼容路径（core_bak_refactored/config/dev/data.yml）
-                    config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'core_bak_refactored', 'config', 'dev', 'data.yml')
-                markets = []
-                try:
-                    with open(config_path, 'r', encoding='utf-8') as f:
-                        cfg = yaml.safe_load(f)
-                    provider_cfg = next((p for p in cfg.get('providers', []) if p.get('id') == provider_id), {})
-                    supported = provider_cfg.get('markets', [])
-                except Exception:
-                    supported = ['A股']
-                # 默认指数与代表股票（界面展示用途）
-                cn_indices = [
-                    {'id': '000300.SH', 'name': '沪深300', 'type': 'index'},
-                    {'id': '000001.SH', 'name': '上证指数', 'type': 'index'},
-                    {'id': '399001.SZ', 'name': '深证成指', 'type': 'index'},
-                    {'id': '399006.SZ', 'name': '创业板指', 'type': 'index'},
-                    {'id': '601318.SH', 'name': '中国平安', 'type': 'stock'},
-                    {'id': '600519.SH', 'name': '贵州茅台', 'type': 'stock'},
-                    {'id': '000001.SZ', 'name': '平安银行', 'type': 'stock'},
-                    {'id': '000651.SZ', 'name': '格力电器', 'type': 'stock'},
-                    {'id': '300750.SZ', 'name': '宁德时代', 'type': 'stock'},
-                    {'id': '000852.SH', 'name': '中证1000', 'type': 'index'}
-                ]
-                hk_indices = [
-                    {'id': 'HSI', 'name': '恒生指数', 'type': 'index'},
-                    {'id': 'HSCEI', 'name': '国企指数', 'type': 'index'},
-                    {'id': 'HSTECH', 'name': '恒生科技', 'type': 'index'},
-                    {'id': '0700.HK', 'name': '腾讯控股', 'type': 'stock'},
-                    {'id': '0939.HK', 'name': '建设银行', 'type': 'stock'},
-                    {'id': '2318.HK', 'name': '中国平安', 'type': 'stock'}
-                ]
-                us_indices = [
-                    {'id': '^GSPC', 'name': 'S&P 500', 'type': 'index'},
-                    {'id': '^DJI', 'name': '道琼斯', 'type': 'index'},
-                    {'id': '^IXIC', 'name': '纳斯达克', 'type': 'index'},
-                    {'id': 'AAPL', 'name': 'Apple', 'type': 'stock'},
-                    {'id': 'MSFT', 'name': 'Microsoft', 'type': 'stock'},
-                    {'id': 'AMZN', 'name': 'Amazon', 'type': 'stock'},
-                    {'id': 'GOOGL', 'name': 'Alphabet', 'type': 'stock'},
-                    {'id': 'TSLA', 'name': 'Tesla', 'type': 'stock'}
-                ]
-                if 'A股' in supported or provider_id == 'akshare':
-                    markets.append({'id': 'cn_stock', 'name': 'A股', 'icon': '📈', 'supported': True, 'default_indices': cn_indices})
-                if '港股' in supported or provider_id == 'akshare':
-                    markets.append({'id': 'hk_stock', 'name': '港股', 'icon': '🇭🇰', 'supported': True, 'default_indices': hk_indices})
-                if '美股' in supported or provider_id == 'akshare':
-                    markets.append({'id': 'us_stock', 'name': '美股', 'icon': '🇺🇸', 'supported': True, 'default_indices': us_indices})
-                return jsonify({'status': 'success', 'current_provider': provider_id, 'markets': markets})
-            except Exception as e:
-                logger.error(f"获取市场配置失败: {e}")
-                return jsonify({'status': 'error', 'message': str(e), 'error_code': 'MARKETS_CONFIG_FAILED'}), 500
 
         # 新增：K线数据（周期切换 + 最近30周期 + 事件标注 + 无限滚动支持）
         @self.app.route('/api/v1/data/kline')

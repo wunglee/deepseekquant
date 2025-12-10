@@ -12,7 +12,7 @@
 """
 
 import pandas as pd
-from typing import Protocol, Dict, Any, List
+from typing import Protocol, Dict, Any, List, Union
 from datetime import datetime
 from dataclasses import dataclass
 
@@ -196,12 +196,12 @@ class HistoricalDataProvider(Protocol):
         """
         ...
 
-    def get_stock_prices(self, symbol: str, start_date: str, end_date: str) -> PriceData:
+    def get_stock_prices(self, symbol: str, start_date: Union[str, datetime], end_date: Union[str, datetime]) -> PriceData:
         """
-        获取个股价格数据
-        
+        获取个股历史价格数据
+
         Args:
-            symbol: 股票代码
+            symbol: 股票代码（支持市场后缀，如 '000001.SZ'）
             start_date: 开始日期
             end_date: 结束日期
         

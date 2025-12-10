@@ -1,0 +1,175 @@
+# 压力测试场景配置
+
+# 默认参数
+defaults:
+  daily_volume: 1000000  # 默认日成交量（100万股）
+  limit_down_freq: 0.05  # 默认跌停频率（5%）
+
+# 内置压力测试场景
+scenarios:
+  # 全球市场事件
+  - scenario_id: '2008_financial_crisis'
+    name: '2008金融危机'
+    description: '标普500下跌57%'
+    probability: 0.01
+    impact_level: 'high'
+    duration: '18个月'
+    triggers: ['次贷危机', '信用紧缩']
+    mitigation_strategies: ['分散投资', '对冲策略']
+    parameters:
+      type: 'market_crash'
+      decline: -0.40
+      volatility_spike: 3.5
+      correlation_break: 0.8
+      recovery_period: 18
+
+  - scenario_id: 'covid_19_pandemic'
+    name: 'COVID-19疫情'
+    description: '全球股市下跌20%'
+    probability: 0.02
+    impact_level: 'moderate'
+    duration: '6个月'
+    triggers: ['公共卫生危机']
+    mitigation_strategies: ['调整行业配置']
+    parameters:
+      type: 'market_crash'
+      decline: -0.20
+      recovery_speed: 6
+      sector_divergence: 0.4
+
+  - scenario_id: 'currency_crisis'
+    name: '货币危机'
+    description: '汇率波动剧烈导致资产缩水'
+    probability: 0.03
+    impact_level: 'high'
+    duration: '3-6个月'
+    triggers: ['外汇储备不足', '资本外流']
+    mitigation_strategies: ['货币对冲', '减少外币敞口']
+    parameters:
+      type: 'market_crash'
+      decline: -0.25
+      currency_volatility: 2.5
+      capital_flight_intensity: 0.6
+
+  - scenario_id: '1997_asian_financial_crisis'
+    name: '1997亚洲金融危机'
+    description: '恒生指数跌60%，对A股影响约-35%'
+    probability: 0.01
+    impact_level: 'high'
+    duration: '24个月'
+    triggers: ['泰铢崩盘', '区域传导']
+    mitigation_strategies: ['货币对冲', '区域多元化']
+    parameters:
+      type: 'currency_crisis'
+      decline: -0.35
+      currency_volatility: 3.0
+      regional_contagion: 0.6
+      recovery_period: 24
+      liquidity_dry_up: 0.7
+
+  - scenario_id: '2022_russia_ukraine_conflict'
+    name: '2022俄乌冲突'
+    description: '地缘政治风险，全球指数平均跌20%'
+    probability: 0.02
+    impact_level: 'moderate'
+    duration: '12个月'
+    triggers: ['地缘政治', '供应链中断']
+    mitigation_strategies: ['避险资产配置', '商品对冲']
+    parameters:
+      type: 'geopolitical_risk'
+      decline: -0.20
+      commodity_shock: 0.8
+      sanction_impact: 0.6
+      flight_to_quality: 0.7
+      recovery_period: 12
+
+  - scenario_id: '2011_eurozone_debt_crisis'
+    name: '2011欧债危机'
+    description: '欧洲主权债务危机，全球股市平均跌25%'
+    probability: 0.015
+    impact_level: 'high'
+    duration: '18个月'
+    triggers: ['主权债务违约风险', '银行业危机']
+    mitigation_strategies: ['减少欧洲敞口', '增持避险资产']
+    parameters:
+      type: 'sovereign_debt_crisis'
+      decline: -0.25
+      credit_spread_widening: 3.0
+      contagion_risk: 0.7
+      recovery_period: 18
+      banking_sector_stress: 0.8
+
+  - scenario_id: '2013_china_credit_crunch'
+    name: '2013中国钱荒'
+    description: '银行间市场流动性骤紧，隔夜利率飙升至13%'
+    probability: 0.04
+    impact_level: 'moderate'
+    duration: '2周'
+    triggers: ['央行去杠杆', '流动性收紧']
+    mitigation_strategies: ['增加现金储备', '缩短资金久期']
+    parameters:
+      type: 'liquidity_crisis'
+      decline: -0.08
+      interest_rate_spike: 6.5
+      interbank_freeze: 0.6
+      recovery_period: 0.5
+      margin_pressure: 0.5
+
+  - scenario_id: '2011_us_debt_ceiling_crisis'
+    name: '2011美国债务上限危机'
+    description: '政策不确定性上升，全球指数跌幅约12-20%'
+    probability: 0.03
+    impact_level: 'moderate'
+    duration: '3个月'
+    triggers: ['财政悬崖', '评级下调']
+    mitigation_strategies: ['提升现金', '降低风险资产']
+    parameters:
+      type: 'sovereign_debt_crisis'
+      decline: -0.12
+      credit_spread_widening: 1.5
+      contagion_risk: 0.4
+      recovery_period: 6
+      banking_sector_stress: 0.4
+
+  # A股特有事件
+  - scenario_id: '2015_china_market_crash'
+    name: '2015A股大跌'
+    description: '上证指数下跌43%'
+    probability: 0.05
+    impact_level: 'high'
+    duration: '3个月'
+    triggers: ['杠杆破裂', '流动性枯竭']
+    mitigation_strategies: ['减少杠杆', '提高现金比例']
+    parameters:
+      type: 'market_crash'
+      decline: -0.43
+      liquidity_dry_up: 0.8
+      limit_hit_frequency: 0.3
+
+  - scenario_id: 'circuit_breaker_2016'
+    name: '2016A股熔断'
+    description: '市场熔断机制触发'
+    probability: 0.08
+    impact_level: 'moderate'
+    duration: '1天'
+    triggers: ['指数下跌7%']
+    mitigation_strategies: ['控制仓位']
+    parameters:
+      type: 'market_crash'
+      decline: -0.07
+      market_closure: true
+      panic_selling: 0.6
+
+  - scenario_id: 'thousand_stocks_limit_down'
+    name: '千股跌停'
+    description: '30%股票跌停'
+    probability: 0.03
+    impact_level: 'high'
+    duration: '1天'
+    triggers: ['系统性恐慌']
+    mitigation_strategies: ['提高流动性储备']
+    parameters:
+      type: 'liquidity_crisis'
+      limit_down_ratio: 0.3
+      liquidity_crisis: 0.9
+      margin_call_cascade: 0.4

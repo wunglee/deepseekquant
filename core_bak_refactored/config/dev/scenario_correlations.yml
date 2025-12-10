@@ -1,0 +1,146 @@
+# 场景相关性矩阵配置
+# 定义不同历史压力测试场景之间的相关性
+
+correlations:
+  '2008_financial_crisis':
+    '2008_financial_crisis': 1.0
+    'covid_19_pandemic': 0.6
+    '2015_china_market_crash': 0.4
+    'circuit_breaker_2016': 0.45
+    'thousand_stocks_limit_down': 0.5
+    'currency_crisis': 0.7
+    '1997_asian_financial_crisis': 0.4
+    '2022_russia_ukraine_conflict': 0.3
+    '2011_eurozone_debt_crisis': 0.75
+    '2013_china_credit_crunch': 0.5
+    '2011_us_debt_ceiling_crisis': 0.6
+
+  'covid_19_pandemic':
+    '2008_financial_crisis': 0.6
+    'covid_19_pandemic': 1.0
+    '2015_china_market_crash': 0.3
+    'circuit_breaker_2016': 0.35
+    'thousand_stocks_limit_down': 0.4
+    'currency_crisis': 0.4
+    '1997_asian_financial_crisis': 0.2
+    '2022_russia_ukraine_conflict': 0.4
+    '2011_eurozone_debt_crisis': 0.3
+    '2013_china_credit_crunch': 0.3
+    '2011_us_debt_ceiling_crisis': 0.3
+
+  '2015_china_market_crash':
+    '2008_financial_crisis': 0.4
+    'covid_19_pandemic': 0.3
+    '2015_china_market_crash': 1.0
+    'circuit_breaker_2016': 0.85
+    'thousand_stocks_limit_down': 0.9
+    'currency_crisis': 0.3
+    '1997_asian_financial_crisis': 0.3
+    '2022_russia_ukraine_conflict': 0.2
+    '2011_eurozone_debt_crisis': 0.25
+    '2013_china_credit_crunch': 0.7
+    '2011_us_debt_ceiling_crisis': 0.2
+
+  'circuit_breaker_2016':
+    '2008_financial_crisis': 0.45
+    'covid_19_pandemic': 0.35
+    '2015_china_market_crash': 0.85
+    'circuit_breaker_2016': 1.0
+    'thousand_stocks_limit_down': 0.75
+    'currency_crisis': 0.35
+    '1997_asian_financial_crisis': 0.25
+    '2022_russia_ukraine_conflict': 0.2
+    '2011_eurozone_debt_crisis': 0.3
+    '2013_china_credit_crunch': 0.6
+    '2011_us_debt_ceiling_crisis': 0.25
+
+  'thousand_stocks_limit_down':
+    '2008_financial_crisis': 0.5
+    'covid_19_pandemic': 0.4
+    '2015_china_market_crash': 0.9
+    'circuit_breaker_2016': 0.75
+    'thousand_stocks_limit_down': 1.0
+    'currency_crisis': 0.4
+    '1997_asian_financial_crisis': 0.3
+    '2022_russia_ukraine_conflict': 0.25
+    '2011_eurozone_debt_crisis': 0.35
+    '2013_china_credit_crunch': 0.75
+    '2011_us_debt_ceiling_crisis': 0.3
+
+  'currency_crisis':
+    '2008_financial_crisis': 0.7
+    'covid_19_pandemic': 0.4
+    '2015_china_market_crash': 0.3
+    'circuit_breaker_2016': 0.35
+    'thousand_stocks_limit_down': 0.4
+    'currency_crisis': 1.0
+    '1997_asian_financial_crisis': 0.8
+    '2022_russia_ukraine_conflict': 0.35
+    '2011_eurozone_debt_crisis': 0.5
+    '2013_china_credit_crunch': 0.3
+    '2011_us_debt_ceiling_crisis': 0.3
+
+  '1997_asian_financial_crisis':
+    '2008_financial_crisis': 0.4
+    'covid_19_pandemic': 0.2
+    '2015_china_market_crash': 0.3
+    'circuit_breaker_2016': 0.25
+    'thousand_stocks_limit_down': 0.3
+    'currency_crisis': 0.8
+    '1997_asian_financial_crisis': 1.0
+    '2022_russia_ukraine_conflict': 0.25
+    '2011_eurozone_debt_crisis': 0.4
+    '2013_china_credit_crunch': 0.25
+    '2011_us_debt_ceiling_crisis': 0.3
+
+  '2022_russia_ukraine_conflict':
+    '2008_financial_crisis': 0.3
+    'covid_19_pandemic': 0.4
+    '2015_china_market_crash': 0.2
+    'circuit_breaker_2016': 0.2
+    'thousand_stocks_limit_down': 0.25
+    'currency_crisis': 0.35
+    '1997_asian_financial_crisis': 0.25
+    '2022_russia_ukraine_conflict': 1.0
+    '2011_eurozone_debt_crisis': 0.3
+    '2013_china_credit_crunch': 0.2
+    '2011_us_debt_ceiling_crisis': 0.25
+
+  '2011_eurozone_debt_crisis':
+    '2008_financial_crisis': 0.75
+    'covid_19_pandemic': 0.3
+    '2015_china_market_crash': 0.25
+    'circuit_breaker_2016': 0.3
+    'thousand_stocks_limit_down': 0.35
+    'currency_crisis': 0.5
+    '1997_asian_financial_crisis': 0.4
+    '2022_russia_ukraine_conflict': 0.3
+    '2011_eurozone_debt_crisis': 1.0
+    '2013_china_credit_crunch': 0.4
+    '2011_us_debt_ceiling_crisis': 0.6
+
+  '2013_china_credit_crunch':
+    '2008_financial_crisis': 0.5
+    'covid_19_pandemic': 0.3
+    '2015_china_market_crash': 0.7
+    'circuit_breaker_2016': 0.6
+    'thousand_stocks_limit_down': 0.75
+    'currency_crisis': 0.3
+    '1997_asian_financial_crisis': 0.25
+    '2022_russia_ukraine_conflict': 0.2
+    '2011_eurozone_debt_crisis': 0.4
+    '2013_china_credit_crunch': 1.0
+    '2011_us_debt_ceiling_crisis': 0.4
+
+  '2011_us_debt_ceiling_crisis':
+    '2008_financial_crisis': 0.6
+    'covid_19_pandemic': 0.3
+    '2015_china_market_crash': 0.2
+    'circuit_breaker_2016': 0.25
+    'thousand_stocks_limit_down': 0.3
+    'currency_crisis': 0.3
+    '1997_asian_financial_crisis': 0.3
+    '2022_russia_ukraine_conflict': 0.25
+    '2011_eurozone_debt_crisis': 0.6
+    '2013_china_credit_crunch': 0.4
+    '2011_us_debt_ceiling_crisis': 1.0

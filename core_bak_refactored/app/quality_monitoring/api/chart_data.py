@@ -23,6 +23,7 @@ from datetime import datetime
 from typing import Dict, Any, List, Optional
 import pandas as pd
 import numpy as np
+from core_bak_refactored.core.data.providers.protocols import PriceData, OHLCVRecord
 
 logger = logging.getLogger('DeepSeekQuant.App.API.ChartData')
 
@@ -31,7 +32,7 @@ class ChartDataAssembler:
     """图表数据组装器
     
     职责：
-    1. 获取K线数据
+    1. 获取K线数据（使用领域层标准 PriceData 类型）
     2. 调用领域层服务计算技术指标
     3. 检测市场事件
     4. 组装完整的图表数据结构
@@ -39,6 +40,7 @@ class ChartDataAssembler:
     依赖倒置原则（DIP）：
     - 依赖抽象的数据提供者接口，不依赖具体实现
     - 依赖抽象的指标服务接口，不依赖具体实现
+    - 使用领域层标准类型 PriceData，避免非强类型 DataFrame
     """
     
     def __init__(self, data_provider: Any, indicator_service: Any) -> None:
@@ -57,7 +59,7 @@ class ChartDataAssembler:
                            count: int = 120,
                            before: Optional[str] = None,
                            indicators: Optional[str] = 'all') -> Dict[str, Any]:
-        """组装完整的图表数据
+        """组装完整的图表数据（全程使用强类型 PriceData）
         
         Args:
             index_id: 股票/指数代码
@@ -80,15 +82,15 @@ class ChartDataAssembler:
         try:
             logger.info(f"开始组装图表数据: index_id={index_id}, period={period}, count={count}, before={before}")
             
-            # 1. 获取K线数据（🔧 额外获取30条用于指标预热）
+            # 1. 获取K线数据（🔧 额外获取30条用于指标预热，返回 PriceData）
             logger.info("步骤1: 获取K线数据...")
             warmup_count = 30  # 预热数据条数（足够MACD/RSI/KDJ计算）
-            df_full = self._fetch_kline_data(index_id, period, count + warmup_count, before)
-            logger.info(f"K线数据获取成功，共 {len(df_full)} 条（包含{warmup_count}条预热数据）")
+            price_data_full = self._fetch_kline_data(index_id, period, count + warmup_count, before)
+            logger.info(f"K线数据获取成功，共 {price_data_full.count} 条（包含{warmup_count}条预热数据）")
             
-            # 2. 计算技术指标（使用完整数据）
+            # 2. 计算技术指标（使用完整 PriceData）
             logger.info(f"步骤2: 计算技术指标 ({indicators})...")
-            kline_with_ma_full, indicators_data_full = self._calculate_indicators(df_full, indicators)
+            kline_with_ma_full, indicators_data_full = self._calculate_indicators(price_data_full, indicators)
             logger.info(f"技术指标计算成功: {list(indicators_data_full.keys())}")
             
             # 🔧 关键优化：裁剪掉预热数据，只返回请求的条数
@@ -99,10 +101,10 @@ class ChartDataAssembler:
             }
             logger.info(f"裁剪后的数据: kline={len(kline_with_ma)} 条, 指标每个约{len(next(iter(indicators_data.values()), []))} 条")
             
-            # 3. 检测市场事件（只在请求的范围内）
+            # 3. 检测市场事件（只在请求的范围内，使用裁剪后的 PriceData）
             logger.info("步骤3: 检测市场事件...")
-            df_requested = df_full.tail(count)  # 只在请求的范围检测事件
-            events = self._detect_events(df_requested)
+            price_data_requested = self._slice_price_data(price_data_full, -count)
+            events = self._detect_events(price_data_requested)
             logger.info(f"事件检测成功，共 {len(events)} 个事件")
             
             # 4. 组装返回数据
@@ -129,8 +131,8 @@ class ChartDataAssembler:
                          index_id: str,
                          period: str,
                          count: int,
-                         before: Optional[str]) -> pd.DataFrame:
-        """获取K线数据
+                         before: Optional[str]) -> PriceData:
+        """获取K线数据（使用领域层标准 PriceData 类型）
         
         Args:
             index_id: 股票/指数代码
@@ -139,7 +141,7 @@ class ChartDataAssembler:
             before: 截止日期
         
         Returns:
-            包含 date, open, high, low, close, volume 的 DataFrame
+            PriceData: 强类型价格数据对象
         """
         from datetime import datetime, timedelta
         
@@ -154,47 +156,63 @@ class ChartDataAssembler:
         
         start_date = end_date - timedelta(days=days_needed)
         
-        # 调用数据提供者
-        df = self._data_provider.get_index_prices(
+        # 调用数据提供者（返回领域层标准 PriceData 类型）
+        price_data = self._data_provider.get_index_prices(
             index_id,
             start_date.strftime('%Y-%m-%d'),
             end_date.strftime('%Y-%m-%d')
         )
         
-        if df is None or df.empty:
+        # 验证数据
+        if price_data is None or price_data.count == 0:
             raise ValueError(f"无数据：{index_id}")
         
-        # 🔧 标准化列名（小写）
-        df.columns = df.columns.str.lower()
-        logger.info(f"数据列名: {df.columns.tolist()}")
+        logger.info(f"获取到 {price_data.count} 条数据，symbol={price_data.symbol}, 时间范围: {price_data.start_date} to {price_data.end_date}")
         
-        # 确保日期列
-        if 'date' not in df.columns:
-            df['date'] = pd.to_datetime(df.index)
-        else:
-            df['date'] = pd.to_datetime(df['date'])
+        # 周期转换（如需要）
+        if period != 'daily':
+            price_data = self._convert_period(price_data, period, count)
         
-        # 周期转换
-        df = self._convert_period(df, period, count)
-        
-        return df
+        return price_data
     
-    def _convert_period(self,
-                       df: pd.DataFrame,
-                       period: str,
-                       count: int) -> pd.DataFrame:
-        """周期转换（日线→周线/月线）
+    def _slice_price_data(self, price_data: PriceData, slice_count: int) -> PriceData:
+        """裁剪 PriceData（保持强类型）
         
         Args:
-            df: 日线数据
+            price_data: 原始价格数据
+            slice_count: 裁剪条数（负数表示从尾部取）
+        
+        Returns:
+            裁剪后的 PriceData 对象
+        """
+        sliced_records = price_data.records[slice_count:] if slice_count < 0 else price_data.records[:slice_count]
+        
+        return PriceData(
+            records=sliced_records,
+            symbol=price_data.symbol,
+            start_date=sliced_records[0].date if sliced_records else price_data.start_date,
+            end_date=sliced_records[-1].date if sliced_records else price_data.end_date,
+            count=len(sliced_records)
+        )
+    
+    def _convert_period(self,
+                       price_data: PriceData,
+                       period: str,
+                       count: int) -> PriceData:
+        """周期转换（日线→周线/月线）（使用强类型 PriceData）
+        
+        Args:
+            price_data: 日线数据（PriceData对象）
             period: 目标周期
             count: 目标条数
         
         Returns:
-            转换后的数据
+            转换后的 PriceData 对象
         """
-        df_copy = df.copy()
-        df_copy = df_copy.set_index('date')
+        # 临时转换为 DataFrame 进行周期重采样（这是 pandas 的优势）
+        df = price_data.to_dataframe()
+        df['date'] = pd.to_datetime(df['date'])
+        df_copy = df.set_index('date')
         
         if period == 'weekly':
             df_copy = df_copy.resample('W').agg({
@@ -216,15 +234,34 @@ class ChartDataAssembler:
         df_copy = df_copy.reset_index()
         df_copy = df_copy.tail(count)
         
-        return df_copy
+        # 转换回 PriceData 强类型
+        records = [
+            OHLCVRecord(
+                date=pd.Timestamp(row['date']),
+                open=float(row['open']),
+                high=float(row['high']),
+                low=float(row['low']),
+                close=float(row['close']),
+                volume=float(row['volume'])
+            )
+            for _, row in df_copy.iterrows()
+        ]
+        
+        return PriceData(
+            records=records,
+            symbol=price_data.symbol,
+            start_date=records[0].date if records else price_data.start_date,
+            end_date=records[-1].date if records else price_data.end_date,
+            count=len(records)
+        )
     
     def _calculate_indicators(self,
-                             df: pd.DataFrame,
+                             price_data: PriceData,
                              indicators: Optional[str]) -> tuple:
-        """计算技术指标
+        """计算技术指标（使用强类型 PriceData）
         
         Args:
-            df: K线数据
+            price_data: K线数据（PriceData对象）
             indicators: 需要的指标（'all' 或逗号分隔）
         
         Returns:
@@ -242,57 +279,57 @@ class ChartDataAssembler:
         kline_data = []
         indicators_data = {}
         
-        # 计算MA并嵌入K线数据
-        ma5 = df['close'].rolling(window=5).mean()
-        ma10 = df['close'].rolling(window=10).mean()
-        ma20 = df['close'].rolling(window=20).mean()
+        # 提取价格序列用于MA计算
+        close_prices = pd.Series([r.close for r in price_data.records])
+        ma5 = close_prices.rolling(window=5).mean()
+        ma10 = close_prices.rolling(window=10).mean()
+        ma20 = close_prices.rolling(window=20).mean()
         
         # 组装K线数据（包含MA）
-        for _, row in df.iterrows():
-            idx = df.index.get_loc(row.name) if hasattr(row, 'name') else _
-            record = {
-                'date': row['date'].strftime('%Y-%m-%d') if hasattr(row['date'], 'strftime') else str(row['date']),
-                'open': self._safe_float(row['open']),
-                'high': self._safe_float(row['high']),
-                'low': self._safe_float(row['low']),
-                'close': self._safe_float(row['close']),
-                'volume': self._safe_float(row['volume']),
-                'ma5': self._safe_float(ma5.iloc[idx]),
-                'ma10': self._safe_float(ma10.iloc[idx]),
-                'ma20': self._safe_float(ma20.iloc[idx])
+        for i, record in enumerate(price_data.records):
+            kline_record = {
+                'date': record.date.strftime('%Y-%m-%d') if hasattr(record.date, 'strftime') else str(record.date),
+                'open': self._safe_float(record.open),
+                'high': self._safe_float(record.high),
+                'low': self._safe_float(record.low),
+                'close': self._safe_float(record.close),
+                'volume': self._safe_float(record.volume),
+                'ma5': self._safe_float(ma5.iloc[i]),
+                'ma10': self._safe_float(ma10.iloc[i]),
+                'ma20': self._safe_float(ma20.iloc[i])
             }
-            kline_data.append(record)
+            kline_data.append(kline_record)
         
         # 计算技术指标（调用领域层服务）
         if 'vol' in requested_indicators:
-            indicators_data['vol'] = self._calculate_vol(df)
+            indicators_data['vol'] = self._calculate_vol(price_data)
         
         if 'macd' in requested_indicators:
-            indicators_data['macd'] = self._calculate_macd(df)
+            indicators_data['macd'] = self._calculate_macd(price_data)
         
         if 'rsi' in requested_indicators:
-            indicators_data['rsi'] = self._calculate_rsi(df)
+            indicators_data['rsi'] = self._calculate_rsi(price_data)
         
         if 'kdj' in requested_indicators:
-            indicators_data['kdj'] = self._calculate_kdj(df)
+            indicators_data['kdj'] = self._calculate_kdj(price_data)
         
         if 'obv' in requested_indicators:
-            indicators_data['obv'] = self._calculate_obv(df)
+            indicators_data['obv'] = self._calculate_obv(price_data)
         
         return kline_data, indicators_data
     
-    def _calculate_vol(self, df: pd.DataFrame) -> List[Dict]:
-        """计算成交量指标"""
+    def _calculate_vol(self, price_data: PriceData) -> List[Dict]:
+        """计算成交量指标（使用强类型 PriceData）"""
         return [
             {
-                'date': row['date'].strftime('%Y-%m-%d') if hasattr(row['date'], 'strftime') else str(row['date']),
-                'value': self._safe_float(row['volume'])
+                'date': record.date.strftime('%Y-%m-%d') if hasattr(record.date, 'strftime') else str(record.date),
+                'value': self._safe_float(record.volume)
             }
-            for _, row in df.iterrows()
+            for record in price_data.records
         ]
     
-    def _calculate_macd(self, df: pd.DataFrame) -> List[Dict]:
-        """计算MACD指标（调用领域层服务）
+    def _calculate_macd(self, price_data: PriceData) -> List[Dict]:
+        """计算MACD指标（调用领域层服务，使用强类型 PriceData）
         
         注意：
         - 使用Wilder EMA平滑法（pandas标准实现）
@@ -300,21 +337,23 @@ class ChartDataAssembler:
         - 前端会自动处理null值，不显示对应点
         """
         try:
-            logger.info(f"🔧 开始计算MACD，数据行数: {len(df)}")
-            logger.info(f"   - df.columns: {df.columns.tolist()}")
-            logger.info(f"   - df['close'] 类型: {type(df['close'])}")
-            logger.info(f"   - df['close'] 前5个值: {df['close'].head().tolist() if hasattr(df['close'], 'head') else df['close'][:5]}")
+            logger.info(f"🔧 开始计算MACD，数据行数: {price_data.count}")
+            
+            # 提取价格序列（强类型 -> Series）
+            close_prices = pd.Series([r.close for r in price_data.records])
+            logger.info(f"   - close_prices 类型: {type(close_prices)}")
+            logger.info(f"   - close_prices 前5个值: {close_prices.head().tolist()}")
             
             # 调用领域层服务计算MACD
-            macd, signal, hist = self._indicator_service.calculate_macd(df['close'])
+            macd, signal, hist = self._indicator_service.calculate_macd(close_prices)
             
             logger.info(f"✅ MACD计算成功，返回类型: macd={type(macd)}, signal={type(signal)}, hist={type(hist)}")
             
             results = []
-            for i in range(len(df)):
+            for i, record in enumerate(price_data.records):
                 # ⚠️ 关键：保留NaN转为null，让前端正确处理数据连续性
                 results.append({
-                    'date': df.iloc[i]['date'].strftime('%Y-%m-%d') if hasattr(df.iloc[i]['date'], 'strftime') else str(df.iloc[i]['date']),
+                    'date': record.date.strftime('%Y-%m-%d') if hasattr(record.date, 'strftime') else str(record.date),
                     'macd': self._safe_float(macd.iloc[i] if hasattr(macd, 'iloc') else macd[i]),
                     'signal': self._safe_float(signal.iloc[i] if hasattr(signal, 'iloc') else signal[i]),
                     'histogram': self._safe_float(hist.iloc[i] if hasattr(hist, 'iloc') else hist[i])
@@ -325,13 +364,12 @@ class ChartDataAssembler:
             return results
         except Exception as e:
             logger.error(f"⚠️ MACD计算失败，返回空数据: {e}", exc_info=True)
-            logger.error(f"   - df.shape: {df.shape if hasattr(df, 'shape') else 'N/A'}")
-            logger.error(f"   - df.columns: {df.columns.tolist() if hasattr(df, 'columns') else 'N/A'}")
-            logger.error(f"   - 'close' in df.columns: {'close' in df.columns if hasattr(df, 'columns') else 'N/A'}")
+            logger.error(f"   - price_data.count: {price_data.count}")
+            logger.error(f"   - price_data.symbol: {price_data.symbol}")
             return []
     
-    def _calculate_rsi(self, df: pd.DataFrame) -> List[Dict]:
-        """计算RSI指标（调用领域层服务）
+    def _calculate_rsi(self, price_data: PriceData) -> List[Dict]:
+        """计算RSI指标（调用领域层服务，使用强类型 PriceData）
         
         注意：
         - 使用Wilder平滑法（alpha=1/14）
@@ -339,14 +377,16 @@ class ChartDataAssembler:
         - 返回值范围0-100
         """
         try:
-            rsi = self._indicator_service.calculate_rsi(df['close'])
+            # 提取价格序列
+            close_prices = pd.Series([r.close for r in price_data.records])
+            rsi = self._indicator_service.calculate_rsi(close_prices)
             
             results = [
                 {
-                    'date': df.iloc[i]['date'].strftime('%Y-%m-%d') if hasattr(df.iloc[i]['date'], 'strftime') else str(df.iloc[i]['date']),
+                    'date': record.date.strftime('%Y-%m-%d') if hasattr(record.date, 'strftime') else str(record.date),
                     'value': self._safe_float(rsi.iloc[i] if hasattr(rsi, 'iloc') else rsi[i])
                 }
-                for i in range(len(df))
+                for i, record in enumerate(price_data.records)
             ]
             
             logger.debug(f"RSI计算完成：{len(results)}条数据，前{self._count_leading_nulls(results, 'value')}条为null（正常）")
@@ -355,8 +395,8 @@ class ChartDataAssembler:
             logger.warning(f"RSI计算失败，返回空数据: {e}")
             return []
     
-    def _calculate_kdj(self, df: pd.DataFrame) -> List[Dict]:
-        """计算KDJ指标（调用领域层服务）
+    def _calculate_kdj(self, price_data: PriceData) -> List[Dict]:
+        """计算KDJ指标（调用领域层服务，使用强类型 PriceData）
         
         注意：
         - K线：随机指标（周期内价格相对位置）
@@ -365,10 +405,15 @@ class ChartDataAssembler:
         - 前9个周期的值可能为NaN
         """
         try:
+            # 提取价格序列
+            high_prices = pd.Series([r.high for r in price_data.records])
+            low_prices = pd.Series([r.low for r in price_data.records])
+            close_prices = pd.Series([r.close for r in price_data.records])
+            
             k, d = self._indicator_service.calculate_kdj(
-                df['high'],
-                df['low'],
-                df['close']
+                high_prices,
+                low_prices,
+                close_prices
             )
             
             # 计算 J 值：J = 3*K - 2*D
@@ -376,12 +421,12 @@ class ChartDataAssembler:
             
             results = [
                 {
-                    'date': df.iloc[i]['date'].strftime('%Y-%m-%d') if hasattr(df.iloc[i]['date'], 'strftime') else str(df.iloc[i]['date']),
+                    'date': record.date.strftime('%Y-%m-%d') if hasattr(record.date, 'strftime') else str(record.date),
                     'k': self._safe_float(k.iloc[i] if hasattr(k, 'iloc') else k[i]),
                     'd': self._safe_float(d.iloc[i] if hasattr(d, 'iloc') else d[i]),
                     'j': self._safe_float(j.iloc[i] if hasattr(j, 'iloc') else j[i])
                 }
-                for i in range(len(df))
+                for i, record in enumerate(price_data.records)
             ]
             
             logger.debug(f"KDJ计算完成：{len(results)}条数据，前{self._count_leading_nulls(results, 'k')}条为null（正常）")
@@ -390,8 +435,8 @@ class ChartDataAssembler:
             logger.warning(f"KDJ计算失败，返回空数据: {e}")
             return []
     
-    def _calculate_obv(self, df: pd.DataFrame) -> List[Dict]:
-        """计算OBV指标（调用领域层服务）
+    def _calculate_obv(self, price_data: PriceData) -> List[Dict]:
+        """计算OBV指标（调用领域层服务，使用强类型 PriceData）
         
         注意：
         - 能量潮指标，累计方向性成交量
@@ -399,14 +444,18 @@ class ChartDataAssembler:
         - 第一个值为0（起始点）
         """
         try:
-            obv = self._indicator_service.calculate_obv(df['close'], df['volume'])
+            # 提取价格和成交量序列
+            close_prices = pd.Series([r.close for r in price_data.records])
+            volumes = pd.Series([r.volume for r in price_data.records])
+            
+            obv = self._indicator_service.calculate_obv(close_prices, volumes)
             
             results = [
                 {
-                    'date': df.iloc[i]['date'].strftime('%Y-%m-%d') if hasattr(df.iloc[i]['date'], 'strftime') else str(df.iloc[i]['date']),
+                    'date': record.date.strftime('%Y-%m-%d') if hasattr(record.date, 'strftime') else str(record.date),
                     'value': self._safe_float(obv.iloc[i] if hasattr(obv, 'iloc') else obv[i])
                 }
-                for i in range(len(df))
+                for i, record in enumerate(price_data.records)
             ]
             
             logger.debug(f"OBV计算完成：{len(results)}条数据")

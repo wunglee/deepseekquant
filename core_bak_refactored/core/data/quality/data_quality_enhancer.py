@@ -23,15 +23,56 @@
 
 import logging
 import pandas as pd
+import yaml
 from typing import List, Dict, Any, Union, Tuple
 from datetime import datetime
 from dataclasses import dataclass
+from pathlib import Path
 
 logger = logging.getLogger('DeepSeekQuant.DataQualityEnhancer')
 
-# 数据质量阈值常量
-DEFAULT_QUALITY_THRESHOLD = 0.8  # 默认质量阈值
-MIN_DATA_ROWS = 1  # 最少数据行数
+
+def _load_data_quality_config() -> Dict[str, Any]:
+    """从配置文件加载数据质量配置
+    
+    Returns:
+        Dict: 数据质量配置字典
+    
+    Raises:
+        FileNotFoundError: 配置文件不存在
+        ValueError: 配置文件格式错误或缺少必需字段
+    """
+    config_path = Path(__file__).parent.parent.parent.parent / 'config' / 'dev' / 'data_quality.yml'
+    
+    if not config_path.exists():
+        raise FileNotFoundError(
+            f"数据质量配置文件不存在: {config_path}\n"
+            f"请确保配置文件存在: core_bak_refactored/config/dev/data_quality.yml"
+        )
+    
+    try:
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config = yaml.safe_load(f)
+        
+        # 验证必需字段
+        if 'quality_threshold' not in config:
+            raise ValueError("配置文件缺少必需字段: quality_threshold")
+        if 'min_data_rows' not in config:
+            raise ValueError("配置文件缺少必需字段: min_data_rows")
+        if 'score_weights' not in config:
+            raise ValueError("配置文件缺少必需字段: score_weights")
+        
+        return config
+    
+    except yaml.YAMLError as e:
+        raise ValueError(f"数据质量配置文件格式错误: {e}")
+
+
+# 从配置文件加载常量
+_DATA_QUALITY_CONFIG = _load_data_quality_config()
+DEFAULT_QUALITY_THRESHOLD = _DATA_QUALITY_CONFIG['quality_threshold']
+MIN_DATA_ROWS = _DATA_QUALITY_CONFIG['min_data_rows']
+SCORE_WEIGHTS = _DATA_QUALITY_CONFIG['score_weights']
 
 
 @dataclass
@@ -130,13 +171,13 @@ class DataQualityEnhancer:
         accuracy_score = self._calculate_accuracy_score(data)
         outliers_detected = self._detect_outliers(data)
         
-        # 综合评分(加权平均)
+        # 综合评分(加权平均，权重从配置文件读取)
         outlier_penalty = min(1.0, outliers_detected / max(1, total_rows))
         overall_score = (
-            0.3 * completeness_score +
-            0.3 * consistency_score +
-            0.2 * accuracy_score +
-            0.2 * (1.0 - outlier_penalty)
+            SCORE_WEIGHTS['completeness'] * completeness_score +
+            SCORE_WEIGHTS['consistency'] * consistency_score +
+            SCORE_WEIGHTS['accuracy'] * accuracy_score +
+            SCORE_WEIGHTS['outliers'] * (1.0 - outlier_penalty)
         )
         
         report = DataQualityReport(

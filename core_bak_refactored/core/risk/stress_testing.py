@@ -7,10 +7,12 @@ P1增强: 完整场景参数使用、组合场景测试（基于专家answer.md�
 
 import numpy as np
 import pandas as pd
+import yaml
 from typing import Dict, List, Optional, Any
 import logging
 import copy
 import random
+from pathlib import Path
 
 from .risk_models import StressTestScenario, RiskLevel
 from .risk_metrics_service import RiskMetricsService, RiskMetricsEngine
@@ -19,169 +21,92 @@ from . import calculate_hhi
 logger = logging.getLogger('DeepSeekQuant.StressTesting')
 
 # =============================================================================
-# 常量定义（基于专家answer.md指导）
+# 从配置文件加载常量（基于专家answer.md指导）
 # =============================================================================
 
-# 场景相关性矩阵（第6轮更新：扩展至11×11矩阵，新增2011欧债危机、2013钱荒、2011美国债务上限危机）
-SCENARIO_CORRELATION_MATRIX = {
-    '2008_financial_crisis': {
-        '2008_financial_crisis': 1.0,
-        'covid_19_pandemic': 0.5,
-        '2015_china_market_crash': 0.3,
-        'circuit_breaker_2016': 0.7,
-        'thousand_stocks_limit_down': 0.7,
-        'currency_crisis': 0.45,
-        '1997_asian_financial_crisis': 0.4,
-        '2022_russia_ukraine_conflict': 0.3,
-        '2011_eurozone_debt_crisis': 0.75,
-        '2013_china_credit_crunch': 0.5,
-        '2011_us_debt_ceiling_crisis': 0.6
-    },
-    'covid_19_pandemic': {
-        '2008_financial_crisis': 0.5,
-        'covid_19_pandemic': 1.0,
-        '2015_china_market_crash': 0.4,
-        'circuit_breaker_2016': 0.5,
-        'thousand_stocks_limit_down': 0.6,
-        'currency_crisis': 0.2,
-        '1997_asian_financial_crisis': 0.2,
-        '2022_russia_ukraine_conflict': 0.4,
-        '2011_eurozone_debt_crisis': 0.3,
-        '2013_china_credit_crunch': 0.3,
-        '2011_us_debt_ceiling_crisis': 0.3
-    },
-    '2015_china_market_crash': {
-        '2008_financial_crisis': 0.3,
-        'covid_19_pandemic': 0.4,
-        '2015_china_market_crash': 1.0,
-        'circuit_breaker_2016': 0.8,
-        'thousand_stocks_limit_down': 0.9,
-        'currency_crisis': 0.25,
-        '1997_asian_financial_crisis': 0.3,
-        '2022_russia_ukraine_conflict': 0.2,
-        '2011_eurozone_debt_crisis': 0.25,
-        '2013_china_credit_crunch': 0.7,
-        '2011_us_debt_ceiling_crisis': 0.2
-    },
-    'circuit_breaker_2016': {
-        '2008_financial_crisis': 0.7,
-        'covid_19_pandemic': 0.5,
-        '2015_china_market_crash': 0.8,
-        'circuit_breaker_2016': 1.0,
-        'thousand_stocks_limit_down': 0.8,
-        'currency_crisis': 0.3,
-        '1997_asian_financial_crisis': 0.25,
-        '2022_russia_ukraine_conflict': 0.2,
-        '2011_eurozone_debt_crisis': 0.3,
-        '2013_china_credit_crunch': 0.6,
-        '2011_us_debt_ceiling_crisis': 0.25
-    },
-    'thousand_stocks_limit_down': {
-        '2008_financial_crisis': 0.7,
-        'covid_19_pandemic': 0.6,
-        '2015_china_market_crash': 0.9,
-        'circuit_breaker_2016': 0.8,
-        'thousand_stocks_limit_down': 1.0,
-        'currency_crisis': 0.35,
-        '1997_asian_financial_crisis': 0.3,
-        '2022_russia_ukraine_conflict': 0.25,
-        '2011_eurozone_debt_crisis': 0.35,
-        '2013_china_credit_crunch': 0.75,
-        '2011_us_debt_ceiling_crisis': 0.3
-    },
-    'currency_crisis': {
-        '2008_financial_crisis': 0.45,
-        'covid_19_pandemic': 0.2,
-        '2015_china_market_crash': 0.25,
-        'circuit_breaker_2016': 0.3,
-        'thousand_stocks_limit_down': 0.35,
-        'currency_crisis': 1.0,
-        '1997_asian_financial_crisis': 0.8,
-        '2022_russia_ukraine_conflict': 0.35,
-        '2011_eurozone_debt_crisis': 0.5,
-        '2013_china_credit_crunch': 0.3,
-        '2011_us_debt_ceiling_crisis': 0.3
-    },
-    '1997_asian_financial_crisis': {
-        '2008_financial_crisis': 0.4,
-        'covid_19_pandemic': 0.2,
-        '2015_china_market_crash': 0.3,
-        'circuit_breaker_2016': 0.25,
-        'thousand_stocks_limit_down': 0.3,
-        'currency_crisis': 0.8,
-        '1997_asian_financial_crisis': 1.0,
-        '2022_russia_ukraine_conflict': 0.25,
-        '2011_eurozone_debt_crisis': 0.4,
-        '2013_china_credit_crunch': 0.25,
-        '2011_us_debt_ceiling_crisis': 0.3
-    },
-    '2022_russia_ukraine_conflict': {
-        '2008_financial_crisis': 0.3,
-        'covid_19_pandemic': 0.4,
-        '2015_china_market_crash': 0.2,
-        'circuit_breaker_2016': 0.2,
-        'thousand_stocks_limit_down': 0.25,
-        'currency_crisis': 0.35,
-        '1997_asian_financial_crisis': 0.25,
-        '2022_russia_ukraine_conflict': 1.0,
-        '2011_eurozone_debt_crisis': 0.3,
-        '2013_china_credit_crunch': 0.2,
-        '2011_us_debt_ceiling_crisis': 0.25
-    },
-    '2011_eurozone_debt_crisis': {
-        '2008_financial_crisis': 0.75,
-        'covid_19_pandemic': 0.3,
-        '2015_china_market_crash': 0.25,
-        'circuit_breaker_2016': 0.3,
-        'thousand_stocks_limit_down': 0.35,
-        'currency_crisis': 0.5,
-        '1997_asian_financial_crisis': 0.4,
-        '2022_russia_ukraine_conflict': 0.3,
-        '2011_eurozone_debt_crisis': 1.0,
-        '2013_china_credit_crunch': 0.4,
-        '2011_us_debt_ceiling_crisis': 0.6
-    },
-    '2013_china_credit_crunch': {
-        '2008_financial_crisis': 0.5,
-        'covid_19_pandemic': 0.3,
-        '2015_china_market_crash': 0.7,
-        'circuit_breaker_2016': 0.6,
-        'thousand_stocks_limit_down': 0.75,
-        'currency_crisis': 0.3,
-        '1997_asian_financial_crisis': 0.25,
-        '2022_russia_ukraine_conflict': 0.2,
-        '2011_eurozone_debt_crisis': 0.4,
-        '2013_china_credit_crunch': 1.0,
-        '2011_us_debt_ceiling_crisis': 0.4
-    },
-    '2011_us_debt_ceiling_crisis': {
-        '2008_financial_crisis': 0.6,
-        'covid_19_pandemic': 0.3,
-        '2015_china_market_crash': 0.2,
-        'circuit_breaker_2016': 0.25,
-        'thousand_stocks_limit_down': 0.3,
-        'currency_crisis': 0.3,
-        '1997_asian_financial_crisis': 0.3,
-        '2022_russia_ukraine_conflict': 0.25,
-        '2011_eurozone_debt_crisis': 0.6,
-        '2013_china_credit_crunch': 0.4,
-        '2011_us_debt_ceiling_crisis': 1.0
-    }
-}
+def _load_stress_testing_config() -> Dict[str, Any]:
+    """从配置文件加载压力测试配置
+    
+    Returns:
+        Dict: 压力测试配置字典
+    
+    Raises:
+        FileNotFoundError: 配置文件不存在
+        ValueError: 配置文件格式错误或缺少必需字段
+    """
+    # 加载压力测试场景配置
+    scenarios_path = Path(__file__).parent.parent.parent / 'config' / 'dev' / 'stress_scenarios.yml'
+    correlations_path = Path(__file__).parent.parent.parent / 'config' / 'dev' / 'scenario_correlations.yml'
+    asset_corr_path = Path(__file__).parent.parent.parent / 'config' / 'dev' / 'asset_correlations.yml'
+    
+    if not scenarios_path.exists():
+        raise FileNotFoundError(
+            f"压力测试场景配置文件不存在: {scenarios_path}\n"
+            f"请确保配置文件存在: core_bak_refactored/config/dev/stress_scenarios.yml"
+        )
+    
+    if not correlations_path.exists():
+        raise FileNotFoundError(
+            f"场景相关性配置文件不存在: {correlations_path}\n"
+            f"请确保配置文件存在: core_bak_refactored/config/dev/scenario_correlations.yml"
+        )
+    
+    if not asset_corr_path.exists():
+        raise FileNotFoundError(
+            f"资产相关性配置文件不存在: {asset_corr_path}\n"
+            f"请确保配置文件存在: core_bak_refactored/config/dev/asset_correlations.yml"
+        )
+    
+    try:
+        with open(scenarios_path, 'r', encoding='utf-8') as f:
+            scenarios_config = yaml.safe_load(f)
+        
+        with open(correlations_path, 'r', encoding='utf-8') as f:
+            correlations_config = yaml.safe_load(f)
+        
+        with open(asset_corr_path, 'r', encoding='utf-8') as f:
+            asset_corr_config = yaml.safe_load(f)
+        
+        # 验证必需字段
+        if 'defaults' not in scenarios_config:
+            raise ValueError("压力测试场景配置文件缺少必需字段: defaults")
+        if 'scenarios' not in scenarios_config:
+            raise ValueError("压力测试场景配置文件缺少必需字段: scenarios")
+        if 'correlations' not in correlations_config:
+            raise ValueError("场景相关性配置文件缺少必需字段: correlations")
+        if 'correlation_factors' not in asset_corr_config:
+            raise ValueError("资产相关性配置文件缺少必需字段: correlation_factors")
+        
+        return {
+            'scenarios': scenarios_config,
+            'correlations': correlations_config,
+            'asset_correlations': asset_corr_config
+        }
+    
+    except yaml.YAMLError as e:
+        raise ValueError(f"压力测试配置文件格式错误: {e}")
 
-# 资产类别相关性调整因子（answer.md 123-131行）
+
+# 从配置文件加载压力测试配置
+_STRESS_CONFIG = _load_stress_testing_config()
+
+# 场景相关性矩阵（从配置文件加载）
+SCENARIO_CORRELATION_MATRIX = _STRESS_CONFIG['correlations']['correlations']
+
+# 资产类别相关性调整因子（从配置文件加载）
+_asset_factors = _STRESS_CONFIG['asset_correlations']['correlation_factors']
 DEFAULT_CORRELATION_ADJUSTMENT_FACTORS = {
-    ('stock', 'stock'): 0.9,
-    ('stock', 'bond'): 0.6,
-    ('stock', 'commodity'): 0.7,
-    ('bond', 'bond'): 0.8,
-    ('bond', 'commodity'): 0.5,
-    ('commodity', 'commodity'): 0.8
+    ('stock', 'stock'): _asset_factors['stock_stock'],
+    ('stock', 'bond'): _asset_factors['stock_bond'],
+    ('stock', 'commodity'): _asset_factors['stock_commodity'],
+    ('bond', 'bond'): _asset_factors['bond_bond'],
+    ('bond', 'commodity'): _asset_factors['bond_commodity'],
+    ('commodity', 'commodity'): _asset_factors['commodity_commodity']
 }
 
-# 默认值（answer.md 495-498行）
-DEFAULT_DAILY_VOLUME = 1000000  # 100万股
-DEFAULT_LIMIT_DOWN_FREQ = 0.05  # 5%的历史跌停频率
+# 默认值（从配置文件加载）
+DEFAULT_DAILY_VOLUME = _STRESS_CONFIG['scenarios']['defaults']['daily_volume']
+DEFAULT_LIMIT_DOWN_FREQ = _STRESS_CONFIG['scenarios']['defaults']['limit_down_freq']
 
 
 class StressTester:
@@ -198,82 +123,11 @@ class StressTester:
         self._load_custom_scenarios()    # 自定义
     
     def _load_builtin_scenarios(self):
-        """加载内置场景库（第6轮更新：补全至10个场景，覆盖率100%）"""
-        scenarios = [
-            # 全球市场事件
-            {'scenario_id': '2008_financial_crisis', 'name': '2008金融危机',
-             'description': '标普500下跌57%', 'probability': 0.01, 'impact_level': 'high',
-             'duration': '18个月', 'triggers': ['次贷危机', '信用紧缩'], 
-             'mitigation_strategies': ['分散投资', '对冲策略'],
-             'parameters': {'type': 'market_crash', 'decline': -0.40, 'volatility_spike': 3.5, 
-                           'correlation_break': 0.8, 'recovery_period': 18}},
-            {'scenario_id': 'covid_19_pandemic', 'name': 'COVID-19疫情',
-             'description': '全球股市下跌20%', 'probability': 0.02, 'impact_level': 'moderate',
-             'duration': '6个月', 'triggers': ['公共卫生危机'], 
-             'mitigation_strategies': ['调整行业配置'],
-             'parameters': {'type': 'market_crash', 'decline': -0.20, 'recovery_speed': 6, 
-                           'sector_divergence': 0.4}},
-            {'scenario_id': 'currency_crisis', 'name': '货币危机',
-             'description': '汇率波动剧烈导致资产缩水', 'probability': 0.03, 'impact_level': 'high',
-             'duration': '3-6个月', 'triggers': ['外汇储备不足', '资本外流'], 
-             'mitigation_strategies': ['货币对冲', '减少外币敞口'],
-             'parameters': {'type': 'market_crash', 'decline': -0.25, 'currency_volatility': 2.5, 
-                           'capital_flight_intensity': 0.6}},
-            # 第5轮新增：1997亚洲金融危机（专家answer.md 2.3节参数）
-            {'scenario_id': '1997_asian_financial_crisis', 'name': '1997亚洲金融危机',
-             'description': '恒生指数跌60%，对A股影响约-35%', 'probability': 0.01, 'impact_level': 'high',
-             'duration': '24个月', 'triggers': ['泰铢崩盘', '区域传导'], 
-             'mitigation_strategies': ['货币对冲', '区域多元化'],
-             'parameters': {'type': 'currency_crisis', 'decline': -0.35, 'currency_volatility': 3.0, 
-                           'regional_contagion': 0.6, 'recovery_period': 24, 'liquidity_dry_up': 0.7}},
-            # 第5轮新增：2022俄乌冲突（专家answer.md 2.3节参数）
-            {'scenario_id': '2022_russia_ukraine_conflict', 'name': '2022俄乌冲突',
-             'description': '地缘政治风险，全球指数平均跌20%', 'probability': 0.02, 'impact_level': 'moderate',
-             'duration': '12个月', 'triggers': ['地缘政治', '供应链中断'], 
-             'mitigation_strategies': ['避险资产配置', '商品对冲'],
-             'parameters': {'type': 'geopolitical_risk', 'decline': -0.20, 'commodity_shock': 0.8, 
-                           'sanction_impact': 0.6, 'flight_to_quality': 0.7, 'recovery_period': 12}},
-            # 第6轮新增：2011欧债危机
-            {'scenario_id': '2011_eurozone_debt_crisis', 'name': '2011欧债危机',
-             'description': '欧洲主权债务危机，全球股市平均跌25%', 'probability': 0.015, 'impact_level': 'high',
-             'duration': '18个月', 'triggers': ['主权债务违约风险', '银行业危机'], 
-             'mitigation_strategies': ['减少欧洲敞口', '增持避险资产'],
-             'parameters': {'type': 'sovereign_debt_crisis', 'decline': -0.25, 'credit_spread_widening': 3.0, 
-                           'contagion_risk': 0.7, 'recovery_period': 18, 'banking_sector_stress': 0.8}},
-            # 第6轮新增：2013钱荒
-            {'scenario_id': '2013_china_credit_crunch', 'name': '2013中国钱荒',
-             'description': '银行间市场流动性骤紧，隔夜利率飙升至13%', 'probability': 0.04, 'impact_level': 'moderate',
-             'duration': '2周', 'triggers': ['央行去杠杆', '流动性收紧'], 
-             'mitigation_strategies': ['增加现金储备', '缩短资金久期'],
-             'parameters': {'type': 'liquidity_crisis', 'decline': -0.08, 'interest_rate_spike': 6.5, 
-                           'interbank_freeze': 0.6, 'recovery_period': 0.5, 'margin_pressure': 0.5}},
-            # 第6轮新增：2011美国债务上限危机
-            {'scenario_id': '2011_us_debt_ceiling_crisis', 'name': '2011美国债务上限危机',
-             'description': '政策不确定性上升，全球指数跌幅约12-20%', 'probability': 0.03, 'impact_level': 'moderate',
-             'duration': '3个月', 'triggers': ['财政悬崖', '评级下调'], 
-             'mitigation_strategies': ['提升现金', '降低风险资产'],
-             'parameters': {'type': 'sovereign_debt_crisis', 'decline': -0.12, 'credit_spread_widening': 1.5, 
-                           'contagion_risk': 0.4, 'recovery_period': 6, 'banking_sector_stress': 0.4}},
-            # A股特有事件
-            {'scenario_id': '2015_china_market_crash', 'name': '2015A股大跌',
-             'description': '上证指数下跌43%', 'probability': 0.05, 'impact_level': 'high',
-             'duration': '3个月', 'triggers': ['杠杆破裂', '流动性枯竭'], 
-             'mitigation_strategies': ['减少杠杆', '提高现金比例'],
-             'parameters': {'type': 'market_crash', 'decline': -0.43, 'liquidity_dry_up': 0.8, 
-                           'limit_hit_frequency': 0.3}},
-            {'scenario_id': 'circuit_breaker_2016', 'name': '2016A股熔断',
-             'description': '市场熔断机制触发', 'probability': 0.08, 'impact_level': 'moderate',
-             'duration': '1天', 'triggers': ['指数下跌7%'], 
-             'mitigation_strategies': ['控制仓位'],
-             'parameters': {'type': 'market_crash', 'decline': -0.07, 'market_closure': True, 
-                           'panic_selling': 0.6}},
-            {'scenario_id': 'thousand_stocks_limit_down', 'name': '千股跌停',
-             'description': '30%股票跌停', 'probability': 0.03, 'impact_level': 'high',
-             'duration': '1天', 'triggers': ['系统性恐慌'], 
-             'mitigation_strategies': ['提高流动性储备'],
-             'parameters': {'type': 'liquidity_crisis', 'limit_down_ratio': 0.3, 
-                           'liquidity_crisis': 0.9, 'margin_call_cascade': 0.4}}
-        ]
+        """加载内置场景库（从配置文件加载）
+        
+        配置文件: core_bak_refactored/config/dev/stress_scenarios.yml
+        """
+        scenarios = _STRESS_CONFIG['scenarios']['scenarios']
         
         for data in scenarios:
             try:

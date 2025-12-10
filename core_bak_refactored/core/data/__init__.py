@@ -33,8 +33,7 @@ TODO:
 from .fetcher_orchestrator import DataFetcherOrchestrator
 from core_bak_refactored.infrastructure.cache import CacheManager
 from core_bak_refactored.core.share.market.market_status_service import MarketStatusService
-from .providers.fundamental_data_service import FundamentalDataService
-from .providers.alpha_vantage import AlphaVantageProvider
+
 
 # 遗留组件（仅用于测试，不再导出）
 # from .data_fetcher import DataFetcher  # 已被 DataFetcherOrchestrator 替代
@@ -54,11 +53,7 @@ from .providers.protocols import (
     HistoricalDataProvider,  # 协议接口（2025-12-02重构：从 historical_data_provider.py 提取）
 )
 
-from .providers.historical_data_provider import (
-    RealHistoricalDataProvider,  # 真实数据提供者（2025-12-02重构：主要实现）
-)
-
-from .providers.yahoo_finance import (
+from .providers.yahoo_provider import (
     YahooFinanceDataProvider,  # 第6轮专家碎片 - Yahoo数据源
 )
 
@@ -74,8 +69,6 @@ __all__ = [
     'DataFetcherOrchestrator',
     'CacheManager',
     'MarketStatusService',
-    'FundamentalDataService',
-    'AlphaVantageProvider',
     
     # 数据枚举
     'DataSourceType',
@@ -93,7 +86,7 @@ __all__ = [
     'DataQualityEnhancer',
     'DataQualityReport',
     'HistoricalDataProvider',  # Protocol接口
-    'RealHistoricalDataProvider',  # 真实数据提供者
+   # Deleted: 'RealHistoricalDataProvider' 已删除
     'YahooFinanceDataProvider',
     
     # MarketData业务验证

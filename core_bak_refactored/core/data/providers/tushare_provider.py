@@ -16,6 +16,11 @@ pip install tushare
 - A股数据质量高
 - 港股数据较为完整
 - 需要注册获取token
+
+配置：
+- 需要Token（从 https://tushare.pro/register 注册获取）
+- 环境变量：TUSHARE_TOKEN
+- 或通过credentials.yml配置
 """
 
 import pandas as pd
@@ -24,9 +29,12 @@ from typing import Dict, Optional, Union, Any, List
 from datetime import datetime, timedelta
 import logging
 from dataclasses import dataclass, field
+import os
 
 # 导入新的数据结构
 from core_bak_refactored.core.data.providers.protocols import PriceData, OHLCVRecord
+from core_bak_refactored.core.data.providers.base_provider import BaseDataProvider
+from core_bak_refactored.core.risk.backtest_framework import HistoricalDataProvider
 
 logger = logging.getLogger('DeepSeekQuant.TushareProvider')
 
@@ -46,7 +54,7 @@ class DataQualityReport:
         self.overall_score = (self.completeness_score + self.consistency_score + self.accuracy_score) / 3
 
 
-class TushareDataProvider:
+class TushareDataProvider(BaseDataProvider, HistoricalDataProvider):
     """
     Tushare数据提供者（实现HistoricalDataProvider接口）
     
@@ -85,35 +93,91 @@ class TushareDataProvider:
         Args:
             token: Tushare Pro API token（可从环境变量TUSHARE_TOKEN读取）
         """
-        self.token = token
-        self.available = False
+        # 优先级：传入参数 > 环境变量 > 配置文件 > None
+        token = token or os.getenv('TUSHARE_TOKEN') or self._load_token_from_config()
+        self.ts_pro = None
         
         # 尝试初始化Tushare
         try:
             import tushare as ts
-            import os
             
-            # 优先使用传入token，否则从环境变量读取
-            final_token = token or os.getenv('TUSHARE_TOKEN')
-            
-            if not final_token:
-                logger.error("Tushare token未配置，请设置TUSHARE_TOKEN环境变量或传入token参数")
+            if token:
+                ts.set_token(token)
+                self.ts_pro = ts.pro_api()
+                logger.info(f"Tushare API initialized successfully with token: {self.token[:8]}...")
+            else:
                 self.ts_pro = None
-                raise RuntimeError("Tushare token未配置")
-            
-            ts.set_token(final_token)
-            self.ts_pro = ts.pro_api()
-            self.available = True
-            logger.info("Tushare API initialized successfully")
+                logger.warning("Tushare token未配置，请设置TUSHARE_TOKEN环境变量或传入token参数")
             
         except ImportError:
             logger.error("tushare库未安装，请运行: pip install tushare")
             self.ts_pro = None
-            raise RuntimeError("tushare library not available")
+            # 不抛出异常，允许实例创建但标记为不可用
         except Exception as e:
             logger.error(f"Tushare初始化失败: {e}")
             self.ts_pro = None
-            raise
+            # 不抛出异常，允许实例创建但标记为不可用
+    
+    def initialize(self, token: str = None, **kwargs):
+        """
+        初始化客户端
+        
+        Args:
+            token: Tushare Token
+            **kwargs: 其他初始化参数
+        """
+        # 使用传入的token或已有token
+        if token:
+            try:
+                import tushare as ts
+                ts.set_token(token)
+                self.ts_pro = ts.pro_api()
+                logger.info(f"Tushare客户端初始化成功: {token[:8]}...")
+            except Exception as e:
+                logger.error(f"Tushare客户端初始化失败: {e}")
+                self.ts_pro = None
+        else:
+            logger.warning("未提供Token，无法初始化Tushare客户端")
+
+    def _load_token_from_config(self) -> Optional[str]:
+        """
+        从配置文件加载Token
+        
+        Returns:
+            Token字符串，如果未找到则返回None
+        """
+        try:
+            # 使用基类方法获取配置路径
+            config_path = self._get_config_path('credentials.yml')
+            
+            # 检查配置文件是否存在
+            if not config_path.exists():
+                logger.debug("凭证配置文件不存在")
+                return None
+            
+            # 读取配置文件
+            import yaml
+            with open(config_path, 'r', encoding='utf-8') as f:
+                credentials_data = yaml.safe_load(f) or {}
+            
+            # 获取Tushare的Token
+            tushare_creds = credentials_data.get('tushare', {})
+            token = tushare_creds.get('token')
+            
+            if token:
+                logger.debug("从配置文件加载Tushare Token成功")
+                return token
+            else:
+                logger.debug("配置文件中未找到Tushare Token")
+                return None
+                
+        except Exception as e:
+            logger.warning(f"从配置文件加载Token失败: {e}")
+            return None
+
+    def get_test_symbol(self) -> str:
+        """获取测试符号"""
+        return '000300.SH'  # 沪深300指数
     
     def get_index_prices(self, index_id: str, start_date: Union[str, datetime], end_date: Union[str, datetime]) -> PriceData:
         """
@@ -130,7 +194,7 @@ class TushareDataProvider:
         Raises:
             ValueError: 数据不可用
         """
-        if not self.available or self.ts_pro is None:
+        if not self.ts_pro:
             raise RuntimeError("Tushare API不可用，请配置 TUSHARE_TOKEN")
         
         # 转换日期格式为Tushare要求的YYYYMMDD
@@ -218,7 +282,7 @@ class TushareDataProvider:
         Returns:
             PriceData: 包含标准OHLCV数据的结构化对象
         """
-        if not self.available or self.ts_pro is None:
+        if not self.ts_pro:
             raise RuntimeError("Tushare API不可用，请配置 TUSHARE_TOKEN")
         
         # 转换日期格式
@@ -466,7 +530,7 @@ class TushareDataProvider:
     
     def test_connection(self) -> bool:
         """测试API连接"""
-        if not self.available or self.ts_pro is None:
+        if not self.ts_pro:
             logger.error("Tushare API未初始化")
             return False
         

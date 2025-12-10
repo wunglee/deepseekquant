@@ -1,7 +1,6 @@
 from typing import Any, Callable, Dict, List, Optional
 
 from core_bak_refactored.core.share import MarketData
-from core_bak_refactored.core.data.providers.alpha_vantage import AlphaVantageProvider
 from core_bak_refactored.infrastructure.cache import CacheManager
 from core_bak_refactored.core.share.market.market_status_service import MarketStatusService
 from core_bak_refactored.core.data.providers.fundamental_data_service import FundamentalDataService

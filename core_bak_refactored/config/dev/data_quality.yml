@@ -1,0 +1,10 @@
+# 数据质量配置
+quality_threshold: 0.8  # 默认质量阈值
+min_data_rows: 1  # 最少数据行数
+
+# 数据质量评分权重
+score_weights:
+  completeness: 0.3  # 完整性权重
+  consistency: 0.3   # 一致性权重
+  accuracy: 0.2      # 准确性权重
+  outliers: 0.2      # 异常值权重

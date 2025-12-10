@@ -94,12 +94,6 @@ class QualityMonitoringService:
         Args:
             alert_config: 告警配置（如果None则使用默认配置）
             config: 监控配置字典
-        
-        Note:
-            数据源类型通过配置文件 config/dev/data.yml 中的 primary_source 控制
-            - mock: 使用模拟数据（不调用外部API）
-            - yahoo: 使用Yahoo Finance真实数据
-            - tushare: 使用Tushare数据
         """
         # 初始化核心组件
         self.quality_checker = DataQualityChecker()
@@ -109,25 +103,7 @@ class QualityMonitoringService:
         self.config_manager = ConfigManager()
         self.config = config or self.config_manager.get_system_config().__dict__
         
-        # 数据提供者（根据配置文件选择）
-        data_cfg = self.config_manager.get_data_config()
-        factory = get_global_factory()
-        
-        # 根据配置创建数据提供者
-        if data_cfg.primary_source in ['yahoo', 'tushare', 'akshare']:
-            # 直接使用指定的数据源
-            self.data_provider = factory.create(data_cfg.primary_source)
-            logger.info(f"🌐 使用真实数据源: {data_cfg.primary_source}（配置: config/dev/data.yml）")
-        else:
-            # 使用RealHistoricalDataProvider
-            self.data_provider = factory.create(
-                'real',
-                primary_source=data_cfg.primary_source,
-                enable_cross_validation=self.config_manager.get_monitoring_config().enable_cross_validation,
-            )
-            logger.info(f"🌐 使用RealHistoricalDataProvider: primary={data_cfg.primary_source}（配置: config/dev/data.yml）")
-        
-        # 质量历史记录（从DataQualityChecker的check_history转换而来）
+        # 质量历史记录（从 DataQualityChecker 的 check_history 转换而来）
         self._quality_history: List[Dict[str, Any]] = []
         
         # 性能统计管理器

@@ -13,56 +13,85 @@ from typing import Any, Dict, Optional
 from dataclasses import dataclass, asdict
 import logging
 
+from core_bak_refactored.core.share.market.market_enums import MarketCode, DataSource
+
 logger = logging.getLogger('DeepSeekQuant.Core.Share.ConfigManager')
 
 
 @dataclass
 class MonitoringConfig:
-    """监控配置数据类"""
-    check_interval: int = 300  # 检查间隔（秒）
-    max_quality_history: int = 5000  # 最大质量历史记录数
-    alert_threshold: float = 0.8  # 告警阈值
-    enable_cross_validation: bool = True  # 是否启用交叉验证
-    cross_validation_interval: int = 3600  # 交叉验证间隔（秒）
+    """监控配置数据类
+    
+    Note:
+        所有字段必须从配置文件读取，不提供默认值
+        配置文件路径: core_bak_refactored/config/{env}/monitoring.yml
+    """
+    check_interval: int  # 检查间隔（秒）
+    max_quality_history: int  # 最大质量历史记录数
+    alert_threshold: float  # 告警阈值
+    enable_cross_validation: bool  # 是否启用交叉验证
+    cross_validation_interval: int  # 交叉验证间隔（秒）
 
 
 @dataclass
 class AlertingConfig:
-    """告警配置数据类"""
-    enable_email: bool = False
-    enable_sms: bool = False
-    enable_wechat: bool = True
-    enable_dingtalk: bool = False
-    enable_slack: bool = False
-    enable_webhook: bool = False
-    enable_log: bool = True
-    min_severity: str = "warning"  # 最小告警严重程度
-    deduplication_window: int = 3600  # 去重窗口（秒）
+    """告警配置数据类
+    
+    Note:
+        所有字段必须从配置文件读取，不提供默认值
+        配置文件路径: core_bak_refactored/config/{env}/alerting.yml
+    """
+    enable_email: bool
+    enable_sms: bool
+    enable_wechat: bool
+    enable_dingtalk: bool
+    enable_slack: bool
+    enable_webhook: bool
+    enable_log: bool
+    min_severity: str  # 最小告警严重程度
+    deduplication_window: int  # 去重窗口（秒）
 
 
 @dataclass
 class DataConfig:
-    """数据配置数据类"""
-    primary_source: str = "yahoo"
-    default_index: str = "SPX"
-    cache_enabled: bool = True
-    cache_ttl: int = 3600  # 缓存过期时间（秒）
-    max_retries: int = 3  # 最大重试次数
-    providers: list = None  # 数据源列表（用于 Providers 页面展示）
+    """数据配置数据类
+    
+    Note:
+        所有字段必须从配置文件读取，不提供默认值
+        配置文件路径: core_bak_refactored/config/{env}/data.yml
+        
+    ❌ 已废弃：primary_source（不向后兼容）
+    ✅ 新字段：market_sources - 每个市场单独配置数据源
+    """
+    market_sources: Dict[str, str]  # 市场数据源映射：{market_code: provider_id}
+    default_index: str
+    cache_enabled: bool
+    cache_ttl: int  # 缓存过期时间（秒）
+    max_retries: int  # 最大重试次数
+    providers: list  # 数据源列表（用于 Providers 页面展示）
     
     def __post_init__(self):
-        if self.providers is None:
-            self.providers = []
+        # 确保 providers 是列表类型
+        if not isinstance(self.providers, list):
+            raise ValueError("providers 必须是列表类型")
+        # 确保 market_sources 是字典类型
+        if not isinstance(self.market_sources, dict):
+            raise ValueError("market_sources 必须是字典类型")
 
 
 @dataclass
 class SystemConfig:
-    """系统配置数据类"""
-    log_level: str = "INFO"
-    max_concurrent_requests: int = 10
-    timeout: int = 30  # 请求超时（秒）
-    enable_health_check: bool = True
-    health_check_interval: int = 60  # 健康检查间隔（秒）
+    """系统配置数据类
+    
+    Note:
+        所有字段必须从配置文件读取，不提供默认值
+        配置文件路径: core_bak_refactored/config/{env}/system.yml
+    """
+    log_level: str
+    max_concurrent_requests: int
+    timeout: int  # 请求超时（秒）
+    enable_health_check: bool
+    health_check_interval: int  # 健康检查间隔（秒）
 
 
 class ConfigManager:
@@ -169,13 +198,20 @@ class ConfigManager:
         logger.info("使用默认配置")
     
     def _get_default_config(self) -> Dict[str, Any]:
-        """获取默认配置（作为YAML缺失时的回退）"""
-        return {
-            'monitoring': asdict(MonitoringConfig()),
-            'alerting': asdict(AlertingConfig()),
-            'data': asdict(DataConfig()),
-            'system': asdict(SystemConfig())
-        }
+        """配置文件缺失时抛出异常（不再提供硬编码默认值）
+        
+        Raises:
+            RuntimeError: 配置文件不存在或加载失败
+        
+        Note:
+            所有配置必须从配置文件读取，不提供硬编码默认值
+            请确保配置文件存在: core_bak_refactored/config/{env}/*.yml
+        """
+        raise RuntimeError(
+            f"配置文件加载失败，请检查配置文件是否存在: "
+            f"core_bak_refactored/config/{self.environment}/*.yml\n"
+            f"必需的配置文件: monitoring.yml, alerting.yml, data.yml, system.yml"
+        )
     
     def get_monitoring_config(self) -> MonitoringConfig:
         """获取监控配置"""
@@ -286,3 +322,131 @@ class ConfigManager:
                     original[key] = value
         
         deep_update(self._config, config_dict)
+    
+    def validate_market_sources(self, market_sources: Dict[str, str]) -> tuple[bool, Optional[str]]:
+        """验证市场数据源映射配置
+        
+        Args:
+            market_sources: 市场到数据源的映射字典
+        
+        Returns:
+            (是否有效, 错误信息)
+        
+        Examples:
+            >>> config_manager = ConfigManager()
+            >>> valid, error = config_manager.validate_market_sources({'CN': 'akshare', 'US': 'yahoo'})
+            >>> valid
+            False  # 缺少必需市场
+            >>> error
+            '市场 HK 未配置数据源'
+        
+        验证规则:
+            - 所有必需市场（CN/HK/US/EU/JP/SG）都必须配置
+            - 数据源 ID 不能为空
+        """
+        if not isinstance(market_sources, dict):
+            return False, 'market_sources 必须是字典类型'
+        
+        # 验证所有必需市场都有配置
+        required_markets = [
+            MarketCode.CN,
+            MarketCode.HK,
+            MarketCode.US,
+            MarketCode.EU,
+            MarketCode.JP,
+            MarketCode.SG
+        ]
+        
+        for market in required_markets:
+            market_value = market.value
+            if market_value not in market_sources:
+                return False, f'市场 {market_value} 未配置数据源'
+            
+            provider_id = market_sources[market_value]
+            if not provider_id or not isinstance(provider_id, str) or not provider_id.strip():
+                return False, f'市场 {market_value} 的数据源 ID 无效'
+        
+        return True, None
+    
+    def save_market_sources(self, market_sources: Dict[str, str], env: str = None) -> bool:
+        """保存市场数据源映射到配置文件
+        
+        Args:
+            market_sources: 市场到数据源的映射字典
+            env: 环境名称（默认使用当前环境）
+        
+        Returns:
+            bool: 是否保存成功
+        
+        Examples:
+            >>> config_manager = ConfigManager()
+            >>> market_sources = {'CN': 'akshare', 'US': 'yahoo', 'HK': 'akshare', ...}
+            >>> config_manager.save_market_sources(market_sources)
+            True
+        
+        Raises:
+            ValueError: 如果 market_sources 验证失败
+        """
+        # 1. 验证配置
+        valid, error = self.validate_market_sources(market_sources)
+        if not valid:
+            raise ValueError(f"市场配置验证失败: {error}")
+        
+        # 2. 确定保存路径
+        import yaml
+        target_env = env or self.environment
+        base_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'config')
+        env_dir = os.path.join(base_dir, target_env)
+        data_yml_path = os.path.join(env_dir if os.path.exists(env_dir) else base_dir, 'data.yml')
+        
+        try:
+            # 3. 读取现有配置
+            if os.path.exists(data_yml_path):
+                with open(data_yml_path, 'r', encoding='utf-8') as f:
+                    config_data = yaml.safe_load(f) or {}
+            else:
+                config_data = {}
+            
+            # 4. 更新 market_sources
+            config_data['market_sources'] = market_sources
+            
+            # 5. 写入文件
+            with open(data_yml_path, 'w', encoding='utf-8') as f:
+                yaml.dump(config_data, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+            
+            logger.info(f"保存市场配置成功: {market_sources} -> {data_yml_path}")
+            
+            # 6. 重新加载配置（更新内存中的配置）
+            self._load_config()
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"保存市场配置失败: {e}")
+            raise
+    
+    def get_config_path(self, config_type: str, env: str = None) -> str:
+        """获取配置文件路径
+        
+        Args:
+            config_type: 配置类型（如 'data', 'credentials', 'monitoring'）
+            env: 环境名称（默认使用当前环境）
+        
+        Returns:
+            str: 配置文件绝对路径
+        
+        Examples:
+            >>> config_manager = ConfigManager()
+            >>> config_manager.get_config_path('data')
+            '/path/to/core_bak_refactored/config/dev/data.yml'
+            >>> config_manager.get_config_path('credentials', env='prod')
+            '/path/to/core_bak_refactored/config/prod/credentials.yml'
+        """
+        target_env = env or self.environment
+        base_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'config')
+        env_dir = os.path.join(base_dir, target_env)
+        
+        config_file = f"{config_type}.yml"
+        config_path = os.path.join(env_dir if os.path.exists(env_dir) else base_dir, config_file)
+        
+        return config_path
