@@ -385,7 +385,13 @@ function loadMoreHistoryData(callback) {
     
     // 调用API
     fetch(url)
-        .then(r => r.json())
+        .then(r => {
+            // 检查HTTP状态码
+            if (!r.ok) {
+                throw new Error(`HTTP ${r.status}: ${r.statusText}`);
+            }
+            return r.json()
+        })
         .then(res => {
             if (res.status !== 'success') {
                 console.error('加载失败:', res.message)
@@ -431,6 +437,10 @@ function loadMoreHistoryData(callback) {
         })
         .catch(err => {
             console.error('加载更多数据失败:', err)
+            // 更详细的错误信息显示
+            if (err instanceof TypeError && err.message.includes('fetch')) {
+                showEmpty(klineChart, '网络连接失败，请检查网络设置')
+            }
             callback(false)
         })
 }
@@ -659,42 +669,89 @@ function showEmpty(chart, text) {
 
 function init() {
     fetch('/api/v1/markets/config')
-        .then(r => r.json()).then(res => {
-            if (res.status !== 'success') { showEmpty(klineChart, '加载失败'); return }
-            const markets = res.markets || []
-            // 为界面验证：若返回市场数量不足，注入港股/美股的模拟市场（仅应用层展示）
-            if (markets.length < 3) {
-                const hk = {
-                    id: 'hk_stock', name: '港股', default_indices: [
+        .then(r => {
+            if (!r.ok) {
+                throw new Error(`HTTP ${r.status}: ${r.statusText}`);
+            }
+            return r.json();
+        })
+        .then(res => {
+            if (res.status !== 'success') { 
+                showEmpty(klineChart, '加载失败: ' + (res.message || '未知错误')); 
+                return 
+            }
+            const markets = res.data.markets || []
+            const marketSources = res.data.market_sources || {}
+            
+            // 为界面验证：构建完整的市场配置，包括默认指数
+            const completeMarkets = []
+            
+            // 添加A股市场
+            const cnMarket = markets.find(m => m.code === 'CN')
+            if (cnMarket) {
+                completeMarkets.push({
+                    id: 'cn_stock',
+                    name: cnMarket.name,
+                    default_indices: [
+                        {id: '000001.SH', name: '上证指数', type: 'index'},
+                        {id: '000300.SH', name: '沪深300', type: 'index'},
+                        {id: '399001.SZ', name: '深证成指', type: 'index'},
+                        {id: '399006.SZ', name: '创业板指', type: 'index'},
+                        {id: '600036.SH', name: '招商银行', type: 'stock'}
+                    ]
+                })
+            }
+            
+            // 添加港股市场
+            const hkMarket = markets.find(m => m.code === 'HK')
+            if (hkMarket) {
+                completeMarkets.push({
+                    id: 'hk_stock',
+                    name: hkMarket.name,
+                    default_indices: [
                         {id: 'HSI', name: '恒生指数', type: 'index'},
                         {id: 'HSCEI', name: '国企指数', type: 'index'},
                         {id: 'HSTECH', name: '恒生科技', type: 'index'},
                         {id: '0700.HK', name: '腾讯控股', type: 'stock'},
                         {id: '0939.HK', name: '建设银行', type: 'stock'}
                     ]
-                }
-                const us = {
-                    id: 'us_stock', name: '美股', default_indices: [
+                })
+            }
+            
+            // 添加美股市场
+            const usMarket = markets.find(m => m.code === 'US')
+            if (usMarket) {
+                completeMarkets.push({
+                    id: 'us_stock',
+                    name: usMarket.name,
+                    default_indices: [
                         {id: '^GSPC', name: 'S&P 500', type: 'index'},
                         {id: '^DJI', name: '道琼斯', type: 'index'},
                         {id: '^IXIC', name: '纳斯达克', type: 'index'},
                         {id: 'AAPL', name: 'Apple', type: 'stock'},
                         {id: 'MSFT', name: 'Microsoft', type: 'stock'}
                     ]
-                }
-                // 保持A股在最前，其次港股与美股
-                const hasCN = markets.find(m => m.id === 'cn_stock')
-                const others = markets.filter(m => m.id !== 'cn_stock')
-                const final = []
-                if (hasCN) final.push(hasCN)
-                final.push(hk, us, ...others)
-                markets.splice(0, markets.length, ...final)
+                })
             }
-            buildMarketSelector(markets)
-            if (markets.length) {
-                selectMarket(markets[0])
+            
+            // 添加其他市场（如果有）
+            const otherMarkets = markets.filter(m => !['CN', 'HK', 'US'].includes(m.code))
+            otherMarkets.forEach(market => {
+                completeMarkets.push({
+                    id: `${market.code.toLowerCase()}_stock`,
+                    name: market.name,
+                    default_indices: [] // 其他市场暂时不添加默认指数
+                })
+            })
+            
+            buildMarketSelector(completeMarkets)
+            if (completeMarkets.length) {
+                selectMarket(completeMarkets[0]) // 默认选择第一个市场（A股）
             }
-        }).catch(() => showEmpty(klineChart, '加载失败'))
+        }).catch(err => {
+            console.error('Init error:', err)
+            showEmpty(klineChart, '初始化失败: ' + err.message)
+        })
     buildPeriodSelector()
     buildIndicatorSelector()
 }
@@ -720,6 +777,26 @@ function selectMarket(market) {
     currentMarket = market.id
     const indices = (market.default_indices || [])
     buildIndexList(indices)
+    
+    // 清除之前的错误状态，确保切换市场时能正常显示新数据
+    if (klineChart) {
+        // 清除图表中的错误提示
+        klineChart.clear()
+        // 显示加载状态
+        klineChart.setOption({
+            graphic: [{
+                type: 'text',
+                left: 'center',
+                top: 'center',
+                style: {
+                    text: '加载中...',
+                    fontSize: 16,
+                    fill: '#999'
+                }
+            }]
+        }, true);
+    }
+    
     if (indices.length) selectIndex(indices[0])
 }
 
@@ -767,6 +844,50 @@ function buildIndexList(indices) {
     })
 }
 
+function selectIndex(item) {
+    currentIndex = item
+    
+    // 清除之前的错误状态，确保切换指数时能正常显示新数据
+    if (klineChart) {
+        // 清除图表中的错误提示
+        klineChart.clear()
+        // 显示加载状态
+        klineChart.setOption({
+            graphic: [{
+                type: 'text',
+                left: 'center',
+                top: 'center',
+                style: {
+                    text: '加载中...',
+                    fontSize: 16,
+                    fill: '#999'
+                }
+            }]
+        }, true);
+    }
+    
+    // 同时清除技术指标图的错误状态并显示加载状态
+    if (indicatorChart) {
+        // 清除图表中的错误提示
+        indicatorChart.clear()
+        // 显示加载状态
+        indicatorChart.setOption({
+            graphic: [{
+                type: 'text',
+                left: 'center',
+                top: 'center',
+                style: {
+                    text: '加载中...',
+                    fontSize: 16,
+                    fill: '#999'
+                }
+            }]
+        }, true);
+    }
+    
+    loadKline(item.id)
+}
+
 function buildPeriodSelector() {
     const container = document.getElementById('periodSelector')
     container.innerHTML = ''
@@ -783,12 +904,6 @@ function buildPeriodSelector() {
         }
         container.appendChild(btn)
     })
-    const tip = document.createElement('span')
-    tip.style.marginLeft = '8px'
-    tip.style.color = '#6b7280'
-    tip.style.fontSize = '13px'
-    tip.textContent = '最近30周期'
-    container.appendChild(tip)
 }
 
 function buildIndicatorSelector() {
@@ -810,11 +925,6 @@ function buildIndicatorSelector() {
         }
         container.appendChild(btn)
     })
-}
-
-function selectIndex(item) {
-    currentIndex = item
-    loadKline(item.id)
 }
 
 function calcMA(data, period) {
@@ -1608,6 +1718,10 @@ function loadKline(indexId) {
     fetch(url)
         .then(r => {
             console.log('Response received:', r.status)
+            // 检查HTTP状态码
+            if (!r.ok) {
+                throw new Error(`HTTP ${r.status}: ${r.statusText}`);
+            }
             return r.json()
         })
         .then(res => {
@@ -1636,7 +1750,12 @@ function loadKline(indexId) {
         })
         .catch(err => {
             console.error('Fetch error:', err)
-            showEmpty(klineChart, '加载失败: ' + err.message)
+            // 更详细的错误信息显示
+            if (err instanceof TypeError && err.message.includes('fetch')) {
+                showEmpty(klineChart, '网络连接失败，请检查网络设置')
+            } else {
+                showEmpty(klineChart, '加载失败: ' + err.message)
+            }
         })
 }
 

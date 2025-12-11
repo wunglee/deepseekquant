@@ -166,7 +166,8 @@ class AKShareDataProvider(BaseDataProvider, HistoricalDataProvider):
             
         except Exception as e:
             logger.error(f"AKShare failed for {symbol}: {e}")
-            raise ValueError(f"Failed to fetch data for {symbol}: {e}")
+            # 更详细的错误信息，帮助调试
+            raise ValueError(f"Failed to fetch data for {symbol}: {str(e)}") from e
 
     def get_index_prices(
         self,
@@ -290,26 +291,34 @@ class AKShareDataProvider(BaseDataProvider, HistoricalDataProvider):
         from core_bak_refactored.core.share.market import MarketUtils, MarketCode
         market = MarketUtils.infer_market_from_symbol(symbol_id)
         
-        # 根据市场选择 API
-        if market == MarketCode.CN:
-            # A股指数API
-            logger.debug(f"调用A股指数API: stock_zh_index_daily({ak_symbol})")
-            return self.ak.stock_zh_index_daily(symbol=ak_symbol)
-        
-        elif market == MarketCode.HK:
-            # 港股指数API
-            logger.debug(f"调用港股指数API: stock_hk_index_daily_em({ak_symbol})")
-            return self.ak.stock_hk_index_daily_em(symbol=ak_symbol)
-        
-        elif market == MarketCode.US:
-            # 美股/全球指数API
-            logger.debug(f"调用全球指数API: index_global_hist_em({ak_symbol})")
-            return self.ak.index_global_hist_em(symbol=ak_symbol)
-        
-        else:
-            # 默认使用A股指数API
-            logger.debug(f"默认调用A股指数API: stock_zh_index_daily({ak_symbol})")
-            return self.ak.stock_zh_index_daily(symbol=ak_symbol)
+        try:
+            # 根据市场选择 API
+            if market == MarketCode.CN:
+                # A股指数API
+                logger.debug(f"调用A股指数API: stock_zh_index_daily({ak_symbol})")
+                return self.ak.stock_zh_index_daily(symbol=ak_symbol)
+            
+            elif market == MarketCode.HK:
+                # 港股指数API
+                logger.debug(f"调用港股指数API: stock_hk_index_daily_em({ak_symbol})")
+                return self.ak.stock_hk_index_daily_em(symbol=ak_symbol)
+            
+            elif market == MarketCode.US:
+                # 美股/全球指数API
+                logger.debug(f"调用全球指数API: index_global_hist_em({ak_symbol})")
+                return self.ak.index_global_hist_em(symbol=ak_symbol)
+            
+            else:
+                # 默认使用A股指数API
+                logger.debug(f"默认调用A股指数API: stock_zh_index_daily({ak_symbol})")
+                return self.ak.stock_zh_index_daily(symbol=ak_symbol)
+        except Exception as e:
+            logger.error(f"AKShare API调用失败 for {symbol_id} (market: {market.value}): {e}")
+            # 提供更友好的错误信息
+            if "HTTPSConnectionPool" in str(e) or "proxy" in str(e).lower():
+                raise ConnectionError(f"网络连接失败，请检查网络设置或代理配置: {str(e)}")
+            # 重新抛出异常，让上层处理
+            raise
     
     def _standardize_format(self, df: pd.DataFrame) -> pd.DataFrame:
         """

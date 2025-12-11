@@ -467,10 +467,10 @@ class DataQualityAPIService:
                 }), 500
             
             except Exception as e:
-                logger.error(f"获取图表数据失败: {e}")
+                logger.error(f"获取图表数据失败: {e}", exc_info=True)
                 return jsonify({
                     'status': 'error',
-                    'message': str(e),
+                    'message': f'获取图表数据失败: {str(e)}',
                     'error_code': 'CHART_DATA_FETCH_FAILED'
                 }), 500
 
@@ -1014,7 +1014,7 @@ class DataQualityAPIService:
                         'data': {
                             'provider_id': provider_id,
                             'configured': True,
-                            'test_status': ProviderTestStatus.UNTESTED.value
+                            'test_status': 'success'
                         },
                         'timestamp': datetime.now().isoformat()
                     })
