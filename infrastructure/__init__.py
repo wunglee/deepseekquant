@@ -15,6 +15,7 @@ from .logging_service import (
 )
 from .circuit_breaker import CircuitBreaker, CircuitBreakerConfig, CircuitBreakerState
 from .error_handler import ErrorHandler, ErrorHandlerConfig, ErrorRecord
+from .performance_tracker import PerformanceTracker, PerformanceConfig
 from .resource_manager import ResourceMonitor, ResourceMonitorConfig, ResourceUsage
 from .task_manager import TaskManager, TaskManagerConfig, TaskInfo, ITaskManager
 from .resource_manager import ResourceManager, IResourceManager

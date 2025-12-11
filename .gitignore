@@ -66,6 +66,14 @@ config/snapshots/
 /core/snapshots/
 /core/config_snapshots/
 
+# 敏感凭证文件（不要提交到版本库）
+config/dev/credentials.yml
+config/prod/credentials.yml
+config/test/credentials.yml
+core_bak_refactored/config/dev/credentials.yml
+core_bak_refactored/config/prod/credentials.yml
+core_bak_refactored/config/test/credentials.yml
+
 # 文档工作文件（每次生成后立即追加到consultation.md，不纳入版本库）
 docs/ask.md
 docs/answer.md
