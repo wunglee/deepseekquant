@@ -216,11 +216,12 @@ class DataQualityChecker:
             )
         
         report = DataQualityReport(
-            overall_score=overall_score,
-            completeness=completeness_score,
-            consistency=consistency_score,
-            continuity=continuity_score,
-            reasonableness=reasonableness_score,
+            completeness_score=completeness_score,
+            consistency_score=consistency_score,
+            accuracy_score=reasonableness_score,  # reasonableness 映射到 accuracy_score
+            outliers_detected=0,  # DataQualityChecker 不检测异常值
+            total_rows=len(data),
+            missing_values=data.isnull().sum().sum() if not data.empty else 0,
             issues=issues,
             metadata={
                 'index_id': index_id,
@@ -229,13 +230,14 @@ class DataQualityChecker:
                 'timestamp': datetime.now().isoformat(),
                 'advanced_checks_enabled': enable_advanced_checks,
                 'ts_consistency_score': ts_consistency_score if enable_advanced_checks else None,
-                'data_frequency': self._detect_data_frequency(data) if 'date' in data.columns else 'unknown'
+                'data_frequency': self._detect_data_frequency(data) if 'date' in data.columns else 'unknown',
+                'continuity_score': continuity_score  # 保留在metadata中
             }
         )
         
         self._check_history.append(report)
         
-        logger.info(f"数据质量检查完成: {index_id}, 总分={overall_score:.2f}, "
+        logger.info(f"数据质量检查完成: {index_id}, 总分={report.overall_score:.2f}, "
                    f"问题数={len(issues)}, 高级检查={'启用' if enable_advanced_checks else '禁用'}")
         
         return report

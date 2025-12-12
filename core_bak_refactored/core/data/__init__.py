@@ -10,7 +10,7 @@
    - CacheManager: 三层缓存管理器 (L1内存+L2 LRU+L3 Redis)
    - MarketStatusService: 市场状态评估服务
    - FundamentalDataService: 基本面数据服务
-   - AlphaVantageProvider: AlphaVantage数据源
+   - AkshareProvider: AKShare数据源
 
 2. 遗留组件 (data_fetcher.py) - 待删除
    - DataFetcher: 遗留的单体类，已被新架构替代
@@ -30,7 +30,7 @@ TODO:
 """
 
 # 重构新架构 - SOLID原则（推荐使用）
-from .fetcher_orchestrator import DataFetcherOrchestrator
+from .fetcher.fetcher_orchestrator import DataFetcherOrchestrator
 from core_bak_refactored.infrastructure.cache import CacheManager
 from core_bak_refactored.core.share.market.market_status_service import MarketStatusService
 

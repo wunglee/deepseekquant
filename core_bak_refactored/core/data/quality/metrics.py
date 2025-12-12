@@ -56,10 +56,10 @@ def get_quality_summary(reports: List[DataQualityReport]) -> Dict[str, Any]:
         'total_reports': len(reports),
         'avg_score': total_score / len(reports),
         'pass_rate': passed_count / len(reports),
-        'avg_completeness': sum(r.completeness for r in reports) / len(reports),
-        'avg_consistency': sum(r.consistency for r in reports) / len(reports),
-        'avg_continuity': sum(r.continuity for r in reports) / len(reports),
-        'avg_reasonableness': sum(r.reasonableness for r in reports) / len(reports),
+        'avg_completeness': sum(r.completeness_score for r in reports) / len(reports),
+        'avg_consistency': sum(r.consistency_score for r in reports) / len(reports),
+        'avg_accuracy': sum(r.accuracy_score for r in reports) / len(reports),
+        'total_outliers': sum(r.outliers_detected for r in reports),
         'total_issues': sum(len(r.issues) for r in reports),
         'timestamp': datetime.now().isoformat()
     }

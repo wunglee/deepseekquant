@@ -734,8 +734,56 @@ function init() {
                 })
             }
             
+            // 添加欧洲市场
+            const euMarket = markets.find(m => m.code === 'EU')
+            if (euMarket) {
+                completeMarkets.push({
+                    id: 'eu_stock',
+                    name: euMarket.name,
+                    default_indices: [
+                        {id: '^STOXX50E', name: '欧洲斯托克50', type: 'index'},
+                        {id: '^GDAXI', name: '德国DAX', type: 'index'},
+                        {id: '^FTSE', name: '英国富时100', type: 'index'},
+                        {id: '^FCHI', name: '法国CAC40', type: 'index'},
+                        {id: 'SAP.DE', name: 'SAP', type: 'stock'}
+                    ]
+                })
+            }
+            
+            // 添加日本市场
+            const jpMarket = markets.find(m => m.code === 'JP')
+            if (jpMarket) {
+                completeMarkets.push({
+                    id: 'jp_stock',
+                    name: jpMarket.name,
+                    default_indices: [
+                        {id: '^N225', name: '日经225', type: 'index'},
+                        {id: '^N300', name: '日经300', type: 'index'},
+                        {id: '7203.T', name: '丰田汽车', type: 'stock'},
+                        {id: '9984.T', name: '软银集团', type: 'stock'},
+                        {id: '6758.T', name: '索尼集团', type: 'stock'}
+                    ]
+                })
+            }
+            
+            // 添加新加坡市场
+            const sgMarket = markets.find(m => m.code === 'SG')
+            if (sgMarket) {
+                completeMarkets.push({
+                    id: 'sg_stock',
+                    name: sgMarket.name,
+                    default_indices: [
+                        {id: '^STI', name: '新加坡海峡时报指数', type: 'index'},
+                        {id: 'D05.SI', name: '星展银行', type: 'stock'},
+                        {id: 'O39.SI', name: '华侨银行', type: 'stock'},
+                        {id: 'U11.SI', name: '大华银行', type: 'stock'},
+                        {id: 'C31.SI', name: '凯德集团', type: 'stock'}
+                    ]
+                })
+            }
+            
             // 添加其他市场（如果有）
-            const otherMarkets = markets.filter(m => !['CN', 'HK', 'US'].includes(m.code))
+            const otherMarkets = markets.filter(m => !['CN', 'HK', 'US', 'EU', 'JP', 'SG'].includes(m.code))
             otherMarkets.forEach(market => {
                 completeMarkets.push({
                     id: `${market.code.toLowerCase()}_stock`,
@@ -784,6 +832,24 @@ function selectMarket(market) {
         klineChart.clear()
         // 显示加载状态
         klineChart.setOption({
+            graphic: [{
+                type: 'text',
+                left: 'center',
+                top: 'center',
+                style: {
+                    text: '加载中...',
+                    fontSize: 16,
+                    fill: '#999'
+                }
+            }]
+        }, true);
+    }
+    
+    // 💚 同时清除技术指标图（关键修复）
+    if (indicatorChart) {
+        indicatorChart.clear()
+        // 显示加载状态
+        indicatorChart.setOption({
             graphic: [{
                 type: 'text',
                 left: 'center',
@@ -944,6 +1010,9 @@ function renderIndicator(data) {
         showEmpty(indicatorChart, '暂无数据')
         return
     }
+    
+    // 💚 关键修复: 先clear()清空所有内容(包括graphic),再重新渲染
+    indicatorChart.clear()
     
     // 处理日期格式
     const processedData = data.map(d => {
@@ -1506,8 +1575,8 @@ function renderIndicator(data) {
         }
     }
     console.log('Setting indicatorChart option:', option)
-    // 🔧 使用 true 强制清除旧配置，避免切换指标时数据累积和图形走样
-    indicatorChart.setOption(option, true)
+    // 💚 图表已经通过 clear() 清空,直接设置新配置
+    indicatorChart.setOption(option, true)  // 🔧 使用 true 强制清除旧配置
 }
 
 /**
@@ -1586,19 +1655,10 @@ function renderKline(data, events) {
         showEmpty(klineChart, '暂无数据')
         return
     }
-    // 处理日期格式（后端返回 GMT 格式，需转换为 YYYY-MM-DD）
-    const processedData = data.map(d => {
-        let dateStr = d.date
-        if (typeof dateStr === 'string' && dateStr.includes('GMT')) {
-            // 转换 "Wed, 03 Dec 2025 00:00:00 GMT" 为 "2025-12-03"
-            const dt = new Date(dateStr)
-            dateStr = dt.toISOString().split('T')[0]
-        }
-        return { ...d, date: dateStr }
-    })
     
+    // 💚 关键修复: 先保存 dataZoom 位置,再清空图表
     // 🔧 保存当前 dataZoom 位置（避免重新渲染时复位）
-    // ⚠️ 关键：如果是加载新股票，使用默认位置；如枟是无限滚动，保留当前位置
+    // ⚠️ 关键：如果是加载新股票，使用默认位置；如柠是无限滚动，保留当前位置
     let currentZoom = { start: 75, end: 100 }  // 默认值
     
     if (!isLoadingNewStock) {
@@ -1619,6 +1679,20 @@ function renderKline(data, events) {
         console.log('🆕 加载新股票，使用默认 dataZoom 位置:', currentZoom)
         isLoadingNewStock = false  // 重置标志
     }
+    
+    // 💚 现在清空图表(包括"加载中..."提示)
+    klineChart.clear()
+    
+    // 处理日期格式（后端返回 GMT 格式，需转换为 YYYY-MM-DD）
+    const processedData = data.map(d => {
+        let dateStr = d.date
+        if (typeof dateStr === 'string' && dateStr.includes('GMT')) {
+            // 转换 "Wed, 03 Dec 2025 00:00:00 GMT" 为 "2025-12-03"
+            const dt = new Date(dateStr)
+            dateStr = dt.toISOString().split('T')[0]
+        }
+        return { ...d, date: dateStr }
+    })
     
     // 默认显示全部120个周期的数据，但通过dataZoom控制初始视图
     const displayData = processedData
@@ -1701,7 +1775,8 @@ function renderKline(data, events) {
         ]
     }
     console.log('Setting klineChart option:', option)
-    klineChart.setOption(option, false)  // 🔧 改为false，保留未指定的选项（如事件监听器）
+    // 💚 使用 true 完全替换配置,确保清除所有旧配置(包括graphic)
+    klineChart.setOption(option, true)
     renderIndicator(displayData)
     renderDataZoom(dates, currentZoom)  // 🔧 渲染数据窗口控制条
 }
@@ -1712,8 +1787,11 @@ function loadKline(indexId) {
     // 🔧 标记正在加载新股票（需要复位 dataZoom 到默认位置）
     isLoadingNewStock = true
     
+    // 💚 性能优化: A股默认60条,其他市场120条
+    const count = currentMarket === 'cn_stock' ? 60 : 120
+    
     // 🔧 使用后端API的专业技术指标计算，而不是前端自己算
-    const url = `/api/v1/chart/data?index_id=${encodeURIComponent(indexId)}&period=${currentPeriod}&count=120&indicators=all`
+    const url = `/api/v1/chart/data?index_id=${encodeURIComponent(indexId)}&period=${currentPeriod}&count=${count}&indicators=all`
     console.log('Fetching:', url)
     fetch(url)
         .then(r => {

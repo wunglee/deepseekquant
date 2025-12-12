@@ -42,14 +42,7 @@ class DataFetcherOrchestrator:
         # HTTP会话
         self.aiohttp_session = aiohttp.ClientSession()
         
-        # Provider
-        api_credentials = config.get('api_credentials', {})
-        self._alpha_provider = AlphaVantageProvider(
-            api_credentials=api_credentials.get('alpha_vantage'),
-            aiohttp_session=self.aiohttp_session
-        )
-        
-        # 数据源装配
+        # 数据源装配（不再硬编码任何provider，由custom_sources提供）
         self.data_sources = self._initialize_data_sources()
         
         # 独立服务（依赖注入）
@@ -172,12 +165,10 @@ class DataFetcherOrchestrator:
             return None
 
     def _initialize_data_sources(self) -> Dict[str, Callable]:
+        """初始化数据源字典，仅使用custom_sources，不硬编码任何provider"""
         sources: Dict[str, Callable] = {}
         sources.update(self.custom_sources)
-        if 'alpha_vantage' not in sources:
-            async def _av(symbol, period, interval, data_type, adjustments):
-                return await self._alpha_provider.fetch(symbol, period, interval, data_type, adjustments)
-            sources['alpha_vantage'] = _av
+        # 不再硬编码 alpha_vantage provider，由调用方通过 custom_sources 提供
         return sources
 
     async def _try_fallback_sources(self, symbols: List[str], period: str, interval: str,

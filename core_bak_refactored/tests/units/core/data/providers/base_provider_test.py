@@ -56,6 +56,67 @@ class MockProvider(BaseDataProvider):
         return df
 
 
+class EmptyDataProvider(BaseDataProvider):
+    """返回空数据的 Provider"""
+    def get_index_prices(self, index_id: str, start_date: str, end_date: str):
+        import pandas as pd
+        return pd.DataFrame()  # 空 DataFrame
+    
+    def get_test_symbol(self) -> str:
+        return 'EMPTY_SYMBOL'
+    
+    def get_stock_prices(self, symbol: str, start_date: str, end_date: str):
+        import pandas as pd
+        return pd.DataFrame()
+
+
+class ErrorProvider(BaseDataProvider):
+    """抛出连接错误的 Provider"""
+    def get_index_prices(self, index_id: str, start_date: str, end_date: str):
+        raise ConnectionError("无法连接到数据源")
+    
+    def get_test_symbol(self) -> str:
+        return 'ERROR_SYMBOL'
+    
+    def get_stock_prices(self, symbol: str, start_date: str, end_date: str):
+        pass
+
+
+class DefaultSymbolProvider(BaseDataProvider):
+    """使用默认符号的 Provider（没有 get_test_symbol 方法）"""
+    def get_index_prices(self, index_id: str, start_date: str, end_date: str):
+        import pandas as pd
+        dates = pd.date_range(start=start_date, end=end_date, freq='D')
+        df = pd.DataFrame({
+            'date': dates,
+            'close': [100.0] * len(dates),
+            'volume': [1000000] * len(dates)
+        })
+        return df
+    
+    def get_stock_prices(self, symbol: str, start_date: str, end_date: str):
+        import pandas as pd
+        dates = pd.date_range(start=start_date, end=end_date, freq='D')
+        df = pd.DataFrame({
+            'date': dates,
+            'close': [100.0] * len(dates),
+            'volume': [1000000] * len(dates)
+        })
+        return df
+
+
+class BrokenInitProvider(BaseDataProvider):
+    """初始化时抛出异常的 Provider"""
+    def __init__(self):
+        raise Exception("初始化失败")
+    
+    def get_index_prices(self, index_id: str, start_date: str, end_date: str):
+        pass
+    
+    def get_stock_prices(self, symbol: str, start_date: str, end_date: str):
+        pass
+
+
 class BaseProviderTest(unittest.TestCase):
     """BaseDataProvider 基类测试"""
     
@@ -105,7 +166,7 @@ class BaseProviderTest(unittest.TestCase):
             'secret': 'test_secret'
         }
         
-        result = BaseDataProvider.save_credentials('test_provider', credentials, env='dev')
+        result = BaseDataProvider.save_credentials('test_provider', credentials)
         
         # 验证结果
         self.assertTrue(result)
@@ -146,7 +207,7 @@ class BaseProviderTest(unittest.TestCase):
             'secret': 'new_secret'
         }
         
-        result = BaseDataProvider.save_credentials('test_provider', new_credentials, env='dev')
+        result = BaseDataProvider.save_credentials('test_provider', new_credentials)
         
         # 验证结果
         self.assertTrue(result)
@@ -173,7 +234,7 @@ class BaseProviderTest(unittest.TestCase):
         credentials = {'api_key': 'test_key'}
         
         # 保存应该失败并返回 False
-        result = BaseDataProvider.save_credentials('test_provider', credentials, env='dev')
+        result = BaseDataProvider.save_credentials('test_provider', credentials)
         
         self.assertFalse(result)
     
@@ -196,7 +257,7 @@ class BaseProviderTest(unittest.TestCase):
             yaml.dump(credentials_data, f, allow_unicode=True)
         
         # 删除 provider1 的凭证
-        result = BaseDataProvider.delete_credentials('provider1', env='dev')
+        result = BaseDataProvider.delete_credentials('provider1')
         
         # 验证结果
         self.assertTrue(result)
@@ -218,7 +279,7 @@ class BaseProviderTest(unittest.TestCase):
         mock_get_config_path.return_value = credentials_path
         
         # 删除不存在的文件应该返回 True（幂等设计）
-        result = BaseDataProvider.delete_credentials('provider1', env='dev')
+        result = BaseDataProvider.delete_credentials('provider1')
         
         self.assertTrue(result)
     
@@ -236,7 +297,7 @@ class BaseProviderTest(unittest.TestCase):
             yaml.dump(credentials_data, f, allow_unicode=True)
         
         # 删除不存在的 provider 应该返回 True（幂等设计）
-        result = BaseDataProvider.delete_credentials('nonexistent_provider', env='dev')
+        result = BaseDataProvider.delete_credentials('nonexistent_provider')
         
         self.assertTrue(result)
         
@@ -260,7 +321,7 @@ class BaseProviderTest(unittest.TestCase):
             yaml.dump(credentials_data, f, allow_unicode=True)
         
         # 删除唯一的 provider
-        result = BaseDataProvider.delete_credentials('provider1', env='dev')
+        result = BaseDataProvider.delete_credentials('provider1')
         
         # 验证结果
         self.assertTrue(result)
@@ -277,147 +338,182 @@ class BaseProviderTest(unittest.TestCase):
     
     def test_test_provider_success(self):
         """测试 test_provider 成功场景"""
-        # 测试成功场景
-        result = MockProvider.test_provider('mock_provider', env='dev')
-        
-        # 验证结果结构
-        self.assertIn('status', result)
-        self.assertIn('test_result', result)
-        self.assertIn('available', result)
-        self.assertIn('message', result)
-        
-        # 验证成功状态
-        self.assertEqual(result['status'], 'success')
-        self.assertEqual(result['test_result'], 'passed')
-        self.assertTrue(result['available'])
-        
-        # 验证详细信息
-        self.assertIn('details', result)
-        self.assertIn('test_symbol', result['details'])
-        self.assertIn('data_count', result['details'])
-        self.assertIn('date_range', result['details'])
-        self.assertEqual(result['details']['test_symbol'], 'TEST_SYMBOL')
+        # Mock ConfigManager 返回包含 mock_provider 的配置
+        with patch('core_bak_refactored.core.data.providers.base_provider.ConfigManager') as MockConfigManager:
+            mock_config_instance = MockConfigManager.return_value
+            mock_data_config = Mock()
+            mock_data_config.providers = [
+                {
+                    'id': 'mock_provider',
+                    'name': 'Mock Provider',
+                    'adapter_module': 'core_bak_refactored.tests.units.core.data.providers.base_provider_test',
+                    'adapter_class': 'MockProvider'
+                }
+            ]
+            mock_config_instance.get_data_config.return_value = mock_data_config
+            
+            # 测试成功场景（使用 credential 参数）
+            result = MockProvider.test_provider('mock_provider', credential='test_credential')
+            
+            # 验证结果结构
+            self.assertIn('status', result)
+            self.assertIn('test_result', result)
+            self.assertIn('available', result)
+            self.assertIn('message', result)
+            
+            # 验证成功状态
+            self.assertEqual(result['status'], 'success')
+            self.assertEqual(result['test_result'], 'passed')
+            self.assertTrue(result['available'])
+            
+            # 验证详细信息
+            self.assertIn('details', result)
+            self.assertIn('test_symbol', result['details'])
+            self.assertIn('data_count', result['details'])
+            self.assertIn('date_range', result['details'])
+            self.assertEqual(result['details']['test_symbol'], 'TEST_SYMBOL')
     
     def test_test_provider_empty_data(self):
         """测试 test_provider 返回空数据"""
-        # 创建一个返回空数据的 provider
-        class EmptyDataProvider(BaseDataProvider):
-            def get_index_prices(self, index_id: str, start_date: str, end_date: str):
-                import pandas as pd
-                return pd.DataFrame()  # 空 DataFrame
+        with patch('core_bak_refactored.core.data.providers.base_provider.ConfigManager') as MockConfigManager:
+            mock_config_instance = MockConfigManager.return_value
+            mock_data_config = Mock()
+            mock_data_config.providers = [
+                {
+                    'id': 'empty_provider',
+                    'name': 'Empty Provider',
+                    'adapter_module': 'core_bak_refactored.tests.units.core.data.providers.base_provider_test',
+                    'adapter_class': 'EmptyDataProvider'
+                }
+            ]
+            mock_config_instance.get_data_config.return_value = mock_data_config
             
-            def get_test_symbol(self) -> str:
-                return 'EMPTY_SYMBOL'
+            result = EmptyDataProvider.test_provider('empty_provider', credential='')
             
-            def get_stock_prices(self, symbol: str, start_date: str, end_date: str):
-                import pandas as pd
-                return pd.DataFrame()
-        
-        result = EmptyDataProvider.test_provider('empty_provider', env='dev')
-        
-        # 验证结果
-        self.assertEqual(result['status'], 'error')
-        self.assertEqual(result['test_result'], 'failed')
-        self.assertFalse(result['available'])
-        self.assertIn('返回空数据', result['message'])
+            # 验证结果
+            self.assertEqual(result['status'], 'error')
+            self.assertEqual(result['test_result'], 'failed')
+            self.assertFalse(result['available'])
+            self.assertIn('返回空数据', result['message'])
     
     def test_test_provider_connection_error(self):
         """测试 test_provider 连接错误"""
-        # 创建一个抛出异常的 provider
-        class ErrorProvider(BaseDataProvider):
-            def get_index_prices(self, index_id: str, start_date: str, end_date: str):
-                raise ConnectionError("无法连接到数据源")
+        with patch('core_bak_refactored.core.data.providers.base_provider.ConfigManager') as MockConfigManager:
+            mock_config_instance = MockConfigManager.return_value
+            mock_data_config = Mock()
+            mock_data_config.providers = [
+                {
+                    'id': 'error_provider',
+                    'name': 'Error Provider',
+                    'adapter_module': 'core_bak_refactored.tests.units.core.data.providers.base_provider_test',
+                    'adapter_class': 'ErrorProvider'
+                }
+            ]
+            mock_config_instance.get_data_config.return_value = mock_data_config
             
-            def get_test_symbol(self) -> str:
-                return 'ERROR_SYMBOL'
+            result = ErrorProvider.test_provider('error_provider', credential='test')
             
-            def get_stock_prices(self, symbol: str, start_date: str, end_date: str):
-                pass
-        
-        result = ErrorProvider.test_provider('error_provider', env='dev')
-        
-        # 验证结果
-        self.assertEqual(result['status'], 'error')
-        self.assertEqual(result['test_result'], 'failed')
-        self.assertFalse(result['available'])
-        self.assertIn('连接测试失败', result['message'])
-        self.assertIn('无法连接到数据源', result['message'])
+            # 验证结果
+            self.assertEqual(result['status'], 'error')
+            self.assertEqual(result['test_result'], 'failed')
+            self.assertFalse(result['available'])
+            self.assertIn('连接测试失败', result['message'])
+            self.assertIn('无法连接到数据源', result['message'])
     
     def test_test_provider_default_symbol(self):
         """测试 test_provider 使用默认测试符号"""
-        # 创建一个没有 get_test_symbol 方法的 provider
-        class DefaultSymbolProvider(BaseDataProvider):
-            def get_index_prices(self, index_id: str, start_date: str, end_date: str):
-                import pandas as pd
-                dates = pd.date_range(start=start_date, end=end_date, freq='D')
-                df = pd.DataFrame({
-                    'date': dates,
-                    'close': [100.0] * len(dates),
-                    'volume': [1000000] * len(dates)
-                })
-                return df
+        with patch('core_bak_refactored.core.data.providers.base_provider.ConfigManager') as MockConfigManager:
+            mock_config_instance = MockConfigManager.return_value
+            mock_data_config = Mock()
+            mock_data_config.providers = [
+                {
+                    'id': 'default_provider',
+                    'name': 'Default Provider',
+                    'adapter_module': 'core_bak_refactored.tests.units.core.data.providers.base_provider_test',
+                    'adapter_class': 'DefaultSymbolProvider'
+                }
+            ]
+            mock_config_instance.get_data_config.return_value = mock_data_config
             
-            def get_stock_prices(self, symbol: str, start_date: str, end_date: str):
-                import pandas as pd
-                dates = pd.date_range(start=start_date, end=end_date, freq='D')
-                df = pd.DataFrame({
-                    'date': dates,
-                    'close': [100.0] * len(dates),
-                    'volume': [1000000] * len(dates)
-                })
-                return df
-        
-        result = DefaultSymbolProvider.test_provider('default_provider', env='dev')
-        
-        # 验证使用了默认符号
-        self.assertEqual(result['status'], 'success')
-        # BaseDataProvider 的默认测试符号是 '^GSPC'
+            result = DefaultSymbolProvider.test_provider('default_provider', credential='test')
+            
+            # 验证使用了默认符号
+            self.assertEqual(result['status'], 'success')
+            # BaseDataProvider 的默认测试符号是 '^GSPC'
     
     def test_test_provider_with_temporary_credentials(self):
         """测试 test_provider 使用临时凭证"""
         # 这个测试主要是为了确保 test_provider 方法能够正常工作
         # 实际的临时凭证处理在 API 层完成
-        result = MockProvider.test_provider('temp_provider', env='dev')
-        
-        # 验证基本结构
-        self.assertIn('status', result)
-        self.assertIn('test_result', result)
-        self.assertIn('available', result)
-        self.assertIn('message', result)
+        with patch('core_bak_refactored.core.data.providers.base_provider.ConfigManager') as MockConfigManager:
+            mock_config_instance = MockConfigManager.return_value
+            mock_data_config = Mock()
+            mock_data_config.providers = [
+                {
+                    'id': 'temp_provider',
+                    'name': 'Temp Provider',
+                    'adapter_module': 'core_bak_refactored.tests.units.core.data.providers.base_provider_test',
+                    'adapter_class': 'MockProvider'
+                }
+            ]
+            mock_config_instance.get_data_config.return_value = mock_data_config
+            
+            result = MockProvider.test_provider('temp_provider', credential='temp_credential')
+            
+            # 验证基本结构
+            self.assertIn('status', result)
+            self.assertIn('test_result', result)
+            self.assertIn('available', result)
+            self.assertIn('message', result)
     
     def test_test_provider_exception_handling(self):
         """测试 test_provider 异常处理"""
-        # 创建一个在初始化时抛出异常的 provider
-        class BrokenInitProvider(BaseDataProvider):
-            def __init__(self):
-                raise Exception("初始化失败")
+        with patch('core_bak_refactored.core.data.providers.base_provider.ConfigManager') as MockConfigManager:
+            mock_config_instance = MockConfigManager.return_value
+            mock_data_config = Mock()
+            mock_data_config.providers = [
+                {
+                    'id': 'broken_provider',
+                    'name': 'Broken Provider',
+                    'adapter_module': 'core_bak_refactored.tests.units.core.data.providers.base_provider_test',
+                    'adapter_class': 'BrokenInitProvider'
+                }
+            ]
+            mock_config_instance.get_data_config.return_value = mock_data_config
             
-            def get_index_prices(self, index_id: str, start_date: str, end_date: str):
-                pass
+            result = BrokenInitProvider.test_provider('broken_provider', credential='test')
             
-            def get_stock_prices(self, symbol: str, start_date: str, end_date: str):
-                pass
-        
-        result = BrokenInitProvider.test_provider('broken_provider', env='dev')
-        
-        # 验证异常被捕获并返回错误结果
-        self.assertEqual(result['status'], 'error')
-        self.assertEqual(result['test_result'], 'failed')
-        self.assertFalse(result['available'])
-        self.assertIn('初始化失败', result['message'])
+            # 验证异常被捕获并返回错误结果
+            self.assertEqual(result['status'], 'error')
+            self.assertEqual(result['test_result'], 'failed')
+            self.assertFalse(result['available'])
+            self.assertIn('初始化失败', result['message'])
     
     def test_test_provider_with_timestamp(self):
         """测试 test_provider 返回结果包含时间戳"""
-        result = MockProvider.test_provider('mock_provider', env='dev')
-        
-        # 验证成功结果包含时间戳
-        if result['status'] == 'success':
-            self.assertIn('timestamp', result)
-            # 验证时间戳格式（ISO 8601）
-            timestamp = result['timestamp']
-            self.assertIsInstance(timestamp, str)
-            # 验证可以解析为 datetime
-            datetime.fromisoformat(timestamp)
+        with patch('core_bak_refactored.core.data.providers.base_provider.ConfigManager') as MockConfigManager:
+            mock_config_instance = MockConfigManager.return_value
+            mock_data_config = Mock()
+            mock_data_config.providers = [
+                {
+                    'id': 'mock_provider',
+                    'name': 'Mock Provider',
+                    'adapter_module': 'core_bak_refactored.tests.units.core.data.providers.base_provider_test',
+                    'adapter_class': 'MockProvider'
+                }
+            ]
+            mock_config_instance.get_data_config.return_value = mock_data_config
+            
+            result = MockProvider.test_provider('mock_provider', credential='test_key')
+            
+            # 验证成功结果包含时间戳
+            if result['status'] == 'success':
+                self.assertIn('timestamp', result)
+                # 验证时间戳格式（ISO 8601）
+                timestamp = result['timestamp']
+                self.assertIsInstance(timestamp, str)
+                # 验证可以解析为 datetime
+                datetime.fromisoformat(timestamp)
     
     # ========================================================================
     # 测试 get_test_symbol() 方法
@@ -448,16 +544,30 @@ class BaseProviderTest(unittest.TestCase):
                 'secret': 'integration_test_secret'
             }
             
-            save_result = BaseDataProvider.save_credentials('integration_provider', credentials, env='dev')
+            save_result = BaseDataProvider.save_credentials('integration_provider', credentials)
             self.assertTrue(save_result)
         
-        # 2. 测试连接
-        test_result = MockProvider.test_provider('integration_provider', env='dev')
-        
-        # 3. 验证结果
-        self.assertEqual(test_result['status'], 'success')
-        self.assertEqual(test_result['test_result'], 'passed')
-        self.assertTrue(test_result['available'])
+        # 2. 测试连接（需要 mock ConfigManager）
+        with patch('core_bak_refactored.core.data.providers.base_provider.ConfigManager') as MockConfigManager:
+            mock_config_instance = MockConfigManager.return_value
+            mock_data_config = Mock()
+            mock_data_config.providers = [
+                {
+                    'id': 'integration_provider',
+                    'name': 'Integration Provider',
+                    'adapter_module': 'core_bak_refactored.tests.units.core.data.providers.base_provider_test',
+                    'adapter_class': 'MockProvider'
+                }
+            ]
+            mock_config_instance.get_data_config.return_value = mock_data_config
+            
+            # 使用新的 credential 参数（字符串）
+            test_result = MockProvider.test_provider('integration_provider', credential='integration_test_key')
+            
+            # 3. 验证结果
+            self.assertEqual(test_result['status'], 'success')
+            self.assertEqual(test_result['test_result'], 'passed')
+            self.assertTrue(test_result['available'])
         
         # 4. 验证凭证文件内容
         with open(credentials_path, 'r', encoding='utf-8') as f:

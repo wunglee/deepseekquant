@@ -102,6 +102,17 @@ class AKShareDataProvider(BaseDataProvider, HistoricalDataProvider):
     def _initialize(self):
         """初始化AKShare模块"""
         try:
+            # AKShare访问国内网站，临时清除代理环境变量
+            self._saved_proxy = {
+                'http_proxy': os.environ.get('http_proxy'),
+                'https_proxy': os.environ.get('https_proxy'),
+                'HTTP_PROXY': os.environ.get('HTTP_PROXY'),
+                'HTTPS_PROXY': os.environ.get('HTTPS_PROXY')
+            }
+            for key in ['http_proxy', 'https_proxy', 'HTTP_PROXY', 'HTTPS_PROXY']:
+                if key in os.environ:
+                    del os.environ[key]
+            
             import akshare as ak
             self.ak = ak
             self.available = True
@@ -110,6 +121,12 @@ class AKShareDataProvider(BaseDataProvider, HistoricalDataProvider):
             logger.warning(f"akshare not installed: {e}. Install with: pip install akshare")
             self.ak = None
             # 不抛出异常，允许优雅降级
+        finally:
+            # 恢复代理设置（供其他Provider使用）
+            if hasattr(self, '_saved_proxy'):
+                for key, value in self._saved_proxy.items():
+                    if value is not None:
+                        os.environ[key] = value
 
         # 未来扩展：指数名称映射缓存（暂未实现）
         self._index_name_cache = None

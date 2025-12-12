@@ -17,90 +17,217 @@ pip install yfinance
 - 数据质量较高
 """
 
-import pandas as pd
-import numpy as np
-from typing import Dict, Optional, Union, Any, List
-from datetime import datetime, timedelta
 import logging
-from dataclasses import dataclass, field
+import random
+import time
+import requests
+import json
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Union
 
+import numpy as np
+import pandas as pd
+
+from core_bak_refactored.core.data.providers.base_provider import BaseDataProvider
 # 导入新的数据结构
 from core_bak_refactored.core.data.providers.protocols import PriceData, OHLCVRecord, HistoricalDataProvider
-from core_bak_refactored.core.data.providers.base_provider import BaseDataProvider
+from core_bak_refactored.core.share.config_manager import ConfigManager
+# 导入 HTTP/2 补丁
+from core_bak_refactored.core.data.providers.yfinance_http2_patch import patch_yfinance
 
-logger = logging.getLogger('DeepSeekQuant.YahooFinanceProvider')
+logger = logging.getLogger('DeepSeekQuant.YahooFinance')
 
 
-# TODO: 从quality_types.py迁移到此处,避免外部依赖
 @dataclass
-class DataQualityReport:
-    """数据质量报告"""
-    completeness_score: float
-    consistency_score: float
-    accuracy_score: float
-    outliers_detected: int
-    total_rows: int
-    missing_values: int
-    overall_score: float = field(init=False)
-    
-    def __post_init__(self):
-        self.overall_score = (self.completeness_score + self.consistency_score + self.accuracy_score) / 3
+class YahooFinanceConfig:
+    """Yahoo Finance配置数据类"""
+    test_symbol: str = "^GSPC"  # 默认测试符号
+    timeout: int = 30  # 请求超时（秒）
+    max_retries: int = 3  # 最大重试次数
 
 
-class YahooFinanceDataProvider(BaseDataProvider,HistoricalDataProvider):
-    """
-    雅虎财经数据提供者（实现HistoricalDataProvider接口）
-    
-    功能：
-    - 通过yfinance API获取真实历史指数价格数据
-    - 自动映射国内指数代码到Yahoo Finance ticker
-    - 数据质量验证与清洗
-    - 完整的错误处理与日志记录
-    - 完全符合HistoricalDataProvider协议标准
-    
-    示例：
-        provider = YahooFinanceDataProvider()
-        data = provider.get_index_prices('000300.SH', '2015-06-01', '2015-09-01')
-    """
-    
-    # 指数代码映射表（国内代码 → Yahoo Finance ticker）
-    INDEX_MAPPING = {
-        # 中国市场
-        '000300.SH': '000300.SS',      # 沪深300
-        '000001.SH': '000001.SS',      # 上证指数
-        '399001.SZ': '399001.SZ',      # 深证成指
-        '000016.SH': 'SSEC',           # 上证50（备选）
-        '000905.SH': '000905.SS',      # 中证500
-        
-        # 美国市场
-        'SPX': '^GSPC',                # S&P 500
-        'DJI': '^DJI',                 # 道琼斯
-        'IXIC': '^IXIC',               # 纳斯达克
-        
-        # 香港市场
-        'HSI': '^HSI',                 # 恒生指数
-        'HSCEI': '^HSCEI',             # 国企指数
-    }
+class YahooFinanceDataProvider(BaseDataProvider, HistoricalDataProvider):
+    """Yahoo Finance数据提供者"""
     
     def __init__(self):
         """
         初始化Yahoo Finance数据提供者
+        
+        Note:
+            proxy 从配置文件读取，不通过参数传递
         """
-        self._session = None
+        # 创建自定义 Session（官方推荐，避免 429 限流）
+        self._session = self._create_session()
+        
+        # 请求限速器（避免 429）
+        self._last_request_time = 0
+        self._min_request_interval = 0.5  # 每个请求之间至少间隔 0.5 秒
+        
+        # 从配置文件中获取代理配置
+        config_manager = ConfigManager()
+        
+        # 检查是否为 Yahoo Finance 启用代理（从 data.yml 读取）
+        use_proxy = config_manager.get('data.data_providers.yahoo_finance.use_proxy', default=False)
+        
+        if use_proxy:
+            # 使用统一的 get_proxies_from_config() 方法（从 system.yml 读取）
+            proxy_config = config_manager.get_proxies_from_config()
+            if proxy_config:
+                # 使用HTTP代理（如果有配置的话）
+                self.proxy = proxy_config.get('http') or proxy_config.get('socks5')
+                logger.info(f"Yahoo Finance: 将尝试使用代理 {self.proxy}")
+            else:
+                self.proxy = None
+                logger.warning(
+                    "Yahoo Finance: use_proxy=true 但未配置代理地址\n"
+                    "请在 config/dev/system.yml 中配置 proxies.http"
+                )
+        else:
+            self.proxy = None
+            logger.info(
+                "Yahoo Finance: 不使用代理（直连）\n"
+                "使用自定义 Session 和请求限速来避免 429 限流"
+            )
         
         # 延迟导入yfinance（避免环境依赖问题）
         try:
             import yfinance as yf
             self.yf = yf
-            logger.info("YahooFinanceDataProvider initialized successfully")
+            
+            # 应用 HTTP/2 补丁，传入代理配置
+            # 补丁内部会测试代理是否可用
+            patch_yfinance(proxy_url=self.proxy)
+            
+            # 如果提供了代理，也配置 yfinance 原生代理（双保险）
+            if self.proxy:
+                yf.set_config(proxy=self.proxy)
+                logger.info(f"YahooFinanceDataProvider initialized with proxy: {self.proxy}")
+            else:
+                logger.info("YahooFinanceDataProvider initialized with custom session (anti-429)")
+                
         except ImportError:
             logger.error("yfinance not installed. Please run: pip install yfinance")
             self.yf = None
-            raise RuntimeError("yfinance library not available. Please install: pip install yfinance")
+            self.available = False
+        except Exception as e:
+            logger.error(f"Failed to initialize yfinance: {e}")
+            self.yf = None
+            self.available = False
+    
+    def _create_session(self) -> requests.Session:
+        """
+        创建自定义 Session（官方推荐，避免 429 限流）
+        
+        根据 yfinance 官方文档和最佳实践：
+        1. 使用真实的 User-Agent（模拟浏览器）
+        2. 保持 Session 重用（保留 cookies）
+        3. 设置合理的超时时间
+        
+        Returns:
+            requests.Session: 配置好的 Session
+        """
+        session = requests.Session()
+        
+        # 设置真实的 User-Agent（关键！Yahoo 会检测默认的 User-Agent）
+        session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'DNT': '1',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1'
+        })
+        
+        logger.info("Created custom session with browser-like headers (anti-429)")
+        return session
+    
+    def _throttle_request(self):
+        """
+        请求限速（避免 429）
+        
+        确保两个请求之间有足够的时间间隔
+        """
+        current_time = time.time()
+        time_since_last_request = current_time - self._last_request_time
+        
+        if time_since_last_request < self._min_request_interval:
+            sleep_time = self._min_request_interval - time_since_last_request
+            logger.debug(f"Throttling request: sleeping {sleep_time:.2f}s")
+            time.sleep(sleep_time)
+        
+        self._last_request_time = time.time()
     
     def get_test_symbol(self) -> str:
         """获取测试符号"""
-        return '^GSPC'  # 标普500指数
+        return "^GSPC"  # 标普500指数
+    
+    def _fetch_with_retry(self, ticker: str, start_date: Union[str, datetime], end_date: Union[str, datetime], max_retries: int = 3) -> pd.DataFrame:
+        """
+        带重试机制的数据获取方法
+        
+        Note: 
+        - yfinance 已经通过 patch 修复了 "Too Many Requests" bug
+        - 使用指数退避策略处理速率限制
+        - 使用自定义 Session 和请求限速避免 429
+        
+        Args:
+            ticker: 股票或指数代码
+            start_date: 开始日期
+            end_date: 结束日期
+            max_retries: 最大重试次数
+            
+        Returns:
+            DataFrame: 获取到的数据
+        """
+        if self.yf is None:
+            raise RuntimeError("yfinance not available")
+            
+        for attempt in range(max_retries + 1):
+            try:
+                # 指数退避：第1次 5s, 第2次 10s, 第3次 20s, 第4次 40s
+                if attempt > 0:
+                    delay = 5 * (2 ** (attempt - 1)) + random.uniform(0, 2)
+                    logger.info(f"Attempt {attempt + 1}/{max_retries + 1} for {ticker}, waiting {delay:.1f}s before retry (exponential backoff)")
+                    time.sleep(delay)
+                
+                # 💚 请求限速（关键！避免 429）
+                self._throttle_request()
+                
+                # 使用自定义 Session（关键！避免 429）
+                ticker_obj = self.yf.Ticker(ticker, session=self._session)
+                data = ticker_obj.history(start=start_date, end=end_date)
+                
+                # 检查数据是否有效
+                if data is not None and not data.empty:
+                    logger.info(f"Successfully fetched {len(data)} rows for {ticker}")
+                    return data
+                    
+            except Exception as e:
+                error_msg = str(e)
+                logger.warning(f"Attempt {attempt + 1} failed for {ticker}: {e}")
+                
+                # 特殊处理速率限制错误
+                if "Too Many Requests" in error_msg or "429" in error_msg or "Rate limited" in error_msg:
+                    if attempt < max_retries:
+                        logger.info(f"Rate limit hit, will retry with exponential backoff")
+                        continue
+                    else:
+                        # 最后一次尝试失败，提供友好的错误信息
+                        raise ValueError(
+                            f"Yahoo Finance 速率限制 ({ticker})\n"
+                            f"建议: 1) 等待 5-10 分钟后重试\n"
+                            f"      2) 或使用其他数据源 (AKShare/Tushare)\n"
+                            f"      3) 或在 data.yml 中启用代理: yahoo_finance.use_proxy: true"
+                        )
+                
+                if attempt == max_retries:
+                    raise
+                continue
+                
+        # 如果所有重试都失败了，抛出异常
+        raise RuntimeError(f"Failed to fetch data for {ticker} after {max_retries + 1} attempts")
     
     def get_index_prices(
         self,
@@ -109,512 +236,157 @@ class YahooFinanceDataProvider(BaseDataProvider,HistoricalDataProvider):
         end_date: Union[str, datetime]
     ) -> PriceData:
         """
-        获取指数价格数据（实现HistoricalDataProvider接口）
+        获取指数历史价格数据
         
         Args:
-            index_id: 指数代码（如'000300.SH'沪深300）
-            start_date: 开始日期 'YYYY-MM-DD' 或 datetime 对象
-            end_date: 结束日期 'YYYY-MM-DD' 或 datetime 对象
-        
+            index_id: 指数ID（如 "^GSPC"）
+            start_date: 开始日期
+            end_date: 结束日期
+            
         Returns:
-            PriceData: 包含标准OHLCV数据的结构化对象
+            PriceData: 标准化的价格数据
             
         Raises:
-            ValueError: 日期格式错误或数据不可用
+            ValueError: 当无法获取有效数据时
         """
-        # Convert datetime objects to string format if needed
-        if isinstance(start_date, datetime):
-            start_date = start_date.strftime('%Y-%m-%d')
-        if isinstance(end_date, datetime):
-            end_date = end_date.strftime('%Y-%m-%d')
+        if self.yf is None:
+            raise RuntimeError("yfinance not available")
             
+        logger.info(f"Fetching index data for {index_id} from {start_date} to {end_date}")
+        
         try:
-            # 1. 映射指数代码
-            ticker = self._map_index_to_yahoo(index_id)
-            logger.info(f"Fetching data for {index_id} (mapped to {ticker}) from {start_date} to {end_date}")
+            # 使用带重试机制的方法获取数据
+            data = self._fetch_with_retry(index_id, start_date, end_date)
             
-            # 2. 调用yfinance API
-            if self.yf is None:
-                raise RuntimeError("yfinance not available")
+            if data is None or data.empty:
+                raise ValueError(f"No data returned for {index_id}")
+                
+            # 标准化数据格式
+            standardized_data = self._standardize_format(data, index_id)
             
-            data = self.yf.download(ticker, start=start_date, end=end_date, progress=False)
-            
-            # 3. 数据质量验证
-            if data.empty:
-                raise ValueError(f"No data returned for {ticker}")
-            
-            # 4. 标准化格式
-            standardized_data = self._standardize_format(data)
-            
-            logger.info(f"Successfully fetched {len(standardized_data)} rows for {index_id}")
-            # 返回PriceData对象而不是原始DataFrame
-            return PriceData.from_dataframe(standardized_data, index_id)
+            logger.info(f"Successfully fetched {len(standardized_data.records)} records for {index_id}")
+            return standardized_data
             
         except Exception as e:
-            logger.warning(f"Yahoo Finance failed for {index_id}: {e}")
-            raise ValueError(f"Failed to fetch data for {index_id}: {e}")
+            logger.error(f"Failed to fetch data for {index_id}: {e}")
+            raise ValueError(f"Failed to fetch data for {index_id}: {str(e)}")
     
-    def get_index_returns(self, index_id: str, start_date: Union[str, datetime], end_date: Union[str, datetime]) -> pd.Series:
+    def get_stock_prices(
+        self,
+        stock_id: str,
+        start_date: Union[str, datetime],
+        end_date: Union[str, datetime]
+    ) -> PriceData:
         """
-        获取指数收益率序列（实现HistoricalDataProvider接口）
+        获取个股历史价格数据
         
         Args:
-            index_id: 指数代码
-            start_date: 开始日期 'YYYY-MM-DD' 或 datetime 对象
-            end_date: 结束日期 'YYYY-MM-DD' 或 datetime 对象
-        
-        Returns:
-            Series with date index and return values
-        """
-        # Convert datetime objects to string format if needed
-        if isinstance(start_date, datetime):
-            start_date = start_date.strftime('%Y-%m-%d')
-        if isinstance(end_date, datetime):
-            end_date = end_date.strftime('%Y-%m-%d')
+            stock_id: 股票ID（如 "AAPL"）
+            start_date: 开始日期
+            end_date: 结束日期
             
-        price_data = self.get_index_prices(index_id, start_date, end_date)
-        prices = price_data.to_dataframe().set_index('date')
-        returns = prices['close'].pct_change().dropna()
-        return returns
-    
-    def get_stock_prices(self, symbol: str, start_date: Union[str, datetime], end_date: Union[str, datetime]) -> PriceData:
-        """
-        获取个股价格数据（实现HistoricalDataProvider接口）
-        
-        Args:
-            symbol: 股票代码（如'600036.SS'招商银行）
-            start_date: 开始日期 'YYYY-MM-DD' 或 datetime 对象
-            end_date: 结束日期 'YYYY-MM-DD' 或 datetime 对象
-        
         Returns:
-            PriceData: 包含标准OHLCV数据的结构化对象
+            PriceData: 标准化的价格数据
             
         Raises:
-            ValueError: 日期格式错误或数据不可用
+            ValueError: 当无法获取有效数据时
         """
-        # Convert datetime objects to string format if needed
-        if isinstance(start_date, datetime):
-            start_date = start_date.strftime('%Y-%m-%d')
-        if isinstance(end_date, datetime):
-            end_date = end_date.strftime('%Y-%m-%d')
+        if self.yf is None:
+            raise RuntimeError("yfinance not available")
             
-        try:
-            logger.info(f"Fetching stock data for {symbol} from {start_date} to {end_date}")
-            
-            # 1. 调用yfinance API
-            if self.yf is None:
-                raise RuntimeError("yfinance not available")
-            
-            data = self.yf.download(symbol, start=start_date, end=end_date, progress=False)
-            
-            # 2. 数据质量验证
-            if data.empty:
-                raise ValueError(f"No data returned for {symbol}")
-            
-            # 3. 标准化格式
-            standardized_data = self._standardize_format(data)
-            
-            logger.info(f"Successfully fetched {len(standardized_data)} rows for {symbol}")
-            # 返回PriceData对象而不是原始DataFrame
-            return PriceData.from_dataframe(standardized_data, symbol)
-            
-        except Exception as e:
-            logger.warning(f"Yahoo Finance failed for {symbol}: {e}")
-            raise ValueError(f"Failed to fetch data for {symbol}: {e}")
-    
-    def get_volatility_index(self, index_id: str, start_date: Union[str, datetime], end_date: Union[str, datetime]) -> pd.Series:
-        """
-        获取波动率指数（如VIX）（实现HistoricalDataProvider接口）
-        
-        Args:
-            index_id: 指数代码
-            start_date: 开始日期 'YYYY-MM-DD' 或 datetime 对象
-            end_date: 结束日期 'YYYY-MM-DD' 或 datetime 对象
-        
-        Returns:
-            Series with date index and volatility values
-        """
-        # Convert datetime objects to string format if needed
-        if isinstance(start_date, datetime):
-            start_date = start_date.strftime('%Y-%m-%d')
-        if isinstance(end_date, datetime):
-            end_date = end_date.strftime('%Y-%m-%d')
-            
-        # VIX指数在Yahoo Finance中的ticker
-        volatility_tickers = {
-            'VIX': '^VIX',      # CBOE波动率指数
-            'VXFXI': '^VXFXI',  # 中国波指
-        }
-        
-        ticker = volatility_tickers.get(index_id, index_id)
+        logger.info(f"Fetching stock data for {stock_id} from {start_date} to {end_date}")
         
         try:
-            if self.yf is None:
-                raise RuntimeError("yfinance not available")
+            # 使用带重试机制的方法获取数据
+            data = self._fetch_with_retry(stock_id, start_date, end_date)
             
-            data = self.yf.download(ticker, start=start_date, end=end_date, progress=False)
+            if data is None or data.empty:
+                raise ValueError(f"No data returned for {stock_id}")
+                
+            # 标准化数据格式
+            standardized_data = self._standardize_format(data, stock_id)
             
-            if data.empty:
-                raise ValueError(f"No data returned for {ticker}")
-            
-            # 提取收盘价作为波动率数据
-            if 'Close' in data.columns:
-                volatility_data = data['Close']
-            elif 'close' in data.columns:
-                volatility_data = data['close']
-            else:
-                raise ValueError("No 'Close' column found in Yahoo Finance data")
-            
-            return volatility_data
+            logger.info(f"Successfully fetched {len(standardized_data.records)} records for {stock_id}")
+            return standardized_data
             
         except Exception as e:
-            logger.warning(f"Failed to fetch volatility index {index_id}: {e}")
-            raise ValueError(f"Failed to fetch volatility data for {index_id}: {e}")
+            logger.error(f"Failed to fetch data for {stock_id}: {e}")
+            raise ValueError(f"Failed to fetch data for {stock_id}: {str(e)}")
     
-    def _map_index_to_yahoo(self, index_id: str) -> str:
+    def _standardize_format(self, data: pd.DataFrame, symbol: str) -> PriceData:
         """
-        映射国内指数代码到Yahoo Finance ticker
+        标准化Yahoo Finance返回的数据格式
         
         Args:
-            index_id: 国内指数代码（如'000300.SH'）
-        
-        Returns:
-            Yahoo Finance ticker（如'000300.SS'）
-        
-        Raises:
-            ValueError: 未知的指数代码
-        """
-        if index_id in self.INDEX_MAPPING:
-            return self.INDEX_MAPPING[index_id]
-        
-        # 如果已经是Yahoo格式（包含^或以.SS/.SZ结尾），直接使用
-        if index_id.startswith('^') or index_id.endswith('.SS') or index_id.endswith('.SZ'):
-            logger.info(f"Using {index_id} as-is (already Yahoo format)")
-            return index_id
-        
-        # 未知代码，尝试直接使用（可能失败）
-        logger.warning(f"Unknown index code {index_id}, trying as-is")
-        return index_id
-    
-    def _standardize_format(self, data: pd.DataFrame) -> pd.DataFrame:
-        """
-        标准化yfinance数据格式（实现HistoricalDataProvider协议标准）
-        
-        Args:
-            data: yfinance返回的原始DataFrame
+            data: Yahoo Finance返回的原始数据
+            symbol: 证券代码
             
         Returns:
-            标准化DataFrame with columns: ['date', 'open', 'high', 'low', 'close', 'volume']
-            
-        数据标准：
-        - date: pd.Timestamp 类型，交易日期时间
-        - open: float，开盘价
-        - high: float，最高价
-        - low: float，最低价
-        - close: float，收盘价
-        - volume: float，成交量
-        """
-        # 处理 MultiIndex 列结构
-        if isinstance(data.columns, pd.MultiIndex):
-            # 将 MultiIndex 列降级为简单列名
-            data = data.copy()
-            data.columns = [col[0] for col in data.columns]
-        
-        # yfinance返回的列名可能是大写或小写
-        standardized = pd.DataFrame()
-        
-        # 提取date（从index）
-        standardized['date'] = data.index
-        
-        # 提取Open
-        if 'Open' in data.columns:
-            standardized['open'] = data['Open'].values
-        elif 'open' in data.columns:
-            standardized['open'] = data['open'].values
-        else:
-            standardized['open'] = np.nan
-        
-        # 提取High
-        if 'High' in data.columns:
-            standardized['high'] = data['High'].values
-        elif 'high' in data.columns:
-            standardized['high'] = data['high'].values
-        else:
-            standardized['high'] = np.nan
-        
-        # 提取Low
-        if 'Low' in data.columns:
-            standardized['low'] = data['Low'].values
-        elif 'low' in data.columns:
-            standardized['low'] = data['low'].values
-        else:
-            standardized['low'] = np.nan
-        
-        # 提取close价格（处理多种列名格式）
-        if 'Close' in data.columns:
-            standardized['close'] = data['Close'].values
-        elif 'close' in data.columns:
-            standardized['close'] = data['close'].values
-        else:
-            raise ValueError("No 'Close' column found in Yahoo Finance data")
-        
-        # 提取成交量（可选，如果不存在则填充NaN）
-        if 'Volume' in data.columns:
-            standardized['volume'] = data['Volume'].values
-        elif 'volume' in data.columns:
-            standardized['volume'] = data['volume'].values
-        else:
-            logger.warning("No 'Volume' column found, filling with NaN")
-            standardized['volume'] = np.nan
-        
-        # 重置index
-        standardized = standardized.reset_index(drop=True)
-        
-        # 数据清洗：移除NaN和异常值
-        original_len = len(standardized)
-        standardized = standardized.dropna(subset=['close'])
-        if len(standardized) < original_len:
-            logger.warning(f"Removed {original_len - len(standardized)} rows with missing close prices")
-        
-        # 确保所有数值列为float类型
-        for col in ['open', 'high', 'low', 'close', 'volume']:
-            if col in standardized.columns:
-                standardized[col] = standardized[col].astype(float)
-        
-        return standardized
-    
-    def validate_data_quality(self, data: pd.DataFrame) -> DataQualityReport:
-        """
-        数据质量验证报告（实现HistoricalDataProvider接口）
-        
-        Args:
-            data: 待验证的数据DataFrame
-            
-        Returns:
-            DataQualityReport: 数据质量报告
+            PriceData: 标准化后的数据
         """
         if data is None or data.empty:
-            return DataQualityReport(
-                completeness_score=0.0,
-                consistency_score=0.0,
-                accuracy_score=0.0,
-                outliers_detected=0,
-                total_rows=0,
-                missing_values=0
+            # 空数据返回空的PriceData
+            return PriceData(
+                symbol=symbol, 
+                records=[], 
+                start_date=pd.Timestamp.now(),
+                end_date=pd.Timestamp.now(),
+                count=0
             )
         
-        total_rows = len(data)
+        # 处理MultiIndex列结构
+        if isinstance(data.columns, pd.MultiIndex):
+            # 对于MultiIndex，我们需要提取正确的列
+            # 通常格式是 [('Close', 'AAPL'), ('High', 'AAPL'), ...]
+            close_col = ('Close', symbol) if ('Close', symbol) in data.columns else 'Close'
+            high_col = ('High', symbol) if ('High', symbol) in data.columns else 'High'
+            low_col = ('Low', symbol) if ('Low', symbol) in data.columns else 'Low'
+            open_col = ('Open', symbol) if ('Open', symbol) in data.columns else 'Open'
+            volume_col = ('Volume', symbol) if ('Volume', symbol) in data.columns else 'Volume'
+        else:
+            # 普通列名
+            close_col = 'Close'
+            high_col = 'High'
+            low_col = 'Low'
+            open_col = 'Open'
+            volume_col = 'Volume'
         
-        # 计算缺失值
-        missing_values = data.isnull().sum().sum()
+        # 确保必要的列存在
+        required_columns = [close_col, high_col, low_col, open_col, volume_col]
+        for col in required_columns:
+            if col not in data.columns:
+                logger.warning(f"Missing column {col} in data for {symbol}")
+                # 如果缺少某些列，使用默认值填充
+                if col not in data.columns:
+                    data[col] = np.nan
         
-        # 完整性评分 (基于缺失值比例)
-        completeness_score = 1.0 - (missing_values / (total_rows * len(data.columns))) if total_rows > 0 else 0.0
+        records = []
+        for timestamp, row in data.iterrows():
+            try:
+                record = OHLCVRecord(
+                    date=pd.to_datetime(timestamp),  # 使用date而非timestamp
+                    open=float(row.get(open_col, np.nan)),
+                    high=float(row.get(high_col, np.nan)),
+                    low=float(row.get(low_col, np.nan)),
+                    close=float(row.get(close_col, np.nan)),
+                    volume=int(row.get(volume_col, 0)) if not np.isnan(row.get(volume_col, np.nan)) else 0
+                )
+                records.append(record)
+            except (ValueError, TypeError) as e:
+                logger.warning(f"Skipping invalid row for {symbol} at {timestamp}: {e}")
+                continue
         
-        # 一致性评分 (检查数据类型一致性)
-        consistency_score = self._calculate_consistency_score(data)
+        # 计算start_date和end_date
+        start_date = records[0].date if records else pd.Timestamp.now()
+        end_date = records[-1].date if records else pd.Timestamp.now()
         
-        # 准确性评分 (基于数据范围检查)
-        accuracy_score = self._calculate_accuracy_score(data)
-        
-        # 异常值检测
-        outliers_detected = self._detect_outliers(data)
-        
-        return DataQualityReport(
-            completeness_score=completeness_score,
-            consistency_score=consistency_score,
-            accuracy_score=accuracy_score,
-            outliers_detected=outliers_detected,
-            total_rows=total_rows,
-            missing_values=missing_values
+        return PriceData(
+            symbol=symbol, 
+            records=records,
+            start_date=start_date,
+            end_date=end_date,
+            count=len(records)
         )
     
-    def _calculate_consistency_score(self, data: pd.DataFrame) -> float:
-        """计算数据一致性评分"""
-        if data.empty:
-            return 0.0
-            
-        # 检查数值列的数据类型一致性
-        numeric_columns = data.select_dtypes(include=[np.number]).columns
-        if len(numeric_columns) == 0:
-            return 0.5  # 如果没有数值列，给中等分数
-            
-        # 检查是否有混合类型的数据
-        consistency_issues = 0
-        for col in numeric_columns:
-            if data[col].dtype == 'object':
-                # 尝试转换为数值
-                try:
-                    pd.to_numeric(data[col], errors='raise')
-                except (ValueError, TypeError):
-                    consistency_issues += 1
-        
-        # 计算一致性评分
-        consistency_score = 1.0 - (consistency_issues / len(numeric_columns)) if len(numeric_columns) > 0 else 1.0
-        return max(0.0, consistency_score)  # 确保不为负数
-    
-    def _calculate_accuracy_score(self, data: pd.DataFrame) -> float:
-        """计算数据准确性评分"""
-        if data.empty:
-            return 0.0
-            
-        accuracy_score = 1.0
-        
-        # 检查价格数据是否合理
-        if 'close' in data.columns:
-            close_prices = data['close']
-            # 检查是否有负价格
-            negative_prices = (close_prices < 0).sum()
-            if negative_prices > 0:
-                accuracy_score -= 0.2 * (negative_prices / len(close_prices))
-            
-            # 检查是否有异常大的价格
-            if len(close_prices) > 0:
-                mean_price = close_prices.mean()
-                if mean_price > 0:
-                    # 检查超过均值10倍的价格
-                    extreme_prices = (close_prices > mean_price * 10).sum()
-                    if extreme_prices > 0:
-                        accuracy_score -= 0.1 * (extreme_prices / len(close_prices))
-        
-        # 确保评分在0-1范围内
-        return max(0.0, min(1.0, accuracy_score))
-    
-    def _detect_outliers(self, data: pd.DataFrame) -> int:
-        """检测异常值数量"""
-        if data.empty:
-            return 0
-            
-        outliers = 0
-        
-        # 对数值列进行异常值检测
-        numeric_columns = data.select_dtypes(include=[np.number]).columns
-        for col in numeric_columns:
-            series = data[col]
-            # 使用IQR方法检测异常值
-            Q1 = series.quantile(0.25)
-            Q3 = series.quantile(0.75)
-            IQR = Q3 - Q1
-            lower_bound = Q1 - 1.5 * IQR
-            upper_bound = Q3 + 1.5 * IQR
-            col_outliers = ((series < lower_bound) | (series > upper_bound)).sum()
-            outliers += col_outliers
-            
-        return outliers
-    
-    def get_dividends(self, symbol: str, start_date: Union[str, datetime], end_date: Union[str, datetime]) -> pd.DataFrame:
-        """
-        获取股息数据（从yahoo.py整合）
-        
-        Args:
-            symbol: 股票代码
-            start_date: 开始日期
-            end_date: 结束日期
-        
-        Returns:
-            DataFrame with columns: ['date', 'dividends']
-        """
-        # Convert datetime to string
-        if isinstance(start_date, datetime):
-            start_date = start_date.strftime('%Y-%m-%d')
-        if isinstance(end_date, datetime):
-            end_date = end_date.strftime('%Y-%m-%d')
-        
-        try:
-            if self.yf is None:
-                raise RuntimeError("yfinance not available")
-            
-            ticker = self.yf.Ticker(symbol)
-            dividends = ticker.dividends
-            
-            if dividends.empty:
-                logger.warning(f"No dividends data for {symbol}")
-                return pd.DataFrame(columns=['date', 'dividends'])
-            
-            # 转换为DataFrame
-            df = dividends.to_frame(name='dividends')
-            df['date'] = df.index
-            df = df.reset_index(drop=True)
-            
-            # 筛选日期范围
-            df['date'] = pd.to_datetime(df['date'])
-            mask = (df['date'] >= start_date) & (df['date'] <= end_date)
-            df = df[mask]
-            
-            return df[['date', 'dividends']]
-            
-        except Exception as e:
-            logger.error(f"Failed to fetch dividends for {symbol}: {e}")
-            return pd.DataFrame(columns=['date', 'dividends'])
-    
-    def get_splits(self, symbol: str, start_date: Union[str, datetime], end_date: Union[str, datetime]) -> pd.DataFrame:
-        """
-        获取股票拆分数据（从yahoo.py整合）
-        
-        Args:
-            symbol: 股票代码
-            start_date: 开始日期
-            end_date: 结束日期
-        
-        Returns:
-            DataFrame with columns: ['date', 'splits']
-        """
-        # Convert datetime to string
-        if isinstance(start_date, datetime):
-            start_date = start_date.strftime('%Y-%m-%d')
-        if isinstance(end_date, datetime):
-            end_date = end_date.strftime('%Y-%m-%d')
-        
-        try:
-            if self.yf is None:
-                raise RuntimeError("yfinance not available")
-            
-            ticker = self.yf.Ticker(symbol)
-            splits = ticker.splits
-            
-            if splits.empty:
-                logger.info(f"No splits data for {symbol}")
-                return pd.DataFrame(columns=['date', 'splits'])
-            
-            # 转换为DataFrame
-            df = splits.to_frame(name='splits')
-            df['date'] = df.index
-            df = df.reset_index(drop=True)
-            
-            # 筛选日期范围
-            df['date'] = pd.to_datetime(df['date'])
-            mask = (df['date'] >= start_date) & (df['date'] <= end_date)
-            df = df[mask]
-            
-            return df[['date', 'splits']]
-            
-        except Exception as e:
-            logger.error(f"Failed to fetch splits for {symbol}: {e}")
-            return pd.DataFrame(columns=['date', 'splits'])
-    
-    def test_connection(self, sample_index: str = '000300.SH') -> bool:
-        """
-        测试与Yahoo Finance的连接
-        
-        Args:
-            sample_index: 测试用指数代码
-        
-        Returns:
-            True if connection successful, False otherwise
-        """
-        try:
-            # 获取最近10天数据
-            end_date = datetime.now().strftime('%Y-%m-%d')
-            start_date = (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')
-            
-            data = self.get_index_prices(sample_index, start_date, end_date)
-            
-            if len(data.records) > 0:
-                logger.info(f"Connection test passed: fetched {len(data.records)} rows for {sample_index}")
-                return True
-            else:
-                logger.warning("Connection test failed: no data returned")
-                return False
-        except Exception as e:
-            logger.error(f"Connection test failed: {e}")
-            return False
+    # validate_data_quality方法已迁移到data_quality_utils.py
+    # 请使用: from core_bak_refactored.core.data.quality.data_quality_utils import validate_data_quality

@@ -1,6 +1,6 @@
 from typing import Any, Callable, Dict, List, Optional
 
-from core_bak_refactored.core.data.fetcher_orchestrator import DataFetcherOrchestrator
+from core_bak_refactored.core.data.fetcher.fetcher_orchestrator import DataFetcherOrchestrator
 
 
 async def stream(orchestrator: DataFetcherOrchestrator, symbols: List[str], callback: Callable[[Dict], None],

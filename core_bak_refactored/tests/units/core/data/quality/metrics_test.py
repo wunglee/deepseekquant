@@ -80,6 +80,6 @@ def test_get_quality_summary_multiple_reports():
     assert 0.0 <= summary['pass_rate'] <= 1.0
     assert 'avg_completeness' in summary
     assert 'avg_consistency' in summary
-    assert 'avg_continuity' in summary
-    assert 'avg_reasonableness' in summary
+    assert 'avg_accuracy' in summary  # 更新为 accuracy
+    assert 'total_outliers' in summary  # 更新为 outliers
     assert 'total_issues' in summary

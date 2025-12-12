@@ -207,7 +207,7 @@ class TestAssertionHelper:
             threshold: 阈值（默认60%）
             use_real_data: 是否使用真实数据（影响阈值）
         """
-        from core_bak_refactored.tests.common.assertions_test import TestAssertions
+        from core_bak_refactored.tests.common.assertions import TestAssertions
         TestAssertions.assert_quality_score(test_case, quality_report, threshold, use_real_data)
     
     @staticmethod
@@ -221,5 +221,5 @@ class TestAssertionHelper:
             threshold: 阈值
             context: 上下文信息
         """
-        from core_bak_refactored.tests.common.assertions_test import TestAssertions
+        from core_bak_refactored.tests.common.assertions import TestAssertions
         TestAssertions.assert_error_within_threshold(test_case, error, threshold, context)

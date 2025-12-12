@@ -29,6 +29,9 @@ from datetime import datetime
 from dataclasses import dataclass
 from pathlib import Path
 
+from core_bak_refactored.core.data.quality.quality_types import DataQualityReport
+from core_bak_refactored.core.data.quality.data_quality_utils import calculate_consistency_score, calculate_accuracy_score, detect_outliers
+
 logger = logging.getLogger('DeepSeekQuant.DataQualityEnhancer')
 
 
@@ -74,27 +77,6 @@ DEFAULT_QUALITY_THRESHOLD = _DATA_QUALITY_CONFIG['quality_threshold']
 MIN_DATA_ROWS = _DATA_QUALITY_CONFIG['min_data_rows']
 SCORE_WEIGHTS = _DATA_QUALITY_CONFIG['score_weights']
 
-
-@dataclass
-class DataQualityReport:
-    """数据质量报告
-    
-    Attributes:
-        completeness_score: 完整性评分(0-1)
-        consistency_score: 一致性评分(0-1)
-        accuracy_score: 准确性评分(0-1)
-        outliers_detected: 检测到的异常值数量
-        total_rows: 总行数
-        missing_values: 缺失值总数
-        overall_score: 综合评分(0-1)
-    """
-    completeness_score: float
-    consistency_score: float
-    accuracy_score: float
-    outliers_detected: int
-    total_rows: int
-    missing_values: int
-    overall_score: float
 
 class DataQualityEnhancer:
     """数据质量验证器
@@ -155,30 +137,13 @@ class DataQualityEnhancer:
                 accuracy_score=0.0,
                 outliers_detected=0,
                 total_rows=0,
-                missing_values=0,
-                overall_score=0.0
+                missing_values=0
             )
         # 计算各维度评分
-        total_rows = len(data)
-        total_cells = total_rows * len(data.columns)
-        missing_values = data.isnull().sum().sum()
-        
-        completeness_score = (
-            1.0 - (missing_values / total_cells)
-            if total_cells > 0 else 0.0
-        )
-        consistency_score = self._calculate_consistency_score(data)
-        accuracy_score = self._calculate_accuracy_score(data)
-        outliers_detected = self._detect_outliers(data)
-        
-        # 综合评分(加权平均，权重从配置文件读取)
-        outlier_penalty = min(1.0, outliers_detected / max(1, total_rows))
-        overall_score = (
-            SCORE_WEIGHTS['completeness'] * completeness_score +
-            SCORE_WEIGHTS['consistency'] * consistency_score +
-            SCORE_WEIGHTS['accuracy'] * accuracy_score +
-            SCORE_WEIGHTS['outliers'] * (1.0 - outlier_penalty)
-        )
+        completeness_score, total_rows, missing_values = self._validate_data_completeness(data)
+        consistency_score = calculate_consistency_score(data)
+        accuracy_score = calculate_accuracy_score(data)
+        outliers_detected = detect_outliers(data)
         
         report = DataQualityReport(
             completeness_score=completeness_score,
@@ -186,12 +151,11 @@ class DataQualityEnhancer:
             accuracy_score=accuracy_score,
             outliers_detected=int(outliers_detected),
             total_rows=int(total_rows),
-            missing_values=int(missing_values),
-            overall_score=overall_score
+            missing_values=int(missing_values)
         )
         
         logger.debug(
-            f"质量评分: 总分={overall_score:.3f}, "
+            f"质量评分: 总分={report.overall_score:.3f}, "
             f"完整性={completeness_score:.3f}, "
             f"一致性={consistency_score:.3f}, "
             f"准确性={accuracy_score:.3f}, "
@@ -200,84 +164,22 @@ class DataQualityEnhancer:
         
         return report
     
-    def _calculate_consistency_score(self, data: pd.DataFrame) -> float:
-        """计算数据一致性评分
-        
-        检查数值列的类型一致性
-        
-        Args:
-            data: 待检查的DataFrame
-        
-        Returns:
-            一致性评分(0-1)
-        """
-        if data.empty:
-            return 0.0
-        numeric_columns = data.select_dtypes(include=['number']).columns
-        if len(numeric_columns) == 0:
-            return 0.5
-        consistency_issues = 0
-        for col in numeric_columns:
-            if data[col].dtype == 'object':
-                try:
-                    pd.to_numeric(data[col], errors='raise')
-                except (ValueError, TypeError):
-                    consistency_issues += 1
-        consistency_score = 1.0 - (consistency_issues / len(numeric_columns)) if len(numeric_columns) > 0 else 1.0
-        return max(0.0, consistency_score)
-    
-    def _calculate_accuracy_score(self, data: pd.DataFrame) -> float:
-        """计算数据准确性评分
-        
-        检查项:
-        - 负价格(扣0.2 * 比例)
-        - 极端价格(超过均值10倍,扣0.1 * 比例)
+
+    def _validate_data_completeness(self, data: pd.DataFrame) -> Tuple[float, int, int]:
+        """验证数据完整性
         
         Args:
-            data: 待检查的DataFrame
-        
+            data: 待验证的DataFrame
+            
         Returns:
-            准确性评分(0-1)
+            Tuple[完整性评分, 总行数, 缺失值总数]
         """
         if data.empty:
-            return 0.0
-        accuracy_score = 1.0
-        if 'close' in data.columns:
-            close_prices = data['close']
-            negative_prices = (close_prices < 0).sum()
-            if negative_prices > 0:
-                accuracy_score -= 0.2 * (negative_prices / len(close_prices))
-            if len(close_prices) > 0:
-                mean_price = close_prices.mean()
-                if mean_price > 0:
-                    extreme_prices = (close_prices > mean_price * 10).sum()
-                    if extreme_prices > 0:
-                        accuracy_score -= 0.1 * (extreme_prices / len(close_prices))
-        return max(0.0, min(1.0, accuracy_score))
-    
-    def _detect_outliers(self, data: pd.DataFrame) -> int:
-        """检测异常值(IQR方法)
+            return 0.0, 0, 0
+            
+        total_rows = len(data)
+        total_cells = total_rows * len(data.columns)
+        missing_values = data.isnull().sum().sum()
+        completeness_score = 1.0 - (missing_values / total_cells) if total_cells > 0 else 0.0
         
-        使用四分位距(IQR)检测异常值:
-        - 异常值定义:< Q1 - 1.5*IQR 或 > Q3 + 1.5*IQR
-        
-        Args:
-            data: 待检测的DataFrame
-        
-        Returns:
-            异常值总数
-        """
-        if data.empty:
-            return 0
-        outliers = 0
-        numeric_columns = data.select_dtypes(include=['number']).columns
-        for col in numeric_columns:
-            series = data[col]
-            Q1 = series.quantile(0.25)
-            Q3 = series.quantile(0.75)
-            IQR = Q3 - Q1
-            lower_bound = Q1 - 1.5 * IQR
-            upper_bound = Q3 + 1.5 * IQR
-            col_outliers = ((series < lower_bound) | (series > upper_bound)).sum()
-            outliers += col_outliers
-        return outliers
+        return completeness_score, total_rows, int(missing_values)

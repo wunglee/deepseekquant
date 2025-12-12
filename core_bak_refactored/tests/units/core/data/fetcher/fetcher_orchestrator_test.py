@@ -11,7 +11,7 @@ import pytest
 from datetime import datetime
 from unittest.mock import AsyncMock, patch
 
-from core_bak_refactored.core.data.fetcher_orchestrator import DataFetcherOrchestrator
+from core_bak_refactored.core.data.fetcher.fetcher_orchestrator import DataFetcherOrchestrator
 from core_bak_refactored.core.share import MarketData
 from core_bak_refactored.core.share.market.market_enums import MarketCode
 

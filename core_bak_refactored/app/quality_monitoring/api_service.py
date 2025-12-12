@@ -46,28 +46,25 @@ API端点:
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
-from typing import Dict, Any, List, TYPE_CHECKING
 import os
+from datetime import datetime, timedelta
+from typing import Dict, Any, TYPE_CHECKING
 
 import numpy as np
-import psutil
-import yaml
 import pandas as pd
-from flask import Flask, jsonify, request, Response, render_template, send_from_directory
+from flask import Flask, jsonify, request, Response, render_template
 from flask_cors import CORS
 from flask_socketio import SocketIO, emit
 
+from core_bak_refactored.app.quality_monitoring.api.chart_data import ChartDataAssembler
 # 从组件导入
 from core_bak_refactored.app.quality_monitoring.api.controllers import DataQualityControllers
+from core_bak_refactored.app.quality_monitoring.api.diagnostics import DiagnosticsRunner
+from core_bak_refactored.app.quality_monitoring.api.exporter import DataExporter
 from core_bak_refactored.app.quality_monitoring.api.health import HealthChecker
 from core_bak_refactored.app.quality_monitoring.api.system_metrics import MetricsCollector
-from core_bak_refactored.app.quality_monitoring.api.diagnostics import DiagnosticsRunner
-from core_bak_refactored.core.share.config_manager import ConfigManager
-from core_bak_refactored.core.share.market.market_enums import MarketCode, DataSource
-from core_bak_refactored.app.quality_monitoring.api.exporter import DataExporter
 from core_bak_refactored.app.quality_monitoring.api.system_status import SystemStatusManager
-from core_bak_refactored.app.quality_monitoring.api.chart_data import ChartDataAssembler
+from core_bak_refactored.core.share.config_manager import ConfigManager
 
 if TYPE_CHECKING:
     from core_bak_refactored.app.quality_monitoring.monitoring_service import QualityMonitoringService
@@ -892,14 +889,10 @@ class DataQualityAPIService:
                 # 从真实凭证文件读取凭证状态
                 import os
                 import yaml
-                        # 获取 core_bak_refactored 目录（api_service.py 在 core_bak_refactored/app/quality_monitoring/）
-                current_file_dir = os.path.dirname(os.path.abspath(__file__))
-                core_bak_dir = os.path.dirname(os.path.dirname(current_file_dir))
-                config_dir = os.path.join(core_bak_dir, 'config')
-                
-                env = os.getenv('DEEPSEEK_ENV', 'dev')
-                env_dir = os.path.join(config_dir, env)
-                credentials_yml_path = os.path.join(env_dir if os.path.exists(env_dir) else config_dir, 'credentials.yml')
+                        # 使用 ConfigManager 获取配置路径（封装环境逻辑）
+                from core_bak_refactored.core.share.config_manager import ConfigManager
+                config_manager_temp = ConfigManager()
+                credentials_yml_path = config_manager_temp.get_config_path('credentials')
                 
                 # 读取凭证文件
                 credentials_data = {}
@@ -997,12 +990,12 @@ class DataQualityAPIService:
                 
                 # 使用环境变量或默认 dev
                 import os
-                env = os.getenv('DEEPSEEK_ENV', 'dev')
+
                 
                 # 使用 BaseDataProvider 的通用方法保存凭证
                 from core_bak_refactored.core.data.providers.base_provider import BaseDataProvider
                 
-                success = BaseDataProvider.save_credentials(provider_id, data, env=env)
+                success = BaseDataProvider.save_credentials(provider_id, data)
                 
                 if success:
                     # 重新加载配置
@@ -1039,12 +1032,11 @@ class DataQualityAPIService:
             try:
                 # 使用环境变量或默认 dev
                 import os
-                env = os.getenv('DEEPSEEK_ENV', 'dev')
                 
                 # 使用 BaseDataProvider 的通用方法删除凭证
                 from core_bak_refactored.core.data.providers.base_provider import BaseDataProvider
                 
-                success = BaseDataProvider.delete_credentials(provider_id, env=env)
+                success = BaseDataProvider.delete_credentials(provider_id)
                 
                 if success:
                     return jsonify({
@@ -1071,10 +1063,6 @@ class DataQualityAPIService:
         def test_provider_connection(provider_id):
             """测试数据源连接（调用领域层 Provider 的测试方法）"""
             try:
-                # 使用环境变量或默认 dev
-                import os
-                env = os.getenv('DEEPSEEK_ENV', 'dev')
-                
                 # 获取请求中的测试参数（如API Key）
                 test_params = request.get_json() or {}
                 
@@ -1087,8 +1075,23 @@ class DataQualityAPIService:
                     # 创建 provider 实例
                     provider = factory.get(provider_id)
                     
-                    # 调用 provider 类的 test_provider 方法，传递测试参数
-                    result = provider.__class__.test_provider(provider_id, env=env, **test_params)
+                    # 转换参数：credentials → credential
+                    # test_provider 方法签名：test_provider(provider_id, credential: str)
+                    # proxy 从配置文件读取，不作为参数传递
+                    credentials_dict = test_params.get('credentials', {})
+                    
+                    # 提取 credential 字符串（可能是 api_key 或 token）
+                    credential = None
+                    if credentials_dict:
+                        # 优先使用 api_key，其次使用 token
+                        credential = credentials_dict.get('api_key') or credentials_dict.get('token')
+                    
+                    # 调用 provider 类的 test_provider 方法
+                    if credential:
+                        result = provider.__class__.test_provider(provider_id, credential=credential)
+                    else:
+                        # 免费数据源不需要 credential
+                        result = provider.__class__.test_provider(provider_id, credential='')
                 except Exception as e:
                     result = {
                         'status': 'error',
@@ -1335,141 +1338,110 @@ class DataQualityAPIService:
                         'error_code': 'PROVIDER_NOT_FOUND'
                     }), 404
                 
-                # 获取前端传入的临时凭证（如果有）
-                credentials = request.get_json() or {}
+                # 获取前端传入的临时凭证和代理设置（如果有）
+                request_data = request.get_json() or {}
+                temp_credentials = request_data.get('credentials', {})
+                proxy_config = request_data.get('proxy', {})
+                test_symbol = request_data.get('test_symbol', 'AAPL')
+                start_date = request_data.get('start_date', '2023-01-01')
+                end_date = request_data.get('end_date', '2023-12-31')
                 
-                # 动态创建适配器实例（使用临时凭证）
-                adapter_module = provider.get('adapter_module')
-                adapter_class = provider.get('adapter_class')
-                requires_auth = provider.get('requires_auth', False)
-                auth_type = provider.get('auth_type', 'api_key')
+                # 如果没有传入代理配置，则从系统配置中获取
+                if not proxy_config:
+                    try:
+                        system_config = self.config_manager.get_system_config()
+                        proxy_config = system_config.proxies or {}
+                    except Exception:
+                        proxy_config = {}
                 
-                if not adapter_module or not adapter_class:
+                # 创建临时实例进行测试
+                test_instance = self._create_provider_instance(provider, temp_credentials, proxy_config)
+                
+                if not test_instance:
                     return jsonify({
                         'status': 'error',
-                        'message': f'{provider_id} 适配器未实现',
-                        'error_code': 'ADAPTER_NOT_IMPLEMENTED'
-                    }), 400
+                        'message': f'无法创建数据源实例: {provider_id}',
+                        'error_code': 'INSTANCE_CREATION_FAILED'
+                    }), 500
                 
-                try:
-                    # 动态导入类
-                    module = __import__(adapter_module, fromlist=[adapter_class])
-                    provider_class = getattr(module, adapter_class)
+                requires_auth = test_instance.requires_auth()
+                credentials = test_instance.credentials
+                
+                # 执行测试
+                start_time = time.time()
+                test_data = test_instance.test_connection(
+                    test_symbol=test_symbol,
+                    start_date=start_date,
+                    end_date=end_date
+                )
+                latency_ms = round((time.time() - start_time) * 1000, 2)
+
+                # 检查测试数据
+                if hasattr(test_data, 'to_dataframe'):
+                    test_data_df = test_data.to_dataframe()
+                    is_empty = test_data_df.empty
+                    data_count = len(test_data_df)
+                else:
+                    is_empty = test_data.empty if test_data is not None else True
+                    data_count = len(test_data) if test_data is not None else 0
+                
+                if test_data is None or is_empty:
+                    # 测试失败：连接成功但返回空数据
+                    is_available = False
+                    message = f'{provider_id} 连接成功，但返回空数据'
+                    logger.warning(f"{provider_id} 测试警告: {message}")
                     
-                    # 准备初始化参数（使用临时凭证）
-                    init_kwargs = {}
-                    if requires_auth and credentials:
-                        if auth_type == 'token':
-                            init_kwargs['token'] = credentials.get('token')
-                        elif auth_type == 'api_key':
-                            init_kwargs['api_key'] = credentials.get('api_key')
-                    
-                    # 创建临时实例
-                    adapter = provider_class(**init_kwargs)
-                    
-                    # 移除了对 adapter.available 的检查
-                    # 允许测试时即使没有有效凭证也能继续执行
-                    # 直到真正调用API时才会失败
-                    
-                    # 使用适配器自定义的测试符号
-                    if hasattr(adapter, 'get_test_symbol'):
-                        test_symbol = adapter.get_test_symbol()
-                    else:
-                        test_symbol = '^GSPC'
-                    
-                    from datetime import datetime, timedelta
-                    end_date = datetime.now().strftime('%Y-%m-%d')
-                    start_date = (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')
-                    
-                    start_time = time.time()
-                    
-                    # 执行测试查询（这里会真正测试API Key的有效性）
-                    test_data = adapter.get_index_prices(test_symbol, start_date, end_date)
-                    
-                    latency_ms = int((time.time() - start_time) * 1000)
-                    
-                    # 处理PriceData对象
-                    if hasattr(test_data, 'to_dataframe'):
-                        test_data_df = test_data.to_dataframe()
-                        is_empty = test_data_df.empty
-                        data_count = len(test_data_df)
-                    else:
-                        is_empty = test_data.empty if test_data is not None else True
-                        data_count = len(test_data) if test_data is not None else 0
-                    
-                    if test_data is None or is_empty:
-                        # 测试失败：连接成功但返回空数据
-                        is_available = False
-                        message = f'{provider_id} 连接成功，但返回空数据'
-                        logger.warning(f"{provider_id} 测试警告: {message}")
-                        
-                        result_data = {
-                            'status': 'error',
-                            'test_result': 'failed',
-                            'available': is_available,
-                            'message': message,
-                            'details': {
-                                'test_symbol': test_symbol,
-                                'date_range': f'{start_date} to {end_date}',
-                                'latency_ms': latency_ms
-                            }
-                        }
-                    else:
-                        # 测试成功
-                        is_available = True
-                        message = f'{provider_id} 连接测试通过'
-                        logger.info(f"{provider_id} 测试成功: {data_count} 条数据, {latency_ms}ms")
-                        
-                        result_data = {
-                            'status': 'success',
-                            'test_result': 'passed',
-                            'available': is_available,
-                            'message': message,
-                            'details': {
-                                'test_symbol': test_symbol,
-                                'data_count': data_count,
-                                'date_range': f'{start_date} to {end_date}',
-                                'latency_ms': latency_ms
-                            },
-                            'timestamp': datetime.now().isoformat()
-                        }
-                        
-                        # 测试成功后，保存凭证到文件
-                        if requires_auth and credentials:
-                            from core_bak_refactored.core.data.providers.base_provider import BaseDataProvider
-                            import os
-                            env = os.getenv('DEEPSEEKQUANT_ENV', 'dev')
-                            BaseDataProvider.save_credentials(provider_id, credentials, env=env)
-                            logger.info(f"{provider_id} 凭证已保存")
-                        
-                        # 注意：不再保存测试状态到配置文件
-                        # 状态由前端在内存中维护，下次启动时重新测试
-                    
-                    return jsonify(result_data)
-                    
-                except Exception as test_error:
-                    # 测试失败
-                    logger.error(f"{provider_id} 测试失败: {test_error}")
-                    
-                    # 注意：不再保存失败状态到配置文件
-                    # 状态由前端在内存中维护
-                    
-                    return jsonify({
+                    result_data = {
                         'status': 'error',
                         'test_result': 'failed',
-                        'available': False,
-                        'message': f'{provider_id} 连接测试失败: {str(test_error)}',
-                        'error_code': 'CONNECTION_TEST_FAILED'
-                    })
+                        'available': is_available,
+                        'message': message,
+                        'details': {
+                            'test_symbol': test_symbol,
+                            'date_range': f'{start_date} to {end_date}',
+                            'latency_ms': latency_ms
+                        }
+                    }
+                else:
+                    # 测试成功
+                    is_available = True
+                    message = f'{provider_id} 连接测试通过'
+                    logger.info(f"{provider_id} 测试成功: {data_count} 条数据, {latency_ms}ms")
                     
+                    result_data = {
+                        'status': 'success',
+                        'test_result': 'passed',
+                        'available': is_available,
+                        'message': message,
+                        'details': {
+                            'test_symbol': test_symbol,
+                            'data_count': data_count,
+                            'date_range': f'{start_date} to {end_date}',
+                            'latency_ms': latency_ms
+                        },
+                        'timestamp': datetime.now().isoformat()
+                    }
+                    
+                    # 测试成功后，保存凭证到文件
+                    if requires_auth and credentials:
+                        from core_bak_refactored.core.data.providers.base_provider import BaseDataProvider
+                        import os
+                        BaseDataProvider.save_credentials(provider_id, credentials)
+                        logger.info(f"{provider_id} 凭证已保存")
+                    
+                    # 注意：不再保存测试状态到配置文件
+                    # 状态由前端在内存中维护，下次启动时重新测试
+                
+                return jsonify(result_data)
+                
             except Exception as e:
-                logger.error(f"测试数据源连接失败: {e}")
+                logger.error(f"测试 {provider_id} 连接失败: {str(e)}", exc_info=True)
                 return jsonify({
                     'status': 'error',
-                    'message': str(e),
-                    'error_code': 'PROVIDER_TEST_FAILED'
+                    'message': f'测试连接时发生错误: {str(e)}',
+                    'error_code': 'TEST_ERROR'
                 }), 500
-        
+
         @self.app.route('/api/v1/providers/<provider_id>/activate', methods=['POST'])
         def activate_provider(provider_id):
             """
@@ -1527,7 +1499,7 @@ class DataQualityAPIService:
         # ============================================================
         # 凭证管理端点（Credentials Management）
         # ============================================================
-        
+
         @self.app.route('/api/v1/credentials', methods=['GET'])
         def get_credentials():
             """获取所有凭证列表（敏感信息脱敏）"""

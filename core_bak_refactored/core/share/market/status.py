@@ -1,6 +1,6 @@
 from typing import Any, Dict
 
-from core_bak_refactored.core.data.fetcher_orchestrator import DataFetcherOrchestrator
+from core_bak_refactored.core.data.fetcher.fetcher_orchestrator import DataFetcherOrchestrator
 
 
 async def get_market_status(orchestrator: DataFetcherOrchestrator) -> Dict[str, Any]:

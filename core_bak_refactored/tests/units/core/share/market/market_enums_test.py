@@ -1,10 +1,11 @@
 import unittest
 
-from core_bak_refactored.core.share.market.market_enums import MarketCode, DataSource, REGIONAL_DATA_SOURCE_PRIORITY
+from core_bak_refactored.core.share.market.market_enums import MarketCode, DataSource
 
 
 class MarketEnumsTest(unittest.TestCase):
     def test_market_code_values_and_validation(self):
+        """测试市场代码枚举的值和验证功能"""
         codes = MarketCode.get_all_codes()
         self.assertIn('CN', codes)
         self.assertIn('US', codes)
@@ -15,6 +16,7 @@ class MarketEnumsTest(unittest.TestCase):
         self.assertEqual(str(MarketCode.CN), 'CN')
 
     def test_data_source_values_and_validation(self):
+        """测试数据源枚举的值和验证功能"""
         sources = DataSource.get_all_sources()
         self.assertIn('yahoo', sources)
         self.assertIn('mock', sources)
@@ -22,18 +24,20 @@ class MarketEnumsTest(unittest.TestCase):
         self.assertFalse(DataSource.is_valid('unknown_source'))
         self.assertEqual(str(DataSource.MOCK), 'mock')
 
-    def test_regional_priority_mapping_basic(self):
-        # CN market should prioritize JOINQUANT/TUSHARE/WIND/YAHOO/MOCK in some order
-        # 注意：由于生产环境中不再包含MOCK，此处仅验证基本结构
-        cn_priority = REGIONAL_DATA_SOURCE_PRIORITY.get(MarketCode.CN)
-        self.assertIsNotNone(cn_priority)
-        self.assertGreater(len(cn_priority), 0)
-        # US market should include YAHOO
-        us_priority = REGIONAL_DATA_SOURCE_PRIORITY.get(MarketCode.US)
-        self.assertIsNotNone(us_priority)
-        self.assertIn(DataSource.YAHOO, us_priority)
-        # Default key should exist
-        self.assertIn(MarketCode.UNKNOWN, REGIONAL_DATA_SOURCE_PRIORITY)
+    def test_market_code_parse(self):
+        """测试市场代码解析功能（字符串/枚举 -> 枚举）"""
+        # 测试字符串解析
+        self.assertEqual(MarketCode.parse('CN'), MarketCode.CN)
+        self.assertEqual(MarketCode.parse('us'), MarketCode.US)  # 小写自动转大写
+        self.assertEqual(MarketCode.parse('Hk'), MarketCode.HK)  # 混合大小写
+        
+        # 测试枚举解析（直接返回）
+        self.assertEqual(MarketCode.parse(MarketCode.US), MarketCode.US)
+        
+        # 测试无效值回退到 UNKNOWN
+        self.assertEqual(MarketCode.parse('invalid'), MarketCode.UNKNOWN)
+        self.assertEqual(MarketCode.parse(None), MarketCode.UNKNOWN)
+        self.assertEqual(MarketCode.parse(123), MarketCode.UNKNOWN)
 
 
 if __name__ == '__main__':

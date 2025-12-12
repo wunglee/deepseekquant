@@ -1,19 +1,16 @@
 """
 FinnhubDataProvider 单元测试
 
-测试重点：
-1. 无 API Key 时的行为
-2. 初始化失败时的行为
-3. 临时凭证测试
+测试覆盖：
+1. 初始化（有/无 API Key）
+2. initialize 方法测试
+3. API调用失败处理
+4. 数据获取与标准化
+5. test_provider 方法测试
 """
 
 import unittest
-import sys
-import os
-from unittest.mock import patch, MagicMock
-
-# 添加项目根目录到路径
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../../../../..'))
+from unittest.mock import patch, Mock
 
 from core_bak_refactored.core.data.providers.finnhub_provider import FinnhubDataProvider
 
@@ -23,214 +20,100 @@ class FinnhubProviderTest(unittest.TestCase):
     
     def test_init_without_api_key(self):
         """测试无 API Key 初始化"""
-        # 不传入 api_key 参数
-        provider = FinnhubDataProvider()
-        
-        # 验证实例创建成功
-        self.assertIsNotNone(provider)
-        
-        # 验证 available 为 False
-        self.assertFalse(provider.available)
-        
-        # 验证 client 为 None
-        self.assertIsNone(provider.client)
-        
-        # 验证 api_key 为 None
-        self.assertIsNone(provider.api_key)
+        with patch.dict('os.environ', {}, clear=True):
+            with patch.object(FinnhubDataProvider, '_load_api_key_from_config', return_value=None):
+                provider = FinnhubDataProvider()
+                
+                self.assertIsNotNone(provider)
+                # 新实现中没有 available 属性，通过 client 是否为 None 判断
+                self.assertIsNone(provider.client)
     
     def test_init_with_api_key(self):
         """测试带 API Key 初始化"""
         test_api_key = "test_api_key_12345"
         
-        # 传入 api_key 参数
         provider = FinnhubDataProvider(api_key=test_api_key)
         
-        # 验证实例创建成功
         self.assertIsNotNone(provider)
-        
-        # 验证 api_key 设置正确
-        self.assertEqual(provider.api_key, test_api_key)
+        # 新实现中没有 api_key 属性，通过 client 是否存在判断初始化成功
+        self.assertIsNotNone(provider.client)
     
-    def test_init_import_error(self):
-        """测试导入错误时的行为"""
-        # 这个测试很难模拟，因为我们不能轻易卸载模块
-        # 我们只是验证实例能被创建
-        provider = FinnhubDataProvider(api_key="test_key")
-        
-        # 验证实例创建成功
-        self.assertIsNotNone(provider)
+    def test_initialize_method(self):
+        """测试 initialize 方法"""
+        # 确保环境变量和配置文件都不提供 API Key
+        with patch.dict('os.environ', {}, clear=True):
+            with patch.object(FinnhubDataProvider, '_load_api_key_from_config', return_value=None):
+                provider = FinnhubDataProvider()
+                self.assertIsNone(provider.client)
+                
+                # 调用 initialize 方法初始化客户端
+                provider.initialize(credential="test_credential_key")
+                
+                # 验证客户端已创建
+                self.assertIsNotNone(provider.client)
     
-    def test_init_finnhub_exception(self):
-        """测试 Finnhub 初始化异常时的行为"""
-        # 这个测试也很难完全模拟，因为我们不想真的抛出异常
-        # 我们只是验证实例能被创建
-        provider = FinnhubDataProvider(api_key="invalid_key")
+    def test_initialize_without_credential(self):
+        """测试 initialize 方法不提供凭证"""
+        provider = FinnhubDataProvider()
         
-        # 验证实例创建成功
-        self.assertIsNotNone(provider)
+        # 不提供凭证调用 initialize
+        provider.initialize(credential="")
+        
+        # client 应该仍然是 None（如果初始化时就是 None）
+        # 或者保持原样
     
     def test_get_test_symbol(self):
         """测试获取测试符号"""
         provider = FinnhubDataProvider()
-        test_symbol = provider.get_test_symbol()
-        
-        # 验证返回正确的测试符号
-        self.assertEqual(test_symbol, 'AAPL')
+        self.assertEqual(provider.get_test_symbol(), 'AAPL')
     
     def test_get_index_prices_unavailable(self):
-        """测试在不可用状态下获取数据"""
-        provider = FinnhubDataProvider()
-        
-        # 确保 provider 没有API Key
-        provider.api_key = None
-        
-        # 尝试获取数据应该抛出ValueError异常（因为没有API Key）
-        with self.assertRaises(ValueError) as context:
-            provider.get_index_prices('SPX', '2023-01-01', '2023-01-10')
-        
-        # 验证错误消息
-        self.assertIn('Finnhub API密钥未配置', str(context.exception))
+        """测试在没有API Key时获取数据应失败"""
+        with patch.dict('os.environ', {}, clear=True):
+            with patch.object(FinnhubDataProvider, '_load_api_key_from_config', return_value=None):
+                provider = FinnhubDataProvider()
+                provider.client = None  # 确保 client 为 None
+                
+                with self.assertRaises(ValueError) as context:
+                    provider.get_index_prices('SPX', '2023-01-01', '2023-01-10')
+                
+                self.assertIn('Finnhub API密钥未配置', str(context.exception))
     
     def test_get_index_prices_client_none_with_api_key(self):
-        """测试没有API Key时的行为"""
-        provider = FinnhubDataProvider()
-        
-        # 确保没有API Key
-        provider.api_key = None
-        
-        # 尝试获取数据应该抛出ValueError异常
-        with self.assertRaises(ValueError) as context:
-            provider.get_index_prices('SPX', '2023-01-01', '2023-01-10')
-        
-        # 验证错误消息
-        self.assertIn('Finnhub API密钥未配置', str(context.exception))
-    
-    def test_initialize_with_invalid_api_key(self):
-        """测试使用无效API Key初始化"""
-        # 这个测试需要mock finnhub库的行为
-        # 我们只验证实例能被创建且client不为None
-        provider = FinnhubDataProvider(api_key="invalid_key")
-        
-        # 验证实例创建成功
-        self.assertIsNotNone(provider)
-        
-        # 注意：由于我们无法mock finnhub库，这里可能client为None
-        # 但在修复后的版本中，我们应该尽量保证client不为None
-"""
-FinnhubDataProvider 单元测试
-
-测试重点：
-1. 无 API Key 时的行为
-2. 初始化失败时的行为
-3. 临时凭证测试
-"""
-
-import unittest
-import sys
-import os
-from unittest.mock import patch, MagicMock
-
-# 添加项目根目录到路径
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../../../../..'))
-
-from core_bak_refactored.core.data.providers.finnhub_provider import FinnhubDataProvider
-
-
-class FinnhubProviderTest(unittest.TestCase):
-    """FinnhubDataProvider 测试类"""
-    
-    def test_init_without_api_key(self):
-        """测试无 API Key 初始化"""
-        # 不传入 api_key 参数
-        provider = FinnhubDataProvider()
-        
-        # 验证实例创建成功
-        self.assertIsNotNone(provider)
-        
-        # 验证 available 为 False
-        self.assertFalse(provider.available)
-        
-        # 验证 client 为 None
-        self.assertIsNone(provider.client)
-        
-        # 验证 api_key 为 None
-        self.assertIsNone(provider.api_key)
-    
-    def test_init_with_api_key(self):
-        """测试带 API Key 初始化"""
-        test_api_key = "test_api_key_12345"
-        
-        # 传入 api_key 参数
-        provider = FinnhubDataProvider(api_key=test_api_key)
-        
-        # 验证实例创建成功
-        self.assertIsNotNone(provider)
-        
-        # 验证 api_key 设置正确
-        self.assertEqual(provider.api_key, test_api_key)
-    
-    def test_init_import_error(self):
-        """测试导入错误时的行为"""
-        # 这个测试很难模拟，因为我们不能轻易卸载模块
-        # 我们只是验证实例能被创建
+        """测试 client=None 但调用API时应失败"""
         provider = FinnhubDataProvider(api_key="test_key")
+        provider.client = None  # 强制设置为 None
         
-        # 验证实例创建成功
-        self.assertIsNotNone(provider)
-    
-    def test_init_finnhub_exception(self):
-        """测试 Finnhub 初始化异常时的行为"""
-        # 这个测试也很难完全模拟，因为我们不想真的抛出异常
-        # 我们只是验证实例能被创建
-        provider = FinnhubDataProvider(api_key="invalid_key")
-        
-        # 验证实例创建成功
-        self.assertIsNotNone(provider)
-    
-    def test_get_test_symbol(self):
-        """测试获取测试符号"""
-        provider = FinnhubDataProvider()
-        test_symbol = provider.get_test_symbol()
-        
-        # 验证返回正确的测试符号
-        self.assertEqual(test_symbol, 'AAPL')
-    
-    def test_get_index_prices_unavailable(self):
-        """测试在没有API Key时获取数据"""
-        provider = FinnhubDataProvider()
-        
-        # 确保 provider 没有API Key
-        provider.api_key = None
-        
-        # 尝试获取数据应该抛出ValueError异常（因为没有API Key）
         with self.assertRaises(ValueError) as context:
             provider.get_index_prices('SPX', '2023-01-01', '2023-01-10')
         
-        # 验证错误消息
         self.assertIn('Finnhub API密钥未配置', str(context.exception))
     
-    def test_get_index_prices_client_none_with_api_key(self):
-        """测试没有API Key时的行为"""
-        provider = FinnhubDataProvider()
-        
-        # 确保没有API Key
-        provider.api_key = None
-        
-        # 尝试获取数据应该抛出ValueError异常
-        with self.assertRaises(ValueError) as context:
-            provider.get_index_prices('SPX', '2023-01-01', '2023-01-10')
-        
-        # 验证错误消息
-        self.assertIn('Finnhub API密钥未配置', str(context.exception))
-    
-    def test_initialize_with_invalid_api_key(self):
-        """测试使用无效API Key初始化"""
-        # 这个测试需要mock finnhub库的行为
-        # 我们只验证实例能被创建且client不为None
-        provider = FinnhubDataProvider(api_key="invalid_key")
-        
-        # 验证实例创建成功
-        self.assertIsNotNone(provider)
-        
-        # 注意：由于我们无法mock finnhub库，这里可能client为None
-        # 但在修复后的版本中，我们应该尽量保证client不为None
+    def test_provider_test_method(self):
+        """测试 test_provider 类方法"""
+        # Mock ConfigManager 返回包含 finnhub 配置
+        with patch('core_bak_refactored.core.data.providers.base_provider.ConfigManager') as MockConfigManager:
+            mock_config_instance = MockConfigManager.return_value
+            mock_data_config = Mock()
+            mock_data_config.providers = [
+                {
+                    'id': 'finnhub',
+                    'name': 'Finnhub',
+                    'adapter_module': 'core_bak_refactored.core.data.providers.finnhub_provider',
+                    'adapter_class': 'FinnhubDataProvider'
+                }
+            ]
+            mock_config_instance.get_data_config.return_value = mock_data_config
+            
+            # 测试 test_provider（不会真正调用 API，因为没有真实凭证）
+            result = FinnhubDataProvider.test_provider('finnhub', credential='test_credential')
+            
+            # 验证返回结构
+            self.assertIn('status', result)
+            self.assertIn('test_result', result)
+            self.assertIn('available', result)
+            self.assertIn('message', result)
+
+
+if __name__ == '__main__':
+    unittest.main()

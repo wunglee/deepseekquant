@@ -34,8 +34,8 @@ class TestDataQualityChecker:
         
         assert report.overall_score >= 0.9
         assert report.passed == True
-        assert report.completeness == 1.0
-        assert report.consistency >= 0.9
+        assert report.completeness_score == 1.0
+        assert report.consistency_score >= 0.9
         assert len(report.issues) == 0
     
     def test_check_quality_incomplete_data(self):
@@ -50,7 +50,7 @@ class TestDataQualityChecker:
         
         report = checker.check_quality(data, index_id='000300.SH', expected_days=100)
         
-        assert report.completeness == 0.9  # 80/100 = 0.8, 但质量算法有容错机制，实际返回0.9
+        assert report.completeness_score == 0.9  # 80/100 = 0.8, 但质量算法有容错机制，实际返回0.9
         assert '数据不完整' in ' '.join(report.issues)
     
     def test_check_quality_missing_values(self):
@@ -65,7 +65,8 @@ class TestDataQualityChecker:
         
         report = checker.check_quality(data, index_id='000300.SH')
         
-        assert report.continuity < 0.9
+        # continuity_score在metadata中
+        assert report.metadata['continuity_score'] < 0.9
         assert '缺失值' in ' '.join(report.issues)
     
     def test_check_quality_abnormal_volatility(self):
@@ -84,7 +85,8 @@ class TestDataQualityChecker:
         
         report = checker.check_quality(data, index_id='000300.SH')
         
-        assert report.reasonableness <= 0.9  # 0.9也算合格
+        # accuracy_score对应原来的reasonableness
+        assert report.accuracy_score <= 0.9  # 0.9也算合格
         assert '异常波动' in ' '.join(report.issues)
     
     def test_cross_validate_identical_data(self):
@@ -213,7 +215,7 @@ class TestDataQualityChecker:
         })
         
         report_cn = checker.check_quality(data_cn, index_id='000300.SH', market='CN')
-        assert report_cn.reasonableness >= 0.9
+        assert report_cn.accuracy_score >= 0.9
         
         # US市场：20%熔断阈值
         close_prices_us = [100] * 50
@@ -227,7 +229,7 @@ class TestDataQualityChecker:
         })
         
         report_us = checker.check_quality(data_us, index_id='SPY', market='US')
-        assert report_us.reasonableness >= 0.9
+        assert report_us.accuracy_score >= 0.9
     
     def test_market_specific_gap_threshold(self):
         """测试市场特定间隔阈值（专家answer.md第3轮）"""

@@ -1,13 +1,16 @@
 """
 Provider 基类 - 确保所有 Provider 实现统一的配置管理接口
 """
-
-from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional
-from pathlib import Path
-import yaml
 import logging
-from datetime import datetime
+import os
+import time
+from abc import ABC, abstractmethod
+from pathlib import Path
+from typing import Dict, Any, Optional
+
+import yaml
+
+from core_bak_refactored.core.share import ConfigManager
 
 logger = logging.getLogger('DeepSeekQuant.DataProviders')
 
@@ -79,76 +82,103 @@ class BaseDataProvider(ABC):
     # ========================================================================
     
     @staticmethod
-    def _get_config_path(filename: str, env: str = 'dev') -> Path:
+    @classmethod
+    def _get_config_path(cls, filename: str) -> Path:
         """
         获取配置文件路径
         
         Args:
             filename: 配置文件名
-            env: 环境（dev/prod/test）
             
         Returns:
             Path: 配置文件完整路径
+            
+        Note:
+            使用 ConfigManager.get_config_path() 统一获取配置路径
         """
-        # 从当前文件向上找到 core_bak_refactored/config
-        current_file = Path(__file__).resolve()
-        core_bak_dir = current_file.parent.parent.parent.parent
-        config_dir = core_bak_dir / 'config'
-        
-        # 优先使用环境目录
-        env_dir = config_dir / env
-        env_path = env_dir / filename
-        if env_path.exists():
-            return env_path
-        return config_dir / filename
+        from core_bak_refactored.core.share.config_manager import ConfigManager
+        config_manager = ConfigManager()
+        # 使用 ConfigManager 的封装方法获取配置路径
+        config_path_str = config_manager.get_config_path(filename.replace('.yml', ''))
+        return Path(config_path_str)
     
     @classmethod
-    def test_provider(
-        cls,
-        provider_id: str,
-        env: str = 'dev',
-        **test_args
-    ) -> Dict[str, Any]:
+    def test_provider(cls, provider_id: str, credential:str) -> Dict[str, Any]:
         """
-        测试数据源连接（简化版，移除 RealHistoricalDataProvider 特殊逻辑）
+        测试数据源连接
         
         Args:
             provider_id: 数据源ID
-            env: 环境（dev/prod/test）
-            **test_args: 测试参数，例如api_key等
+            credential: 临时凭证（用于测试）
             
         Returns:
-            Dict: 测试结果
-                - status: 'success'/'error'
-                - test_result: 'passed'/'failed'
-                - available: bool (可用/不可用)
-                - message: 提示信息
-                - details: 详细信息
-        
-        Note:
-            此方法已废弃，现在测试逻辑由 API 端点直接处理
+            测试结果字典
         """
+        logger.info(f"Testing connection for provider: {provider_id}")
+        
         try:
-            # 创建临时实例用于测试
-            test_instance = cls()
+            # 获取数据源配置
+            config_manager = ConfigManager()
+            data_config = config_manager.get_data_config()
+            providers = data_config.providers
             
-            # 如果有测试参数，调用initialize方法进行初始化
-            if test_args:
-                test_instance.initialize(**test_args)
+            provider_config = next((p for p in providers if p.get('id') == provider_id or p.get('name') == provider_id), None)
             
-            # 获取测试符号
-            if hasattr(test_instance, 'get_test_symbol'):
-                test_symbol = test_instance.get_test_symbol()
-            else:
-                test_symbol = '^GSPC'
+            if not provider_config:
+                return {
+                    'status': 'error',
+                    'test_result': 'failed',
+                    'available': False,
+                    'message': f'数据源不存在: {provider_id}',
+                    'error_code': 'PROVIDER_NOT_FOUND'
+                }
             
-            from datetime import datetime, timedelta
-            end_date = datetime.now().strftime('%Y-%m-%d')
-            start_date = (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')
+            # 动态创建适配器实例
+            adapter_module = provider_config.get('adapter_module')
+            adapter_class = provider_config.get('adapter_class')
+            
+            if not adapter_module or not adapter_class:
+                return {
+                    'status': 'error',
+                    'test_result': 'failed',
+                    'available': False,
+                    'message': f'{provider_id} 适配器未实现',
+                    'error_code': 'ADAPTER_NOT_IMPLEMENTED'
+                }
             
             try:
+                # 动态导入类
+                module = __import__(adapter_module, fromlist=[adapter_class])
+                provider_class = getattr(module, adapter_class)
+                
+                # 创建临时实例（各Provider从配置读取proxy，无需传参）
+                test_instance = provider_class()
+                
+                # 如果Provider实现了initialize方法，调用它来初始化客户端
+                if hasattr(test_instance, 'initialize'):
+                    if credential:
+                        test_instance.initialize(credential=credential)
+                    else:
+                        test_instance.initialize()
+                
+                # 使用适配器自定义的测试符号
+                if hasattr(test_instance, 'get_test_symbol'):
+                    test_symbol = test_instance.get_test_symbol()
+                else:
+                    test_symbol = '^GSPC'
+                
+                from datetime import datetime, timedelta
+                end_date = datetime.now().strftime('%Y-%m-%d')
+                start_date = (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')
+                
+                start_time = time.time()
+                
+                # 执行测试查询
                 test_data = test_instance.get_index_prices(test_symbol, start_date, end_date)
                 
+                latency_ms = int((time.time() - start_time) * 1000)
+                
+                # 处理PriceData对象
                 if hasattr(test_data, 'to_dataframe'):
                     test_data_df = test_data.to_dataframe()
                     is_empty = test_data_df.empty
@@ -158,30 +188,50 @@ class BaseDataProvider(ABC):
                     data_count = len(test_data) if test_data is not None else 0
                 
                 if test_data is None or is_empty:
+                    # 测试失败：连接成功但返回空数据
+                    is_available = False
+                    message = f'{provider_id} 连接成功，但返回空数据'
+                    logger.warning(f"{provider_id} 测试警告: {message}")
+                    
                     result = {
                         'status': 'error',
                         'test_result': 'failed',
-                        'available': False,
-                        'message': f'{provider_id} 连接成功，但返回空数据',
+                        'available': is_available,
+                        'message': message,
                         'details': {
                             'test_symbol': test_symbol,
-                            'date_range': f'{start_date} to {end_date}'
+                            'date_range': f'{start_date} to {end_date}',
+                            'latency_ms': latency_ms
                         }
                     }
                 else:
-                    logger.info(f"测试 {provider_id} 连接成功，返回 {data_count} 条数据")
+                    # 测试成功
+                    is_available = True
+                    message = f'{provider_id} 连接测试通过'
+                    logger.info(f"{provider_id} 测试成功: {data_count} 条数据, {latency_ms}ms")
+                    
                     result = {
                         'status': 'success',
                         'test_result': 'passed',
-                        'available': True,
-                        'message': f'{provider_id} 连接测试通过',
+                        'available': is_available,
+                        'message': message,
                         'details': {
                             'test_symbol': test_symbol,
                             'data_count': data_count,
-                            'date_range': f'{start_date} to {end_date}'
+                            'date_range': f'{start_date} to {end_date}',
+                            'latency_ms': latency_ms
                         },
                         'timestamp': datetime.now().isoformat()
                     }
+                    
+                    # 测试成功后，保存凭证到文件
+                    if credential:
+                        cls.save_credentials(provider_id, credential)
+                        logger.info(f"{provider_id} 凭证已保存")
+                    
+                    # 💚 保存测试状态到配置文件（关键修复）
+                    cls.save_test_status(provider_id, 'passed')
+                    logger.info(f"{provider_id} 测试状态已保存: passed")
                 
                 return result
                 
@@ -209,16 +259,14 @@ class BaseDataProvider(ABC):
     def save_credentials(
         cls,
         provider_id: str,
-        credentials: Dict[str, Any],
-        env: str = 'dev'
+        credential: str,
     ) -> bool:
         """
         保存数据源凭证
         
         Args:
             provider_id: 数据源ID
-            credentials: 凭证数据
-            env: 环境（dev/prod/test）
+            credential: 凭证数据
             
         Returns:
             bool: 是否成功
@@ -227,7 +275,7 @@ class BaseDataProvider(ABC):
             凭证保存后不再重置测试状态，状态由下次系统启动时的实时测试决定
         """
         try:
-            credentials_yml_path = cls._get_config_path('credentials.yml', env)
+            credentials_yml_path = cls._get_config_path('credentials.yml')
             
             # 读取现有凭证
             if credentials_yml_path.exists():
@@ -237,14 +285,14 @@ class BaseDataProvider(ABC):
                 credentials_data = {}
             
             # 更新凭证
-            credentials_data[provider_id] = credentials
+            credentials_data[provider_id] = credential
             
             # 写入凭证文件
             credentials_yml_path.parent.mkdir(parents=True, exist_ok=True)
             with open(credentials_yml_path, 'w', encoding='utf-8') as f:
                 yaml.dump(credentials_data, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
             
-            logger.info(f"保存 {provider_id} 凭证成功: {list(credentials.keys())}")
+            logger.info(f"保存 {provider_id} 凭证成功: {credential}")
             return True
             
         except Exception as e:
@@ -255,20 +303,18 @@ class BaseDataProvider(ABC):
     def delete_credentials(
         cls,
         provider_id: str,
-        env: str = 'dev'
     ) -> bool:
         """
         删除数据源凭证
         
         Args:
             provider_id: 数据源ID
-            env: 环境（dev/prod/test）
             
         Returns:
             bool: 是否成功
         
         Examples:
-            >>> BaseDataProvider.delete_credentials('yahoo', env='dev')
+            >>> BaseDataProvider.delete_credentials('yahoo')
             True
             >>> BaseDataProvider.delete_credentials('nonexistent_provider')
             True  # 即使凭证不存在也返回 True
@@ -279,7 +325,7 @@ class BaseDataProvider(ABC):
             - 只有当文件操作失败时才返回 False
         """
         try:
-            credentials_yml_path = cls._get_config_path('credentials.yml', env)
+            credentials_yml_path = cls._get_config_path('credentials.yml')
             
             # 如果凭证文件不存在，视为已删除
             if not credentials_yml_path.exists():
@@ -308,3 +354,83 @@ class BaseDataProvider(ABC):
         except Exception as e:
             logger.error(f"删除凭证失败: {e}")
             return False
+    
+    @classmethod
+    def save_test_status(
+        cls,
+        provider_id: str,
+        status: str,
+    ) -> bool:
+        """
+        保存数据源测试状态到配置文件
+        
+        Args:
+            provider_id: 数据源ID
+            status: 测试状态 ('passed' | 'failed' | 'untested')
+            
+        Returns:
+            bool: 是否成功
+            
+        Examples:
+            >>> BaseDataProvider.save_test_status('yahoo', 'passed')
+            True
+            >>> BaseDataProvider.save_test_status('akshare', 'failed')
+            True
+        
+        Note:
+            - 状态保存到 data.yml 中对应 provider 的 status 字段
+            - 直接写入文件,确保持久化
+        """
+        try:
+            from datetime import datetime
+            from core_bak_refactored.core.share.config_manager import ConfigManager
+            import yaml
+            import os
+            
+            config_manager = ConfigManager()
+            
+            # 获取 data.yml 的路径
+            data_yml_path = config_manager.get_config_path('data')
+            
+            # 读取现有配置
+            if os.path.exists(data_yml_path):
+                with open(data_yml_path, 'r', encoding='utf-8') as f:
+                    data_config = yaml.safe_load(f) or {}
+            else:
+                logger.error(f"配置文件不存在: {data_yml_path}")
+                return False
+            
+            # 查找并更新 provider 状态
+            providers = data_config.get('providers', [])
+            provider_found = False
+            
+            for provider in providers:
+                if provider.get('id') == provider_id:
+                    provider['status'] = status
+                    provider['last_test'] = datetime.now().isoformat()
+                    provider_found = True
+                    logger.info(f"更新 provider 状态: {provider_id} -> {status}")
+                    break
+            
+            if not provider_found:
+                logger.warning(f"Provider {provider_id} 不存在于配置文件中")
+                return False
+            
+            # 💚 关键修复: 写入文件,确保持久化
+            with open(data_yml_path, 'w', encoding='utf-8') as f:
+                yaml.dump(data_config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+            
+            logger.info(f"{provider_id} 测试状态已保存: {status}")
+            
+            # 重新加载配置(更新内存)
+            config_manager._load_config()
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"保存测试状态失败: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return False
+
+

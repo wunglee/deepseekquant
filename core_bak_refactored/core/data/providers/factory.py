@@ -58,47 +58,17 @@ class DataProviderFactory:
         Returns:
             Dict: 配置字典
         """
-        import yaml
-        import os
-        from pathlib import Path
+        # 使用 ConfigManager 获取配置（封装环境逻辑）
+        from core_bak_refactored.core.share.config_manager import ConfigManager
+        config_manager = ConfigManager()
+        config = config_manager.get('data', {})
         
-        # 获取配置文件路径（修复：从项目根目录定位）
-        # core_bak_refactored/core/data/providers/factory.py
-        # -> core_bak_refactored/config/dev/data.yml
-        current_dir = Path(__file__).parent  # providers/
-        core_data_dir = current_dir.parent  # data/
-        core_dir = core_data_dir.parent  # core/
-        core_bak_refactored_dir = core_dir.parent  # core_bak_refactored/
-        config_dir = core_bak_refactored_dir / 'config'
-        
-        logger.debug(f"配置目录路径: {config_dir}")
-        
-        # 优先从环境变量读取环境配置
-        env = os.getenv('DEEPSEEK_ENV', 'dev')
-        env_config_file = config_dir / env / 'data.yml'
-        
-        logger.debug(f"尝试加载配置文件: {env_config_file}")
-        
-        # 如果环境配置不存在，尝试默认配置
-        if not env_config_file.exists():
-            logger.warning(f"环境配置文件不存在: {env_config_file}")
-            env_config_file = config_dir / 'data.yml'
-            logger.debug(f"尝试默认配置文件: {env_config_file}")
-        
-        if not env_config_file.exists():
-            logger.error(f"配置文件不存在: {env_config_file}，使用空配置")
-            logger.error(f"当前工作目录: {Path.cwd()}")
-            logger.error(f"factory.py位置: {Path(__file__)}")
-            return {'providers': []}
-        
-        try:
-            with open(env_config_file, 'r', encoding='utf-8') as f:
-                config = yaml.safe_load(f) or {}
-            logger.info(f"✅ 从配置文件加载: {env_config_file}")
+        if config:
+            logger.info(f"✅ 从 ConfigManager 加载配置")
             logger.info(f"✅ 加载了 {len(config.get('providers', []))} 个providers")
             return config
-        except Exception as e:
-            logger.error(f"加载配置文件失败: {e}")
+        else:
+            logger.error("配置加载失败，返回空配置")
             return {'providers': []}
     
     def _get_provider_class(self, name: str) -> Type:

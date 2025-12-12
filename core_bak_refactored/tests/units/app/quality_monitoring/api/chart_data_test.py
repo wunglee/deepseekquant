@@ -9,9 +9,11 @@ import unittest
 from unittest.mock import Mock, MagicMock
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta
+
+from pandas import DataFrame
 
 from core_bak_refactored.app.quality_monitoring.api.chart_data import ChartDataAssembler
+from core_bak_refactored.core.data.providers.protocols import PriceData
 
 
 class ChartDataAssemblerBasicTest(unittest.TestCase):
@@ -73,21 +75,22 @@ class ChartDataAssemblerPeriodConversionTest(unittest.TestCase):
         """测试日线转换 - 无需转换"""
         # 准备测试数据
         dates = pd.date_range('2024-01-01', periods=10, freq='D')
-        df = pd.DataFrame({
+        price_data = PriceData.from_dataframe(DataFrame({
             'date': dates,
             'open': np.random.rand(10) * 100,
             'high': np.random.rand(10) * 100,
             'low': np.random.rand(10) * 100,
             'close': np.random.rand(10) * 100,
             'volume': np.random.rand(10) * 1000000
-        })
+        }))
         
-        result = self.assembler._convert_period(df, 'daily', 10)
+        result = self.assembler._convert_period(price_data, 'daily', 10)
         
         # 验证结果
-        self.assertEqual(len(result), 10)
-        self.assertIn('open', result.columns)
-        self.assertIn('date', result.columns)
+        pd_result=result.to_dataframe()
+        self.assertEqual(len(pd_result), 10)
+        self.assertIn('open', pd_result.columns)
+        self.assertIn('date', pd_result.columns)
     
     def test_convert_period_weekly(self):
         """测试日线转周线"""
@@ -102,11 +105,11 @@ class ChartDataAssemblerPeriodConversionTest(unittest.TestCase):
             'volume': np.ones(30) * 1000000
         })
         
-        result = self.assembler._convert_period(df, 'weekly', 4)
-        
+        result = self.assembler._convert_period(PriceData.from_dataframe(df), 'weekly', 4)
+        pd_result=result.to_dataframe()
         # 验证结果（30天约4-5周）
-        self.assertLessEqual(len(result), 5)
-        self.assertIn('open', result.columns)
+        self.assertLessEqual(len(pd_result), 5)
+        self.assertIn('open', pd_result.columns)
     
     def test_convert_period_monthly(self):
         """测试日线转月线"""
@@ -121,11 +124,11 @@ class ChartDataAssemblerPeriodConversionTest(unittest.TestCase):
             'volume': np.ones(90) * 1000000
         })
         
-        result = self.assembler._convert_period(df, 'monthly', 3)
-        
+        result = self.assembler._convert_period(PriceData.from_dataframe(df), 'monthly', 3)
+        pd_result=result.to_dataframe()
         # 验证结果（90天=3个月）
-        self.assertEqual(len(result), 3)
-        self.assertIn('open', result.columns)
+        self.assertEqual(len(pd_result), 3)
+        self.assertIn('open', pd_result.columns)
 
 
 class ChartDataAssemblerEventDetectionTest(unittest.TestCase):

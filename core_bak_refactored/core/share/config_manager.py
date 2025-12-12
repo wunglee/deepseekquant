@@ -13,7 +13,7 @@ from typing import Any, Dict, Optional
 from dataclasses import dataclass, asdict
 import logging
 
-from core_bak_refactored.core.share.market.market_enums import MarketCode, DataSource
+from core_bak_refactored.core.share.market.market_enums import MarketCode
 
 logger = logging.getLogger('DeepSeekQuant.Core.Share.ConfigManager')
 
@@ -69,7 +69,8 @@ class DataConfig:
     cache_ttl: int  # 缓存过期时间（秒）
     max_retries: int  # 最大重试次数
     providers: list  # 数据源列表（用于 Providers 页面展示）
-    
+    data_providers: Optional[dict] = None  # 数据源代理配置，例如 {"yahoo_finance": {"use_proxy": true}}
+
     def __post_init__(self):
         # 确保 providers 是列表类型
         if not isinstance(self.providers, list):
@@ -92,6 +93,7 @@ class SystemConfig:
     timeout: int  # 请求超时（秒）
     enable_health_check: bool
     health_check_interval: int  # 健康检查间隔（秒）
+    proxies: Optional[dict] = None  # 代理配置，例如 {"http": "http://127.0.0.1:8002", "socks5": "socks5://127.0.0.1:1081"}
 
 
 class ConfigManager:
@@ -107,7 +109,21 @@ class ConfigManager:
     _instance = None
     _lock = None
     _observer = None  # 全局watchdog observer
+    environment:str
     
+    @staticmethod
+    def _get_environment() -> str:
+        """
+        获取当前环境配置（内部方法）
+        
+        Returns:
+            环境名称（dev/test/prod）
+            
+        Note:
+            这是内部方法，外部代码不应直接调用
+            环境是 ConfigManager 的实现细节，外部应通过 ConfigManager 实例获取配置
+        """
+        return os.getenv('DEEPSEEK_ENV', 'dev')
     def __new__(cls, config_file: Optional[str] = None, environment: Optional[str] = None):
         """单例模式实现"""
         if cls._instance is None:
@@ -124,7 +140,7 @@ class ConfigManager:
     
     def __init__(self, config_file: Optional[str] = None, environment: Optional[str] = None):
         # 避免重复初始化，但允许environment参数变更时重新加载
-        requested_env = environment or os.getenv('DEEPSEEK_ENV', 'dev')
+        requested_env = environment or ConfigManager._get_environment()  # 使用私有方法
         
         if self._initialized:
             # 如果environment参数与当前环境不同，重新加载配置
@@ -150,34 +166,28 @@ class ConfigManager:
         # 优先读取目录化YAML配置
         try:
             import yaml  # 可选依赖
+            import glob
             base_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'config')
             # 环境隔离支持：优先加载环境目录下的配置
             env_dir = os.path.join(base_dir, self.environment)
-            monitoring_path = os.path.join(env_dir if os.path.exists(env_dir) else base_dir, 'monitoring.yml')
-            alerting_path = os.path.join(env_dir if os.path.exists(env_dir) else base_dir, 'alerting.yml')
-            data_path = os.path.join(env_dir if os.path.exists(env_dir) else base_dir, 'data.yml')
-            system_path = os.path.join(env_dir if os.path.exists(env_dir) else base_dir, 'system.yml')
-            event_window_path = os.path.join(env_dir if os.path.exists(env_dir) else base_dir, 'event_window.yml')
-            dashboard_path = os.path.join(env_dir if os.path.exists(env_dir) else base_dir, 'dashboard.yml')
-            api_service_path = os.path.join(env_dir if os.path.exists(env_dir) else base_dir, 'api_service.yml')
-            critical_industries_path = os.path.join(env_dir if os.path.exists(env_dir) else base_dir, 'critical_industries.yml')
+            config_dir = env_dir if os.path.exists(env_dir) else base_dir
+                
+            # 自动扫描所有 .yml 文件（不需要手动维护列表）
             loaded = {}
-            for path, key in [
-                (monitoring_path, 'monitoring'),
-                (alerting_path, 'alerting'),
-                (data_path, 'data'),
-                (system_path, 'system'),
-                (event_window_path, 'event_window'),
-                (dashboard_path, 'dashboard'),
-                (api_service_path, 'api_service'),
-                (critical_industries_path, 'critical_industries'),
-            ]:
-                if os.path.exists(path):
-                    with open(path, 'r', encoding='utf-8') as f:
-                        loaded[key] = yaml.safe_load(f) or {}
+            yml_files = glob.glob(os.path.join(config_dir, '*.yml'))
+                
+            for yml_path in yml_files:
+                # 从文件名提取配置 key（去掉 .yml 后缀）
+                config_key = os.path.splitext(os.path.basename(yml_path))[0]
+                try:
+                    with open(yml_path, 'r', encoding='utf-8') as f:
+                        loaded[config_key] = yaml.safe_load(f) or {}
+                except Exception as e:
+                    logger.warning(f"跳过无效配置文件 {yml_path}: {e}")
+                        
             if loaded:
                 self._config = loaded
-                logger.info(f"从YAML加载配置[{self.environment}]: {list(loaded.keys())}")
+                logger.info(f"从 YAML 加载配置 [{self.environment}]: {sorted(loaded.keys())}")
                 return
         except Exception as e:
             logger.warning(f"YAML配置加载失败，回退默认: {e}")
@@ -232,6 +242,37 @@ class ConfigManager:
         """获取系统配置"""
         config_dict = self._config.get('system', {})
         return SystemConfig(**config_dict)
+    
+    def get_proxies_from_config(self) -> Optional[dict]:
+        """
+        从系统配置中获取代理设置
+        
+        Returns:
+            代理配置字典，如果没有配置则返回None
+        """
+        try:
+            system_config = self.get_system_config()
+            return system_config.proxies
+        except Exception as e:
+            # 如果配置加载失败，返回None
+            return None
+    
+    def configure_provider_proxy(self, provider, proxy_config: Optional[dict] = None):
+        """
+        为数据提供者配置代理
+        
+        Args:
+            provider: 数据提供者实例
+            proxy_config: 代理配置字典
+        """
+        if proxy_config is None:
+            proxy_config = self.get_proxies_from_config()
+        
+        if proxy_config and hasattr(provider, 'proxy'):
+            provider.proxy = proxy_config
+            # 注意：timeout属性可能不存在于所有provider中，需要检查
+            if hasattr(provider, 'timeout'):
+                provider.timeout = 20
     
     def _start_hot_reload_watcher(self):
         """启动热加载监听器（全局单例）"""

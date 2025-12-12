@@ -1,6 +1,6 @@
 from typing import Any
 
-from core_bak_refactored.app.data_quality.api_service import DataQualityAPIService
+from core_bak_refactored.app.quality_monitoring.api_service import DataQualityAPIService
 
 
 class DataQualityAPIRouting:

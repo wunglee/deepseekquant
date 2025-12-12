@@ -16,7 +16,6 @@ from core_bak_refactored.core.backtest._fragments.event_window_backtester import
 from core_bak_refactored.tests.fixtures.core.data.mock_historical_data_provider import MockHistoricalDataProvider
 from core_bak_refactored.core.data.providers.yahoo_provider import YahooFinanceDataProvider
 from core_bak_refactored.core.portfolio._fragments.synthetic_portfolio_builder import SyntheticPortfolioBuilder
-from core_bak_refactored.core.risk.backtest_framework import create_data_provider
 from core_bak_refactored.core.risk.stress_testing import StressTester
 from core_bak_refactored.core.data.providers.factory import get_global_factory, reset_global_factory
 
@@ -91,8 +90,8 @@ class EventWindowBacktesterMockIntegrationTest(unittest.TestCase):
     """Mock数据集成测试"""
 
     def setUp(self):
-        self.backtester = EventWindowBacktester()
         self.data_provider = MockHistoricalDataProvider()
+        self.backtester = EventWindowBacktester(data_provider=self.data_provider)
         self.portfolio = SyntheticPortfolioBuilder.build_csi300_equal_weight()
         self.stress_tester = None
 
@@ -132,12 +131,8 @@ class EventWindowBacktesterRealDataIntegrationTest(unittest.TestCase):
     """真实数据集成测试（3个核心事件）"""
 
     def setUp(self):
-        # 注册Mock provider
-        reset_global_factory()
-        factory = get_global_factory()
-        factory.register('mock', MockHistoricalDataProvider)
-        
-        provider = create_data_provider('mock')
+        # 直接创建Mock provider实例（不再使用factory.register）
+        provider = MockHistoricalDataProvider()
         self.backtester = EventWindowBacktester(data_provider=provider)
         self.portfolio = SyntheticPortfolioBuilder.build_csi300_equal_weight()
         self.stress_tester = StressTester(config={})
@@ -173,12 +168,8 @@ class EventWindowBacktesterFiveEventsIntegrationTest(unittest.TestCase):
     """5事件真实数据集成测试"""
 
     def setUp(self):
-        # 注册Mock provider
-        reset_global_factory()
-        factory = get_global_factory()
-        factory.register('mock', MockHistoricalDataProvider)
-        
-        provider = create_data_provider('mock')
+        # 直接创建Mock provider实例（不再使用factory.register）
+        provider = MockHistoricalDataProvider()
         self.backtester = EventWindowBacktester(data_provider=provider)
         self.portfolio = SyntheticPortfolioBuilder.build_csi300_equal_weight()
         

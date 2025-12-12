@@ -30,12 +30,23 @@ class StubProvider:
         })
 
 class StubFactory:
+    def __init__(self):
+        self._instances = {}
+    
     def create(self, name, **kwargs):
-        if name != 'real':
+        if name != 'akshare':  # 支持两种名称
             raise ValueError(f"Unexpected provider name: {name}")
         global stub_provider_instance
         stub_provider_instance = StubProvider()
         return stub_provider_instance
+    
+    def get(self, name):
+        """单例模式，与DataProviderFactory保持一致"""
+        if name in self._instances:
+            return self._instances[name]
+        instance = self.create(name)
+        self._instances[name] = instance
+        return instance
 
 @pytest.fixture(autouse=True)
 def patch_global_factory(monkeypatch):
@@ -116,7 +127,8 @@ class TestQualityMonitoringServiceRunCheckCycle:
         # 验证真实provider被调用（通过工厂注入的 Stub）
         global stub_provider_instance
         assert stub_provider_instance is not None
-        assert stub_provider_instance.last_index_id == 'AAPL'
+        # 验证默认指数代码（从配置获取，默认为 000300.SH）
+        assert stub_provider_instance.last_index_id == '000300.SH'
         
         # 验证alerts_triggered字段存在
         assert 'alerts_triggered' in summary

@@ -33,6 +33,7 @@ import pandas as pd
 
 from core_bak_refactored.core.data.providers.protocols import HistoricalDataProvider, PriceData
 from core_bak_refactored.core.data.providers.base_provider import BaseDataProvider
+from core_bak_refactored.core.share.config_manager import ConfigManager
 import finnhub
 logger = logging.getLogger(__name__)
 
@@ -53,15 +54,25 @@ class FinnhubDataProvider(BaseDataProvider, HistoricalDataProvider):
     - 透明失败原则（API问题直接抛出异常）
     """
 
-    def __init__(self, api_key: Optional[str] = None):
+    def __init__(self):
         """
         初始化Finnhub数据提供者
         
-        Args:
-            api_key: Finnhub API密钥，如果未提供则从环境变量或配置文件读取
+        Note:
+            - API Key 从环境变量 FINNHUB_API_KEY 或配置文件读取
+            - proxy 从配置文件读取，不通过参数传递
         """
-        # 优先级：传入参数 > 环境变量 > 配置文件 > None
-        api_key = api_key or os.getenv('FINNHUB_API_KEY') or self._load_api_key_from_config()
+        # 优先级：环境变量 > 配置文件 > None
+        api_key = os.getenv('FINNHUB_API_KEY') or self._load_api_key_from_config()
+        
+        # 从配置文件中获取proxy
+        config_manager = ConfigManager()
+        proxy_config = config_manager.get_proxies_from_config()
+        if proxy_config:
+            # 使用HTTP代理（如果有配置的话）
+            self.proxy = proxy_config.get('http') or proxy_config.get('socks5')
+        else:
+            self.proxy = None
         
         if api_key:
             self.client = finnhub.Client(api_key=api_key)
@@ -71,18 +82,16 @@ class FinnhubDataProvider(BaseDataProvider, HistoricalDataProvider):
         self._last_request_time = 0
         self._min_request_interval = 1.0  # 最小请求间隔（秒），60次/分钟
     
-    def initialize(self, api_key: str = None, **kwargs):
+    def initialize(self,credential:str,**kwargs):
         """
         初始化客户端
         
         Args:
-            api_key: API密钥
             **kwargs: 其他初始化参数
         """
-        # 使用传入的api_key或已有api_key
-        if api_key:
-            self.client = finnhub.Client(api_key=api_key)
-            logger.info(f"Finnhub客户端初始化成功: {api_key[:8]}...")
+        if credential:
+            self.client = finnhub.Client(api_key=credential)
+            logger.info(f"Finnhub客户端初始化成功: {credential[:8]}...")
         else:
             logger.warning("未提供API Key，无法初始化Finnhub客户端")
 
@@ -245,6 +254,18 @@ class FinnhubDataProvider(BaseDataProvider, HistoricalDataProvider):
             
         except Exception as e:
             # 不重新抛出RuntimeError，保持异常类型一致性
+            error_msg = str(e)
+            
+            # 特殊处理 403 错误 - Finnhub 免费版不支持历史数据
+            if '403' in error_msg or "You don't have access" in error_msg:
+                friendly_msg = (
+                    f"Finnhub 免费版不支持历史K线数据 ({index_id})。"
+                    "免费账户只能访问实时报价和公司信息。"
+                    "如需历史数据，请使用 AKShare 或 Yahoo Finance。"
+                )
+                logger.warning(friendly_msg)
+                raise ValueError(friendly_msg)
+            
             if isinstance(e, ValueError):
                 # 如果已经是ValueError，直接重新抛出
                 logger.error(f"Finnhub获取数据失败 ({index_id}): {e}")

@@ -52,8 +52,10 @@ class TestConfigManager(unittest.TestCase):
         manager = ConfigManager()
         config = manager.get_data_config()
         self.assertIsInstance(config, DataConfig)
-        # dev环境主数据源为akshare
-        self.assertEqual(config.primary_source, "akshare")
+        # dev环境使用 market_sources 映射，不再有 primary_source
+        self.assertIsNotNone(config.market_sources)
+        # 验证 CN 市场使用 akshare
+        self.assertEqual(config.market_sources.get('CN'), 'akshare')
     
     def test_get_system_config(self):
         """测试获取系统配置"""
@@ -90,18 +92,46 @@ class TestConfigManager(unittest.TestCase):
         # 在测试环境中，我们不测试JSON文件加载，因为YAML配置优先级更高
         # 我们测试get方法的基本功能
         manager = ConfigManager(environment='test')
-        # 测试从YAML配置中获取值
+        # 测试从YAML配置中获取值（test/data.yml 中 default_index 为 SPX）
         value = manager.get('data.default_index')
-        self.assertEqual(value, 'MSFT')
+        self.assertEqual(value, 'SPX')
     
     def test_yaml_config_loading(self):
         """测试YAML配置加载"""
         # 使用开发环境配置
         manager = ConfigManager(environment='dev')
-        regional_config = manager.get('regional_data_source')
-        self.assertIsNotNone(regional_config)
-        self.assertIn('CN', regional_config)
-        self.assertIn('US', regional_config)
+        # 新配置中使用 market_sources 而不是 regional_data_source
+        market_sources = manager.get('data.market_sources')
+        self.assertIsNotNone(market_sources)
+        # 验证 CN 和 US 市场配置存在
+        self.assertIn('CN', market_sources)
+        self.assertIn('US', market_sources)
+    
+    def test_environment_encapsulation(self):
+        """测试环境封装（外部不应直接获取环境）"""
+        # 外部不应直接获取环境，应通过 ConfigManager 实例获取配置
+        manager = ConfigManager()
+        
+        # 验证可以获取配置（环境已被封装）
+        data_config = manager.get('data')
+        self.assertIsNotNone(data_config)
+        
+        # 验证 _get_environment() 是私有方法
+        self.assertTrue(hasattr(ConfigManager, '_get_environment'))
+        
+        # 测试环境切换（通过创建新实例）
+        original_env = os.environ.get('DEEPSEEK_ENV')
+        try:
+            os.environ['DEEPSEEK_ENV'] = 'test'
+            test_manager = ConfigManager(environment='test')
+            test_value = test_manager.get('data.default_index')
+            self.assertEqual(test_value, 'SPX')  # test 环境的配置
+        finally:
+            # 恢复原始环境
+            if original_env:
+                os.environ['DEEPSEEK_ENV'] = original_env
+            elif 'DEEPSEEK_ENV' in os.environ:
+                del os.environ['DEEPSEEK_ENV']
 
 
 if __name__ == '__main__':

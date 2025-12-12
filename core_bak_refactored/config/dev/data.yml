@@ -4,11 +4,20 @@ market_sources:
   HK: akshare
   JP: yahoo
   SG: yahoo
-  US: akshare
+  US: yahoo
 default_index: 000300.SH
 cache_enabled: true
 cache_ttl: 3600
 max_retries: 3
+data_providers:
+  yahoo_finance:
+    use_proxy: false
+  akshare:
+    use_proxy: false
+  tushare:
+    use_proxy: false
+  finnhub:
+    use_proxy: true
 providers:
 - id: akshare
   name: AKShare
@@ -34,7 +43,7 @@ providers:
   name: Yahoo Finance
   type: 商业API
   description: 全球市场数据源
-  status: warning
+  status: passed
   adapter_module: core_bak_refactored.core.data.providers.yahoo_provider
   adapter_class: YahooFinanceDataProvider
   markets:
@@ -49,7 +58,7 @@ providers:
   - 历史数据
   - 期权数据
   installation: pip install yfinance
-  last_test: '2025-12-09T10:05:27.689316'
+  last_test: '2025-12-12T00:06:49.701765'
 - id: tushare
   name: Tushare Pro
   type: 社区数据

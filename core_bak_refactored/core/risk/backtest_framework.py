@@ -5,19 +5,24 @@
 
 设计原则：
 - 数据抽象层：预留真实数据集成点
-- 模拟优先：使用模拟数据快速验证框架
+- 配置驱动：Provider 选择由配置文件决定，不在代码中硬编码
 - 接口稳定：真实数据集成时无需修改业务逻辑
 
 使用示例：
-    # Phase 3A: 使用模拟数据
-    from core_bak_refactored.core.risk.backtest_framework import create_data_provider
-    provider = create_data_provider('mock')
+    # 使用工厂模式 + 配置驱动
+    from core_bak_refactored.core.data.providers.factory import get_global_factory
+    from core_bak_refactored.core.share.config_manager import ConfigManager
     
-    # Phase 3B: 使用Yahoo Finance真实数据
-    provider = create_data_provider('yahoo', fallback_to_mock=True)
+    # 方式1: 直接指定 provider ID
+    factory = get_global_factory()
+    provider = factory.get('akshare')
     
-    # 推荐：自动选择（优先真实数据，失败回退）
-    provider = create_data_provider('auto')
+    # 方式2: 从配置获取（推荐）
+    config_manager = ConfigManager()
+    data_config = config_manager.get_data_config()
+    # 根据市场选择 provider
+    provider_id = data_config.market_sources.get('CN', 'akshare')
+    provider = factory.get(provider_id)
 """
 
 import numpy as np
@@ -83,65 +88,25 @@ class HistoricalDataProvider(Protocol):
 
 
 # =============================================================================
-# 数据提供者工厂（使用统一工厂模式）
+# 数据提供者工厂（统一使用 factory.py）
 # =============================================================================
 
-from core_bak_refactored.core.data.providers.factory import DataProviderFactory, get_global_factory
+# ❌ 已废弃: create_data_provider() 函数（硬编码 provider 选择逻辑）
+# ✅ 新方式: 直接使用 factory.get() + 配置驱动
+#
+# 迁移指南:
+#   旧代码: provider = create_data_provider('auto')
+#   新代码: 
+#     from core_bak_refactored.core.data.providers.factory import get_global_factory
+#     from core_bak_refactored.core.share.config_manager import ConfigManager
+#     
+#     config_manager = ConfigManager()
+#     data_config = config_manager.get_data_config()
+#     provider_id = data_config.market_sources.get('CN', 'akshare')  # 从配置读取
+#     factory = get_global_factory()
+#     provider = factory.get(provider_id)
 
-
-def create_data_provider(provider_type: str = 'akshare', **kwargs) -> HistoricalDataProvider:
-    """
-    创建历史数据提供者（使用工厂模式）
-    
-    Args:
-        provider_type: 数据提供者类型
-            - 'yahoo': Yahoo Finance真实数据
-            - 'tushare': Tushare A股数据
-            - 'akshare': AKShare数据源（推荐）
-            - 'real': 真实数据提供者（多源）
-            - 'auto': 自动选择（优先akshare）
-            - 或通过 factory.register() 注册的自定义provider
-        **kwargs: 传递给数据提供者的额外参数
-    
-    Returns:
-        HistoricalDataProvider实例
-    
-    Example:
-        >>> # 基本使用
-        >>> provider = create_data_provider('akshare')
-        >>> 
-        >>> # 使用自定义provider（需先注册）
-        >>> factory = get_global_factory()
-        >>> factory.register('custom', MyCustomProvider)
-        >>> provider = create_data_provider('custom')
-    """
-    factory = get_global_factory()
-    
-    # 处理 'auto' 模式：优先使用akshare
-    if provider_type == 'auto':
-        logger.info("Auto-selecting data provider (优先akshare)")
-        try:
-            return factory.create('akshare')
-        except Exception as e:
-            logger.warning(f"AKShare provider创建失败，尝试yahoo: {e}")
-            try:
-                return factory.create('yahoo')
-            except Exception as e2:
-                logger.error(f"Yahoo provider也创建失败: {e2}")
-                raise RuntimeError("无法创建任何数据提供者，请安装 akshare 或 yfinance")
-    
-    # 使用工厂创建 provider
-    try:
-        logger.info(f"Creating data provider: {provider_type}")
-        return factory.create(provider_type, **kwargs)
-    except ValueError as e:
-        # 提供更友好的错误信息
-        available = factory.list_providers()
-        raise ValueError(
-            f"未知的provider_type: '{provider_type}'\n"
-            f"可用的providers: {available}\n"
-            f"提示: 使用 get_global_factory().register('{provider_type}', YourProviderClass) 注册自定义provider"
-        ) from e
+from core_bak_refactored.core.data.providers.factory import get_global_factory
 
 
 # =============================================================================

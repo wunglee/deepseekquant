@@ -103,6 +103,23 @@ class QualityMonitoringService:
         self.config_manager = ConfigManager()
         self.config = config or self.config_manager.get_system_config().__dict__
         
+        # 初始化数据提供者（通过配置映射自动选择）
+        # 从配置获取默认指数和对应市场
+        factory = get_global_factory()
+        data_config = self.config_manager.get_data_config()
+        default_index = data_config.default_index  # 例如: '000300.SH'
+        
+        # 根据指数代码推断市场
+        market = self._infer_market_from_index(default_index)
+        
+        # 从 market_sources 映射获取该市场的数据源ID
+        market_sources = data_config.market_sources or {}
+        provider_id = market_sources.get(market, 'akshare')  # 默认使用 akshare
+        
+        # 通过工厂创建对应的provider
+        self.data_provider = factory.get(provider_id)
+        logger.info(f"监控服务使用数据源: {provider_id} (市场: {market}, 指数: {default_index})")
+        
         # 质量历史记录（从 DataQualityChecker 的 check_history 转换而来）
         self._quality_history: List[Dict[str, Any]] = []
         
@@ -147,10 +164,10 @@ class QualityMonitoringService:
             history.append({
                 'timestamp': report_time_str,
                 'overall_score': report.overall_score,
-                'completeness': report.completeness,
-                'consistency': report.consistency,
-                'continuity': report.continuity,
-                'reasonableness': report.reasonableness,
+                'completeness': report.completeness_score,
+                'consistency': report.consistency_score,
+                'accuracy': report.accuracy_score,
+                'outliers': report.outliers_detected,
                 'issues': report.issues,
                 'anomaly_count': len([i for i in report.issues if 'anomaly' in i.lower() or 'abnormal' in i.lower()]),
                 'error_count': len(report.issues),
@@ -284,6 +301,43 @@ class QualityMonitoringService:
         }
     
     # ==================== 私有辅助方法 ====================
+    
+    def _infer_market_from_index(self, index_code: str) -> str:
+        """
+        根据指数代码推断市场
+        
+        Args:
+            index_code: 指数代码（如 '000300.SH', '^GSPC'）
+        
+        Returns:
+            市场代码（CN, US, HK, JP, EU, SG等）
+        """
+        if not index_code:
+            return 'CN'  # 默认中国市场
+        
+        index_upper = index_code.upper()
+        
+        # 中国市场
+        if '.SH' in index_upper or '.SZ' in index_upper or '.BJ' in index_upper:
+            return 'CN'
+        # 香港市场
+        elif '.HK' in index_upper:
+            return 'HK'
+        # 美国市场
+        elif index_upper.startswith('^') or '.US' in index_upper:
+            return 'US'
+        # 日本市场
+        elif '.T' in index_upper or '.JP' in index_upper:
+            return 'JP'
+        # 欧洲市场
+        elif any(x in index_upper for x in ['.L', '.PA', '.DE', '.EU']):
+            return 'EU'
+        # 新加坡市场
+        elif '.SI' in index_upper or '.SG' in index_upper:
+            return 'SG'
+        else:
+            # 默认中国市场
+            return 'CN'
     
     def _map_severity_to_level(self, severity: AlertSeverity) -> str:
         """将AlertSeverity映射到遗留API的level"""
@@ -454,10 +508,10 @@ class QualityMonitoringService:
             quality_dict = {
                 'timestamp': datetime.now().isoformat(),
                 'overall_score': quality_report.overall_score,
-                'completeness': quality_report.completeness,
-                'consistency': quality_report.consistency,
-                'continuity': quality_report.continuity,
-                'reasonableness': quality_report.reasonableness,
+                'completeness': quality_report.completeness_score,
+                'consistency': quality_report.consistency_score,
+                'accuracy': quality_report.accuracy_score,
+                'outliers': quality_report.outliers_detected,
                 'issues': quality_report.issues,
                 'anomaly_count': len([i for i in quality_report.issues if 'anomaly' in i.lower()]),
                 'error_count': len(quality_report.issues),
