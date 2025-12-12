@@ -1,14 +1,8 @@
-market_sources:
-  CN: akshare
-  EU: yahoo
-  HK: akshare
-  JP: yahoo
-  SG: yahoo
-  US: yahoo
-default_index: 000300.SH
-cache_enabled: true
-cache_ttl: 3600
-max_retries: 3
+# 测试环境数据配置
+default_index: SPX
+cache_enabled: false
+cache_ttl: 60
+max_retries: 1
 data_providers:
   yahoo_finance:
     use_proxy: false

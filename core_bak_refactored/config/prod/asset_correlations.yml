@@ -1,0 +1,10 @@
+# 资产类别相关性调整因子配置
+
+# 不同资产类别之间的相关性因子
+correlation_factors:
+  stock_stock: 0.9
+  stock_bond: 0.6
+  stock_commodity: 0.7
+  bond_bond: 0.8
+  bond_commodity: 0.5
+  commodity_commodity: 0.8

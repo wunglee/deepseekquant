@@ -57,13 +57,13 @@ class DataConfig:
     """数据配置数据类
     
     Note:
-        所有字段必须从配置文件读取，不提供默认值
-        配置文件路径: core_bak_refactored/config/{env}/data.yml
+        - 大部分字段从 core_bak_refactored/config/{env}/data_provider.yml 读取
+        - market_sources 从 core_bak_refactored/config/{env}/market.yml 读取
         
     ❌ 已废弃：primary_source（不向后兼容）
-    ✅ 新字段：market_sources - 每个市场单独配置数据源
+    ✅ 新字段：market_sources - 每个市场单独配置数据源（从 market.yml 读取）
     """
-    market_sources: Dict[str, str]  # 市场数据源映射：{market_code: provider_id}
+    market_sources: Dict[str, str]  # 市场数据源映射：{market_code: provider_id}，来自 market.yml
     default_index: str
     cache_enabled: bool
     cache_ttl: int  # 缓存过期时间（秒）
@@ -220,7 +220,7 @@ class ConfigManager:
         raise RuntimeError(
             f"配置文件加载失败，请检查配置文件是否存在: "
             f"core_bak_refactored/config/{self.environment}/*.yml\n"
-            f"必需的配置文件: monitoring.yml, alerting.yml, data.yml, system.yml"
+            f"必需的配置文件: monitoring.yml, alerting.yml, data_provider.yml, system.yml"
         )
     
     def get_monitoring_config(self) -> MonitoringConfig:
@@ -234,8 +234,19 @@ class ConfigManager:
         return AlertingConfig(**config_dict)
     
     def get_data_config(self) -> DataConfig:
-        """获取数据配置"""
-        config_dict = self._config.get('data', {})
+        """获取数据配置
+        
+        Note:
+            - 大部分字段从 data_provider.yml 读取
+            - market_sources 从 market.yml 读取
+        """
+        # 从 data_provider.yml 读取基础配置
+        config_dict = dict(self._config.get('data_provider', {}))
+        
+        # 从 market.yml 读取 market_sources
+        market_config = self._config.get('market', {})
+        config_dict['market_sources'] = market_config.get('market_sources', {})
+        
         return DataConfig(**config_dict)
     
     def get_system_config(self) -> SystemConfig:
@@ -427,23 +438,26 @@ class ConfigManager:
         
         Raises:
             ValueError: 如果 market_sources 验证失败
+            
+        Note:
+            保存到 market.yml 文件的 market_sources 字段
         """
         # 1. 验证配置
         valid, error = self.validate_market_sources(market_sources)
         if not valid:
             raise ValueError(f"市场配置验证失败: {error}")
         
-        # 2. 确定保存路径
+        # 2. 确定保存路径 - 保存到 market.yml
         import yaml
         target_env = env or self.environment
         base_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'config')
         env_dir = os.path.join(base_dir, target_env)
-        data_yml_path = os.path.join(env_dir if os.path.exists(env_dir) else base_dir, 'data.yml')
+        market_yml_path = os.path.join(env_dir if os.path.exists(env_dir) else base_dir, 'market.yml')
         
         try:
             # 3. 读取现有配置
-            if os.path.exists(data_yml_path):
-                with open(data_yml_path, 'r', encoding='utf-8') as f:
+            if os.path.exists(market_yml_path):
+                with open(market_yml_path, 'r', encoding='utf-8') as f:
                     config_data = yaml.safe_load(f) or {}
             else:
                 config_data = {}
@@ -452,10 +466,10 @@ class ConfigManager:
             config_data['market_sources'] = market_sources
             
             # 5. 写入文件
-            with open(data_yml_path, 'w', encoding='utf-8') as f:
+            with open(market_yml_path, 'w', encoding='utf-8') as f:
                 yaml.dump(config_data, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
             
-            logger.info(f"保存市场配置成功: {market_sources} -> {data_yml_path}")
+            logger.info(f"保存市场配置成功: {market_sources} -> {market_yml_path}")
             
             # 6. 重新加载配置（更新内存中的配置）
             self._load_config()
@@ -479,7 +493,7 @@ class ConfigManager:
         Examples:
             >>> config_manager = ConfigManager()
             >>> config_manager.get_config_path('data')
-            '/path/to/core_bak_refactored/config/dev/data.yml'
+            '/path/to/core_bak_refactored/config/dev/data_provider.yml'
             >>> config_manager.get_config_path('credentials', env='prod')
             '/path/to/core_bak_refactored/config/prod/credentials.yml'
         """

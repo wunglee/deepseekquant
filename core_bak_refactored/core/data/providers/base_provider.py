@@ -1,14 +1,23 @@
 """
-Provider 基类 - 确保所有 Provider 实现统一的配置管理接口
+Provider 基类 - 三层数据架构封装
+
+三层数据获取策略:
+1. 内存缓存（最快）- 毫秒级
+2. 数据库缓存（次快）- 0.1-0.3秒
+3. 外部API（最慢）- 4-8秒
+
+对外透明: 调用者无需关心数据来源，Provider自动选择最优策略
 """
 import logging
 import os
 import time
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Union
+from datetime import datetime, timedelta
 
 import yaml
+import pandas as pd
 
 from core_bak_refactored.core.share import ConfigManager
 
@@ -17,42 +26,321 @@ logger = logging.getLogger('DeepSeekQuant.DataProviders')
 
 class BaseDataProvider(ABC):
     """
-    数据提供者基类
+    数据提供者基类 - 三层数据架构
     
-    定义所有 Provider 必须实现的接口，包括：
-    1. 数据获取接口（抽象方法，子类必须实现）
-    2. 配置管理接口（具体方法，基类统一实现）
+    核心责任:
+    1. 封装三层数据获取逻辑（内存、数据库、API）
+    2. 对外提供统一的数据接口
+    3. 自动处理缓存读写，对调用者透明
+    
+    数据获取流程:
+    get_index_prices() → _get_with_cache()
+        ↓
+    1. 检查内存缓存 (毫秒级)
+        └─ 命中 → 返回
+        ↓
+    2. 检查数据库缓存 (0.1-0.3秒)
+        └─ 命中 → 写入内存 → 返回
+        ↓
+    3. 调用外部API (4-8秒)
+        └─ 成功 → 写入数据库 → 写入内存 → 返回
     """
     
-    # ========================================================================
-    # 数据获取接口（抽象方法，子类必须实现）
-    # ========================================================================
-    @abstractmethod
-    def get_index_prices(self, index_id: str, start_date: str, end_date: str):
+    def __init__(self):
+        """初始化数据提供者"""
+        # 💚 内存缓存（粀单字典，可后续替换为 LRU Cache）
+        self._memory_cache: Dict[str, Dict[str, Any]] = {}
+        
+        # 💚 数据库服务（延迟初始化）
+        self._db_service = None
+        self._db_initialized = False
+        
+        # 缓存配置
+        self._cache_ttl = 300  # 内存缓存TTL（秒）
+        self._enable_memory_cache = True
+        self._enable_db_cache = True
+        
+        # 加载配置
+        self._load_cache_config()
+    
+    def _load_cache_config(self):
+        """加载缓存配置"""
+        try:
+            config_manager = ConfigManager()
+            data_config = config_manager.get_config('data')
+            
+            if data_config:
+                self._cache_ttl = data_config.get('cache_ttl', 300)
+                self._enable_memory_cache = data_config.get('cache_enabled', True)
+            
+            # 检查数据库配置
+            db_config = config_manager.get_config('database')
+            if db_config:
+                cache_strategy = db_config.get('cache_strategy', {})
+                self._enable_db_cache = cache_strategy.get('enabled', True)
+        except Exception as e:
+            logger.warning(f"加载缓存配置失败，使用默认值: {e}")
+    
+    def _get_db_service(self):
         """
-        获取指数价格数据（抽象方法）
-
-        Args:
-            index_id: 指数代码
-            start_date: 开始日期
-            end_date: 结束日期
-
+        获取数据库服务（延迟初始化）
+        
         Returns:
-            pd.DataFrame: 包含 date, close, volume 等列的数据
+            DatabaseService 或 None
         """
-        pass
-    @abstractmethod
-    def get_stock_prices(self, index_id: str, start_date: str, end_date: str):
+        if not self._enable_db_cache:
+            return None
+        
+        if not self._db_initialized:
+            try:
+                from core_bak_refactored.infrastructure.database_service import get_database_service
+                self._db_service = get_database_service()
+                logger.info("数据库服务已启用")
+            except Exception as e:
+                logger.warning(f"数据库服务初始化失败，将不使用数据库缓存: {e}")
+                self._db_service = None
+            finally:
+                self._db_initialized = True
+        
+        return self._db_service
+    
+    def _make_cache_key(self, index_id: str, start_date: str, end_date: str) -> str:
         """
-        获取指数价格数据（抽象方法）
+        生成缓存键
         
         Args:
             index_id: 指数代码
             start_date: 开始日期
             end_date: 结束日期
-            
+        
         Returns:
-            pd.DataFrame: 包含 date, close, volume 等列的数据
+            缓存键字符串
+        """
+        return f"{index_id}:{start_date}:{end_date}"
+    
+    def _get_from_memory_cache(self, cache_key: str) -> Optional[pd.DataFrame]:
+        """
+        从内存缓存获取数据
+        
+        Args:
+            cache_key: 缓存键
+        
+        Returns:
+            DataFrame 或 None
+        """
+        if not self._enable_memory_cache:
+            return None
+        
+        cached = self._memory_cache.get(cache_key)
+        if cached:
+            # 检查是否过期
+            if time.time() - cached['timestamp'] < self._cache_ttl:
+                logger.debug(f"✅ 内存缓存命中: {cache_key}")
+                return cached['data']
+            else:
+                # 过期，删除
+                del self._memory_cache[cache_key]
+        
+        return None
+    
+    def _set_to_memory_cache(self, cache_key: str, data: pd.DataFrame):
+        """
+        写入内存缓存
+        
+        Args:
+            cache_key: 缓存键
+            data: 数据
+        """
+        if not self._enable_memory_cache or data is None or data.empty:
+            return
+        
+        self._memory_cache[cache_key] = {
+            'data': data.copy(),
+            'timestamp': time.time()
+        }
+        logger.debug(f"✅ 写入内存缓存: {cache_key}")
+    
+    def _get_from_db_cache(self, index_id: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
+        """
+        从数据库缓存获取数据
+        
+        Args:
+            index_id: 指数代码
+            start_date: 开始日期
+            end_date: 结束日期
+        
+        Returns:
+            DataFrame 或 None
+        """
+        db_service = self._get_db_service()
+        if not db_service:
+            return None
+        
+        try:
+            df = db_service.get_cached_data(
+                index_id,
+                start_date,
+                end_date,
+                source=self.__class__.__name__
+            )
+            
+            if df is not None and not df.empty:
+                logger.info(f"✅ 数据库缓存命中: {index_id} ({len(df)} 条)")
+                return df
+        except Exception as e:
+            logger.warning(f"从数据库获取缓存失败: {e}")
+        
+        return None
+    
+    def _set_to_db_cache(self, index_id: str, data: pd.DataFrame):
+        """
+        写入数据库缓存
+        
+        Args:
+            index_id: 指数代码
+            data: 数据
+        """
+        db_service = self._get_db_service()
+        if not db_service or data is None or data.empty:
+            return
+        
+        try:
+            db_service.cache_data(
+                index_id,
+                data,
+                source=self.__class__.__name__
+            )
+            logger.info(f"✅ 数据已缓存到数据库: {index_id} ({len(data)} 条)")
+        except Exception as e:
+            logger.warning(f"缓存数据到数据库失败: {e}")
+    
+    def _get_with_cache(self, index_id: str, start_date: str, end_date: str):
+        """
+        三层数据获取（核心方法）
+        
+        数据获取顺序:
+        1. 内存缓存 → 命中则返回
+        2. 数据库缓存 → 命中则写入内存并返回
+        3. 外部API → 写入数据库和内存后返回
+        
+        Args:
+            index_id: 指数代码
+            start_date: 开始日期 (YYYY-MM-DD)
+            end_date: 结束日期 (YYYY-MM-DD)
+        
+        Returns:
+            PriceData 对象
+        """
+        # 1. 尝试内存缓存
+        cache_key = self._make_cache_key(index_id, start_date, end_date)
+        cached_df = self._get_from_memory_cache(cache_key)
+        
+        if cached_df is not None:
+            # 转换为 PriceData
+            return self._dataframe_to_price_data(cached_df, index_id)
+        
+        # 2. 尝试数据库缓存
+        cached_df = self._get_from_db_cache(index_id, start_date, end_date)
+        
+        if cached_df is not None:
+            # 写入内存缓存
+            self._set_to_memory_cache(cache_key, cached_df)
+            # 转换为 PriceData
+            return self._dataframe_to_price_data(cached_df, index_id)
+        
+        # 3. 调用外部API（子类实现）
+        logger.info(f"🌐 缓存未命中，调用外部API: {index_id}")
+        price_data = self._fetch_from_external_api(index_id, start_date, end_date)
+        
+        if price_data and price_data.count > 0:
+            # 转换为 DataFrame
+            df = price_data.to_dataframe()
+            
+            # 写入数据库缓存
+            self._set_to_db_cache(index_id, df)
+            
+            # 写入内存缓存
+            self._set_to_memory_cache(cache_key, df)
+        
+        return price_data
+    
+    @staticmethod
+    def _dataframe_to_price_data(df: pd.DataFrame, symbol: str):
+        """
+        将 DataFrame 转换为 PriceData 对象
+        
+        Args:
+            df: DataFrame
+            symbol: 股票/指数代码
+        
+        Returns:
+            PriceData 对象
+        """
+        from core_bak_refactored.core.data.providers.protocols import PriceData
+        return PriceData.from_dataframe(df, symbol)
+    
+    # ========================================================================
+    # 数据获取接口（对外提供，自动使用缓存）
+    # ========================================================================
+    
+    def get_index_prices(self, index_id: str, start_date: str, end_date: str):
+        """
+        获取指数价格数据（对外接口，自动使用三层缓存）
+        
+        💚 三层数据策略:
+        1. 内存缓存 → 毫秒级
+        2. 数据库缓存 → 0.1-0.3秒
+        3. 外部API → 4-8秒
+        
+        Args:
+            index_id: 指数代码
+            start_date: 开始日期 (YYYY-MM-DD)
+            end_date: 结束日期 (YYYY-MM-DD)
+        
+        Returns:
+            PriceData: 价格数据对象
+        """
+        return self._get_with_cache(index_id, start_date, end_date)
+    
+    def get_stock_prices(self, stock_id: str, start_date: str, end_date: str):
+        """
+        获取股票价格数据（对外接口，自动使用三层缓存）
+        
+        Args:
+            stock_id: 股票代码
+            start_date: 开始日期 (YYYY-MM-DD)
+            end_date: 结束日期 (YYYY-MM-DD)
+        
+        Returns:
+            PriceData: 价格数据对象
+        """
+        # 股票数据也使用相同的缓存策略
+        return self._get_with_cache(stock_id, start_date, end_date)
+    
+    # ========================================================================
+    # 内部接口（子类必须实现）
+    # ========================================================================
+    
+    @abstractmethod
+    def _fetch_from_external_api(self, symbol: str, start_date: str, end_date: str):
+        """
+        从外部API获取数据（抽象方法，子类必须实现）
+        
+        💚 注意:
+        - 此方法仅供内部使用，不对外暴露
+        - 外部调用者应使用 get_index_prices() 或 get_stock_prices()
+        - 基类会自动处理缓存，子类只需实现API调用
+        
+        Args:
+            symbol: 股票/指数代码
+            start_date: 开始日期 (YYYY-MM-DD)
+            end_date: 结束日期 (YYYY-MM-DD)
+        
+        Returns:
+            PriceData: 价格数据对象
+        
+        Raises:
+            Exception: API调用失败时抛出异常
         """
         pass
     

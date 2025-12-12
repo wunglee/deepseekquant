@@ -53,7 +53,7 @@ class DataProviderFactory:
     
     def _load_default_config(self) -> Dict[str, Any]:
         """
-        加载默认配置（从 config/dev/data.yml）
+        加载默认配置（从 config/dev/data_provider.yml）
         
         Returns:
             Dict: 配置字典
@@ -61,7 +61,7 @@ class DataProviderFactory:
         # 使用 ConfigManager 获取配置（封装环境逻辑）
         from core_bak_refactored.core.share.config_manager import ConfigManager
         config_manager = ConfigManager()
-        config = config_manager.get('data', {})
+        config = config_manager.get('data_provider', {})
         
         if config:
             logger.info(f"✅ 从 ConfigManager 加载配置")

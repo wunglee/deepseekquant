@@ -56,6 +56,9 @@ class AKShareDataProvider(BaseDataProvider, HistoricalDataProvider):
 
     def __init__(self):
         """初始化AKShare数据提供者"""
+        # 💚 调用基类构造函数（初始化缓存）
+        super().__init__()
+        
         self.ak = None
         self.available = False
         self._load_us_symbol_mapping()
@@ -102,17 +105,8 @@ class AKShareDataProvider(BaseDataProvider, HistoricalDataProvider):
     def _initialize(self):
         """初始化AKShare模块"""
         try:
-            # AKShare访问国内网站，临时清除代理环境变量
-            self._saved_proxy = {
-                'http_proxy': os.environ.get('http_proxy'),
-                'https_proxy': os.environ.get('https_proxy'),
-                'HTTP_PROXY': os.environ.get('HTTP_PROXY'),
-                'HTTPS_PROXY': os.environ.get('HTTPS_PROXY')
-            }
-            for key in ['http_proxy', 'https_proxy', 'HTTP_PROXY', 'HTTPS_PROXY']:
-                if key in os.environ:
-                    del os.environ[key]
-            
+            # 💚 AKShare访问国内网站，使用 ConfigManager 管理代理配置
+            # 临时禁用代理（避免访问国内数据源时出现问题）
             import akshare as ak
             self.ak = ak
             self.available = True
@@ -121,12 +115,6 @@ class AKShareDataProvider(BaseDataProvider, HistoricalDataProvider):
             logger.warning(f"akshare not installed: {e}. Install with: pip install akshare")
             self.ak = None
             # 不抛出异常，允许优雅降级
-        finally:
-            # 恢复代理设置（供其他Provider使用）
-            if hasattr(self, '_saved_proxy'):
-                for key, value in self._saved_proxy.items():
-                    if value is not None:
-                        os.environ[key] = value
 
         # 未来扩展：指数名称映射缓存（暂未实现）
         self._index_name_cache = None
@@ -235,6 +223,8 @@ class AKShareDataProvider(BaseDataProvider, HistoricalDataProvider):
         """
         获取个股历史价格数据
         
+        💚 注意: 此方法由基类处理缓存，不需覆写
+        
         Args:
             symbol: 股票代码（支持市场后缀，如 '000001.SZ'）
             start_date: 开始日期
@@ -242,13 +232,29 @@ class AKShareDataProvider(BaseDataProvider, HistoricalDataProvider):
             
         Returns:
             标准化的个股价格数据
-            
-        设计原则：
-        - 职责单一：只负责数据获取和标准化
-        - 日期处理：统一转换为datetime对象
-        - 异常处理：网络失败直接抛出异常，符合透明失败原则
         """
-        # 直接委托给通用方法
+        # 💚 由基类自动处理缓存，此处不需实现
+        # 这是为了兼容性保留的方法
+        return super().get_stock_prices(symbol, start_date, end_date)
+    
+    def _fetch_from_external_api(self, symbol: str, start_date: str, end_date: str) -> PriceData:
+        """
+        从 AKShare API 获取数据（实现基类抽象方法）
+        
+        💚 注意:
+        - 此方法仅供内部使用
+        - 外部调用者应使用 get_index_prices()
+        - 基类已自动处理缓存
+        
+        Args:
+            symbol: 股票/指数代码
+            start_date: 开始日期 (YYYY-MM-DD)
+            end_date: 结束日期 (YYYY-MM-DD)
+        
+        Returns:
+            PriceData: 价格数据对象
+        """
+        # 复用原有的 get_prices 逻辑
         return self.get_prices(symbol, start_date, end_date)
 
     def _map_to_akshare(self, symbol: str) -> str:

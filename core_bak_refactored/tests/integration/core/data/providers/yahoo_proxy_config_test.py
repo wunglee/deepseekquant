@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 """
-Yahoo Finance 数据源代理配置测试
+Yahoo Finance 数据源代理配置集成测试
 
 测试功能：
 1. Yahoo Finance HTTP/2 支持
 2. 代理配置开关功能
 3. 配置文件独立控制每个数据源的代理
+
+Note:
+    这是集成测试，需要真实网络请求
+    位置符合规范：core_bak_refactored/tests/integration/core/data/providers/
 """
 
 from core_bak_refactored.core.data.providers.yahoo_provider import YahooFinanceDataProvider

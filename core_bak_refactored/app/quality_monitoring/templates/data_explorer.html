@@ -520,7 +520,20 @@ function updateIndicatorData(processedData) {
         if (currentIndicator === 'VOL') {
             indicatorChart.setOption({
                 xAxis: { data: dates },
-                series: [{ data: processedData.map(d => d.volume) }]
+                series: [{ 
+                    data: processedData.map(d => d.volume),
+                    itemStyle: { 
+                        color: (params) => {
+                            // 根据当天涨跌上色（红涨绿跌）
+                            // 🔧 引用全局变量 allKlineData 而不是闭包捕获的局部变量
+                            const idx = params.dataIndex
+                            if (!allKlineData || idx >= allKlineData.length) return '#64748b'
+                            const data = allKlineData[idx]
+                            if (!data || data.close === null || data.open === null) return '#64748b'
+                            return data.close >= data.open ? '#ef4444' : '#10b981'
+                        }
+                    }
+                }]
             }, { notMerge: false, lazyUpdate: true })
         } else if (currentIndicator === 'MACD') {
             // 🔧 使用后端计算的MACD数据

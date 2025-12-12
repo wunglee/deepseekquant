@@ -66,6 +66,12 @@ from .database import (
     DatabaseProtocol
 )
 
+# 数据库服务（2025-12-12新增）
+from .database_service import (
+    DatabaseService,
+    get_database_service
+)
+
 # 注意：MarketData业务验证已迁移到 core.data.validation
 # 通用技术验证请使用 type_validators（LengthValidator, TypeValidator等）
 

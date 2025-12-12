@@ -21,7 +21,7 @@ class BacktestFrameworkTest(unittest.TestCase):
     def test_factory_returns_configured_provider(self):
         """测试工厂返回配置的 provider（从配置文件读取）"""
         factory = get_global_factory()
-        # 工厂会从 config/dev/data.yml 中加载配置的 providers
+        # 工厂会从 config/dev/data_provider.yml 中加载配置的 providers
         # 验证 akshare 和 yahoo 都在配置中
         provider = factory.get('akshare')
         self.assertTrue(

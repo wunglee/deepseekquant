@@ -1,10 +1,10 @@
-# 系统配置 - 告警模块
+# 测试环境告警配置
 enable_email: false
 enable_sms: false
-enable_wechat: true
+enable_wechat: false
 enable_dingtalk: false
 enable_slack: false
 enable_webhook: false
 enable_log: true
 min_severity: warning
-deduplication_window: 3600
+deduplication_window: 60

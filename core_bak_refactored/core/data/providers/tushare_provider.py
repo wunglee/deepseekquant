@@ -55,12 +55,17 @@ class TushareDataProvider(BaseDataProvider):
         初始化Tushare数据提供者
         
         Note:
-            - token 从环境变量 TUSHARE_TOKEN 或配置文件读取
+            - token 从配置文件读取（credentials.yml）
             - proxy 从配置文件读取，不通过参数传递
+            - 💚 不再使用 os.environ，统一使用 ConfigManager
         """
-        # 优先级：环境变量 > 配置文件 > None
-        token = os.getenv('TUSHARE_TOKEN') or self._load_token_from_config()
+        # 💚 调用基类构造函数（初始化缓存）
+        super().__init__()
+        
+        # 💚 从配置文件读取 Token（不再使用环境变量）
+        token = self._load_token_from_config()
         self.ts_pro = None
+        
         # 从配置文件中获取proxy
         config_manager = ConfigManager()
         proxy_config = config_manager.get_proxies_from_config()
@@ -207,6 +212,8 @@ class TushareDataProvider(BaseDataProvider):
         """
         获取个股历史价格数据
         
+        💚 注意: 此方法由基类处理缓存，不需覆写
+        
         Args:
             stock_id: 股票ID（如 "000001.SZ"）
             start_date: 开始日期
@@ -218,31 +225,68 @@ class TushareDataProvider(BaseDataProvider):
         Raises:
             ValueError: 当无法获取有效数据时
         """
-        if not self.available or self.ts_pro is None:
-            raise RuntimeError("Tushare API not available")
-            
-        # 转换日期格式
-        start_date_str = start_date.strftime('%Y%m%d') if isinstance(start_date, datetime) else start_date.replace('-', '')
-        end_date_str = end_date.strftime('%Y%m%d') if isinstance(end_date, datetime) else end_date.replace('-', '')
+        # 💚 由基类自动处理缓存
+        return super().get_stock_prices(stock_id, start_date, end_date)
+    
+    def _fetch_from_external_api(self, symbol: str, start_date: str, end_date: str) -> PriceData:
+        """
+        从 Tushare API 获取数据（实现基类抽象方法）
         
-        logger.info(f"Fetching stock data for {stock_id} from {start_date_str} to {end_date_str}")
+        💚 注意:
+        - 此方法仅供内部使用
+        - 外部调用者应使用 get_index_prices() 或 get_stock_prices()
+        - 基类已自动处理缓存
         
-        try:
-            # 调用Tushare API获取股票行情数据
-            df = self.ts_pro.daily(ts_code=stock_id, start_date=start_date_str, end_date=end_date_str)
+        Args:
+            symbol: 股票/指数代码
+            start_date: 开始日期 (YYYY-MM-DD)
+            end_date: 结束日期 (YYYY-MM-DD)
+        
+        Returns:
+            PriceData: 价格数据对象
+        """
+        # 判断是指数还是股票
+        # 指数代码：000XXX.SH (上证指数)、399XXX.SZ (深证指数)
+        # 股票代码：000XXX.SZ (深市主板)、6XXXXX.SH (上市)等
+        is_index = False
+        if symbol.endswith('.SH') and symbol.startswith('000'):
+            # 上证指数
+            is_index = True
+        elif symbol.endswith('.SZ') and symbol.startswith('399'):
+            # 深证指数
+            is_index = True
+        
+        if is_index:
+            # 调用原有的 get_index_prices 逻辑
+            return self.get_index_prices(symbol, start_date, end_date)
+        else:
+            # 调用原有的 get_stock_prices 逻辑
+            # 为了避免循环调用，直接实现逻辑
+            if not self.available or self.ts_pro is None:
+                raise RuntimeError("Tushare API not available")
+                
+            # 转换日期格式
+            start_date_str = start_date.strftime('%Y%m%d') if isinstance(start_date, datetime) else start_date.replace('-', '')
+            end_date_str = end_date.strftime('%Y%m%d') if isinstance(end_date, datetime) else end_date.replace('-', '')
             
-            if df is None or df.empty:
-                raise ValueError(f"No data returned for {stock_id}")
+            logger.info(f"Fetching stock data for {symbol} from {start_date_str} to {end_date_str}")
             
-            # 标准化数据格式
-            standardized_data = self._standardize_format(df, stock_id)
-            
-            logger.info(f"Successfully fetched {len(standardized_data.records)} records for {stock_id}")
-            return standardized_data
-            
-        except Exception as e:
-            logger.error(f"Failed to fetch data for {stock_id}: {e}")
-            raise ValueError(f"Failed to fetch data for {stock_id}: {str(e)}")
+            try:
+                # 调用Tushare API获取股票行情数据
+                df = self.ts_pro.daily(ts_code=symbol, start_date=start_date_str, end_date=end_date_str)
+                
+                if df is None or df.empty:
+                    raise ValueError(f"No data returned for {symbol}")
+                
+                # 标准化数据格式
+                standardized_data = self._standardize_format(df, symbol)
+                
+                logger.info(f"Successfully fetched {len(standardized_data.records)} records for {symbol}")
+                return standardized_data
+                
+            except Exception as e:
+                logger.error(f"Failed to fetch data for {symbol}: {e}")
+                raise ValueError(f"Failed to fetch data for {symbol}: {str(e)}")
     
     def get_quote(self, symbol: str) -> Dict[str, Any]:
         """

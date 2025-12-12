@@ -20,37 +20,38 @@ class FinnhubProviderTest(unittest.TestCase):
     
     def test_init_without_api_key(self):
         """测试无 API Key 初始化"""
-        with patch.dict('os.environ', {}, clear=True):
-            with patch.object(FinnhubDataProvider, '_load_api_key_from_config', return_value=None):
-                provider = FinnhubDataProvider()
-                
-                self.assertIsNotNone(provider)
-                # 新实现中没有 available 属性，通过 client 是否为 None 判断
-                self.assertIsNone(provider.client)
+        # 💚 不再使用 os.environ，直接 Mock 配置文件读取
+        with patch.object(FinnhubDataProvider, '_load_api_key_from_config', return_value=None):
+            provider = FinnhubDataProvider()
+            
+            self.assertIsNotNone(provider)
+            # 新实现中没有 available 属性，通过 client 是否为 None 判断
+            self.assertIsNone(provider.client)
     
     def test_init_with_api_key(self):
-        """测试带 API Key 初始化"""
+        """测试带 API Key 初始化（通过配置文件）"""
         test_api_key = "test_api_key_12345"
         
-        provider = FinnhubDataProvider(api_key=test_api_key)
-        
-        self.assertIsNotNone(provider)
-        # 新实现中没有 api_key 属性，通过 client 是否存在判断初始化成功
-        self.assertIsNotNone(provider.client)
+        # 💚 通过 Mock 配置文件返回 API Key
+        with patch.object(FinnhubDataProvider, '_load_api_key_from_config', return_value=test_api_key):
+            provider = FinnhubDataProvider()
+            
+            self.assertIsNotNone(provider)
+            # 新实现中没有 api_key 属性，通过 client 是否存在判断初始化成功
+            self.assertIsNotNone(provider.client)
     
     def test_initialize_method(self):
         """测试 initialize 方法"""
-        # 确保环境变量和配置文件都不提供 API Key
-        with patch.dict('os.environ', {}, clear=True):
-            with patch.object(FinnhubDataProvider, '_load_api_key_from_config', return_value=None):
-                provider = FinnhubDataProvider()
-                self.assertIsNone(provider.client)
-                
-                # 调用 initialize 方法初始化客户端
-                provider.initialize(credential="test_credential_key")
-                
-                # 验证客户端已创建
-                self.assertIsNotNone(provider.client)
+        # 💚 确保配置文件不提供 API Key
+        with patch.object(FinnhubDataProvider, '_load_api_key_from_config', return_value=None):
+            provider = FinnhubDataProvider()
+            self.assertIsNone(provider.client)
+            
+            # 调用 initialize 方法初始化客户端
+            provider.initialize(credential="test_credential_key")
+            
+            # 验证客户端已创建
+            self.assertIsNotNone(provider.client)
     
     def test_initialize_without_credential(self):
         """测试 initialize 方法不提供凭证"""
@@ -69,25 +70,27 @@ class FinnhubProviderTest(unittest.TestCase):
     
     def test_get_index_prices_unavailable(self):
         """测试在没有API Key时获取数据应失败"""
-        with patch.dict('os.environ', {}, clear=True):
-            with patch.object(FinnhubDataProvider, '_load_api_key_from_config', return_value=None):
-                provider = FinnhubDataProvider()
-                provider.client = None  # 确保 client 为 None
-                
-                with self.assertRaises(ValueError) as context:
-                    provider.get_index_prices('SPX', '2023-01-01', '2023-01-10')
-                
-                self.assertIn('Finnhub API密钥未配置', str(context.exception))
+        # 💚 不再使用 os.environ
+        with patch.object(FinnhubDataProvider, '_load_api_key_from_config', return_value=None):
+            provider = FinnhubDataProvider()
+            provider.client = None  # 确保 client 为 None
+            
+            with self.assertRaises(ValueError) as context:
+                provider.get_index_prices('SPX', '2023-01-01', '2023-01-10')
+            
+            self.assertIn('Finnhub API密钥未配置', str(context.exception))
     
     def test_get_index_prices_client_none_with_api_key(self):
         """测试 client=None 但调用API时应失败"""
-        provider = FinnhubDataProvider(api_key="test_key")
-        provider.client = None  # 强制设置为 None
-        
-        with self.assertRaises(ValueError) as context:
-            provider.get_index_prices('SPX', '2023-01-01', '2023-01-10')
-        
-        self.assertIn('Finnhub API密钥未配置', str(context.exception))
+        # 💚 通过配置文件提供 API Key
+        with patch.object(FinnhubDataProvider, '_load_api_key_from_config', return_value="test_key"):
+            provider = FinnhubDataProvider()
+            provider.client = None  # 强制设置为 None
+            
+            with self.assertRaises(ValueError) as context:
+                provider.get_index_prices('SPX', '2023-01-01', '2023-01-10')
+            
+            self.assertIn('Finnhub API密钥未配置', str(context.exception))
     
     def test_provider_test_method(self):
         """测试 test_provider 类方法"""

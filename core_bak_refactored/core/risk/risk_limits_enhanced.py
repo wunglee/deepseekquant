@@ -73,12 +73,12 @@ def _load_market_limits_config() -> Dict[str, Any]:
         FileNotFoundError: 配置文件不存在
         ValueError: 配置文件格式错误
     """
-    config_path = Path(__file__).parent.parent.parent / 'config' / 'dev' / 'market_limits.yml'
+    config_path = Path(__file__).parent.parent.parent / 'config' / 'dev' / 'market.yml'
     
     if not config_path.exists():
         raise FileNotFoundError(
             f"市场限额配置文件不存在: {config_path}\n"
-            f"请确保配置文件存在: core_bak_refactored/config/dev/market_limits.yml"
+            f"请确保配置文件存在: core_bak_refactored/config/dev/market.yml"
         )
     
     try:
@@ -128,14 +128,16 @@ class ThresholdBreach:
 # =============================================================================
 
 # 从配置文件加载市场特定限额
-# 配置文件: core_bak_refactored/config/dev/market_limits.yml
+# 配置文件: core_bak_refactored/config/dev/market.yml
+# 注意: 市场配置现在在 market_limit 字段下
+_market_limit_config = _MARKET_LIMITS_CONFIG.get('market_limit', {})
 MARKET_SPECIFIC_LIMITS = {
-    MarketCode.CN: _MARKET_LIMITS_CONFIG.get('CN', {}),
-    MarketCode.US: _MARKET_LIMITS_CONFIG.get('US', {}),
-    MarketCode.HK: _MARKET_LIMITS_CONFIG.get('HK', {}),
-    MarketCode.EU: _MARKET_LIMITS_CONFIG.get('EU', {}),
-    MarketCode.JP: _MARKET_LIMITS_CONFIG.get('JP', {}),
-    MarketCode.SG: _MARKET_LIMITS_CONFIG.get('SG', {}),
+    MarketCode.CN: _market_limit_config.get('CN', {}),
+    MarketCode.US: _market_limit_config.get('US', {}),
+    MarketCode.HK: _market_limit_config.get('HK', {}),
+    MarketCode.EU: _market_limit_config.get('EU', {}),
+    MarketCode.JP: _market_limit_config.get('JP', {}),
+    MarketCode.SG: _market_limit_config.get('SG', {}),
 }
 
 

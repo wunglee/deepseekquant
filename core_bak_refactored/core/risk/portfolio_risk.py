@@ -14,7 +14,7 @@ import os
 from datetime import datetime
 import time
 import uuid
-
+from core_bak_refactored.core.share.config_manager import ConfigManager
 from .risk_metrics_service import RiskMetricsService, RiskMetricsEngine
 from core_bak_refactored.infrastructure.statistical_calculators import StatisticalCalculator
 from core_bak_refactored.core.share.market.market_enums import MarketCode
@@ -187,6 +187,7 @@ class PortfolioRiskAnalyzer:
         if self.enable_incremental and IncrementalCovarianceCalculator is not None:
             self.incremental_calculator = IncrementalCovarianceCalculator()
             logger.info("增量计算已启用")
+
     
     def _get_fallback_strategy(self, component_name: str) -> Dict[str, Any]:
         """功能级别降级策略（专家建议）"""
@@ -587,7 +588,7 @@ class PortfolioRiskAnalyzer:
             # 新增：报告快照与模型健康
             'report_snapshot': {
                 'report_id': str(uuid.uuid4()),
-                'environment': os.getenv('DEPLOYMENT_ENV', 'dev'),
+                'environment': ConfigManager._get_environment(),  # 💚 使用 ConfigManager
                 'timestamp': datetime.utcnow().isoformat() + 'Z',
                 'market_type': str(MarketCode.parse(self.config.get('market_type', 'CN'))),
                 'trading_days_per_year': self.config.get('trading_days_per_year', 252),

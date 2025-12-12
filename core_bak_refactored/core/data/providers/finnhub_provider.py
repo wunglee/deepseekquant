@@ -59,11 +59,15 @@ class FinnhubDataProvider(BaseDataProvider, HistoricalDataProvider):
         初始化Finnhub数据提供者
         
         Note:
-            - API Key 从环境变量 FINNHUB_API_KEY 或配置文件读取
+            - API Key 从配置文件读取（credentials.yml）
             - proxy 从配置文件读取，不通过参数传递
+            - 💚 不再使用 os.environ，统一使用 ConfigManager
         """
-        # 优先级：环境变量 > 配置文件 > None
-        api_key = os.getenv('FINNHUB_API_KEY') or self._load_api_key_from_config()
+        # 💚 调用基类构造函数（初始化缓存）
+        super().__init__()
+        
+        # 💚 从配置文件读取 API Key（不再使用环境变量）
+        api_key = self._load_api_key_from_config()
         
         # 从配置文件中获取proxy
         config_manager = ConfigManager()
@@ -306,6 +310,8 @@ class FinnhubDataProvider(BaseDataProvider, HistoricalDataProvider):
         """
         获取个股价格数据
         
+        💚 注意: 此方法由基类处理缓存，不需覆写
+        
         Args:
             symbol: 股票代码
             start_date: 开始日期
@@ -314,7 +320,27 @@ class FinnhubDataProvider(BaseDataProvider, HistoricalDataProvider):
         Returns:
             PriceData: 包含标准OHLCV数据的结构化对象
         """
-        # 个股和指数使用相同的API
+        # 💚 由基类自动处理缓存
+        return super().get_stock_prices(symbol, start_date, end_date)
+    
+    def _fetch_from_external_api(self, symbol: str, start_date: str, end_date: str) -> PriceData:
+        """
+        从 Finnhub API 获取数据（实现基类抽象方法）
+        
+        💚 注意:
+        - 此方法仅供内部使用
+        - 外部调用者应使用 get_index_prices()
+        - 基类已自动处理缓存
+        
+        Args:
+            symbol: 股票/指数代码
+            start_date: 开始日期 (YYYY-MM-DD)
+            end_date: 结束日期 (YYYY-MM-DD)
+        
+        Returns:
+            PriceData: 价格数据对象
+        """
+        # 复用原有的 get_index_prices 逻辑
         return self.get_index_prices(symbol, start_date, end_date)
 
     def get_quote(self, symbol: str) -> dict:

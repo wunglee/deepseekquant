@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Yahoo Finance 限速测试
+Yahoo Finance 限速集成测试
 
 验证当前方案是否能达到官方限速标准：
 - 每小时 2000 次
@@ -8,6 +8,10 @@ Yahoo Finance 限速测试
 - 即每 2 秒允许 1 次
 
 测试方法：连续请求 10 次，间隔 2-3 秒
+
+Note:
+    这是集成测试，需要真实网络请求
+    位置符合规范：core_bak_refactored/tests/integration/core/data/providers/
 """
 
 import time

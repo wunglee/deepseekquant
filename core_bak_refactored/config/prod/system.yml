@@ -4,3 +4,8 @@ max_concurrent_requests: 10
 timeout: 30
 enable_health_check: true
 health_check_interval: 60
+
+# 全局代理配置（系统级配置）
+proxies:
+  http: http://127.0.0.1:8002
+  socks5: socks5://127.0.0.1:1081

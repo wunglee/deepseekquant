@@ -1,6 +1,6 @@
-# 系统配置 - 系统模块
-log_level: INFO
-max_concurrent_requests: 10
-timeout: 30
-enable_health_check: true
+# 测试环境系统配置
+log_level: DEBUG
+max_concurrent_requests: 2
+timeout: 10
+enable_health_check: false
 health_check_interval: 60

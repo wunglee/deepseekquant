@@ -49,6 +49,8 @@ class ChartDataAssembler:
         Args:
             data_provider: 数据提供者（实现 get_index_prices 接口）
             indicator_service: 技术指标服务（IndicatorService 实例）
+        
+        💚 注意: DataProvider 已内置三层缓存，此处不需再处理
         """
         self._data_provider = data_provider
         self._indicator_service = indicator_service
@@ -132,7 +134,12 @@ class ChartDataAssembler:
                          period: str,
                          count: int,
                          before: Optional[str]) -> PriceData:
-        """获取K线数据（使用领域层标准 PriceData 类型）
+        """获取K线数据（DataProvider 已内置三层缓存）
+        
+        💚 DataProvider 自动处理:
+        1. 内存缓存 → 毫秒级
+        2. 数据库缓存 → 0.1-0.3秒
+        3. 外部API → 4-8秒
         
         Args:
             index_id: 股票/指数代码
@@ -155,12 +162,14 @@ class ChartDataAssembler:
             end_date = datetime.now()
         
         start_date = end_date - timedelta(days=days_needed)
+        start_date_str = start_date.strftime('%Y-%m-%d')
+        end_date_str = end_date.strftime('%Y-%m-%d')
         
-        # 调用数据提供者（返回领域层标准 PriceData 类型）
+        # 💚 直接调用 DataProvider，三层缓存已封装在内
         price_data = self._data_provider.get_index_prices(
             index_id,
-            start_date.strftime('%Y-%m-%d'),
-            end_date.strftime('%Y-%m-%d')
+            start_date_str,
+            end_date_str
         )
         
         # 验证数据

@@ -27,10 +27,10 @@ from core_bak_refactored.core.data.providers.protocols import PriceData, OHLCVRe
 class TushareProviderInitializationTest(unittest.TestCase):
     """测试 TushareDataProvider 初始化"""
     
-    @patch.dict(os.environ, {}, clear=True)  # 清空环境变量
     @patch('core_bak_refactored.core.data.providers.tushare_provider.TushareDataProvider._load_token_from_config')
     def test_init_without_token(self, mock_load_token):
         """测试无 Token 初始化 - API 不可用"""
+        # 💚 不再使用 os.environ，直接 Mock 配置文件读取
         mock_load_token.return_value = None
         
         provider = TushareDataProvider()
@@ -42,32 +42,15 @@ class TushareProviderInitializationTest(unittest.TestCase):
         # 验证 ts_pro 为 None
         self.assertIsNone(provider.ts_pro)
     
-    @patch.dict(os.environ, {"TUSHARE_TOKEN": "test_env_token_12345"})
-    @patch('core_bak_refactored.core.data.providers.tushare_provider.TushareDataProvider._load_token_from_config')
-    @patch('tushare.pro_api')
-    @patch('tushare.set_token')
-    def test_init_with_env_token(self, mock_set_token, mock_pro_api, mock_load_token):
-        """测试从环境变量获取 Token"""
-        mock_load_token.return_value = None
-        mock_ts_pro = MagicMock()
-        mock_pro_api.return_value = mock_ts_pro
-        
-        # Mock 连接测试成功
-        mock_ts_pro.trade_cal.return_value = pd.DataFrame()
-        
-        provider = TushareDataProvider()
-        
-        # 验证 set_token 被调用
-        mock_set_token.assert_called_once_with("test_env_token_12345")
-        # 验证 API 可用
-        self.assertTrue(provider.available)
+    # 💚 已删除以下测试（不再支持环境变量）：
+    # - test_init_with_env_token
+    # - test_env_token_priority_over_config
     
-    @patch.dict(os.environ, {}, clear=True)
     @patch('core_bak_refactored.core.data.providers.tushare_provider.TushareDataProvider._load_token_from_config')
     @patch('tushare.pro_api')
     @patch('tushare.set_token')
     def test_init_with_config_token(self, mock_set_token, mock_pro_api, mock_load_token):
-        """测试从配置文件获取 Token"""
+        """测试从配置文件获取 Token（💚 唯一来源）"""
         mock_load_token.return_value = "config_token_67890"
         mock_ts_pro = MagicMock()
         mock_pro_api.return_value = mock_ts_pro
@@ -78,23 +61,6 @@ class TushareProviderInitializationTest(unittest.TestCase):
         # 验证使用配置文件中的token
         mock_set_token.assert_called_once_with("config_token_67890")
         self.assertTrue(provider.available)
-    
-    @patch.dict(os.environ, {"TUSHARE_TOKEN": "env_token"})
-    @patch('core_bak_refactored.core.data.providers.tushare_provider.TushareDataProvider._load_token_from_config')
-    def test_env_token_priority_over_config(self, mock_load_token):
-        """测试环境变量优先于配置文件"""
-        mock_load_token.return_value = "config_token"
-        
-        with patch('tushare.set_token') as mock_set_token:
-            with patch('tushare.pro_api') as mock_pro_api:
-                mock_ts_pro = MagicMock()
-                mock_pro_api.return_value = mock_ts_pro
-                mock_ts_pro.trade_cal.return_value = pd.DataFrame()
-                
-                provider = TushareDataProvider()
-                
-                # 验证使用环境变量的token（优先级更高）
-                mock_set_token.assert_called_once_with("env_token")
 
 
 class TushareProviderAPITest(unittest.TestCase):
@@ -126,7 +92,6 @@ class TushareProviderAPITest(unittest.TestCase):
     
     @patch('tushare.pro_api')
     @patch('tushare.set_token')
-    @patch.dict(os.environ, {"TUSHARE_TOKEN": "test_token"})
     def test_get_index_prices_success(self, mock_set_token, mock_pro_api):
         """测试成功获取指数数据"""
         # Mock Tushare API
@@ -147,7 +112,8 @@ class TushareProviderAPITest(unittest.TestCase):
         })
         mock_ts_pro.index_daily.return_value = mock_df
         
-        with patch('core_bak_refactored.core.data.providers.tushare_provider.TushareDataProvider._load_token_from_config', return_value=None):
+        # 💚 从配置文件提供 token
+        with patch('core_bak_refactored.core.data.providers.tushare_provider.TushareDataProvider._load_token_from_config', return_value="test_token"):
             provider = TushareDataProvider()
             
             result = provider.get_index_prices('000300.SH', '2023-01-03', '2023-01-05')
@@ -163,7 +129,6 @@ class TushareProviderAPITest(unittest.TestCase):
     
     @patch('tushare.pro_api')
     @patch('tushare.set_token')
-    @patch.dict(os.environ, {"TUSHARE_TOKEN": "test_token"})
     def test_get_stock_prices_success(self, mock_set_token, mock_pro_api):
         """测试成功获取个股数据"""
         mock_ts_pro = MagicMock()
@@ -181,7 +146,8 @@ class TushareProviderAPITest(unittest.TestCase):
         })
         mock_ts_pro.daily.return_value = mock_df
         
-        with patch('core_bak_refactored.core.data.providers.tushare_provider.TushareDataProvider._load_token_from_config', return_value=None):
+        # 💚 从配置文件提供 token
+        with patch('core_bak_refactored.core.data.providers.tushare_provider.TushareDataProvider._load_token_from_config', return_value="test_token"):
             provider = TushareDataProvider()
             
             result = provider.get_stock_prices('000001.SZ', '2023-01-03', '2023-01-04')
@@ -233,7 +199,7 @@ class TushareProviderDataStandardizationTest(unittest.TestCase):
 class TushareProviderErrorHandlingTest(unittest.TestCase):
     """测试错误处理"""
     
-    @patch.dict(os.environ, {"TUSHARE_TOKEN": "test_token"})
+    # 💚 不再使用 os.environ
     @patch('core_bak_refactored.core.data.providers.tushare_provider.TushareDataProvider._load_token_from_config')
     def test_import_error_handling(self, mock_load_token):
         """测试 tushare 未安装时的错误处理"""
