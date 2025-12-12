@@ -156,7 +156,6 @@ class DataFetcher:
         self.config = config
         self.cache_enabled = config.get('cache_enabled', True)
         self.cache_duration = config.get('cache_duration', 300)
-        self.primary_source = config.get('primary', DataSourceType.YAHOO_FINANCE.value)
         self.fallback_sources = config.get('fallback_sources', [])
         self.max_retries = config.get('max_retries', 3)
         self.request_timeout = config.get('request_timeout', 30)
