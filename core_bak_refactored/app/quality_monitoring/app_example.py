@@ -50,7 +50,7 @@ class DataQualityApplication:
             api_port: API 服务监听端口（默认：5001）
         
         Note:
-            数据源类型通过配置文件 config/dev/data.yml 中的 primary_source 控制
+            数据源类型通过配置文件 config/dev/data_provider.yml 中的 primary_source 控制
             - mock: 使用模拟数据（不调用外部API）
             - yahoo: 使用Yahoo Finance真实数据
             - tushare: 使用Tushare数据
@@ -166,7 +166,7 @@ def main():
     
     args = parser.parse_args()
     
-    # 创建应用（数据源由配置文件 config/dev/data.yml 控制）
+    # 创建应用（数据源由配置文件 config/dev/data_provider.yml 控制）
     app = DataQualityApplication(strategy=args.strategy)
     
     if args.once:

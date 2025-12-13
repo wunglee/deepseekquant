@@ -67,19 +67,21 @@ class BaseDataProvider(ABC):
         """加载缓存配置"""
         try:
             config_manager = ConfigManager()
-            data_config = config_manager.get_config('data')
-            
-            if data_config:
-                self._cache_ttl = data_config.get('cache_ttl', 300)
-                self._enable_memory_cache = data_config.get('cache_enabled', True)
-            
-            # 检查数据库配置
-            db_config = config_manager.get_config('database')
-            if db_config:
-                cache_strategy = db_config.get('cache_strategy', {})
-                self._enable_db_cache = cache_strategy.get('enabled', True)
+            # 💚 修复：使用 config 属性而不是 get_config 方法
+            if hasattr(config_manager, 'config'):
+                data_config = config_manager.config.get('data', {})
+                
+                if data_config:
+                    self._cache_ttl = data_config.get('cache_ttl', 300)
+                    self._enable_memory_cache = data_config.get('cache_enabled', True)
+                
+                # 检查数据库配置
+                db_config = config_manager.config.get('database', {})
+                if db_config:
+                    cache_strategy = db_config.get('cache_strategy', {})
+                    self._enable_db_cache = cache_strategy.get('enabled', True)
         except Exception as e:
-            logger.warning(f"加载缓存配置失败，使用默认值: {e}")
+            logger.debug(f"加载缓存配置失败，使用默认值: {e}")
     
     def _get_db_service(self):
         """
@@ -666,7 +668,7 @@ class BaseDataProvider(ABC):
             True
         
         Note:
-            - 状态保存到 data.yml 中对应 provider 的 status 字段
+            - 状态保存到 data_provider.yml 中对应 provider 的 status 字段
             - 直接写入文件,确保持久化
         """
         try:
@@ -677,7 +679,7 @@ class BaseDataProvider(ABC):
             
             config_manager = ConfigManager()
             
-            # 获取 data.yml 的路径
+            # 获取 data_provider.yml 的路径
             data_yml_path = config_manager.get_config_path('data')
             
             # 读取现有配置

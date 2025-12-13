@@ -237,6 +237,73 @@ class TestYahooFinanceDataProvider(unittest.TestCase):
         self.assertIn("Network error", str(context.exception))
         # 当前实现会重试所有异常，所以call_count应该4（初始 + 3次重试）
         self.assertEqual(mock_download.call_count, 4)
+    
+    @patch('core_bak_refactored.core.data.providers.yahoo_provider.YahooFinanceDataProvider.get_index_prices')
+    @patch('core_bak_refactored.core.data.providers.yahoo_provider.YahooFinanceDataProvider.get_stock_prices')
+    def test_fetch_from_external_api_index(self, mock_get_stock, mock_get_index):
+        """
+        测试 _fetch_from_external_api 方法 - 指数
+        
+        🐞 Bug Fix: 验证抽象方法已实现，不会报 "Can't instantiate abstract class" 错误
+        """
+        # 模拟指数数据
+        mock_price_data = PriceData(
+            symbol='^GSPC',
+            records=[],
+            start_date=pd.Timestamp('2023-01-01'),
+            end_date=pd.Timestamp('2023-01-03'),
+            count=0
+        )
+        mock_get_index.return_value = mock_price_data
+        
+        # 调用 _fetch_from_external_api（指数以 ^ 开头）
+        result = self.provider._fetch_from_external_api('^GSPC', '2023-01-01', '2023-01-03')
+        
+        # 验证调用了 get_index_prices
+        mock_get_index.assert_called_once_with('^GSPC', '2023-01-01', '2023-01-03')
+        mock_get_stock.assert_not_called()
+        self.assertEqual(result, mock_price_data)
+    
+    @patch('core_bak_refactored.core.data.providers.yahoo_provider.YahooFinanceDataProvider.get_index_prices')
+    @patch('core_bak_refactored.core.data.providers.yahoo_provider.YahooFinanceDataProvider.get_stock_prices')
+    def test_fetch_from_external_api_stock(self, mock_get_stock, mock_get_index):
+        """
+        测试 _fetch_from_external_api 方法 - 个股
+        
+        🐞 Bug Fix: 验证抽象方法已实现，不会报 "Can't instantiate abstract class" 错误
+        """
+        # 模拟个股数据
+        mock_price_data = PriceData(
+            symbol='AAPL',
+            records=[],
+            start_date=pd.Timestamp('2023-01-01'),
+            end_date=pd.Timestamp('2023-01-03'),
+            count=0
+        )
+        mock_get_stock.return_value = mock_price_data
+        
+        # 调用 _fetch_from_external_api（个股不以 ^ 开头）
+        result = self.provider._fetch_from_external_api('AAPL', '2023-01-01', '2023-01-03')
+        
+        # 验证调用了 get_stock_prices
+        mock_get_stock.assert_called_once_with('AAPL', '2023-01-01', '2023-01-03')
+        mock_get_index.assert_not_called()
+        self.assertEqual(result, mock_price_data)
+    
+    def test_provider_can_be_instantiated(self):
+        """
+        测试 YahooFinanceDataProvider 可以被实例化
+        
+        🐞 Bug Fix: 验证不会报 "Can't instantiate abstract class YahooFinanceDataProvider 
+                   with abstract method _fetch_from_external_api" 错误
+        """
+        # 这个测试如果通过，说明所有抽象方法都已实现
+        provider = YahooFinanceDataProvider()
+        self.assertIsInstance(provider, YahooFinanceDataProvider)
+        
+        # 验证 _fetch_from_external_api 方法存在
+        self.assertTrue(hasattr(provider, '_fetch_from_external_api'))
+        self.assertTrue(callable(getattr(provider, '_fetch_from_external_api')))
 
 
 if __name__ == '__main__':

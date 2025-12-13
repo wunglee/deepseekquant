@@ -12,7 +12,7 @@
 """
 
 import pandas as pd
-from typing import Protocol, Dict, Any, List, Union
+from typing import Protocol, Dict, Any, List, Union, Optional
 from datetime import datetime
 from dataclasses import dataclass
 
@@ -36,6 +36,90 @@ class OHLCVRecord:
     low: float
     close: float
     volume: float
+
+
+@dataclass
+class IntradayTickRecord:
+    """
+    分时Tick数据记录（1分钟级别）
+    
+    属性：
+        time: str - 交易时间（HH:MM格式）
+        price: float - 当前价格
+        volume: int - 成交量（手）
+        avg_price: float - 均价
+    """
+    time: str
+    price: float
+    volume: int
+    avg_price: float
+
+
+@dataclass
+class OrderBookLevel:
+    """
+    盘口档位数据
+    
+    属性：
+        price: float - 价格
+        volume: int - 挂单量（手）
+    """
+    price: float
+    volume: int
+
+
+@dataclass
+class TickerRecord:
+    """
+    成交明细记录
+    
+    属性：
+        time: str - 成交时间（HH:MM:SS格式）
+        price: float - 成交价格
+        volume: int - 成交量（手）
+        direction: str - 买卖方向（'buy'/'sell'）
+    """
+    time: str
+    price: float
+    volume: int
+    direction: str
+
+
+@dataclass
+class IntradayData:
+    """
+    分时图完整数据结构
+    
+    属性：
+        symbol: str - 证券代码
+        name: str - 证券名称
+        current_price: float - 当前价格
+        yesterday_close: float - 昨收价
+        change: float - 涨跌额
+        change_percent: float - 涨跌幅（%）
+        ticks: List[IntradayTickRecord] - 分时tick数据列表
+        order_book_bids: List[OrderBookLevel] - 买盘档位（从高到低）
+        order_book_asks: List[OrderBookLevel] - 卖盘档位（从低到高）
+        tickers: List[TickerRecord] - 成交明细列表
+        trade_date: str - 交易日期（YYYY-MM-DD）
+        order_book_message: str - 盘口数据提示信息（如果为空）
+        tickers_message: str - 成交明细提示信息（如果为空）
+        is_tradable: bool - 是否可交易（指数为False，股票为True）
+    """
+    symbol: str
+    name: str
+    current_price: float
+    yesterday_close: float
+    change: float
+    change_percent: float
+    ticks: List[IntradayTickRecord]
+    order_book_bids: List[OrderBookLevel]
+    order_book_asks: List[OrderBookLevel]
+    tickers: List[TickerRecord]
+    trade_date: str
+    order_book_message: str = ''  # 默认为空
+    tickers_message: str = ''  # 默认为空
+    is_tradable: bool = True  # 默认可交易
 
 
 @dataclass
@@ -240,5 +324,36 @@ class HistoricalDataProvider(Protocol):
             
         Returns:
             质量报告字典，包含completeness_score、consistency_score等
+        """
+        ...
+    
+    def get_intraday_data(self, symbol: str, trade_date: Optional[str] = None) -> IntradayData:
+        """
+        获取分时图数据（1分钟级别）
+        
+        Args:
+            symbol: 证券代码（如'000001.SH'上证指数）
+            trade_date: 交易日期 'YYYY-MM-DD'（默认为当前日期）
+        
+        Returns:
+            IntradayData: 包含完整分时数据的结构化对象：
+                - symbol: 证券代码
+                - name: 证券名称
+                - current_price: 当前价格
+                - yesterday_close: 昨收价
+                - change: 涨跌额
+                - change_percent: 涨跌幅（%）
+                - ticks: List[IntradayTickRecord] - 分时tick数据
+                - order_book_bids: List[OrderBookLevel] - 买盘10档
+                - order_book_asks: List[OrderBookLevel] - 卖盘10档
+                - tickers: List[TickerRecord] - 成交明细（最近20笔）
+                - trade_date: 交易日期
+        
+        数据标准：
+        - ticks: 按时间升序排列，覆盖交易时段（09:30-11:30, 13:00-15:00）
+        - order_book: 买盘从高到低，卖盘从低到高
+        - tickers: 按时间降序排列（最新的在前）
+        
+        注意：实现类可以返回实时数据或历史分时数据
         """
         ...

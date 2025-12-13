@@ -91,7 +91,7 @@ class ProviderSelector:
             'yahoo'
         
         配置来源:
-            从 config/dev/data.yml 的 market_sources 字段读取
+            从 config/dev/data_provider.yml 的 market_sources 字段读取
         """
         # 从配置文件获取 market_sources 映射
         data_config = self.config_manager.get_data_config()

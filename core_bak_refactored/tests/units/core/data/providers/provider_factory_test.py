@@ -2,7 +2,7 @@
 DataProviderFactory 测试 - 验证工厂模式和配置文件管理
 
 注意：
-- 所有 provider 现在通过 core_bak_refactored/config/{env}/data.yml 配置文件管理
+- 所有 provider 现在通过 core_bak_refactored/config/{env}/data_provider.yml 配置文件管理
 - 不再支持动态 register/unregister 方法
 - 工厂从配置文件加载 provider 定义
 """

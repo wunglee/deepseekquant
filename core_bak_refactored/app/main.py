@@ -41,7 +41,7 @@ def main():
     
     args = parser.parse_args()
     
-    # 创建应用（数据源由配置文件 config/dev/data.yml 控制）
+    # 创建应用（数据源由配置文件 config/dev/data_provider.yml 控制）
     app = DataQualityApplication(
         strategy=args.strategy,
         api_host=args.host,

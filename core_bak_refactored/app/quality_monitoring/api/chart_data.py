@@ -106,6 +106,7 @@ class ChartDataAssembler:
             # 3. 检测市场事件（只在请求的范围内，使用裁剪后的 PriceData）
             logger.info("步骤3: 检测市场事件...")
             price_data_requested = self._slice_price_data(price_data_full, -count)
+            # 💚 强类型: 直接传入 PriceData 对象
             events = self._detect_events(price_data_requested)
             logger.info(f"事件检测成功，共 {len(events)} 个事件")
             
@@ -209,6 +210,9 @@ class ChartDataAssembler:
                        period: str,
                        count: int) -> PriceData:
         """周期转换（日线→周线/月线）（使用强类型 PriceData）
+        
+        💚 强类型: 输入/输出都是 PriceData
+        📝 注: 内部使用 pandas.resample()，但仅作为实现细节，对外仍是强类型
         
         Args:
             price_data: 日线数据（PriceData对象）
@@ -473,11 +477,13 @@ class ChartDataAssembler:
             logger.warning(f"OBV计算失败，返回空数据: {e}")
             return []
     
-    def _detect_events(self, df: pd.DataFrame) -> List[Dict]:
+    def _detect_events(self, price_data: PriceData) -> List[Dict]:
         """检测市场事件（暴涨暴跌）
         
+        💚 强类型: 接收 PriceData 对象，不使用弱类型 DataFrame
+        
         Args:
-            df: K线数据
+            price_data: K线价格数据（强类型）
         
         Returns:
             事件列表
@@ -485,39 +491,44 @@ class ChartDataAssembler:
         events = []
         
         try:
-            df_copy = df.copy()
-            df_copy['pct_change'] = df_copy['close'].pct_change() * 100
+            # 计算涨跌幅（使用强类型）
+            if price_data.count < 2:
+                return events
             
-            for i in range(len(df_copy)):
-                chg = df_copy.iloc[i]['pct_change']
-                if pd.isna(chg):
+            records = price_data.records
+            prev_close = None
+            
+            for i, record in enumerate(records):
+                if prev_close is None:
+                    prev_close = record.close
                     continue
                 
-                chg = float(chg)
-                date = df_copy.iloc[i]['date']
-                close = float(df_copy.iloc[i]['close'])
+                # 计算涨跌幅
+                pct_change = ((record.close - prev_close) / prev_close) * 100
                 
-                if chg <= -5.0:
-                    severity = 'critical' if chg < -7 else 'high'
+                if pct_change <= -5.0:
+                    severity = 'critical' if pct_change < -7 else 'high'
                     events.append({
-                        'date': date.strftime('%Y-%m-%d') if hasattr(date, 'strftime') else str(date),
+                        'date': record.date.strftime('%Y-%m-%d') if hasattr(record.date, 'strftime') else str(record.date),
                         'type': 'market_crash',
-                        'title': f'暴跌 {abs(chg):.2f}%',
-                        'decline_pct': chg,
-                        'price': close,
+                        'title': f'暴跌 {abs(pct_change):.2f}%',
+                        'decline_pct': pct_change,
+                        'price': float(record.close),
                         'impact': 'negative',
                         'severity': severity
                     })
-                elif chg >= 5.0:
+                elif pct_change >= 5.0:
                     events.append({
-                        'date': date.strftime('%Y-%m-%d') if hasattr(date, 'strftime') else str(date),
+                        'date': record.date.strftime('%Y-%m-%d') if hasattr(record.date, 'strftime') else str(record.date),
                         'type': 'rally',
-                        'title': f'暴涨 {chg:.2f}%',
-                        'rise_pct': chg,
-                        'price': close,
+                        'title': f'暴涨 {pct_change:.2f}%',
+                        'rise_pct': pct_change,
+                        'price': float(record.close),
                         'impact': 'positive',
                         'severity': 'high'
                     })
+                
+                prev_close = record.close
         
         except Exception as e:
             logger.warning(f"事件检测失败: {e}")
@@ -544,3 +555,99 @@ class ChartDataAssembler:
             else:
                 break
         return count
+    
+    def assemble_intraday_data(self, symbol: str, trade_date: Optional[str] = None, 
+                              batch_indices: Optional[List[int]] = None, 
+                              timestamps: Optional[List[int]] = None) -> Dict[str, Any]:
+        """
+        组装分时图数据
+        
+        Args:
+            symbol: 证券代码
+            trade_date: 交易日期（默认为当前日期）
+            batch_indices: 批次序号数组（如 [3, 4, 5]）
+            timestamps: 时间戳数组（如 [1234567890, 1234567891, 1234567892]）
+        
+        Returns:
+            {
+                'symbol': str,
+                'name': str,
+                'current_price': float,
+                'yesterday_close': float,
+                'change': float,
+                'change_percent': float,
+                'times': List[str],
+                'prices': List[float],
+                'volumes': List[int],
+                'avg_prices': List[float],
+                'order_book': {
+                    'bids': List[{'price': float, 'volume': int}],
+                    'asks': List[{'price': float, 'volume': int}]
+                },
+                'tickers': List[{'time': str, 'price': float, 'volume': int, 'type': str}]
+            }
+        """
+        try:
+            logger.info(f"开始组装分时数据: symbol={symbol}, trade_date={trade_date}, batch_indices={batch_indices}")
+            
+            # 🔧 获取分时数据（调用DataProvider的get_intraday_data接口）
+            intraday_data = self._data_provider.get_intraday_data(
+                symbol, 
+                trade_date, 
+                batch_indices=batch_indices,
+                timestamps=timestamps
+            )
+            
+            # 转换为前端需要的格式
+            times = [tick.time for tick in intraday_data.ticks]
+            prices = [tick.price for tick in intraday_data.ticks]
+            volumes = [tick.volume for tick in intraday_data.ticks]
+            avg_prices = [tick.avg_price for tick in intraday_data.ticks]
+            
+            order_book = {
+                'bids': [{'price': level.price, 'volume': level.volume} 
+                        for level in intraday_data.order_book_bids],
+                'asks': [{'price': level.price, 'volume': level.volume} 
+                        for level in intraday_data.order_book_asks],
+                'message': intraday_data.order_book_message  # 🔧 添加后端提示信息
+            }
+            
+            tickers = [{
+                'time': ticker.time,
+                'price': ticker.price,
+                'volume': ticker.volume,
+                'type': ticker.direction
+            } for ticker in intraday_data.tickers]
+            
+            # 🔧 如果tickers为空，添加message字段
+            tickers_data = {
+                'items': tickers,
+                'message': intraday_data.tickers_message  # 🔧 添加后端提示信息
+            }
+            
+            result = {
+                'symbol': intraday_data.symbol,
+                'name': intraday_data.name,
+                'current_price': intraday_data.current_price,
+                'yesterday_close': intraday_data.yesterday_close,
+                'change': intraday_data.change,
+                'change_percent': intraday_data.change_percent,
+                'times': times,
+                'prices': prices,
+                'volumes': volumes,
+                'avg_prices': avg_prices,
+                'order_book': order_book,
+                'tickers': tickers_data,  # 🔧 使用新的tickers_data结构
+                'is_tradable': intraday_data.is_tradable  # 🔧 添加可交易标识
+            }
+            
+            logger.info(f"分时数据组装完成: times={len(times)}, order_book_bids={len(order_book['bids'])}, tickers={len(tickers)}")
+            return result
+        
+        except Exception as e:
+            logger.error(f"组装分时数据失败: {e}", exc_info=True)
+            logger.error(f"  - symbol: {symbol}")
+            logger.error(f"  - trade_date: {trade_date}")
+            logger.error(f"  - 错误类型: {type(e).__name__}")
+            logger.error(f"  - 错误详情: {str(e)}")
+            raise RuntimeError(f"分时数据组装失败: {str(e)}") from e

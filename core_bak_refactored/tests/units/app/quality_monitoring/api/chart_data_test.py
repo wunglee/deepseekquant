@@ -144,14 +144,26 @@ class ChartDataAssemblerEventDetectionTest(unittest.TestCase):
         )
     
     def test_detect_events_crash(self):
-        """测试暴跌事件检测"""
-        # 构造包含暴跌的数据
-        df = pd.DataFrame({
-            'date': pd.date_range('2024-01-01', periods=5),
-            'close': [100.0, 100.0, 93.0, 93.0, 93.0]  # 第3天暴跌7%
-        })
+        """测试暴跌事件检测（强类型 PriceData）"""
+        from core_bak_refactored.core.data.providers.protocols import OHLCVRecord
         
-        events = self.assembler._detect_events(df)
+        # 💚 构造包含暴跌的强类型 PriceData
+        records = [
+            OHLCVRecord(date=pd.Timestamp('2024-01-01'), open=100.0, high=105.0, low=99.0, close=100.0, volume=1000000),
+            OHLCVRecord(date=pd.Timestamp('2024-01-02'), open=100.0, high=105.0, low=99.0, close=100.0, volume=1000000),
+            OHLCVRecord(date=pd.Timestamp('2024-01-03'), open=100.0, high=105.0, low=92.0, close=93.0, volume=2000000),  # 暴跌 7%
+        ]
+        
+        price_data = PriceData(
+            symbol='000300.SH',
+            records=records,
+            start_date=pd.Timestamp('2024-01-01'),
+            end_date=pd.Timestamp('2024-01-03'),
+            count=3
+        )
+        
+        # 💚 直接传入 PriceData 对象
+        events = self.assembler._detect_events(price_data)
         
         # 验证事件检测
         crash_events = [e for e in events if e['type'] == 'market_crash']
@@ -164,14 +176,26 @@ class ChartDataAssemblerEventDetectionTest(unittest.TestCase):
         self.assertLess(event['decline_pct'], 0)
     
     def test_detect_events_rally(self):
-        """测试暴涨事件检测"""
-        # 构造包含暴涨的数据
-        df = pd.DataFrame({
-            'date': pd.date_range('2024-01-01', periods=5),
-            'close': [100.0, 100.0, 106.0, 106.0, 106.0]  # 第3天暴涨6%
-        })
+        """测试暴涨事件检测（强类型 PriceData）"""
+        from core_bak_refactored.core.data.providers.protocols import OHLCVRecord
         
-        events = self.assembler._detect_events(df)
+        # 💚 构造包含暴涨的强类型 PriceData
+        records = [
+            OHLCVRecord(date=pd.Timestamp('2024-01-01'), open=100.0, high=105.0, low=99.0, close=100.0, volume=1000000),
+            OHLCVRecord(date=pd.Timestamp('2024-01-02'), open=100.0, high=105.0, low=99.0, close=100.0, volume=1000000),
+            OHLCVRecord(date=pd.Timestamp('2024-01-03'), open=100.0, high=108.0, low=99.0, close=106.0, volume=2000000),  # 暴涨 6%
+        ]
+        
+        price_data = PriceData(
+            symbol='000300.SH',
+            records=records,
+            start_date=pd.Timestamp('2024-01-01'),
+            end_date=pd.Timestamp('2024-01-03'),
+            count=3
+        )
+        
+        # 💚 直接传入 PriceData 对象
+        events = self.assembler._detect_events(price_data)
         
         # 验证事件检测
         rally_events = [e for e in events if e['type'] == 'rally']
@@ -183,14 +207,28 @@ class ChartDataAssemblerEventDetectionTest(unittest.TestCase):
         self.assertGreater(event['rise_pct'], 0)
     
     def test_detect_events_no_extreme(self):
-        """测试无极端事件"""
-        # 构造正常波动数据
-        df = pd.DataFrame({
-            'date': pd.date_range('2024-01-01', periods=5),
-            'close': [100.0, 101.0, 102.0, 101.5, 102.5]  # 正常波动
-        })
+        """测试无极端事件（强类型 PriceData）"""
+        from core_bak_refactored.core.data.providers.protocols import OHLCVRecord
         
-        events = self.assembler._detect_events(df)
+        # 💚 构造正常波动数据
+        records = [
+            OHLCVRecord(date=pd.Timestamp('2024-01-01'), open=100.0, high=105.0, low=99.0, close=100.0, volume=1000000),
+            OHLCVRecord(date=pd.Timestamp('2024-01-02'), open=100.0, high=106.0, low=100.0, close=101.0, volume=1100000),
+            OHLCVRecord(date=pd.Timestamp('2024-01-03'), open=101.0, high=107.0, low=101.0, close=102.0, volume=1200000),
+            OHLCVRecord(date=pd.Timestamp('2024-01-04'), open=102.0, high=107.5, low=100.5, close=101.5, volume=1150000),
+            OHLCVRecord(date=pd.Timestamp('2024-01-05'), open=101.5, high=108.0, low=101.0, close=102.5, volume=1250000),
+        ]
+        
+        price_data = PriceData(
+            symbol='000300.SH',
+            records=records,
+            start_date=pd.Timestamp('2024-01-01'),
+            end_date=pd.Timestamp('2024-01-05'),
+            count=5
+        )
+        
+        # 💚 直接传入 PriceData 对象
+        events = self.assembler._detect_events(price_data)
         
         # 验证无事件
         self.assertEqual(len(events), 0)
@@ -215,17 +253,30 @@ class ChartDataAssemblerIntegrationTest(unittest.TestCase):
         )
     
     def _create_mock_data(self):
-        """创建模拟K线数据"""
+        """创建模拟K线数据（强类型 PriceData）"""
+        from core_bak_refactored.core.data.providers.protocols import OHLCVRecord, PriceData
+        
+        # 创建模拟记录
+        records = []
         dates = pd.date_range('2024-01-01', periods=120, freq='D')
-        df = pd.DataFrame({
-            'date': dates,
-            'open': 100 + np.random.randn(120) * 5,
-            'high': 105 + np.random.randn(120) * 5,
-            'low': 95 + np.random.randn(120) * 5,
-            'close': 100 + np.random.randn(120) * 5,
-            'volume': 1000000 + np.random.randn(120) * 100000
-        })
-        return df
+        for i, date in enumerate(dates):
+            record = OHLCVRecord(
+                date=date,
+                open=100 + np.random.randn() * 5,
+                high=105 + np.random.randn() * 5,
+                low=95 + np.random.randn() * 5,
+                close=100 + np.random.randn() * 5,
+                volume=1000000 + np.random.randn() * 100000
+            )
+            records.append(record)
+        
+        return PriceData(
+            symbol='000001.SH',
+            records=records,
+            start_date=dates[0],
+            end_date=dates[-1],
+            count=120
+        )
     
     def _setup_indicator_mocks(self):
         """设置指标服务的Mock返回值"""
@@ -291,6 +342,104 @@ class ChartDataAssemblerIntegrationTest(unittest.TestCase):
         self.assertIn('rsi', result['indicators'])
         self.assertNotIn('kdj', result['indicators'])
         self.assertNotIn('obv', result['indicators'])
+
+
+class ChartDataAssemblerBugFixTest(unittest.TestCase):
+    """
+    Bug 修复测试类
+    
+    🐞 Bug #3: 'PriceData' object has no attribute 'copy'
+    ✅ 已修复: _detect_events 现在直接接收 PriceData，不再需要转换
+    """
+    
+    def setUp(self):
+        """Test setup"""
+        self.mock_provider = Mock()
+        self.mock_indicator = Mock()
+        self.assembler = ChartDataAssembler(
+            data_provider=self.mock_provider,
+            indicator_service=self.mock_indicator
+        )
+    
+    def test_detect_events_accepts_pricedata_directly(self):
+        """
+        测试 _detect_events 方法直接接收 PriceData（强类型）
+        
+        🐞 Bug Fix: 验证 _detect_events 现在直接使用 PriceData，不需要 to_dataframe()
+        原错误: 'PriceData' object has no attribute 'copy'
+        修复: _detect_events 签名改为 def _detect_events(self, price_data: PriceData)
+        """
+        # 构造包含暴跌的 PriceData
+        from core_bak_refactored.core.data.providers.protocols import OHLCVRecord
+        
+        records = [
+            OHLCVRecord(date=pd.Timestamp('2024-01-01'), open=100.0, high=105.0, low=99.0, close=100.0, volume=1000000),
+            OHLCVRecord(date=pd.Timestamp('2024-01-02'), open=100.0, high=105.0, low=99.0, close=100.0, volume=1000000),
+            OHLCVRecord(date=pd.Timestamp('2024-01-03'), open=100.0, high=105.0, low=92.0, close=93.0, volume=2000000),  # 暴跌 7%
+        ]
+        
+        price_data = PriceData(
+            symbol='^GSPC',
+            records=records,
+            start_date=pd.Timestamp('2024-01-01'),
+            end_date=pd.Timestamp('2024-01-03'),
+            count=3
+        )
+        
+        # 💚 直接传入 PriceData 对象（不再需要 to_dataframe()）
+        events = self.assembler._detect_events(price_data)
+        
+        # 验证事件检测成功
+        self.assertIsInstance(events, list)
+        
+        # 验证检测到暴跌事件
+        crash_events = [e for e in events if e['type'] == 'market_crash']
+        self.assertGreater(len(crash_events), 0, "应该检测到暴跌事件")
+        
+        # 验证事件属性
+        event = crash_events[0]
+        self.assertEqual(event['type'], 'market_crash')
+        self.assertEqual(event['impact'], 'negative')
+        self.assertLess(event['decline_pct'], -5.0)
+        self.assertIn('severity', event)
+    
+    def test_slice_price_data_returns_valid_pricedata(self):
+        """
+        测试 _slice_price_data 返回有效的 PriceData 对象
+        
+        相关于 Bug #3: 验证 _slice_price_data 返回的 PriceData 可以被 to_dataframe()
+        """
+        from core_bak_refactored.core.data.providers.protocols import OHLCVRecord
+        
+        records = [
+            OHLCVRecord(date=pd.Timestamp('2024-01-01'), open=100.0, high=105.0, low=99.0, close=100.0, volume=1000000),
+            OHLCVRecord(date=pd.Timestamp('2024-01-02'), open=101.0, high=106.0, low=100.0, close=101.0, volume=1100000),
+            OHLCVRecord(date=pd.Timestamp('2024-01-03'), open=102.0, high=107.0, low=101.0, close=102.0, volume=1200000),
+            OHLCVRecord(date=pd.Timestamp('2024-01-04'), open=103.0, high=108.0, low=102.0, close=103.0, volume=1300000),
+            OHLCVRecord(date=pd.Timestamp('2024-01-05'), open=104.0, high=109.0, low=103.0, close=104.0, volume=1400000),
+        ]
+        
+        price_data = PriceData(
+            symbol='^GSPC',
+            records=records,
+            start_date=pd.Timestamp('2024-01-01'),
+            end_date=pd.Timestamp('2024-01-05'),
+            count=5
+        )
+        
+        # 裁剪最后 3 条
+        sliced = self.assembler._slice_price_data(price_data, -3)
+        
+        # 验证裁剪结果
+        self.assertIsInstance(sliced, PriceData)
+        self.assertEqual(sliced.count, 3)
+        self.assertEqual(len(sliced.records), 3)
+        
+        # 💚 验证可以转换为 DataFrame（不应该报错）
+        df = sliced.to_dataframe()
+        self.assertIsInstance(df, pd.DataFrame)
+        self.assertEqual(len(df), 3)
+        self.assertIn('close', df.columns)
 
 
 if __name__ == '__main__':

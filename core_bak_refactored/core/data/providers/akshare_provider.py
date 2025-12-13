@@ -28,12 +28,14 @@ import os
 import time
 import logging
 from datetime import datetime
-from typing import Union, Dict, Any
+from typing import Union, Dict, Any, Optional, List
 
 import akshare as ak
 import pandas as pd
 
-from core_bak_refactored.core.data.providers.protocols import HistoricalDataProvider, PriceData
+from core_bak_refactored.core.data.providers.protocols import (HistoricalDataProvider, PriceData,
+                                                                IntradayData, IntradayTickRecord,
+                                                                OrderBookLevel, TickerRecord)
 from core_bak_refactored.core.data.providers.base_provider import BaseDataProvider
 
 logger = logging.getLogger(__name__)
@@ -430,3 +432,740 @@ class AKShareDataProvider(BaseDataProvider, HistoricalDataProvider):
             logger.warning(f"Removed {original_len - len(standardized)} rows with missing close prices")
         
         return standardized
+    
+    def get_intraday_data(self, symbol: str, trade_date: str = None, 
+                         batch_indices: Optional[List[int]] = None,
+                         timestamps: Optional[List[int]] = None) -> IntradayData:
+        """
+        获取分时图数据（1分钟级别）
+        
+        实现策略：
+        1. 智能日期处理：如果是周末/节假日，自动获取最近交易日数据
+        2. 优先从内存缓存获取
+        3. 然后尝试真实API（AKShare stock_zh_a_hist_min_em）
+        4. API失败则fallback到前一交易日缓存
+        5. 最后生成模拟数据
+        
+        Args:
+            symbol: 证券代码
+            trade_date: 交易日期（默认为当前日期）
+            batch_indices: 批次序号数组（如 [3, 4, 5]）
+            timestamps: 时间戳数组（如 [1234567890, 1234567891, 1234567892]）
+        
+        批次机制：
+        - 模拟数据：每个批次生成12个5秒级节点，不使用timestamps
+        - 真实数据：每个批次生成1个节点，时间为timestamps中对应的值
+        """
+        from datetime import datetime as dt, time as dt_time, timedelta
+        import random
+        
+        logger.info(f"获取分时数据: symbol={symbol}, trade_date={trade_date}, batch_indices={batch_indices}")
+        
+        # 🔧 智能日期处理：如果未指定日期或指定的是非交易日，获取最近交易日
+        if trade_date is None:
+            trade_date = self._get_latest_trading_day()
+            logger.info(f"未指定日期，使用最近交易日: {trade_date}")
+        else:
+            # 检查指定日期是否是交易日
+            parsed_date = dt.strptime(trade_date, '%Y-%m-%d')
+            if parsed_date.weekday() >= 5:  # 周末
+                trade_date = self._get_latest_trading_day(trade_date)
+                logger.info(f"指定日期为周末，调整为最近交易日: {trade_date}")
+        
+        # 🔧 1. 尝试从内存缓存获取（复用BaseProvider机制）
+        # 注意：对于模拟数据，缓存key需要包含批次信息，避免不同批次返回相同数据
+        cache_key = f"intraday_{symbol}_{trade_date}"
+        
+        # 🔧 只有在没有传递批次序号时（即请求真实数据），才使用缓存
+        # 传递了批次序号的请求（模拟数据）不使用缓存
+        use_cache = (batch_indices is None or len(batch_indices) == 0)
+        
+        if use_cache:
+            cached_data = self._get_from_memory_cache(cache_key)
+            if cached_data is not None:
+                # 直接返回IntradayData对象
+                logger.info(f"✅ 内存缓存命中: {cache_key}")
+                return cached_data
+        
+        # 🔧 2. 关键修复：模拟模式下直接生成模拟数据，不调用真实API（避免15秒超时等待）
+        # 只有当传入batch_indices时，才是模拟模式，直接跳过真实数据获取
+        if batch_indices is None or len(batch_indices) == 0:
+            # 没有传入batch_indices，尝试获取真实数据
+            logger.info(f"📊 模式：真实数据 - 尝试从 AKShare 获取")
+            try:
+                intraday_data = self._fetch_real_intraday_from_akshare(symbol, trade_date)
+                if intraday_data is not None:
+                    # 写入内存缓存（直接存储IntradayData对象）
+                    if use_cache:
+                        self._set_to_memory_cache_obj(cache_key, intraday_data)
+                    return intraday_data
+            except Exception as e:
+                logger.warning(f"获取真实分时数据失败: {e}")
+            
+            # 🔧 3. fallback: 尝试获取前一交易日缓存
+            prev_trade_date = self._get_previous_trading_day(trade_date)
+            if prev_trade_date != trade_date:
+                logger.info(f"尝试使用前一交易日数据: {prev_trade_date}")
+                prev_cache_key = f"intraday_{symbol}_{prev_trade_date}"
+                prev_cached = self._get_from_memory_cache(prev_cache_key)
+                if prev_cached is not None:
+                    logger.info(f"✅ 使用前一交易日缓存: {prev_trade_date}")
+                    return prev_cached
+        else:
+            logger.info(f"🎮 模式：模拟数据 - 批次序号 {batch_indices}")
+        
+        # 🔧 4. 最后生成模拟数据
+        logger.warning(f"无法获取真实数据，生成模拟数据: {symbol}, batch_indices={batch_indices}")
+        mock_data = self._generate_mock_intraday_data(symbol, trade_date, batch_indices, timestamps)  # 🔧 传递批次数组
+        # 🔧 关键修改：模拟数据不缓存（因为不同批次序号应返回不同数据）
+        # 如果后续需要缓存，应使用包含批次信息的key，例如：intraday_{symbol}_{trade_date}_batch_{batch_indices}
+        return mock_data
+    
+    def _set_to_memory_cache_obj(self, cache_key: str, obj: Any):
+        """
+        将任意对象写入内存缓存（专门用于IntradayData等非DataFrame对象）
+        
+        Args:
+            cache_key: 缓存键
+            obj: 任意对象
+        """
+        if not self._enable_memory_cache or obj is None:
+            return
+        
+        import time
+        self._memory_cache[cache_key] = {
+            'data': obj,
+            'timestamp': time.time()
+        }
+        logger.debug(f"✅ 写入内存缓存: {cache_key}")
+    
+    def _fetch_real_intraday_from_akshare(self, symbol: str, trade_date: str) -> IntradayData:
+        """
+        从AKShare获取真实分时数据
+        
+        Args:
+            symbol: 证券代码（需转换为AKShare格式）
+            trade_date: 交易日期
+        
+        Returns:
+            IntradayData或None
+        """
+        from datetime import datetime as dt
+        
+        if not self.available or self.ak is None:
+            raise RuntimeError("AKShare不可用")
+        
+        # 转换symbol为AKShare格式（去掉后缀）
+        ak_symbol = symbol.split('.')[0]
+        
+        # 构建查询时间范围（当日09:30-15:00）
+        start_time = f"{trade_date} 09:30:00"
+        end_time = f"{trade_date} 15:00:00"
+        
+        logger.info(f"调用AKShare API: symbol={ak_symbol}, {start_time} ~ {end_time}")
+        
+        try:
+            # 调用AKShare API获取1分钟数据
+            df = self.ak.stock_zh_a_hist_min_em(
+                symbol=ak_symbol,
+                start_date=start_time,
+                end_date=end_time,
+                period='1',
+                adjust=''
+            )
+            
+            if df is None or df.empty:
+                logger.warning(f"AKShare返回空数据: {ak_symbol}")
+                return None
+            
+            logger.info(f"✅ AKShare返回 {len(df)} 条分时数据")
+            
+            # 转换为IntradayData格式（尝试获取实时盘口和成交明细）
+            return self._convert_akshare_df_to_intraday(
+                df, symbol, trade_date, fetch_realtime_data=True
+            )
+        
+        except Exception as e:
+            logger.error(f"AKShare API调用失败: {e}")
+            raise
+    
+    def _convert_akshare_df_to_intraday(self, df, symbol: str, trade_date: str, 
+                                         fetch_realtime_data: bool = False) -> IntradayData:
+        """
+        将AKShare返回的DataFrame转换为IntradayData
+        
+        AKShare返回格式：时间,开盘,收盘,最高,最低,成交量,成交额,振幅,涨跌幅,涨跌额,换手率
+        
+        Args:
+            df: AKShare返回的DataFrame
+            symbol: 证券代码
+            trade_date: 交易日期
+            fetch_realtime_data: 是否尝试获取实时盘口和成交明细
+        
+        注意：
+        - 盘口和成交明细数据只在实时行情中提供
+        - 历史数据不包含盘口和成交明细，这些字段将为空列表
+        """
+        import random
+        from datetime import datetime as dt
+        
+        # 获取股票名称
+        name_map = {
+            '000001.SH': '上证指数',
+            '000300.SH': '沪深300',
+            '399001.SZ': '深证成指',
+            '399006.SZ': '创业板指'
+        }
+        name = name_map.get(symbol, symbol)
+        
+        # 获取昨收价（从第一条数据推算）
+        if '涨跌额' in df.columns and '收盘' in df.columns:
+            first_close = float(df.iloc[0]['收盘'])
+            first_change = float(df.iloc[0].get('涨跌额', 0))
+            yesterday_close = first_close - first_change
+        else:
+            yesterday_close = float(df.iloc[0].get('收盘', 0)) * 0.99  # 估算
+        
+        # 构建ticks
+        ticks = []
+        total_volume = 0
+        total_amount = 0
+        
+        for _, row in df.iterrows():
+            time_str = str(row['时间']).split(' ')[-1][:5]  # 提取HH:MM
+            price = float(row.get('收盘', row.get('最新价', 0)))
+            volume = int(row.get('成交量', 0))
+            
+            total_volume += volume
+            total_amount += price * volume
+            avg_price = total_amount / total_volume if total_volume > 0 else price
+            
+            ticks.append(IntradayTickRecord(
+                time=time_str,
+                price=round(price, 2),
+                volume=volume,
+                avg_price=round(avg_price, 2)
+            ))
+        
+        # 当前价格
+        current_price = ticks[-1].price if ticks else yesterday_close
+        change = current_price - yesterday_close
+        change_percent = (change / yesterday_close * 100) if yesterday_close > 0 else 0
+        
+        # 🔧 关键修改：尝试获取实时盘口和成交明细数据
+        order_book_bids = []
+        order_book_asks = []
+        tickers_list = []
+        order_book_message = ''
+        tickers_message = ''
+        
+        if fetch_realtime_data:
+            # 只在当天且在交易时间内才尝试获取实时数据
+            from datetime import datetime as dt, time as dt_time
+            now = dt.now()
+            is_today = trade_date == now.strftime('%Y-%m-%d')
+            is_trading_hours = (dt_time(9, 30) <= now.time() <= dt_time(15, 0)) and (now.weekday() < 5)
+            
+            if is_today and is_trading_hours:
+                try:
+                    # 获取实时盘口数据
+                    order_book_bids, order_book_asks = self._fetch_realtime_order_book(symbol)
+                    # 获取实时成交明细
+                    tickers_list = self._fetch_realtime_tickers(symbol)
+                    logger.info(f"✅ 获取实时数据: {len(order_book_bids)}个买盘, {len(order_book_asks)}个卖盘, {len(tickers_list)}条成交")
+                    
+                    # 如果获取失败，设置提示信息
+                    if not order_book_bids and not order_book_asks:
+                        order_book_message = '无法获取盘口数据'
+                    if not tickers_list:
+                        tickers_message = '无法获取成交明细'
+                except Exception as e:
+                    logger.warning(f"获取实时盘口/成交明细失败: {e}")
+                    order_book_message = '无法获取盘口数据'
+                    tickers_message = '无法获取成交明细'
+            else:
+                # 非交易时间或非交易日
+                if now.weekday() >= 5:  # 周末
+                    order_book_message = '非交易日'
+                    tickers_message = '非交易日'
+                elif not is_today:
+                    order_book_message = '非当日数据'
+                    tickers_message = '非当日数据'
+                else:
+                    order_book_message = '非交易时间'
+                    tickers_message = '非交易时间'
+                logger.info(f"非交易时间，盘口和成交明细为空: {order_book_message}")
+        else:
+            # 不获取实时数据时的默认提示
+            order_book_message = '历史数据无盘口信息'
+            tickers_message = '历史数据无成交明细'
+        
+        logger.info(f"分时数据转换完成: {len(ticks)}个tick, {len(order_book_bids)}个买盘, {len(order_book_asks)}个卖盘")
+        
+        # 🔧 判断是否可交易：指数不可交易，个股可交易
+        is_tradable = not self._is_index(symbol)
+        
+        return IntradayData(
+            symbol=symbol,
+            name=name,
+            current_price=round(current_price, 2),
+            yesterday_close=round(yesterday_close, 2),
+            change=round(change, 2),
+            change_percent=round(change_percent, 2),
+            ticks=ticks,
+            order_book_bids=order_book_bids,
+            order_book_asks=order_book_asks,
+            tickers=tickers_list,
+            trade_date=trade_date,
+            order_book_message=order_book_message,
+            tickers_message=tickers_message,
+            is_tradable=is_tradable
+        )
+    
+    def _get_previous_trading_day(self, trade_date: str) -> str:
+        """
+        获取前一交易日（简化实现：前一天，忽略节假日）
+        
+        TODO: 集成交易日历API
+        """
+        from datetime import datetime as dt, timedelta
+        
+        current = dt.strptime(trade_date, '%Y-%m-%d')
+        prev = current - timedelta(days=1)
+        
+        # 跳过周末
+        while prev.weekday() >= 5:  # 5=Saturday, 6=Sunday
+            prev -= timedelta(days=1)
+        
+        return prev.strftime('%Y-%m-%d')
+    
+    def _is_index(self, symbol: str) -> bool:
+        """
+        判断是否是指数（简化版本，用于模拟测试）
+        
+        Args:
+            symbol: 证券代码
+        
+        Returns:
+            bool: True表示是指数（不可交易），False表示是个股（可交易）
+        
+        注意：
+        - 这是临时的简化判断逻辑，仅用于模拟数据测试
+        - 生产环境应该从数据源API获取证券类型信息
+        - TODO: 未来接入真实数据源时，应调用数据源的证券信息接口
+        
+        模拟测试规则（方便测试两种情况）：
+        - 指数（不可交易）：000开头（如000001.SH, 000300.SH）或399开头（如399001.SZ）
+        - 个股（可交易）：其他代码（如600000.SH, 000001.SZ, 300001.SZ）
+        """
+        if not symbol:
+            return False
+        
+        # 提取代码部分（去掉市场后缀）
+        code = symbol.split('.')[0]
+        market = symbol.split('.')[1] if '.' in symbol else ''
+        
+        # 🔧 模拟测试：简化判断，仅用于测试两种情况
+        # 指数判断规则：
+        # - 上海指数：000xxx.SH (如 000001.SH上证指数, 000300.SH沪深300)
+        # - 深圳指数：399xxx.SZ (如 399001.SZ深证成指, 399006.SZ创业板指)
+        # 注意：000001.SZ 是平安银行（个股），不是指数
+        if len(code) == 6:
+            # 上海市场：000开头是指数
+            if market == 'SH' and code.startswith('000'):
+                return True  # 上海指数
+            # 深圳市场：399开头是指数，000开头是个股
+            if market == 'SZ' and code.startswith('399'):
+                return True  # 深圳指数
+        
+        # 其他都视为个股，可交易
+        return False
+    
+    def _get_latest_trading_day(self, from_date: str = None) -> str:
+        """
+        获取最近的交易日（从指定日期往前推）
+        
+        Args:
+            from_date: 起始日期（默认为今天）
+        
+        Returns:
+            最近的交易日（YYYY-MM-DD）
+        
+        逻辑：
+        - 如果是工作日（周一到周五），返回当天
+        - 如果是周六，返回周五
+        - 如果是周日，返回周五
+        
+        TODO: 集成交易日历API处理节假日
+        """
+        from datetime import datetime as dt, timedelta
+        
+        if from_date is None:
+            current = dt.now()
+        else:
+            current = dt.strptime(from_date, '%Y-%m-%d')
+        
+        # 向前推到最近的工作日
+        while current.weekday() >= 5:  # 5=周六, 6=周日
+            current -= timedelta(days=1)
+        
+        return current.strftime('%Y-%m-%d')
+    
+    def _generate_mock_intraday_data(self, symbol: str, trade_date: str, batch_indices: Optional[List[int]] = None,
+                                     timestamps: Optional[List[int]] = None) -> IntradayData:
+        """
+        生成模拟分时数据（fallback方案）
+        
+        Args:
+            symbol: 证券代码
+            trade_date: 交易日期
+            batch_indices: 批次序号数组（如 [3, 4, 5]）
+            timestamps: 时间戳数组（如 [1234567890, 1234567891, 1234567892]）
+        
+        注意：
+        - 只生成分时价格和成交量数据
+        - 盘口和成交明细不生成（保持为空列表）
+        """
+        import random
+        from datetime import datetime as dt, time as dt_time, timedelta
+        
+        # 获取股票名称
+        name_map = {
+            '000001.SH': '上证指数',
+            '000300.SH': '沪深300',
+            '399001.SZ': '深证成指',
+            '399006.SZ': '创业板指',
+            '^GSPC': 'S&P 500',
+            'AAPL': 'Apple Inc.'
+        }
+        name = name_map.get(symbol, symbol)
+        
+        now = dt.now()
+        # 🔧 关键修复：base_price必须使用固定种子，确保每次请求同一股票同一日期的基准价相同
+        random.seed(symbol + trade_date)  # 使用股票代码+日期作为种子
+        base_price = 3000 + random.random() * 300
+        yesterday_close = base_price
+        logger.info(f"💰 生成基准价: {base_price:.2f} (symbol={symbol}, trade_date={trade_date})")
+        
+        # 🔧 关键修复：使用确定性算法直接计算任意批次的价格，保证连续性
+        # 从批次0开始的累积波动总和
+        if batch_indices is not None and len(batch_indices) > 0:
+            first_batch_idx = batch_indices[0]
+            # 计算从批次0到first_batch_idx之前的所有波动
+            cumulative_change = 0.0
+            for prev_batch in range(0, first_batch_idx):
+                random.seed(symbol + trade_date + str(prev_batch))
+                for _ in range(12):  # 每批次12个点
+                    cumulative_change += (random.random() - 0.5) * 0.5
+            current_price = base_price + cumulative_change
+        else:
+            current_price = base_price
+        
+        # 解析trade_date
+        trade_date_obj = dt.strptime(trade_date, '%Y-%m-%d').date()
+        
+        # 🔧 关键修改：使用批次序号机制，与系统时间完全解耦
+        # 每次请求返回当前批次往前的batch_count个批次
+        # 模拟数据：每批次12个点位（5秒级，用于加速观看，1秒间隔获取1批次）
+        # 真实数据：每批次1个点位（5秒级，真实环境5秒间隔获取1批次）
+        import time
+        
+        # 计算当前批次序号：每1秒真实时间 = 1个批次（60倍速）
+        current_timestamp = time.time()
+        current_batch_index = int(current_timestamp) % 330  # 330个批次 = 330分钟交易时间
+        
+        # 🔧 计算需要生成的批次序号列表
+        if batch_indices is None or len(batch_indices) == 0:
+            # 🔧 首次加载：返回最近30分钟的数据（30个批次）
+            initial_window = 30  # 最近30分钟
+            start_batch_index = max(0, current_batch_index - initial_window + 1)
+            batch_indices_to_use = list(range(start_batch_index, current_batch_index + 1))
+            logger.info(f"🆕 首次加载：返回最近{initial_window}分钟 ({start_batch_index} - {current_batch_index}, 总计{len(batch_indices_to_use)}个批次)")
+        else:
+            # 🔧 增量更新：使用传入的批次序号数组
+            batch_indices_to_use = batch_indices
+            logger.info(f"🔢 增量更新：批次序号 {batch_indices_to_use}, 总计{len(batch_indices_to_use)}个批次")
+        
+        # 生成分时tick数据
+        ticks = []
+        total_volume = 0
+        total_amount = 0
+        
+        # 🔧 循环生成每个批次的数据（模拟数据每批次12个点位）
+        for batch_idx in batch_indices_to_use:
+            # 计算该批次对应的虚拟时间范围（每批次1分钟，12个5秒点位）
+            mock_start_time = dt.combine(trade_date_obj, dt_time(9, 30))
+            
+            # 将批次序号转换为交易时段内的分钟偏移
+            if batch_idx < 120:  # 上午时段：0-119 -> 09:30-11:29
+                batch_start_time = mock_start_time + timedelta(minutes=batch_idx)
+            else:  # 下午时段：120-329 -> 13:00-14:59
+                afternoon_offset = batch_idx - 120
+                batch_start_time = dt.combine(trade_date_obj, dt_time(13, 0)) + timedelta(minutes=afternoon_offset)
+            
+            batch_end_time = batch_start_time + timedelta(minutes=1)
+            
+            # 🔧 关键修复：使用批次序号作为种子，但保持价格连续性
+            # 每个批次内的随机波动使用固定种子，确保数据一致
+            random.seed(symbol + trade_date + str(batch_idx))
+            
+            # 🔧 模拟数据：每批次生成12个点位（1分钟内，每5秒一个）
+            for second in range(0, 60, 5):  # 0, 5, 10, 15, ..., 55
+                tick_time = batch_start_time + timedelta(seconds=second)
+                
+                # 不能超过批次结束时间
+                if tick_time >= batch_end_time:
+                    break
+                
+                time_str = tick_time.strftime('%H:%M:%S')
+                # 🔧 价格在前一个点位基础上波动（确保连续性）
+                current_price += (random.random() - 0.5) * 0.5
+                volume = random.randint(500, 2000)
+                
+                total_volume += volume
+                total_amount += current_price * volume
+                avg_price = total_amount / total_volume if total_volume > 0 else current_price
+                
+                ticks.append(IntradayTickRecord(
+                    time=time_str,
+                    price=round(current_price, 2),
+                    volume=volume,
+                    avg_price=round(avg_price, 2)
+                ))
+        
+        change = current_price - yesterday_close
+        change_percent = (change / yesterday_close * 100) if yesterday_close > 0 else 0
+        
+        # 🔧 判断是否可交易：指数不可交易，个股可交易
+        is_tradable = not self._is_index(symbol)
+        
+        # 🔧 关键修改：只有可交易的证券才生成盘口和成交明细
+        # 盘口和成交明细基于最新价格生成，每个批次都会更新
+        if is_tradable:
+            # 使用当前批次的最后价格生成盘口和成交明细
+            order_book_bids, order_book_asks = self._generate_mock_order_book(current_price, current_batch_index)
+            tickers_list = self._generate_mock_tickers(current_price, current_batch_index, ticks[-12:] if len(ticks) >= 12 else ticks)
+            order_book_message = ''
+            tickers_message = ''
+        else:
+            # 指数不可交易，不生成盘口和成交明细
+            order_book_bids = []
+            order_book_asks = []
+            tickers_list = []
+            order_book_message = '指数不可交易'
+            tickers_message = '指数不可交易'
+        
+        logger.info(f"生成模拟分时数据: {len(ticks)}个tick, {len(order_book_bids)}个买盘, {len(order_book_asks)}个卖盘, {len(tickers_list)}条成交, is_tradable={is_tradable}")
+        
+        return IntradayData(
+            symbol=symbol,
+            name=name,
+            current_price=round(current_price, 2),
+            yesterday_close=round(yesterday_close, 2),
+            change=round(change, 2),
+            change_percent=round(change_percent, 2),
+            ticks=ticks,
+            order_book_bids=order_book_bids,
+            order_book_asks=order_book_asks,
+            tickers=tickers_list,
+            trade_date=trade_date,
+            order_book_message=order_book_message,
+            tickers_message=tickers_message,
+            is_tradable=is_tradable
+        )
+    
+    def _generate_mock_order_book(self, current_price: float, batch_index: int = 0):
+        """
+        生成模拟盘口数据
+        
+        Args:
+            current_price: 当前价格
+            batch_index: 批次序号，用于生成不同的随机数据
+        """
+        import random
+        
+        # 🔧 使用批次序号作为种子，确保每个批次生成不同的盘口
+        random.seed(batch_index * 1000)
+        
+        order_book_bids = []
+        order_book_asks = []
+        
+        for i in range(1, 11):
+            order_book_bids.append(OrderBookLevel(
+                price=round(current_price - i * 0.01, 2),
+                volume=random.randint(1000, 10000)
+            ))
+            order_book_asks.append(OrderBookLevel(
+                price=round(current_price + i * 0.01, 2),
+                volume=random.randint(1000, 10000)
+            ))
+        
+        return order_book_bids, order_book_asks
+    
+    def _generate_mock_tickers(self, current_price: float, batch_index: int = 0, recent_ticks: list = None):
+        """
+        生成模拟成交明细
+        
+        Args:
+            current_price: 当前价格
+            batch_index: 批次序号，用于生成不同的随机数据
+            recent_ticks: 最近的tick数据，用于生成更真实的成交明细
+        """
+        import random
+        from datetime import datetime as dt, timedelta
+        
+        # 🔧 使用批次序号作为种子，确保每个批次生成不同的成交明细
+        random.seed(batch_index * 2000)
+        
+        tickers_list = []
+        
+        # 🔧 如果有最近的tick数据，基于它们生成成交明细
+        if recent_ticks and len(recent_ticks) > 0:
+            for i, tick in enumerate(reversed(recent_ticks[-20:])):  # 最多20条
+                tickers_list.append(TickerRecord(
+                    time=tick.time,
+                    price=tick.price,
+                    volume=random.randint(100, 500),  # 单笔成交量
+                    direction=random.choice(['buy', 'sell'])
+                ))
+        else:
+            # 如果没有tick数据，生成随机的成交明细
+            now = dt.now()
+            for i in range(20):
+                tick_time = now - timedelta(seconds=i * 5)
+                tickers_list.append(TickerRecord(
+                    time=tick_time.strftime('%H:%M:%S'),
+                    price=round(current_price + (random.random() - 0.5) * 0.2, 2),
+                    volume=random.randint(100, 2000),
+                    direction=random.choice(['buy', 'sell'])
+                ))
+        
+        return tickers_list
+    
+    def _fetch_realtime_order_book(self, symbol: str):
+        """
+        获取实时盘口数据（买卖五档）
+        
+        Args:
+            symbol: 证券代码（带后缀，如000300.SH）
+        
+        Returns:
+            (order_book_bids, order_book_asks): 买盘列表, 卖盘列表
+        
+        注意：
+        - 只在交易时间内调用此方法
+        - 非交易时间返回空列表
+        """
+        if not self.available or self.ak is None:
+            return [], []
+        
+        try:
+            # 转换symbol为AKShare格式（去掉后缀）
+            ak_symbol = symbol.split('.')[0]
+            
+            # 调用AKShare API获取实时盘口
+            df = self.ak.stock_bid_ask_em(symbol=ak_symbol)
+            
+            if df is None or df.empty:
+                logger.warning(f"无法获取盘口数据: {symbol}")
+                return [], []
+            
+            # 解析盘口数据（字段：buy_1~buy_5, sell_1~sell_5）
+            order_book_bids = []
+            order_book_asks = []
+            
+            # 买盘（buy_1是最高价）
+            for i in range(1, 6):
+                price_key = f'buy_{i}'
+                volume_key = f'buy_{i}_volume'
+                if price_key in df.columns and volume_key in df.columns:
+                    price = float(df[price_key].iloc[0])
+                    volume = int(df[volume_key].iloc[0])
+                    order_book_bids.append(OrderBookLevel(
+                        price=round(price, 2),
+                        volume=volume
+                    ))
+            
+            # 卖盘（sell_1是最低价）
+            for i in range(1, 6):
+                price_key = f'sell_{i}'
+                volume_key = f'sell_{i}_volume'
+                if price_key in df.columns and volume_key in df.columns:
+                    price = float(df[price_key].iloc[0])
+                    volume = int(df[volume_key].iloc[0])
+                    order_book_asks.append(OrderBookLevel(
+                        price=round(price, 2),
+                        volume=volume
+                    ))
+            
+            logger.debug(f"获取盘口数据成功: {len(order_book_bids)}个买盘, {len(order_book_asks)}个卖盘")
+            return order_book_bids, order_book_asks
+            
+        except Exception as e:
+            logger.warning(f"获取实时盘口失败: {e}")
+            return [], []
+    
+    def _fetch_realtime_tickers(self, symbol: str):
+        """
+        获取实时成交明细（逐笔成交）
+        
+        Args:
+            symbol: 证券代码（带后缀，如000300.SH）
+        
+        Returns:
+            tickers_list: 成交明细列表
+        
+        注意：
+        - 只在交易时间内调用此方法
+        - 非交易时间返回空列表
+        """
+        if not self.available or self.ak is None:
+            return []
+        
+        try:
+            # 转换symbol为AKShare格式（需要加市场前缀）
+            if symbol.endswith('.SH'):
+                ak_symbol = 'sh' + symbol.split('.')[0]
+            elif symbol.endswith('.SZ'):
+                ak_symbol = 'sz' + symbol.split('.')[0]
+            else:
+                ak_symbol = symbol
+            
+            # 调用AKShare API获取逐笔成交
+            df = self.ak.stock_zh_a_tick_tx_js(symbol=ak_symbol)
+            
+            if df is None or df.empty:
+                logger.warning(f"无法获取成交明细: {symbol}")
+                return []
+            
+            # 解析成交明细（字段：成交时间,成交价,价格变动,成交量,成交额,性质）
+            tickers_list = []
+            
+            # 只取最近20条
+            for _, row in df.head(20).iterrows():
+                time_str = str(row.get('成交时间', ''))  # HH:MM:SS
+                price = float(row.get('成交价', 0))
+                volume = int(row.get('成交量', 0))
+                nature = str(row.get('性质', ''))
+                
+                # 性质: '买盘' -> 'buy', '卖盘' -> 'sell', '中性盘' -> 'neutral'
+                if '买' in nature:
+                    direction = 'buy'
+                elif '卖' in nature:
+                    direction = 'sell'
+                else:
+                    direction = 'neutral'
+                
+                tickers_list.append(TickerRecord(
+                    time=time_str,
+                    price=round(price, 2),
+                    volume=volume,
+                    direction=direction
+                ))
+            
+            logger.debug(f"获取成交明细成功: {len(tickers_list)}条")
+            return tickers_list
+            
+        except Exception as e:
+            logger.warning(f"获取实时成交明细失败: {e}")
+            return []

@@ -113,7 +113,7 @@ def patch_yfinance(proxy_url=None):
                 f"Yahoo Finance: 代理 {proxy_url} 不可用，将使用直连\n"
                 f"建议: 1) 检查代理服务是否运行 (如 v2ray, clash)\n"
                 f"      2) 检查代理端口是否正确\n"
-                f"      3) 或将 data.yml 中 yahoo_finance.use_proxy 设为 false"
+                f"      3) 或将 data_provider.yml 中 yahoo_finance.use_proxy 设为 false"
             )
     
     _HTTP2_CLIENT = httpx.Client(**client_kwargs)

@@ -227,7 +227,7 @@ def main():
       • 验证代理：python core_bak_refactored/tests/manual/test_yahoo_proxy.py
    
    2. 简单方案：切换到 AKShare
-      • 修改 config/dev/data.yml
+      • 修改 config/dev/data_provider.yml
       • market_sources.US: akshare
         """)
     

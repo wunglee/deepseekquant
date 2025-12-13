@@ -471,6 +471,105 @@ class DataQualityAPIService:
                     'error_code': 'CHART_DATA_FETCH_FAILED'
                 }), 500
 
+        @self.app.route('/api/v1/intraday/data', methods=['GET'])
+        def get_intraday_data():
+            """获取分时图数据
+            
+            查询参数：
+                - symbol: 证券代码（必需）
+                - trade_date: 交易日期 YYYY-MM-DD（可选，默认为当前日期）
+                - batch_indices: 批次序号数组（JSON格式，如 [3,4,5]）
+                - timestamps: 时间戳数组（JSON格式，如 [1234567890, 1234567891, 1234567892]）
+            
+            返回示例：
+            {
+                "status": "success",
+                "data": {
+                    "symbol": "000001.SH",
+                    "name": "上证指数",
+                    "current_price": 3125.50,
+                    "yesterday_close": 3120.00,
+                    "change": 5.50,
+                    "change_percent": 0.18,
+                    "times": ["09:30", "09:31", ...],
+                    "prices": [3121.0, 3122.5, ...],
+                    "volumes": [12000, 15000, ...],
+                    "avg_prices": [3121.0, 3121.75, ...],
+                    "order_book": {
+                        "bids": [{"price": 3125.49, "volume": 2000}, ...],
+                        "asks": [{"price": 3125.51, "volume": 1800}, ...]
+                    },
+                    "tickers": [
+                        {"time": "14:59:50", "price": 3125.50, "volume": 100, "type": "buy"},
+                        ...
+                    ]
+                },
+                "timestamp": "2025-12-12T10:24:29.573456"
+            }
+            """
+            try:
+                symbol = request.args.get('symbol')
+                if not symbol:
+                    return jsonify({
+                        'status': 'error',
+                        'message': '缺少必需参数: symbol',
+                        'error_code': 'MISSING_PARAMETER'
+                    }), 400
+                
+                trade_date = request.args.get('trade_date')  # 可选
+                
+                # 🔧 解析批次序号数组和时间戳数组
+                import json
+                batch_indices_str = request.args.get('batch_indices', '[]')
+                timestamps_str = request.args.get('timestamps', '[]')
+                
+                try:
+                    batch_indices = json.loads(batch_indices_str)
+                    timestamps = json.loads(timestamps_str)
+                except json.JSONDecodeError as e:
+                    return jsonify({
+                        'status': 'error',
+                        'message': f'无效的JSON参数: {str(e)}',
+                        'error_code': 'INVALID_JSON'
+                    }), 400
+                
+                if not isinstance(batch_indices, list) or not isinstance(timestamps, list):
+                    return jsonify({
+                        'status': 'error',
+                        'message': 'batch_indices和timestamps必须是数组',
+                        'error_code': 'INVALID_PARAMETER_TYPE'
+                    }), 400
+                
+                if len(batch_indices) != len(timestamps):
+                    return jsonify({
+                        'status': 'error',
+                        'message': 'batch_indices和timestamps长度必须相同',
+                        'error_code': 'PARAMETER_LENGTH_MISMATCH'
+                    }), 400
+                
+                # 🔧 调用ChartDataAssembler的assemble_intraday_data方法
+                chart_assembler = self._create_chart_assembler(symbol, timeframe='daily')
+                intraday_data = chart_assembler.assemble_intraday_data(
+                    symbol=symbol,
+                    trade_date=trade_date,
+                    batch_indices=batch_indices,  # 🔧 传递批次序号数组
+                    timestamps=timestamps  # 🔧 传递时间戳数组
+                )
+                
+                return jsonify({
+                    'status': 'success',
+                    'data': intraday_data,
+                    'timestamp': datetime.now().isoformat()
+                })
+            
+            except Exception as e:
+                logger.error(f"获取分时数据失败: {e}", exc_info=True)
+                return jsonify({
+                    'status': 'error',
+                    'message': f'获取分时数据失败: {str(e)}',
+                    'error_code': 'INTRADAY_DATA_FAILED'
+                }), 500
+
         @self.app.route('/api/v1/config', methods=['GET', 'PUT'])
         def manage_config():
             """管理配置 - 使用核心层 ConfigManager"""
@@ -817,18 +916,18 @@ class DataQualityAPIService:
             try:
                 # 从配置文件读取真实配置
                 data_config = self.config_manager.get_data_config()
-                
+
                 # 市场列表（固定）
                 markets = [
-                    { 'code': 'CN', 'name': '中国 A股', 'icon': '🇨🇳' },
-                    { 'code': 'HK', 'name': '香港', 'icon': '🇭🇰' },
-                    { 'code': 'US', 'name': '美国', 'icon': '🇺🇸' },
-                    { 'code': 'EU', 'name': '欧洲', 'icon': '🇪🇺' },
-                    { 'code': 'JP', 'name': '日本', 'icon': '🇯🇵' },
-                    { 'code': 'SG', 'name': '新加坡', 'icon': '🇸🇬' }
+                    {'code': 'CN', 'name': '中国 A股', 'icon': '🇨🇳'},
+                    {'code': 'HK', 'name': '香港', 'icon': '🇭🇰'},
+                    {'code': 'US', 'name': '美国', 'icon': '🇺🇸'},
+                    {'code': 'EU', 'name': '欧洲', 'icon': '🇪🇺'},
+                    {'code': 'JP', 'name': '日本', 'icon': '🇯🇵'},
+                    {'code': 'SG', 'name': '新加坡', 'icon': '🇸🇬'}
                 ]
-                
-                # 从 data.yml 读取 providers 配置
+
+                # 从 data_provider.yml 读取 providers 配置
                 providers_raw = data_config.providers or []
                 
                 # 转换为前端需要的格式（过滤掉未实现的适配器）
@@ -1772,7 +1871,7 @@ class DataQualityAPIService:
                     logger.error(f"data_provider 不存在。quality_monitor 属性: {dir(self.quality_monitor)}")
                     return jsonify({
                         'status': 'error',
-                        'message': '数据提供者未初始化，请检查数据源配置（config/dev/data.yml）',
+                        'message': '数据提供者未初始化，请检查数据源配置（config/dev/data_provider.yml）',
                         'error_code': 'DATA_PROVIDER_NOT_FOUND',
                         'hint': '确保 primary_source 已配置且有效（如 tushare, yahoo, akshare）'
                     }), 503

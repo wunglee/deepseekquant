@@ -233,7 +233,7 @@ def main():
         print("⚠️ 代理未配置或不可用")
         print("   1. 检查代理服务是否运行 (如 v2ray, clash)")
         print("   2. 检查 config/dev/system.yml 中的代理地址")
-        print("   3. 或在 config/dev/data.yml 中设置 yahoo_finance.use_proxy: false")
+        print("   3. 或在 config/dev/data_provider.yml 中设置 yahoo_finance.use_proxy: false")
     elif not proxy_api_ok:
         print("⚠️ 代理可用但无法访问 Yahoo Finance")
         print("   1. 代理可能被 Yahoo 限流")

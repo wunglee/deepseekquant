@@ -67,7 +67,7 @@ class YahooFinanceDataProvider(BaseDataProvider, HistoricalDataProvider):
         # 从配置文件中获取代理配置
         config_manager = ConfigManager()
         
-        # 检查是否为 Yahoo Finance 启用代理（从 data.yml 读取）
+        # 检查是否为 Yahoo Finance 启用代理（从 data_provider.yml 读取）
         use_proxy = config_manager.get('data.data_providers.yahoo_finance.use_proxy', default=False)
         
         if use_proxy:
@@ -219,7 +219,7 @@ class YahooFinanceDataProvider(BaseDataProvider, HistoricalDataProvider):
                             f"Yahoo Finance 速率限制 ({ticker})\n"
                             f"建议: 1) 等待 5-10 分钟后重试\n"
                             f"      2) 或使用其他数据源 (AKShare/Tushare)\n"
-                            f"      3) 或在 data.yml 中启用代理: yahoo_finance.use_proxy: true"
+                            f"      3) 或在 data_provider.yml 中启用代理: yahoo_finance.use_proxy: true"
                         )
                 
                 if attempt == max_retries:
@@ -312,6 +312,27 @@ class YahooFinanceDataProvider(BaseDataProvider, HistoricalDataProvider):
         except Exception as e:
             logger.error(f"Failed to fetch data for {stock_id}: {e}")
             raise ValueError(f"Failed to fetch data for {stock_id}: {str(e)}")
+    
+    def _fetch_from_external_api(self, symbol: str, start_date: str, end_date: str) -> PriceData:
+        """
+        从 Yahoo Finance API 获取数据（实现基类抽象方法）
+        
+        💚 此方法由 BaseDataProvider._get_with_cache() 调用
+        💚 三层缓存逻辑在基类中已实现，子类只需实现外部API调用
+        
+        Args:
+            symbol: 证券代码（如 "^GSPC", "AAPL"）
+            start_date: 开始日期 (YYYY-MM-DD)
+            end_date: 结束日期 (YYYY-MM-DD)
+        
+        Returns:
+            PriceData: 标准化的价格数据
+        """
+        # 判断是指数还是个股（以 ^ 开头的是指数）
+        if symbol.startswith('^'):
+            return self.get_index_prices(symbol, start_date, end_date)
+        else:
+            return self.get_stock_prices(symbol, start_date, end_date)
     
     def _standardize_format(self, data: pd.DataFrame, symbol: str) -> PriceData:
         """
