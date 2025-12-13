@@ -229,39 +229,9 @@
             <!-- 中部：K线（含MA5/MA10/MA20 + 事件标注） -->
             <div id="klineChart" style="height:420px;"></div>
             
-            <!-- 分时图容器（默认隐藏） -->
+            <!-- 分时图容器（默认隐藏，由 intraday_chart.js 动态重建布局） -->
             <div id="intradayContainer" style="display:none; width:100%; overflow:visible; min-height: 450px;">
-                <div id="intradayGrid" style="display:grid; grid-template-columns: 2fr 1fr; gap:12px; width:100%;">
-                    <!-- 左侧：分时曲线+成交量容器（保证上下对齐） -->
-                    <div id="intradayChartsContainer" style="min-width:0; overflow:hidden; display:flex; flex-direction:column;">
-                        <div id="intradayPriceChart" style="height:280px; width:100%;"></div>
-                        <div id="intradayVolumeChart" style="height:140px; width:100%; margin-top:8px;"></div>
-                    </div>
-                    <!-- 右侧：挂单+成交明细（股票时显示，指数时隐藏） -->
-                    <div id="intradaySidePanel" style="display:none; min-width:0; overflow:hidden;">
-                        <div id="orderBookContainer" style="height:280px; border:1px solid #e5e7eb; border-radius:6px; padding:8px; overflow-y:auto;">
-                            <div style="font-size:12px; font-weight:600; margin-bottom:8px; color:#374151;">买卖盘口</div>
-                            <table id="orderBookTable" style="width:100%; font-size:11px;">
-                                <thead style="background:#f9fafb;">
-                                    <tr>
-                                        <th style="padding:4px; text-align:left; width:25%;"></th>
-                                        <th style="padding:4px; text-align:center; width:40%;">价格</th>
-                                        <th style="padding:4px; text-align:right; width:35%;">数量</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="orderBookBody">
-                                    <!-- 动态填充 -->
-                                </tbody>
-                            </table>
-                        </div>
-                        <div id="tickerContainer" style="height:140px; margin-top:8px; border:1px solid #e5e7eb; border-radius:6px; padding:8px; overflow-y:auto;">
-                            <div style="font-size:12px; font-weight:600; margin-bottom:8px; color:#374151;">成交明细</div>
-                            <div id="tickerList" style="font-size:11px;">
-                                <!-- 动态滚动显示 -->
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                <!-- 布局将由 IntradayChart.rebuildLayout() 动态生成 -->
             </div>
 
             <!-- 技术指标区域 -->
@@ -1045,7 +1015,10 @@ function selectIndex(item) {
     // 🔧 关键修复：如果当前是分时图模式，彻底重建布局并加载新数据
     if (currentChartType === 'intraday') {
         // 🔥 使用独立模块的重建函数（连根拔起，彻底重建）
-        const isStock = !item.id.startsWith('index_')  // 判断是否是股票
+        // 判断是否是指数：优先看 type 属性，其次看是否是常见指数代码
+        const isIndex = item.type === 'index'
+        const isStock = !isIndex
+        console.log(`🔍 selectIndex: item.id=${item.id}, item.type=${item.type}, isIndex=${isIndex}, isStock=${isStock}`)
         IntradayChart.rebuildLayout(isStock)
         
         // 加载新股票的分时数据
@@ -2456,20 +2429,13 @@ function loadIntradayData(symbol, isInitial = true) {
                 
                 renderIntradayCharts(res.data)
                 
-                // 🔧 根据 is_tradable 决定布局：指数全宽，股票分栏
-                const intradayGrid = document.getElementById('intradayGrid')
-                const intradaySidePanel = document.getElementById('intradaySidePanel')
-                
+                // 🔧 如果是股票，更新盘口和成交明细（等待DOM渲染完成）
                 if (res.data.is_tradable) {
-                    // 股票：显示盘口和成交明细，分栏布局 (2fr 1fr)
-                    if (intradayGrid) intradayGrid.style.gridTemplateColumns = '2fr 1fr'
-                    if (intradaySidePanel) intradaySidePanel.style.display = 'block'
-                    updateOrderBook(res.data.order_book)
-                    updateTicker(res.data.tickers)
-                } else {
-                    // 指数：隐藏盘口和成交明细，全宽布局 (1fr)
-                    if (intradayGrid) intradayGrid.style.gridTemplateColumns = '1fr'
-                    if (intradaySidePanel) intradaySidePanel.style.display = 'none'
+                    // 使用 setTimeout 确保DOM元素已经完全创建
+                    setTimeout(() => {
+                        updateOrderBook(res.data.order_book)
+                        updateTicker(res.data.tickers)
+                    }, 50)
                 }
                 
                 // 🔧 布局变化后，需要 resize 图表
@@ -2888,6 +2854,10 @@ function updateOrderBook(orderBook) {
     if (!orderBook) return
     
     const tbody = document.getElementById('orderBookBody')
+    if (!tbody) {
+        console.warn('⚠️ orderBookBody 元素不存在，跳过盘口更新（可能是指数布局）')
+        return
+    }
     tbody.innerHTML = ''
     
     // 🔧 使用后端返回的提示信息（而非前端判断）
@@ -2945,6 +2915,10 @@ function updateTicker(tickersData) {
     if (!tickersData) return
     
     const container = document.getElementById('tickerList')
+    if (!container) {
+        console.warn('⚠️ tickerList 元素不存在，跳过成交明细更新（可能是指数布局）')
+        return
+    }
     
     // 🔧 从新的数据结构中获取tickers和message
     const tickers = tickersData.items || []
