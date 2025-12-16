@@ -355,6 +355,7 @@ class DataQualityAPIService:
                 - before: 获取此日期之前的数据（YYYY-MM-DD，可选）
                 - indicators: 需要的指标，逗号分隔（默认 'all'）
                                支持: vol, macd, rsi, kdj, obv
+                - use_mock: 是否使用模拟数据（true/false，默认 false）
             
             返回示例：
             {
@@ -408,6 +409,7 @@ class DataQualityAPIService:
                 count = request.args.get('count', 120, type=int)
                 before = request.args.get('before')  # 可选
                 indicators = request.args.get('indicators', 'all')
+                use_mock = request.args.get('use_mock', 'false').lower() in ['true', '1', 'yes']
                 
                 # 参数验证
                 if period not in ['daily', 'weekly', 'monthly']:
@@ -424,8 +426,33 @@ class DataQualityAPIService:
                         'error_code': 'INVALID_COUNT'
                     }), 400
                 
-                # 调用组装器（动态创建）
-                chart_assembler = self._create_chart_assembler(index_id, timeframe=period)
+                # 🔧 根据use_mock参数选择数据源
+                if use_mock:
+                    logger.info(f"🎭 使用模拟数据源: {index_id}")
+                    # 使用MockDataProvider
+                    from core_bak_refactored.core.data.providers.mock_provider import MockDataProvider
+                    from core_bak_refactored.core.signal.indicator_service import TechnicalIndicators
+                    from core_bak_refactored.core.share.market import MarketUtils
+                    
+                    mock_provider = MockDataProvider()
+                    
+                    # 创建指标服务（与真实模式相同）
+                    market_code = MarketUtils.infer_market_from_symbol(index_id)
+                    market = market_code.value
+                    indicator_service = TechnicalIndicators(market=market, timeframe=period)
+                    
+                    # 创建使用Mock Provider的chart_assembler
+                    from core_bak_refactored.app.quality_monitoring.api.chart_data import ChartDataAssembler
+                    chart_assembler = ChartDataAssembler(
+                        data_provider=mock_provider,
+                        indicator_service=indicator_service
+                    )
+                else:
+                    logger.info(f"🎯 使用真实数据源: {index_id}")
+                    # 使用真实Provider（原有逻辑）
+                    chart_assembler = self._create_chart_assembler(index_id, timeframe=period)
+                
+                # 调用组装器
                 chart_data = chart_assembler.assemble_chart_data(
                     index_id=index_id,
                     period=period,
@@ -442,7 +469,8 @@ class DataQualityAPIService:
                         'period': period,
                         'count': len(chart_data.get('kline', [])),
                         'indicators': list(chart_data.get('indicators', {}).keys()),
-                        'events_count': len(chart_data.get('events', []))
+                        'events_count': len(chart_data.get('events', [])),
+                        'use_mock': use_mock
                     },
                     'timestamp': datetime.now().isoformat()
                 })
@@ -473,13 +501,11 @@ class DataQualityAPIService:
 
         @self.app.route('/api/v1/intraday/data', methods=['GET'])
         def get_intraday_data():
-            """获取分时图数据
+            """获取分时图数据（真实数据）
             
             查询参数：
                 - symbol: 证券代码（必需）
-                - trade_date: 交易日期 YYYY-MM-DD（可选，默认为当前日期）
-                - batch_indices: 批次序号数组（JSON格式，如 [3,4,5]）
-                - timestamps: 时间戳数组（JSON格式，如 [1234567890, 1234567891, 1234567892]）
+                - tick_range: TickRange JSON（可选）
             
             返回示例：
             {
@@ -499,7 +525,7 @@ class DataQualityAPIService:
                         "bids": [{"price": 3125.49, "volume": 2000}, ...],
                         "asks": [{"price": 3125.51, "volume": 1800}, ...]
                     },
-                    "tickers": [
+                    "trade_records": [
                         {"time": "14:59:50", "price": 3125.50, "volume": 100, "type": "buy"},
                         ...
                     ]
@@ -516,44 +542,47 @@ class DataQualityAPIService:
                         'error_code': 'MISSING_PARAMETER'
                     }), 400
                 
-                trade_date = request.args.get('trade_date')  # 可选
-                
-                # 🔧 解析批次序号数组和时间戳数组
+                # 解析 tick_range（可选）
                 import json
-                batch_indices_str = request.args.get('batch_indices', '[]')
-                timestamps_str = request.args.get('timestamps', '[]')
+                tick_range_str = request.args.get('tick_range')
+                tick_range = None
                 
-                try:
-                    batch_indices = json.loads(batch_indices_str)
-                    timestamps = json.loads(timestamps_str)
-                except json.JSONDecodeError as e:
-                    return jsonify({
-                        'status': 'error',
-                        'message': f'无效的JSON参数: {str(e)}',
-                        'error_code': 'INVALID_JSON'
-                    }), 400
+                if tick_range_str:
+                    try:
+                        tick_range_dict = json.loads(tick_range_str)
+                        
+                        # 验证字段
+                        required_fields = ['start_time', 'end_time', 'period_seconds']
+                        for field in required_fields:
+                            if field not in tick_range_dict:
+                                return jsonify({
+                                    'status': 'error',
+                                    'message': f'tick_range缺少字段: {field}',
+                                    'error_code': 'INVALID_TICK_RANGE'
+                                }), 400
+                        
+                        # 转换为 TickRange 对象
+                        from core_bak_refactored.core.data.providers.protocols import TickRange
+                        import pandas as pd
+                        tick_range = TickRange(
+                            start_time=pd.Timestamp(tick_range_dict['start_time']),
+                            end_time=pd.Timestamp(tick_range_dict['end_time']),
+                            period_seconds=int(tick_range_dict['period_seconds'])
+                        )
+                    except (json.JSONDecodeError, ValueError) as e:
+                        return jsonify({
+                            'status': 'error',
+                            'message': f'解析tick_range失败: {str(e)}',
+                            'error_code': 'INVALID_TICK_RANGE_FORMAT'
+                        }), 400
                 
-                if not isinstance(batch_indices, list) or not isinstance(timestamps, list):
-                    return jsonify({
-                        'status': 'error',
-                        'message': 'batch_indices和timestamps必须是数组',
-                        'error_code': 'INVALID_PARAMETER_TYPE'
-                    }), 400
+                # 📊 真实模式：调用 ChartDataAssembler（会调用 akshare_provider）
+                logger.info(f"📊 真实模式: symbol={symbol}, tick_range={'已提供' if tick_range else '未提供'}")
                 
-                if len(batch_indices) != len(timestamps):
-                    return jsonify({
-                        'status': 'error',
-                        'message': 'batch_indices和timestamps长度必须相同',
-                        'error_code': 'PARAMETER_LENGTH_MISMATCH'
-                    }), 400
-                
-                # 🔧 调用ChartDataAssembler的assemble_intraday_data方法
                 chart_assembler = self._create_chart_assembler(symbol, timeframe='daily')
                 intraday_data = chart_assembler.assemble_intraday_data(
                     symbol=symbol,
-                    trade_date=trade_date,
-                    batch_indices=batch_indices,  # 🔧 传递批次序号数组
-                    timestamps=timestamps  # 🔧 传递时间戳数组
+                    tick_range=tick_range
                 )
                 
                 return jsonify({
@@ -562,12 +591,174 @@ class DataQualityAPIService:
                     'timestamp': datetime.now().isoformat()
                 })
             
+            except ValueError as e:
+                # 数据验证错误（如盘后数据不完整），返回400
+                logger.warning(f"数据验证失败: {e}")
+                return jsonify({
+                    'status': 'error',
+                    'message': str(e),
+                    'error_code': 'DATA_VALIDATION_FAILED'
+                }), 400
+            
             except Exception as e:
                 logger.error(f"获取分时数据失败: {e}", exc_info=True)
                 return jsonify({
                     'status': 'error',
                     'message': f'获取分时数据失败: {str(e)}',
                     'error_code': 'INTRADAY_DATA_FAILED'
+                }), 500
+
+        @self.app.route('/api/v1/intraday/mock', methods=['GET'])
+        def get_intraday_mock():
+            """获取模拟分时图数据
+            
+            查询参数：
+                - symbol: 证券代码（必需）
+                - trading_phase: 交易时段（'trading'/'before_open'/'after_close'，必需）- 模拟场景由前端按钮控制
+                - tick_range: TickRange JSON（可选）
+                - last_price: 上次请求的最终价格，用于保证价格连续性（可选）
+            
+            🔧 注意：服务器根据 trading_phase 决定返回 should_poll，前端只依赖 should_poll 控制行为
+            """
+            from core_bak_refactored.core.share.market.market_enums import TradingPhase
+            
+            try:
+                symbol = request.args.get('symbol')
+                if not symbol:
+                    return jsonify({
+                        'status': 'error',
+                        'message': '缺少必需参数: symbol',
+                        'error_code': 'MISSING_PARAMETER'
+                    }), 400
+                
+                trading_phase_str = request.args.get('trading_phase')
+                if not trading_phase_str:
+                    return jsonify({
+                        'status': 'error',
+                        'message': '缺少必需参数: trading_phase',
+                        'error_code': 'MISSING_PARAMETER'
+                    }), 400
+                
+                # 验证 trading_phase
+                valid_modes = ['trading', 'before_open', 'after_close']
+                if trading_phase_str not in valid_modes:
+                    return jsonify({
+                        'status': 'error',
+                        'message': f'trading_phase必须是{valid_modes}之一',
+                        'error_code': 'INVALID_TRADING_PHASE'
+                    }), 400
+                
+                # 转换为枚举
+                trading_phase = TradingPhase.parse(trading_phase_str)
+                
+                # 解析 last_price
+                last_price_str = request.args.get('last_price')
+                last_price = None
+                if last_price_str:
+                    try:
+                        last_price = float(last_price_str)
+                    except ValueError:
+                        return jsonify({
+                            'status': 'error',
+                            'message': f'last_price必须是数字: {last_price_str}',
+                            'error_code': 'INVALID_LAST_PRICE'
+                        }), 400
+                
+                # 解析 tick_range
+                import json
+                tick_range_str = request.args.get('tick_range')
+                tick_range = None
+                
+                if tick_range_str:
+                    try:
+                        tick_range_dict = json.loads(tick_range_str)
+                        
+                        # 验证字段
+                        required_fields = ['start_time', 'end_time', 'period_seconds']
+                        for field in required_fields:
+                            if field not in tick_range_dict:
+                                return jsonify({
+                                    'status': 'error',
+                                    'message': f'tick_range缺少字段: {field}',
+                                    'error_code': 'INVALID_TICK_RANGE'
+                                }), 400
+                        
+                        # 转换为 TickRange 对象
+                        from core_bak_refactored.core.data.providers.protocols import TickRange
+                        import pandas as pd
+                        tick_range = TickRange(
+                            start_time=pd.Timestamp(tick_range_dict['start_time']),
+                            end_time=pd.Timestamp(tick_range_dict['end_time']),
+                            period_seconds=int(tick_range_dict['period_seconds'])
+                        )
+                    except (json.JSONDecodeError, ValueError) as e:
+                        return jsonify({
+                            'status': 'error',
+                            'message': f'解析tick_range失败: {str(e)}',
+                            'error_code': 'INVALID_TICK_RANGE_FORMAT'
+                        }), 400
+                
+                logger.info(f"🎮 模拟模式: symbol={symbol}, trading_phase={trading_phase_str}(前端按钮控制), tick_range={'已提供' if tick_range else '未提供'}")
+                
+                # 直接调用 MockDataProvider
+                from core_bak_refactored.core.data.providers.mock_provider import MockDataProvider
+                
+                generator = MockDataProvider()
+                
+                # 判断是否为指数
+                is_index = symbol in ['000001.SH', '000300.SH', '399001.SZ', '399006.SZ']
+                
+                # 使用系统当前日期
+                trade_date = datetime.now().strftime('%Y-%m-%d')
+                
+                # tick_range 由前端直接传入，不需要转换
+                
+                mock_data = generator.generate(
+                    symbol=symbol,
+                    trade_date=trade_date,
+                    tick_range=tick_range,
+                    trading_phase=trading_phase,
+                    last_price=last_price,
+                    is_index=is_index
+                )
+                
+                # 转换为前端需要的格式
+                intraday_data = {
+                    'symbol': mock_data.symbol,
+                    'name': mock_data.name,
+                    'current_price': mock_data.current_price,
+                    'yesterday_close': mock_data.yesterday_close,
+                    'change': mock_data.change,
+                    'change_percent': mock_data.change_percent,
+                    'times': [tick.time for tick in mock_data.ticks],
+                    'prices': [tick.price for tick in mock_data.ticks],
+                    'volumes': [tick.volume for tick in mock_data.ticks],
+                    'avg_prices': [tick.avg_price for tick in mock_data.ticks],
+                    'order_book': {
+                        'bids': [{'price': level.price, 'volume': level.volume} for level in mock_data.order_book_bids],
+                        'asks': [{'price': level.price, 'volume': level.volume} for level in mock_data.order_book_asks],
+                        'message': mock_data.order_book_message
+                    },
+                    'trade_records': {
+                        'items': [{'time': t.time, 'price': t.price, 'volume': t.volume, 'type': t.direction} for t in mock_data.trade_records],
+                        'message': mock_data.trade_records_message
+                    },
+                    'is_index': mock_data.is_index,
+                    'should_poll': mock_data.should_poll  # 🔧 服务器根据 trading_phase 决定，前端只依赖此字段控制行为
+                }
+                
+                return jsonify({
+                    'status': 'success',
+                    'data': intraday_data,
+                    'timestamp': datetime.now().isoformat()
+                })
+            
+            except Exception as e:
+                logger.error(f"获取模拟分时数据失败: {e}", exc_info=True)
+                return jsonify({
+                    'status': 'error',
+                    'message': f'获取模拟分时数据失败: {str(e)}',
+                    'error_code': 'INTRADAY_MOCK_FAILED'
                 }), 500
 
         @self.app.route('/api/v1/config', methods=['GET', 'PUT'])
@@ -2070,6 +2261,149 @@ class DataQualityAPIService:
             except Exception as e:
                 logger.error(f"获取K线数据失败: {e}")
                 return jsonify({'status': 'error', 'message': str(e), 'error_code': 'KLINE_FETCH_FAILED'}), 500
+
+        # 🆕 新增：实时K线柱数据（用于盘前/盘中实时更新当天K线）
+        # 🔧 Mock模式实时K线缓存（在全局范围维护）
+        mock_realtime_cache = {}
+        
+        # 模拟模式端点
+        @self.app.route('/api/v1/data/kline/realtime/mock')
+        def get_realtime_kline_mock():
+            """
+            获取当天K线柱的实时数据（模拟模式，独立于分时图）
+            
+            参数：
+                index_id: 证券代码
+                trading_phase: 交易时段 (BEFORE_OPEN, TRADING, AFTER_CLOSE) - 用于模拟控制
+                trade_date: 交易日期 (YYYY-MM-DD)，默认今天
+                is_index: 是否为指数，默认false
+            
+            返回：
+                {
+                    status: 'success',
+                    data: {
+                        date: 'YYYY-MM-DD',
+                        open: float,
+                        high: float,
+                        low: float,
+                        close: float,
+                        volume: int,
+                        trading_phase: str,  # 交易时段
+                        should_poll: bool  # 服务器根据 trading_phase 决定
+                    },
+                    timestamp: str
+                }
+            """
+            try:
+                index_id = request.args.get('index_id', type=str)
+                if not index_id:
+                    return jsonify({'status': 'error', 'message': '缺少index_id', 'error_code': 'MISSING_PARAMS'}), 400
+                
+                # 🔧 获取前端传入的trading_phase参数（用于模拟控制）
+                from core_bak_refactored.core.share.market.market_enums import TradingPhase
+                from core_bak_refactored.core.share.market.market_utils import MarketUtils
+                
+                trading_phase_str = request.args.get('trading_phase', 'TRADING')  # 默认盘中
+                try:
+                    trading_phase = TradingPhase[trading_phase_str.upper()]  # 转为枚举
+                except KeyError:
+                    return jsonify({
+                        'status': 'error', 
+                        'message': f'无效的trading_phase: {trading_phase_str}，允许值: BEFORE_OPEN, TRADING, AFTER_CLOSE',
+                        'error_code': 'INVALID_TRADING_PHASE'
+                    }), 400
+                
+                trade_date = request.args.get('trade_date', datetime.now().strftime('%Y-%m-%d'))
+                is_index_str = request.args.get('is_index', 'false').lower()
+                is_index = is_index_str in ['true', '1', 'yes']
+                
+                from core_bak_refactored.core.data.providers.mock_provider import MockDataProvider
+                
+                # 🔧 从缓存中获取历史数据
+                nonlocal mock_realtime_cache
+                cache_key = f"{index_id}_{trade_date}"
+                cached = mock_realtime_cache.get(cache_key)
+                
+                # 🔧 调用领域层，显式传入参数（包括cached）
+                provider = MockDataProvider()
+                result = provider.get_realtime_kline(
+                    symbol=index_id,
+                    trade_date=trade_date,
+                    trading_phase=trading_phase,
+                    is_index=is_index,
+                    cached=cached  # 🔧 传入缓存，用于维护历史极值
+                )
+                
+                # 🔧 更新缓存（保存open/high/low/volume用于下次调用）
+                mock_realtime_cache[cache_key] = {
+                    'open': result['open'],
+                    'high': result['high'],
+                    'low': result['low'],
+                    'volume': result['volume']
+                }
+                
+                return jsonify({
+                    'status': 'success',
+                    'data': result,
+                    'timestamp': datetime.now().isoformat()
+                })
+                
+            except Exception as e:
+                logger.error(f"处理模拟实时K线请求失败: {e}")
+                import traceback
+                traceback.print_exc()
+                return jsonify({'status': 'error', 'message': str(e), 'error_code': 'MOCK_REALTIME_KLINE_FAILED'}), 500
+        
+        # 真实模式端点
+        @self.app.route('/api/v1/data/kline/realtime')
+        def get_realtime_kline():
+            """
+            获取当天K线柱的实时数据（真实模式，独立于分时图）
+            
+            参数：
+                index_id: 证券代码
+            
+            返回：
+                {
+                    status: 'success',
+                    data: {
+                        date: 'YYYY-MM-DD',
+                        open: float,
+                        high: float,
+                        low: float,
+                        close: float,
+                        volume: int,
+                        should_poll: bool  # 服务器根据 trading_phase 决定，前端只依赖此字段控制行为
+                    },
+                    timestamp: str
+                }
+            """
+            try:
+                index_id = request.args.get('index_id', type=str)
+                if not index_id:
+                    return jsonify({'status': 'error', 'message': '缺少index_id', 'error_code': 'MISSING_PARAMS'}), 400
+                
+                provider = getattr(self.quality_monitor, 'data_provider', None)
+                if not provider:
+                    return jsonify({'status': 'error', 'message': '数据提供者不可用', 'error_code': 'DATA_PROVIDER_UNAVAILABLE'}), 503
+                
+                try:
+                    # 🔧 直接调用领域层，所有逻辑由领域层处理
+                    result = provider.get_realtime_kline(symbol=index_id)
+                    
+                    return jsonify({
+                        'status': 'success',
+                        'data': result,
+                        'timestamp': datetime.now().isoformat()
+                    })
+                    
+                except Exception as e:
+                    logger.error(f"获取实时K线失败: {e}")
+                    return jsonify({'status': 'error', 'message': str(e), 'error_code': 'REALTIME_KLINE_FETCH_FAILED'}), 500
+                    
+            except Exception as e:
+                logger.error(f"处理实时K线请求失败: {e}")
+                return jsonify({'status': 'error', 'message': str(e), 'error_code': 'REALTIME_KLINE_REQUEST_FAILED'}), 500
 
         # ============================================================
         # 错误处理中间件

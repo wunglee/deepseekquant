@@ -176,7 +176,7 @@ done
 #### 步骤 1：修改配置
 
 ```yaml
-# config/dev/data.yml
+# config/dev/data_provider.yml
 
 # 将所有市场切换到 AKShare
 market_sources:

@@ -23,7 +23,7 @@ from datetime import datetime
 from typing import Dict, Any, List, Optional
 import pandas as pd
 import numpy as np
-from core_bak_refactored.core.data.providers.protocols import PriceData, OHLCVRecord
+from core_bak_refactored.core.data.providers.protocols import PriceData, OHLCVRecord, TickRange
 
 logger = logging.getLogger('DeepSeekQuant.App.API.ChartData')
 
@@ -101,7 +101,19 @@ class ChartDataAssembler:
                 key: value[-count:] if len(value) > count else value
                 for key, value in indicators_data_full.items()
             }
-            logger.info(f"裁剪后的数据: kline={len(kline_with_ma)} 条, 指标每个约{len(next(iter(indicators_data.values()), []))} 条")
+            
+            # 🔧 添加详细日志，诊断数据不一致问题
+            logger.info(f"裁剪后的数据: kline={len(kline_with_ma)} 条")
+            for key, value in indicators_data.items():
+                logger.info(f"  - {key}: {len(value)} 条")
+            
+            # 🔧 验证数据一致性
+            vol_count = len(indicators_data.get('vol', []))
+            if vol_count != len(kline_with_ma):
+                logger.error(f"⚠️ 数据不一致！kline={len(kline_with_ma)}, vol={vol_count}")
+                logger.error(f"  - kline_with_ma_full 长度: {len(kline_with_ma_full)}")
+                logger.error(f"  - indicators_data_full['vol'] 长度: {len(indicators_data_full.get('vol', []))}")
+                logger.error(f"  - 请求的 count: {count}")
             
             # 3. 检测市场事件（只在请求的范围内，使用裁剪后的 PriceData）
             logger.info("步骤3: 检测市场事件...")
@@ -556,17 +568,13 @@ class ChartDataAssembler:
                 break
         return count
     
-    def assemble_intraday_data(self, symbol: str, trade_date: Optional[str] = None, 
-                              batch_indices: Optional[List[int]] = None, 
-                              timestamps: Optional[List[int]] = None) -> Dict[str, Any]:
+    def assemble_intraday_data(self, symbol: str, tick_range: Optional['TickRange'] = None) -> Dict[str, Any]:
         """
-        组装分时图数据
+        组装分时图数据 - 仅负责真实数据
         
         Args:
             symbol: 证券代码
-            trade_date: 交易日期（默认为当前日期）
-            batch_indices: 批次序号数组（如 [3, 4, 5]）
-            timestamps: 时间戳数组（如 [1234567890, 1234567891, 1234567892]）
+            tick_range: Tick数据时间范围（可选）
         
         Returns:
             {
@@ -584,19 +592,15 @@ class ChartDataAssembler:
                     'bids': List[{'price': float, 'volume': int}],
                     'asks': List[{'price': float, 'volume': int}]
                 },
-                'tickers': List[{'time': str, 'price': float, 'volume': int, 'type': str}]
+                'trade_records': List[{'time': str, 'price': float, 'volume': int, 'type': str}],
+                'should_poll': bool  # 🔧 是否应该轮询
             }
         """
         try:
-            logger.info(f"开始组装分时数据: symbol={symbol}, trade_date={trade_date}, batch_indices={batch_indices}")
+            logger.info(f"开始组装分时数据: symbol={symbol}, tick_range={tick_range}")
             
             # 🔧 获取分时数据（调用DataProvider的get_intraday_data接口）
-            intraday_data = self._data_provider.get_intraday_data(
-                symbol, 
-                trade_date, 
-                batch_indices=batch_indices,
-                timestamps=timestamps
-            )
+            intraday_data = self._data_provider.get_intraday_data(symbol)
             
             # 转换为前端需要的格式
             times = [tick.time for tick in intraday_data.ticks]
@@ -612,17 +616,17 @@ class ChartDataAssembler:
                 'message': intraday_data.order_book_message  # 🔧 添加后端提示信息
             }
             
-            tickers = [{
-                'time': ticker.time,
-                'price': ticker.price,
-                'volume': ticker.volume,
-                'type': ticker.direction
-            } for ticker in intraday_data.tickers]
+            trade_records = [{
+                'time': trade_record.time,
+                'price': trade_record.price,
+                'volume': trade_record.volume,
+                'type': trade_record.direction
+            } for trade_record in intraday_data.trade_records]
             
             # 🔧 如果tickers为空，添加message字段
             tickers_data = {
-                'items': tickers,
-                'message': intraday_data.tickers_message  # 🔧 添加后端提示信息
+                'items': trade_records,
+                'message': intraday_data.trade_records_message  # 🔧 添加后端提示信息
             }
             
             result = {
@@ -637,17 +641,23 @@ class ChartDataAssembler:
                 'volumes': volumes,
                 'avg_prices': avg_prices,
                 'order_book': order_book,
-                'tickers': tickers_data,  # 🔧 使用新的tickers_data结构
-                'is_tradable': intraday_data.is_tradable  # 🔧 添加可交易标识
+                'trade_records': tickers_data,  # 🔧 使用新的tickers_data结构
+                'is_index': intraday_data.is_index,  # 🔧 是否为指数（True=指数不可交易，False=个股可交易）
+                'should_poll': intraday_data.should_poll  # 🔧 服务器根据 trading_phase 决定，前端只依赖此字段控制行为
             }
             
-            logger.info(f"分时数据组装完成: times={len(times)}, order_book_bids={len(order_book['bids'])}, tickers={len(tickers)}")
+            logger.info(f"分时数据组装完成: times={len(times)}, order_book_bids={len(order_book['bids'])}, trade_records={len(trade_records)}")
             return result
+        
+        except ValueError as e:
+            # 数据验证错误（如盘后数据不完整），直接向上抛出
+            logger.warning(f"分时数据验证失败: {e}")
+            raise  # 不要包装，直接抛出
         
         except Exception as e:
             logger.error(f"组装分时数据失败: {e}", exc_info=True)
             logger.error(f"  - symbol: {symbol}")
-            logger.error(f"  - trade_date: {trade_date}")
+            logger.error(f"  - tick_range: {tick_range}")
             logger.error(f"  - 错误类型: {type(e).__name__}")
             logger.error(f"  - 错误详情: {str(e)}")
             raise RuntimeError(f"分时数据组装失败: {str(e)}") from e

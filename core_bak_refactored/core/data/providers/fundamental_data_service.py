@@ -56,11 +56,11 @@ class FundamentalDataService:
     async def _get_yahoo_fundamentals(self, symbol: str) -> Dict[str, Any]:
         """从Yahoo Finance获取基本面数据"""
         import yfinance as yf
-        ticker = yf.Ticker(symbol)
-        info = ticker.info
-        financials = ticker.financials
-        balance_sheet = ticker.balance_sheet
-        cash_flow = ticker.cashflow
+        trade_record = yf.Ticker(symbol)
+        info = trade_record.info
+        financials = trade_record.financials
+        balance_sheet = trade_record.balance_sheet
+        cash_flow = trade_record.cashflow
         return {
             'company_name': info.get('longName'),
             'sector': info.get('sector'),

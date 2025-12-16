@@ -505,3 +505,52 @@ class ConfigManager:
         config_path = os.path.join(env_dir if os.path.exists(env_dir) else base_dir, config_file)
         
         return config_path
+    
+    def get_trading_hours(self, market_code: MarketCode) -> dict:
+        """获取市场交易时段配置
+        
+        Args:
+            market_code: 市场代码枚举 (MarketCode.CN/HK/US/EU/JP/SG)
+        
+        Returns:
+            dict: {
+                'open': '开盘时间 HH:MM',
+                'close': '收盘时间 HH:MM',
+                'lunch_start': '午休开始 HH:MM' (optional),
+                'lunch_end': '午休结束 HH:MM' (optional),
+                'has_lunch_break': bool,
+                'timezone': '时区'
+            }
+        
+        Examples:
+            >>> config_manager = ConfigManager()
+            >>> config_manager.get_trading_hours(MarketCode.CN)
+            {'open': '09:30', 'close': '15:00', 'lunch_start': '11:30', 'lunch_end': '13:00', 'has_lunch_break': True, 'timezone': 'Asia/Shanghai'}
+        
+        Note:
+            配置从 market.yml 的 trading_hours 字段读取
+        """
+        # 默认配置（A股）
+        default_hours = {
+            'open': '09:30',
+            'close': '15:00',
+            'lunch_start': '11:30',
+            'lunch_end': '13:00',
+            'has_lunch_break': True,
+            'timezone': 'Asia/Shanghai'
+        }
+        
+        # 🔧 确保smarket_code是MarketCode枚举
+        if not isinstance(market_code, MarketCode):
+            logger.warning(f"market_code应为MarketCode枚举，当前类型: {type(market_code)}，尝试解析")
+            market_code = MarketCode.parse(market_code)
+        
+        market_config = self._config.get('market', {})
+        trading_hours = market_config.get('trading_hours', {})
+        market_hours = trading_hours.get(market_code.value, {})
+        
+        if not market_hours:
+            logger.warning(f"未找到市场 {market_code.value} 的交易时段配置，使用默认配置")
+            return default_hours
+        
+        return market_hours

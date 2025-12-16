@@ -71,3 +71,55 @@ market_sources:
   JP: yahoo
   SG: yahoo
   US: yahoo
+
+# 市场交易时段配置
+trading_hours:
+  CN:
+    description: 'A股交易时段'
+    timezone: 'Asia/Shanghai'
+    open: '09:30'
+    close: '15:00'
+    lunch_start: '11:30'
+    lunch_end: '13:00'
+    has_lunch_break: true
+  
+  HK:
+    description: '港股交易时段'
+    timezone: 'Asia/Hong_Kong'
+    open: '09:30'
+    close: '16:00'
+    lunch_start: '12:00'
+    lunch_end: '13:00'
+    has_lunch_break: true
+  
+  US:
+    description: '美股交易时段'
+    timezone: 'America/New_York'
+    open: '09:30'
+    close: '16:00'
+    has_lunch_break: false
+  
+  EU:
+    description: '欧洲交易时段'
+    timezone: 'Europe/London'
+    open: '08:00'
+    close: '16:30'
+    has_lunch_break: false
+  
+  JP:
+    description: '日本交易时段'
+    timezone: 'Asia/Tokyo'
+    open: '09:00'
+    close: '15:00'
+    lunch_start: '11:30'
+    lunch_end: '12:30'
+    has_lunch_break: true
+  
+  SG:
+    description: '新加坡交易时段'
+    timezone: 'Asia/Singapore'
+    open: '09:00'
+    close: '17:00'
+    lunch_start: '12:00'
+    lunch_end: '13:00'
+    has_lunch_break: true

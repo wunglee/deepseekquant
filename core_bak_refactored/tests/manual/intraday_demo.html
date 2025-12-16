@@ -129,7 +129,7 @@
             color: #52c41a;
         }
         
-        .tickers {
+        .trade_records {
             border: 1px solid #ddd;
             border-radius: 4px;
             padding: 15px;
@@ -137,12 +137,12 @@
             overflow-y: auto;
         }
         
-        .tickers h3 {
+        .trade_records h3 {
             margin-bottom: 10px;
             font-size: 16px;
         }
         
-        .ticker-item {
+        .trade_record-item {
             display: flex;
             justify-content: space-between;
             padding: 5px 0;
@@ -282,14 +282,14 @@
                     </div>
                 </div>
                 
-                <div class="tickers">
+                <div class="trade_records">
                     <h3>成交明细（最近20笔）</h3>
-                    ${data.tickers.map(ticker => `
-                        <div class="ticker-item">
-                            <span>${ticker.time}</span>
-                            <span class="${ticker.type === 'buy' ? 'buy-order' : 'sell-order'}">${ticker.price.toFixed(2)}</span>
-                            <span>${ticker.volume}</span>
-                            <span>${ticker.type === 'buy' ? '买入' : '卖出'}</span>
+                    ${data.trade_records.map(trade_record => `
+                        <div class="trade_record-item">
+                            <span>${trade_record.time}</span>
+                            <span class="${trade_record.type === 'buy' ? 'buy-order' : 'sell-order'}">${trade_record.price.toFixed(2)}</span>
+                            <span>${trade_record.volume}</span>
+                            <span>${trade_record.type === 'buy' ? '买入' : '卖出'}</span>
                         </div>
                     `).join('')}
                 </div>

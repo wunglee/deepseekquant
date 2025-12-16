@@ -94,3 +94,56 @@ class DataSource(str, Enum):
         """支持直接字符串转换"""
         return self.value
 
+
+class TradingPhase(str, Enum):
+    """
+    交易时段枚举
+    
+    定义市场的不同交易阶段，用于控制数据返回逻辑
+    """
+    BEFORE_OPEN = 'before_open'  # 盘前集合竞价时段（09:00-09:30）
+    TRADING = 'trading'          # 盘中交易时段（09:30-11:30 和 13:00-15:00）
+    NOON_BREAK = 'noon_break'    # 午盘休市时段（11:30-13:00）
+    AFTER_CLOSE = 'after_close'  # 盘后时段（15:00之后）
+    
+    @classmethod
+    def parse(cls, phase: Any) -> 'TradingPhase':
+        """解析交易时段
+        
+        Args:
+            phase: 交易时段（字符串或枚举）
+        
+        Returns:
+            TradingPhase: 解析后的枚举
+        
+        Raises:
+            ValueError: 当传入无效的交易时段时
+            TypeError: 当传入类型不正确时
+        
+        支持的值：
+        - 'before_open': 集合竞价
+        - 'trading': 交易时段（上午+下午）
+        - 'noon_break': 午休
+        - 'after_close': 盘后
+        """
+        if isinstance(phase, cls):
+            return phase
+        
+        if isinstance(phase, str):
+            try:
+                return cls(phase.lower())
+            except ValueError:
+                valid_values = [p.value for p in cls]
+                raise ValueError(
+                    f"无效的交易时段: '{phase}'. "
+                    f"支持的值为: {valid_values}"
+                )
+        
+        raise TypeError(
+            f"交易时段必须是 TradingPhase 枚举或字符串，当前类型: {type(phase)}"
+        )
+    
+    def __str__(self) -> str:
+        """支持直接字符串转换"""
+        return self.value
+

@@ -215,8 +215,20 @@
                 <div id="chartTypeSelector" class="segmented-control" style="flex:1;">
                     <!-- (●) K线图  (○) 分时图 -->
                 </div>
-                <!-- 🔧 数据模式切换（仅分时图显示） -->
+                <!-- 🔧 分时图：交易时段切换（仅模拟模式显示） -->
+                <div id="intradayPhaseSelector" class="segmented-control" style="display:none; width:300px;">
+                    <!-- (●) 盘前  (○) 盘中  (○) 盘后 -->
+                </div>
+                <!-- 🔧 分时图：数据模式切换（仅分时图显示） -->
                 <div id="intradayModeSelector" class="segmented-control" style="display:none; width:200px;">
+                    <!-- (●) 模拟  (○) 真实 -->
+                </div>
+                <!-- 🔧 K线图：交易时段切换（仅Mock模式显示） -->
+                <div id="klinePhaseSelector" class="segmented-control" style="display:none; width:300px;">
+                    <!-- (●) 盘前  (○) 盘中  (○) 盘后 -->
+                </div>
+                <!-- 🔧 K线图：数据模式切换（仅K线图显示） -->
+                <div id="klineModeSelector" class="segmented-control" style="display:none; width:200px;">
                     <!-- (●) 模拟  (○) 真实 -->
                 </div>
             </div>
@@ -399,9 +411,9 @@ function loadMoreHistoryData(callback) {
     const earliestData = allKlineData[0]
     const beforeDate = earliestData.date  // 'YYYY-MM-DD' 格式
     
-    // 构建API URL（增加批量大小：每次60条，减少请求次数）
-    // 🔧 使用新的 /api/v1/chart/data API，获取后端计算的指标
-    const url = `/api/v1/chart/data?index_id=${encodeURIComponent(currentIndex.id)}&period=${currentPeriod}&count=60&before=${beforeDate}&indicators=all`
+    // 🔧 构建API URL（添加use_mock参数）
+    const useMockParam = useMockMode ? '&use_mock=true' : ''
+    const url = `/api/v1/chart/data?index_id=${encodeURIComponent(currentIndex.id)}&period=${currentPeriod}&count=60&before=${beforeDate}&indicators=all${useMockParam}`
     console.log('📡 加载更多URL:', url)
     
     // 调用API
@@ -838,7 +850,10 @@ function init() {
             showEmpty(klineChart, '初始化失败: ' + err.message)
         })
     buildChartTypeSelector()
-    buildIntradayModeSelector()  // 🔧 添加数据模式选择器
+    buildIntradayModeSelector()  // 🔧 添加分时图数据模式选择器
+    buildIntradayPhaseSelector()  // 🔧 添加分时图交易时段选择器
+    buildKlineModeSelector()  // 🔧 添加K线图数据模式选择器
+    buildKlinePhaseSelector()  // 🔧 添加K线图交易时段选择器
     buildPeriodSelector()
     buildIndicatorSelector()
     
@@ -850,7 +865,12 @@ function init() {
         document.getElementById('intradayContainer').style.display = 'block'
         document.querySelector('.indicator-area').style.display = 'none'
         document.getElementById('dataZoomContainer').style.display = 'none'
+        // 🔧 显示分时图的控制
         document.getElementById('intradayModeSelector').style.display = 'block'
+        document.getElementById('intradayPhaseSelector').style.display = 'block'
+        // 🔧 隐藏K线图的控制
+        document.getElementById('klineModeSelector').style.display = 'none'
+        document.getElementById('klinePhaseSelector').style.display = 'none'
         
         // 🔧 注意：不在这里调用showLoading，因为图表还未初始化
         // 等待selectIndex被调用时会自动重建布局
@@ -861,7 +881,12 @@ function init() {
         document.getElementById('intradayContainer').style.display = 'none'
         document.querySelector('.indicator-area').style.display = 'block'
         document.getElementById('dataZoomContainer').style.display = 'block'
+        // 🔧 隐藏分时图的控制
         document.getElementById('intradayModeSelector').style.display = 'none'
+        document.getElementById('intradayPhaseSelector').style.display = 'none'
+        // 🔧 显示K线图的控制
+        document.getElementById('klineModeSelector').style.display = 'block'
+        document.getElementById('klinePhaseSelector').style.display = 'none'  // 默认隐藏，切换到Mock模式才显示
     }
 }
 
@@ -1023,24 +1048,6 @@ function selectIndex(item) {
         
         // 加载新股票的分时数据
         loadIntradayData(item.id, true)
-        
-        // 🔧 根据模式和交易时段决定是否启动定时器
-        const currentMarket = currentMarketKey  // 当前市场
-        const isTradingHours = IntradayChart.isTradingTime(currentMarket)
-        const mode = IntradayChart.getMode()
-        
-        if (mode === 'mock' || (mode === 'real' && isTradingHours)) {
-            const interval = mode === 'mock' ? 5000 : 1000
-            const timer = setInterval(() => {
-                if (currentChartType === 'intraday' && currentIndex) {
-                    loadIntradayData(currentIndex.id, false)
-                }
-            }, interval)
-            IntradayChart.setTimer(timer)
-            console.log(`✅ 切换股票后启动定时器，间隔: ${interval}ms`)
-        } else {
-            console.log(`⏸️ 非交易时段，不启动定时器`)
-        }
     } else {
         // K线图模式，加载K线数据
         loadKline(item.id)
@@ -1105,19 +1112,134 @@ function buildIntradayModeSelector() {
 }
 
 /**
+ * 🔧 构建交易时段选择器（盘前/盘中/盘后）
+ */
+function buildIntradayPhaseSelector() {
+    const container = document.getElementById('intradayPhaseSelector')
+    container.innerHTML = ''
+    const phases = [
+        { key: 'before_open', label: '盘前' },
+        { key: 'trading', label: '盘中' },
+        { key: 'after_close', label: '盘后' }
+    ]
+    
+    phases.forEach((phase, idx) => {
+        const btn = document.createElement('button')
+        btn.className = 'btn btn-segment'
+        if (idx === 1) btn.classList.add('active')  // 默认选中盘中
+        btn.textContent = phase.label
+        btn.onclick = () => {
+            container.querySelectorAll('.btn-segment').forEach(b => b.classList.remove('active'))
+            btn.classList.add('active')
+            switchIntradayPhase(phase.key)
+        }
+        container.appendChild(btn)
+    })
+}
+
+/**
+ * 🔧 构建K线图数据模式选择器（模拟/真实）
+ */
+function buildKlineModeSelector() {
+    const container = document.getElementById('klineModeSelector')
+    container.innerHTML = ''
+    ;['mock', 'real'].forEach((mode, idx) => {
+        const btn = document.createElement('button')
+        btn.className = 'btn btn-segment'
+        if (idx === 1) btn.classList.add('active')  // 默认选中真实
+        btn.textContent = ({mock:'模拟数据', real:'真实数据'})[mode]
+        btn.onclick = () => {
+            container.querySelectorAll('.btn-segment').forEach(b => b.classList.remove('active'))
+            btn.classList.add('active')
+            switchKlineDataMode(mode)
+        }
+        container.appendChild(btn)
+    })
+    
+    // 🔧 初始化后，确保交易时段选择器默认隐藏（因为默认是真实模式）
+    document.getElementById('klinePhaseSelector').style.display = 'none'
+}
+
+/**
+ * 🔧 构建K线图交易时段选择器（盘前/盘中/盘后）
+ */
+function buildKlinePhaseSelector() {
+    const container = document.getElementById('klinePhaseSelector')
+    container.innerHTML = ''
+    const phases = [
+        { key: 'BEFORE_OPEN', label: '盘前' },
+        { key: 'TRADING', label: '盘中' },
+        { key: 'AFTER_CLOSE', label: '盘后' }
+    ]
+    
+    phases.forEach((phase, idx) => {
+        const btn = document.createElement('button')
+        btn.className = 'btn btn-segment'
+        if (idx === 1) btn.classList.add('active')  // 默认选中盘中
+        btn.textContent = phase.label
+        btn.onclick = () => {
+            container.querySelectorAll('.btn-segment').forEach(b => b.classList.remove('active'))
+            btn.classList.add('active')
+            setMockTradingPhase(phase.key)
+        }
+        container.appendChild(btn)
+    })
+}
+
+/**
+ * 切换K线图数据模式（模拟/真实）
+ */
+function switchKlineDataMode(mode) {
+    useMockMode = (mode === 'mock')
+    console.log(`🔄 切换K线数据模式: ${mode}`)
+    
+    // 🔧 显示/隐藏交易时段选择器（只有模拟模式才显示）
+    const phaseSelector = document.getElementById('klinePhaseSelector')
+    if (mode === 'mock') {
+        phaseSelector.style.display = 'block'
+    } else {
+        phaseSelector.style.display = 'none'
+    }
+    
+    // 🔧 重新加载历史K线数据（使用新的数据源）
+    if (currentIndex && currentIndex.id) {
+        loadKline(currentIndex.id)
+    }
+}
+
+/**
+ * 切换模拟时段
+ */
+function setMockTradingPhase(phase) {
+    mockTradingPhase = phase
+    console.log('🎭 切换模拟时段:', phase)
+    
+    // 重新获取实时K线
+    if (useMockMode && currentIndex && currentIndex.id) {
+        fetchRealtimeKline()
+    }
+}
+
+/**
  * 切换图表类型（K线图/分时图）
  */
 function switchChartType(type) {
     currentChartType = type
     
     if (type === 'kline') {
-        // 显示K线图相关元素
+        // 显示K线相关元素
         document.getElementById('periodSelector').style.display = 'flex'
         document.getElementById('klineChart').style.display = 'block'
         document.getElementById('intradayContainer').style.display = 'none'
         document.querySelector('.indicator-area').style.display = 'block'
         document.getElementById('dataZoomContainer').style.display = 'block'
+        // 🔧 隐藏分时图的控制
         document.getElementById('intradayModeSelector').style.display = 'none'
+        document.getElementById('intradayPhaseSelector').style.display = 'none'
+        // 🔧 显示K线图的控制
+        document.getElementById('klineModeSelector').style.display = 'block'
+        // 默认隐藏K线的交易时段选择器（需要切换到Mock模式才显示）
+        document.getElementById('klinePhaseSelector').style.display = 'none'
         
         // 🔧 停止分时图更新（使用独立模块）
         const timer = IntradayChart.getTimer()
@@ -1137,7 +1259,12 @@ function switchChartType(type) {
         document.getElementById('intradayContainer').style.display = 'block'
         document.querySelector('.indicator-area').style.display = 'none'
         document.getElementById('dataZoomContainer').style.display = 'none'
+        // 🔧 显示分时图的控制
         document.getElementById('intradayModeSelector').style.display = 'block'
+        document.getElementById('intradayPhaseSelector').style.display = 'block'
+        // 🔧 隐藏K线图的控制
+        document.getElementById('klineModeSelector').style.display = 'none'
+        document.getElementById('klinePhaseSelector').style.display = 'none'
         
         // 🔧 重要：容器从隐藏变为显示后，需要调用 resize() 重新计算图表尺寸
         setTimeout(() => {
@@ -1155,26 +1282,6 @@ function switchChartType(type) {
         const data = IntradayChart.getData()
         if (currentIndex && !data) {
             loadIntradayData(currentIndex.id, true)
-            
-            // 🔧 根据模式和交易时段决定是否启动定时器
-            const timer = IntradayChart.getTimer()
-            if (timer) clearInterval(timer)
-            
-            const isTradingHours = IntradayChart.isTradingTime(currentMarketKey)
-            const mode = IntradayChart.getMode()
-            
-            if (mode === 'mock' || (mode === 'real' && isTradingHours)) {
-                const interval = mode === 'mock' ? 5000 : 1000
-                const newTimer = setInterval(() => {
-                    if (currentChartType === 'intraday' && currentIndex) {
-                        loadIntradayData(currentIndex.id, false)
-                    }
-                }, interval)
-                IntradayChart.setTimer(newTimer)
-                console.log(`✅ 启动定时器，间隔: ${interval}ms`)
-            } else {
-                console.log(`⏸️ 非交易时段，不启动定时器`)
-            }
         }
     }
 }
@@ -1187,30 +1294,40 @@ function switchIntradayDataMode(mode) {
     console.log(`🔄 切换数据模式: ${oldMode} → ${mode}`)
     IntradayChart.setMode(mode)
     
+    // 🔧 显示/隐藏交易时段选择器（只有模拟模式才显示）
+    const phaseSelector = document.getElementById('intradayPhaseSelector')
+    if (mode === 'mock') {
+        phaseSelector.style.display = 'block'
+    } else {
+        phaseSelector.style.display = 'none'
+    }
+    
     // 清空当前数据，重新加载
     if (currentIndex && currentChartType === 'intraday') {
         // 🔥 彻底重建布局
-        const isStock = !currentIndex.id.startsWith('index_')
+        // 🔧 修复：使用 currentIndex.type 判断是否为指数
+        const isIndex = currentIndex.type === 'index'
+        const isStock = !isIndex
+        console.log(`🔍 switchIntradayDataMode: currentIndex.id=${currentIndex.id}, type=${currentIndex.type}, isIndex=${isIndex}, isStock=${isStock}`)
         IntradayChart.rebuildLayout(isStock)
         
         // 重新加载数据
         loadIntradayData(currentIndex.id, true)
-        
-        // 🔧 根据模式和交易时段决定是否启动定时器
-        const isTradingHours = IntradayChart.isTradingTime(currentMarketKey)
-        
-        if (mode === 'mock' || (mode === 'real' && isTradingHours)) {
-            const interval = mode === 'mock' ? 5000 : 1000
-            const timer = setInterval(() => {
-                if (currentChartType === 'intraday' && currentIndex) {
-                    loadIntradayData(currentIndex.id, false)
-                }
-            }, interval)
-            IntradayChart.setTimer(timer)
-            console.log(`✅ 启动定时器，间隔: ${interval}ms`)
-        } else {
-            console.log(`⏸️ 非交易时段，不启动定时器`)
-        }
+    }
+}
+
+/**
+ * 🔧 切换交易时段（盘前/盘中/盘后）
+ */
+function switchIntradayPhase(phase) {
+    console.log(`🔄 切换交易时段: ${phase}`)
+    
+    // 🔧 将选择的时段保存到全局变量
+    window.selectedTradingPhase = phase
+    
+    // 重新加载数据
+    if (currentIndex && currentChartType === 'intraday') {
+        loadIntradayData(currentIndex.id, true)
     }
 }
 
@@ -1246,8 +1363,9 @@ function calcMA(data, period) {
     return result
 }
 
-function renderIndicator(data) {
-    console.log('renderIndicator called with data:', data)
+function renderIndicator(data, klineZoom) {
+    console.log('renderIndicator called with data:', data, 'klineZoom:', klineZoom)
+    console.log('📊 renderIndicator - 传入data数量:', data ? data.length : 0)
     if (!data || !data.length) {
         showEmpty(indicatorChart, '暂无数据')
         return
@@ -1266,19 +1384,29 @@ function renderIndicator(data) {
         return { ...d, date: dateStr }
     })
     
-    // 🔧 获取当前 K 线图的 dataZoom 位置，确保技术指标与 K 线图同步
-    let currentZoom = { start: 75, end: 100 }  // 默认值
-    try {
-        const klineOption = klineChart.getOption()
-        if (klineOption && klineOption.dataZoom && klineOption.dataZoom[0]) {
-            currentZoom = {
-                start: klineOption.dataZoom[0].start || 75,
-                end: klineOption.dataZoom[0].end || 100
+    console.log('📊 renderIndicator - processedData数量:', processedData.length)
+    
+    // 🔧 优先使用传入的 klineZoom 参数（确保与K线图完全对齐）
+    let currentZoom
+    if (klineZoom) {
+        // 使用传入的 zoom 参数（来自 renderKline）
+        currentZoom = klineZoom
+        console.log('📊 技术指标使用传入的 dataZoom 位置:', currentZoom)
+    } else {
+        // 降级：尝试从 K 线图获取（用于其他场景，如切换指标）
+        currentZoom = { start: 75, end: 100 }  // 默认值
+        try {
+            const klineOption = klineChart.getOption()
+            if (klineOption && klineOption.dataZoom && klineOption.dataZoom[0]) {
+                currentZoom = {
+                    start: klineOption.dataZoom[0].start || 75,
+                    end: klineOption.dataZoom[0].end || 100
+                }
+                console.log('📊 技术指标从 K 线图读取 dataZoom 位置:', currentZoom)
             }
-            console.log('📊 技术指标同步 K 线图 dataZoom 位置:', currentZoom)
+        } catch(e) {
+            console.warn('无法获取 K 线图 dataZoom，使用默认值')
         }
-    } catch(e) {
-        console.warn('无法获取 K 线图 dataZoom，使用默认值')
     }
     
     // 🔧 使用全局函数 calculateMACD、calculateRSI、calculateKDJ（已在前面定义）
@@ -1957,6 +2085,7 @@ function renderKline(data, events) {
     
     const ohlc = displayData.map(d => [d.open, d.close, d.low, d.high])
     const dates = displayData.map(d => d.date)
+    console.log('📊 renderKline - displayData数量:', displayData.length)
     console.log('Processed dates:', dates)
     console.log('OHLC data:', ohlc)
     const option = {
@@ -2034,12 +2163,160 @@ function renderKline(data, events) {
     console.log('Setting klineChart option:', option)
     // 💚 使用 true 完全替换配置,确保清除所有旧配置(包括graphic)
     klineChart.setOption(option, true)
-    renderIndicator(displayData)
+    renderIndicator(displayData, currentZoom)  // 🔧 传入 currentZoom 参数，确保对齐
     renderDataZoom(dates, currentZoom)  // 🔧 渲染数据窗口控制条
+}
+
+// ==================== 实时K线功能 ====================
+
+// 实时K线全局变量
+let realtimeKlineTimer = null
+let currentRealtimeKline = null
+let mockTradingPhase = 'TRADING'  // 🔧 模拟控制：BEFORE_OPEN, TRADING, AFTER_CLOSE
+let useMockMode = false  // 是否使用mock模式
+
+/**
+ * 获取实时K线数据
+ */
+function fetchRealtimeKline() {
+    if (!currentIndex || !currentIndex.id) return
+    
+    const indexId = currentIndex.id
+    let url
+    
+    if (useMockMode) {
+        // 🔧 Mock模式：前端显式传入trading_phase参数
+        url = `/api/v1/data/kline/realtime/mock?index_id=${encodeURIComponent(indexId)}&trading_phase=${mockTradingPhase}`
+        console.log('🎭 Mock模式 - 获取实时K线, trading_phase:', mockTradingPhase)
+    } else {
+        // 真实模式：后端自动判断时段
+        url = `/api/v1/data/kline/realtime?index_id=${encodeURIComponent(indexId)}`
+        console.log('🎯 真实模式 - 获取实时K线')
+    }
+    
+    fetch(url)
+        .then(r => r.json())
+        .then(res => {
+            if (res.status !== 'success') {
+                console.warn('获取实时K线失败:', res.message)
+                return
+            }
+            
+            const realtimeData = res.data
+            console.log('📊 实时K线数据:', realtimeData)
+            
+            // 更新实时K线
+            currentRealtimeKline = realtimeData
+            updateRealtimeKlineOnChart(realtimeData)
+            
+            // 根据should_poll决定是否继续轮询
+            if (realtimeData.should_poll) {
+                // 继续轮询（盘前或盘中）
+                if (!realtimeKlineTimer) {
+                    realtimeKlineTimer = setInterval(fetchRealtimeKline, 3000)  // 3秒轮询
+                }
+            } else {
+                // 停止轮询（盘后）
+                stopRealtimeKline()
+            }
+        })
+        .catch(err => {
+            console.error('获取实时K线失败:', err)
+        })
+}
+
+/**
+ * 更新实时K线到图表
+ */
+function updateRealtimeKlineOnChart(realtimeData) {
+    if (!allKlineData || !allKlineData.length) return
+    
+    // 检查是否已存在当天数据
+    const todayDate = realtimeData.date
+    const existingIndex = allKlineData.findIndex(d => {
+        let dateStr = d.date
+        if (typeof dateStr === 'string' && dateStr.includes('GMT')) {
+            dateStr = new Date(dateStr).toISOString().split('T')[0]
+        }
+        return dateStr === todayDate
+    })
+    
+    if (existingIndex >= 0) {
+        // 更新已存在的当天K线（直接使用后端返回的数据）
+        allKlineData[existingIndex] = {
+            date: todayDate,
+            open: realtimeData.open,
+            high: realtimeData.high,   // 后端已维护历史最高价
+            low: realtimeData.low,     // 后端已维护历史最低价
+            close: realtimeData.close,
+            volume: realtimeData.volume
+        }
+    } else {
+        // 添加新的当天K线
+        allKlineData.push({
+            date: todayDate,
+            open: realtimeData.open,
+            high: realtimeData.high,
+            low: realtimeData.low,
+            close: realtimeData.close,
+            volume: realtimeData.volume
+        })
+    }
+    
+    // 更新图表数据（不重新渲染）
+    updateChartData(allKlineData, allEvents)
+}
+
+/**
+ * 停止实时K线轮询
+ */
+function stopRealtimeKline() {
+    if (realtimeKlineTimer) {
+        clearInterval(realtimeKlineTimer)
+        realtimeKlineTimer = null
+        console.log('⏸️ 停止实时K线轮询')
+    }
+}
+
+/**
+ * 启动实时K线（选择股票时调用）
+ */
+function startRealtimeKline() {
+    stopRealtimeKline()  // 先停止之前的轮询
+    currentRealtimeKline = null
+    
+    // 立即获取一次
+    fetchRealtimeKline()
+}
+
+// ==================== Mock模拟控制面板 ====================
+
+
+
+/**
+ * 切换模拟时段
+ */
+function setMockTradingPhase(phase) {
+    mockTradingPhase = phase
+    console.log('🎭 切换模拟时段:', phase)
+    
+    // 更新按钮状态
+    document.querySelectorAll('.mock-phase-btn').forEach(btn => {
+        btn.classList.remove('active')
+    })
+    document.querySelector(`[data-phase="${phase}"]`)?.classList.add('active')
+    
+    // 重新获取实时K线
+    if (useMockMode && currentIndex && currentIndex.id) {
+        fetchRealtimeKline()
+    }
 }
 
 function loadKline(indexId) {
     console.log('loadKline called with indexId:', indexId, 'period:', currentPeriod)
+    
+    // 🔧 停止之前的实时K线轮询
+    stopRealtimeKline()
     
     // 🔧 标记正在加载新股票（需要复位 dataZoom 到默认位置）
     isLoadingNewStock = true
@@ -2047,8 +2324,9 @@ function loadKline(indexId) {
     // 💚 性能优化: A股默认60条,其他市场120条
     const count = currentMarket === 'cn_stock' ? 60 : 120
     
-    // 🔧 使用后端API的专业技术指标计算，而不是前端自己算
-    const url = `/api/v1/chart/data?index_id=${encodeURIComponent(indexId)}&period=${currentPeriod}&count=${count}&indicators=all`
+    // 🔧 添加use_mock参数，统一切换数据源
+    const useMockParam = useMockMode ? '&use_mock=true' : ''
+    const url = `/api/v1/chart/data?index_id=${encodeURIComponent(indexId)}&period=${currentPeriod}&count=${count}&indicators=all${useMockParam}`
     console.log('Fetching:', url)
     fetch(url)
         .then(r => {
@@ -2082,6 +2360,11 @@ function loadKline(indexId) {
             console.log('🎯 后端指标数据:', allIndicatorsData)
             
             renderKline(allKlineData, allEvents)
+            
+            // 🔧 启动实时K线（仅限日线周期）
+            if (currentPeriod === 'daily') {
+                setTimeout(() => startRealtimeKline(), 500)  // 延迟启动，避免与图表渲染冲突
+            }
         })
         .catch(err => {
             console.error('Fetch error:', err)
@@ -2322,92 +2605,138 @@ function loadIntradayData(symbol, isInitial = true) {
         IntradayChart.showLoading(true)
         IntradayChart.setBatchIndex(0)  // 重置批次序号
         IntradayChart.setRequestTime(0)  // 重置时间
+        
+        // 🎮 模拟模式：初始化虚拟时间为 09:30:00
+        const mode = IntradayChart.getMode()
+        if (mode === 'mock') {
+            // 🔧 直接使用固定字符串，完全不依赖系统时间
+            const virtualStartTime = '2024-12-14 09:30:00'
+            IntradayChart.setVirtualTime(virtualStartTime)
+            console.log(`📅 模拟模式 - 初始化虚拟时间: ${virtualStartTime}`)
+        }
     }
     
-    // 🔧 计算批次序号数组和时间戳数组
-    const currentTime = Math.floor(Date.now() / 1000)  // 当前时间（秒）
-    let batchIndices = []
-    let timestamps = []
-    
-    // 🔧 关键：判断是否需要生成批次序号
-    const isTradingHours = isTradingTime()  // 🔧 使用统一的市场交易时间判断
+    // 🔧 计算 TickRange（时间范围）
     const mode = IntradayChart.getMode()
+    let currentTime
     
-    // 🔧 模拟模式：始终生成批次序号
+    if (mode === 'mock') {
+        // 🎮 模拟模式：使用虚拟时间（每次递增1分钟）
+        if (isInitial) {
+            // 首次加载：使用已设置的虚拟时间 (09:30:00)
+            currentTime = IntradayChart.getVirtualTime()
+        } else {
+            // 增量更新：虚拟时间递增 1 分钟
+            const lastVirtualTime = IntradayChart.getVirtualTime()
+            // 🔧 直接字符串操作：解析时间并增加 1 分钟
+            const [date, time] = lastVirtualTime.split(' ')
+            const [hours, minutes, seconds] = time.split(':').map(Number)
+            const totalMinutes = hours * 60 + minutes + 1  // +1分钟
+            const newHours = Math.floor(totalMinutes / 60)
+            const newMinutes = totalMinutes % 60
+            currentTime = `${date} ${String(newHours).padStart(2, '0')}:${String(newMinutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+            IntradayChart.setVirtualTime(currentTime)
+            console.log(`🕜 虚拟时间递增: ${currentTime}`)
+        }
+    } else {
+        // 📊 真实模式：使用系统实际时间
+        currentTime = Math.floor(Date.now() / 1000)  // 当前时间（秒）
+    }
+    
+    // 构建 TickRange 对象
+    let tickRange = null
+    
+    // 🔧 关键：判断是否需要生成 TickRange
+    const isTradingHours = isTradingTime()  // 🔧 使用统一的市场交易时间判断
+    
+    // 🔧 获取用户选择的交易时段（只在模拟模式下有效）
+    let simulationMode = window.selectedTradingPhase || 'trading'  // 默认盘中
+    
+    // 🔧 模拟模式：始终生成 TickRange
     // 🔧 真实模式：首次加载不生成（交易时段拉取当前数据，非交易时段拉取上一交易日完整数据）
     //             增量更新时生成（用于标记时间戳）
-    const shouldGenerateBatches = mode === 'mock' || (mode === 'real' && isTradingHours && !isInitial)
     
-    if (shouldGenerateBatches) {
+    // 🔧 关键修复：模拟模式下，盘后不应该生成 TickRange
+    const shouldGenerateTickRange = mode === 'mock' && simulationMode === 'trading' && (isInitial || !isInitial)
+                                    || (mode === 'real' && isTradingHours && !isInitial)
+    
+    if (shouldGenerateTickRange) {
         if (isInitial) {
-            // 模拟模式首次加载
-            const initialBatches = 30
-            const startBatchIndex = 0
-            const currentBatchIndex = startBatchIndex + initialBatches - 1
+            // 🎯 首次加载：加载约 1 小时的数据（09:30 ~ 10:30）
+            const startTime = currentTime  // 当前虚拟时间："2024-12-14 09:30:00"
+            // 🔧 计算 1 小时后的时间
+            const [date, time] = currentTime.split(' ')
+            const [hours, minutes, seconds] = time.split(':').map(Number)
+            const endHours = hours + 1  // +1小时
+            const endTime = `${date} ${String(endHours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
             
-            for (let i = startBatchIndex; i <= currentBatchIndex; i++) {
-                batchIndices.push(i)
-                timestamps.push(currentTime - (currentBatchIndex - i))
+            tickRange = {
+                start_time: startTime,
+                end_time: endTime,
+                period_seconds: 5
             }
             
-            IntradayChart.setBatchIndex(currentBatchIndex)
-            IntradayChart.setRequestTime(currentTime)
+            // 🔧 关键：同步虚拟时间和请求时间到结束时间，下次增量从这里开始
+            IntradayChart.setVirtualTime(endTime)
+            IntradayChart.setRequestTime(endTime)
             
-            console.log(`🎮 模拟模式 - 首次加载: ${batchIndices.length}个批次, 序号范围: ${startBatchIndex} - ${currentBatchIndex}`)
+            console.log(`🎮 模拟模式 - 首次加载 1 小时数据: ${startTime} ~ ${endTime}，虚拟时间同步到: ${endTime}`)
         } else {
-            // 增量更新（模拟或真实）
+            // 🎯 增量更新：每次增加 1 分钟（从上次结束时间到新的结束时间）
             const lastRequestTime = IntradayChart.getRequestTime()
-            const lastBatchIndex = IntradayChart.getBatchIndex()
-            const elapsedSeconds = currentTime - lastRequestTime
-            const batchInterval = mode === 'mock' ? 5 : 1  // 🔧 模拟5秒，真实1秒
-            const batchCount = Math.floor(elapsedSeconds / batchInterval)
+            const newStartTime = lastRequestTime  // 从上次结束时间开始
+            const newEndTime = currentTime  // 到当前虚拟时间
             
-            if (batchCount <= 0) {
-                return
+            tickRange = {
+                start_time: newStartTime,
+                end_time: newEndTime,
+                period_seconds: 5
             }
             
-            for (let i = 1; i <= batchCount; i++) {
-                const batchIndex = (lastBatchIndex + i) % 330
-                const timestamp = lastRequestTime + i
-                batchIndices.push(batchIndex)
-                timestamps.push(timestamp)
-            }
+            console.log(`${mode === 'mock' ? '🎮 模拟' : '📊 真实'}模式 - 增量更新 1 分钟: ${newStartTime} ~ ${newEndTime}`)
             
-            console.log(`${mode === 'mock' ? '🎮 模拟' : '📊 真实'}模式 - 增量更新: 时间间隔${elapsedSeconds}秒, ${batchCount}个批次`)
-            
-            IntradayChart.setBatchIndex(batchIndices[batchIndices.length - 1])
             IntradayChart.setRequestTime(currentTime)
         }
     } else {
-        // 🔧 真实模式首次加载或非交易时段：不生成批次序号
+        // 🔧 真实模式首次加载或非交易时段：不生成 TickRange
         if (mode === 'real' && isInitial && isTradingHours) {
             console.log(`📊 真实模式 - 首次加载（交易时段），获取当前时刻之前全部数据`)
         } else if (mode === 'real' && !isTradingHours) {
-            console.log(`📊 真实模式 - 非交易时段，获取最近交易日全量数据`)
+            console.log(`📊 真实模式 - 首次加载或增量更新，获取历史数据（后端将返回should_poll）`)
         }
     }
     
-    // 🔧 调用后端分时数据 API
-    let url = `/api/v1/intraday/data?symbol=${encodeURIComponent(symbol)}`
-    
-    // 🔧 传递batch_indices和timestamps（模拟模式或真实模式交易时段）
-    if (batchIndices.length > 0) {
-        url += `&batch_indices=${encodeURIComponent(JSON.stringify(batchIndices))}&timestamps=${encodeURIComponent(JSON.stringify(timestamps))}`
+    // 🔧 根据 mode 决定调用不同的 API 端点
+    let url
+    if (mode === 'mock') {
+        // 模拟模式：调用 /api/v1/intraday/mock
+        url = `/api/v1/intraday/mock?symbol=${encodeURIComponent(symbol)}&trading_phase=${simulationMode}`
+        
+        // 🔧 传递last_price（用于保证价格连续性）
+        const intradayData = IntradayChart.getData()
+        if (intradayData && intradayData.current_price) {
+            url += `&last_price=${intradayData.current_price}`
+        }
+    } else {
+        // 真实模式：调用 /api/v1/intraday/data
+        url = `/api/v1/intraday/data?symbol=${encodeURIComponent(symbol)}`
     }
     
-    // 🔧 真实模式传递trade_date
-    if (intradayDataMode === 'real') {
-        const now = new Date()
-        const today = now.toISOString().split('T')[0]
-        url += `&trade_date=${today}`
+    // 🔧 传递 tick_range（如果存在）
+    if (tickRange) {
+        url += `&tick_range=${encodeURIComponent(JSON.stringify(tickRange))}`
     }
     
     fetch(url)
         .then(r => {
-            if (!r.ok) {
-                throw new Error(`HTTP ${r.status}: ${r.statusText}`)
-            }
-            return r.json()
+            // 无论状态码如何，都尝试解析JSON
+            return r.json().then(data => {
+                if (!r.ok) {
+                    // HTTP错误状态码（4xx, 5xx）
+                    throw new Error(data.message || `HTTP ${r.status}: ${r.statusText}`)
+                }
+                return data
+            })
         })
         .then(res => {
             if (res.status !== 'success') {
@@ -2423,18 +2752,51 @@ function loadIntradayData(symbol, isInitial = true) {
                 // 首次加载：全量更新
                 IntradayChart.setData(res.data)
                 console.log(`🆕 初始加载完成: ${res.data.times.length}个点位`)
-                console.log(`🆕 初始时间范围: ${res.data.times[0]} - ${res.data.times[res.data.times.length-1]}`)
-                console.log(`🆕 初始价格范围: ${Math.min(...res.data.prices).toFixed(2)} - ${Math.max(...res.data.prices).toFixed(2)}`)
-                console.log(`🆕 初始前10个价格: ${res.data.prices.slice(0, 10).map(p => p.toFixed(2)).join(', ')}`)
+                console.log(`🆕 是否指数: ${res.data.is_index}`)
                 
                 renderIntradayCharts(res.data)
+
+                const timer = IntradayChart.getTimer()
+                if (timer) {
+                    clearInterval(timer)
+                    IntradayChart.setTimer(null)
+                }
                 
-                // 🔧 如果是股票，更新盘口和成交明细（等待DOM渲染完成）
-                if (res.data.is_tradable) {
+                // 🔧 mode 已经在上面定义，不需要重复定义
+                
+                if (mode === 'mock') {
+                    if (res.data.should_poll) {
+                        // 盘中或盘前：启动定时器（5秒）
+                        console.log(`🎮 模拟模式，启动定时器（5秒）`)
+                        const newTimer = setInterval(() => {
+                            if (currentChartType === 'intraday' && currentIndex) {
+                                loadIntradayData(currentIndex.id, false)
+                            }
+                        }, 5000)
+                        IntradayChart.setTimer(newTimer)
+                    } else {
+                        // 盘后：不启动定时器
+                        console.log(`⏸️ 模拟模式，不启动定时器`)
+                    }
+                } else if (mode === 'real') {
+                    if (res.data.should_poll) {
+                        const newTimer = setInterval(() => {
+                            if (currentChartType === 'intraday' && currentIndex) {
+                                loadIntradayData(currentIndex.id, false)
+                            }
+                        }, 1000)
+                        IntradayChart.setTimer(newTimer)
+                    } else{
+                        console.log('⏸️ 盘后时段，不启动定时器')
+                    }
+                }
+                
+                // 🔧 如果不是指数，更新盘口和成交明细（等待DOM渲染完成）
+                if (!res.data.is_index) {
                     // 使用 setTimeout 确保DOM元素已经完全创建
                     setTimeout(() => {
                         updateOrderBook(res.data.order_book)
-                        updateTicker(res.data.tickers)
+                        updateTicker(res.data.trade_records)
                     }, 50)
                 }
                 
@@ -2476,17 +2838,17 @@ function loadIntradayData(symbol, isInitial = true) {
                 // 🔧 增量更新图表数据（不重新渲染，只追加新数据）
                 updateIntradayChartsIncremental(res.data)
                 
-                // 🔧 更新盘口和成交明细（如果可交易）
-                if (res.data.is_tradable) {
+                // 🔧 更新盘口和成交明细（如果不是指数）
+                if (!res.data.is_index) {
                     updateOrderBook(res.data.order_book)
-                    updateTicker(res.data.tickers)
+                    updateTicker(res.data.trade_records)
                 }
             }
         })
         .catch(err => {
             console.error('加载分时数据失败:', err)
             if (isInitial) {
-                showIntradayError('加载失败: ' + err.message + '<br/><small>请检查后端服务是否启动</small>')
+                showIntradayError('加载失败: ' + err.message)
             }
         })
 }
@@ -2495,7 +2857,16 @@ function loadIntradayData(symbol, isInitial = true) {
  * 渲染分时图表
  */
 function renderIntradayCharts(data) {
-    if (!data || !data.times.length) return
+    if (!data) {
+        console.error('❌ renderIntradayCharts: 数据为null')
+        return
+    }
+    
+    // 🔧 关键修复：盘前时段（times为空）也要渲染空的图表框架
+    const hasTicks = data.times && data.times.length > 0
+    if (!hasTicks) {
+        console.log('🕒 盘前或无数据时段，渲染空的分时图框架')
+    }
     
     const yesterdayClose = parseFloat(data.yesterday_close)
     const currentPrice = parseFloat(data.current_price)
@@ -2509,7 +2880,7 @@ function renderIntradayCharts(data) {
         const startMin = h === 9 ? 30 : 0
         const endMin = h === 11 ? 30 : 59
         for (let m = startMin; m <= endMin; m++) {
-            for (let s = 0; s < 60; s += 5) {  // 0, 5, 10, ..., 55
+            for (let s = 0; s < 60; s += 5) {
                 const timeStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
                 fullTradingTimes.push(timeStr)
             }
@@ -2525,36 +2896,98 @@ function renderIntradayCharts(data) {
             }
         }
     }
-    console.log(`🕒 生成完整时间轴: ${fullTradingTimes.length}个点位（上午1440 + 下午1440 = 2880）`)
+    console.log(`🕒 生成完整时间轴: ${fullTradingTimes.length}个点位`)
     
     // 🔧 将实际数据映射到完整时间轴（未到达的时间点为null）
     const priceData = new Array(fullTradingTimes.length).fill(null)
     const avgPriceData = new Array(fullTradingTimes.length).fill(null)
     const volumeData = new Array(fullTradingTimes.length).fill(null)
     
-    data.times.forEach((time, idx) => {
-        const timeIndex = fullTradingTimes.indexOf(time)
-        if (timeIndex !== -1) {
-            priceData[timeIndex] = data.prices[idx]
-            avgPriceData[timeIndex] = data.avg_prices[idx]
-            volumeData[timeIndex] = data.volumes[idx]
-        }
-    })
+    // 🔧 关键修复：只有hasTicks为true时才映射数据（盘前为空）
+    if (hasTicks) {
+        data.times.forEach((time, idx) => {
+            const timeIndex = fullTradingTimes.indexOf(time)
+            if (timeIndex !== -1) {
+                // 🔧 关键修复：强制转换为数字类型，并验证有效性
+                const price = parseFloat(data.prices[idx])
+                const avgPrice = parseFloat(data.avg_prices[idx])
+                const volume = parseInt(data.volumes[idx])
+                
+                // 只有有效数字才赋值
+                if (!isNaN(price) && isFinite(price)) {
+                    priceData[timeIndex] = price
+                }
+                if (!isNaN(avgPrice) && isFinite(avgPrice)) {
+                    avgPriceData[timeIndex] = avgPrice
+                }
+                if (!isNaN(volume) && isFinite(volume)) {
+                    volumeData[timeIndex] = volume
+                }
+            }
+        })
+    }
     
     // 🔧 调试信息：检查数据映射情况
     const priceCount = priceData.filter(v => v !== null).length
     const volumeCount = volumeData.filter(v => v !== null).length
-    console.log(`📊 【初始渲染】数据映射结果: 后端返回${data.times.length}个tick, 映射后: 价格${priceCount}个, 成交量${volumeCount}个`)
-    console.log(`📊 【初始渲染】后端时间范围: ${data.times[0]} - ${data.times[data.times.length-1]}`)
-    console.log(`📊 【初始渲染】映射后前10个价格: ${priceData.filter(v => v !== null).slice(0, 10).map(p => p.toFixed(2)).join(', ')}`)
+    console.log(`📊 【全量渲染】数据映射结果: 后端返回${hasTicks ? data.times.length : 0}个tick, 映射后: 价格${priceCount}个, 成交量${volumeCount}个`)
+    console.log(`📊 【全量渲染】前端生成时间轴: ${fullTradingTimes.length}个点`)
+    if (hasTicks) {
+        console.log(`📊 【全量渲染】后端时间范围: ${data.times[0]} - ${data.times[data.times.length-1]}`)
+        console.log(`📊 【全量渲染】映射后前10个价格: ${priceData.filter(v => v !== null).slice(0, 10).map(p => p.toFixed(2)).join(', ')}`)
+        // 🔧 新增：检查是否有未映射的数据点
+        const unmappedTimes = data.times.filter(time => !fullTradingTimes.includes(time))
+        if (unmappedTimes.length > 0) {
+            console.warn(`⚠️ 发现 ${unmappedTimes.length} 个无法映射的时间点:`, unmappedTimes.slice(0, 10))
+        }
+        // 🔧 检查数据点的分布情况
+        const intervals = []
+        for (let i = 1; i < Math.min(100, data.times.length); i++) {
+            const t1 = data.times[i-1].split(':')
+            const t2 = data.times[i].split(':')
+            const seconds1 = parseInt(t1[0])*3600 + parseInt(t1[1])*60 + parseInt(t1[2])
+            const seconds2 = parseInt(t2[0])*3600 + parseInt(t2[1])*60 + parseInt(t2[2])
+            intervals.push(seconds2 - seconds1)
+        }
+        const avgInterval = intervals.reduce((a, b) => a + b, 0) / intervals.length
+        const uniqueIntervals = [...new Set(intervals)]
+        console.log(`📊 【数据间隔分析】前100个点的平均间隔: ${avgInterval.toFixed(2)}秒, 不同间隔值: ${uniqueIntervals.sort((a,b) => a-b).join(', ')}秒`)
+    }
     
     // 🔧 参考K线图逻辑：先clear()清空图表（包括"加载中"提示）
     const charts = IntradayChart.getCharts()
-    if (charts.price) charts.price.clear()
-    if (charts.volume) charts.volume.clear()
+    console.log('📊 【renderIntradayCharts】获取图表实例:', { 
+        price: charts.price ? 'OK' : 'NULL', 
+        volume: charts.volume ? 'OK' : 'NULL' 
+    })
     
-    // 渲染分时价格曲线
-    if (!charts.price) return
+    if (!charts.price) {
+        console.error('❌ 价格图表实例为空，无法渲染！')
+        return
+    }
+    if (!charts.volume) {
+        console.error('❌ 成交量图表实例为空，无法渲染！')
+        return
+    }
+    
+    charts.price.clear()
+    charts.volume.clear()
+    
+    // 🔧 检查图表DOM元素状态
+    const priceChartDom = document.getElementById('intradayPriceChart')
+    const volumeChartDom = document.getElementById('intradayVolumeChart')
+    console.log('📋 【DOM检查】价格图表DOM:', {
+        exists: !!priceChartDom,
+        width: priceChartDom?.offsetWidth,
+        height: priceChartDom?.offsetHeight,
+        visible: priceChartDom?.offsetParent !== null
+    })
+    console.log('📋 【DOM检查】成交量图表DOM:', {
+        exists: !!volumeChartDom,
+        width: volumeChartDom?.offsetWidth,
+        height: volumeChartDom?.offsetHeight,
+        visible: volumeChartDom?.offsetParent !== null
+    })
     
     charts.price.setOption({
         title: {
@@ -2572,6 +3005,10 @@ function renderIntradayCharts(data) {
             formatter: function(params) {
                 let result = params[0].axisValue + '<br/>'
                 params.forEach(item => {
+                    // 🔧 处理null值
+                    if (item.value === null || item.value === undefined) {
+                        return
+                    }
                     const value = parseFloat(item.value)
                     const change = value - yesterdayClose
                     const changePercent = (change / yesterdayClose * 100).toFixed(2)
@@ -2611,9 +3048,10 @@ function renderIntradayCharts(data) {
                 name: '价格',
                 type: 'line',
                 data: priceData,  // 🔧 使用映射后的数据
-                smooth: true,
+                smooth: 0.6,  // 🔧 关键修复：增加平滑系数到0.6，更平滑的曲线
                 symbol: 'none',
-                lineStyle: { width: 1.5 },
+                showSymbol: false,  // 🔧 不显示数据点标记
+                lineStyle: { width: 2 },  // 🔧 增加线宽，让平滑效果更明显
                 itemStyle: { color: '#2563eb' },
                 areaStyle: {
                     color: {
@@ -2625,7 +3063,7 @@ function renderIntradayCharts(data) {
                         ]
                     }
                 },
-                connectNulls: false,  // 🔧 不连接null值，显示断点
+                connectNulls: true,  // 🔧 连接null值，否则数据太稀疏无法显示
                 markLine: {
                     symbol: 'none',
                     data: [
@@ -2641,17 +3079,31 @@ function renderIntradayCharts(data) {
                 name: '均价',
                 type: 'line',
                 data: avgPriceData,  // 🔧 使用映射后的数据
-                smooth: true,
+                smooth: 0.6,  // 🔧 增加平滑系数
                 symbol: 'none',
-                lineStyle: { width: 1, color: '#f59e0b', type: 'dashed' },
-                connectNulls: false  // 🔧 不连接null值
+                showSymbol: false,
+                lineStyle: { width: 1.5, color: '#f59e0b', type: 'dashed' },
+                connectNulls: true  // 🔧 连接null值
             }
         ]
     }, true)  // 🔧 关键：使用true完全替换配置，清除graphic
     
-    // 渲染成交量
-    if (!charts.volume) return
+    console.log('✅ 价格图表setOption完成')
+    console.log('📊 【价格图表配置】series[0].data前10个非null值:', priceData.filter(v => v !== null).slice(0, 10))
+    console.log('📊 【价格图表配置】series[0].data总长度:', priceData.length, '非null数量:', priceData.filter(v => v !== null).length)
+    console.log('📊 【价格图表配置】昨收价格:', yesterdayClose, '当前价格:', currentPrice)
+    console.log('📊 【价格图表配置】价格范围:', {
+        最小价格: Math.min(...priceData.filter(v => v !== null)),
+        最大价格: Math.max(...priceData.filter(v => v !== null))
+    })
     
+    // 🔧 强制调用 resize() 确保图表尺寸正确
+    setTimeout(() => {
+        charts.price.resize()
+        console.log('🔄 已调用 price.resize()')
+    }, 100)
+    
+    // 渲染成交量
     charts.volume.setOption({
         title: { text: '成交量', left: 'center', textStyle: { fontSize: 12 } },
         tooltip: {
@@ -2659,6 +3111,10 @@ function renderIntradayCharts(data) {
             formatter: function(params) {
                 if (!params || params.length === 0) return ''
                 const volume = params[0].value
+                // 🔧 处理null值
+                if (volume === null || volume === undefined) {
+                    return params[0].axisValue + '<br/>' + params[0].marker + '成交量: 无数据'
+                }
                 return params[0].axisValue + '<br/>' + params[0].marker + '成交量: ' + volume.toLocaleString() + '手'
             }
         },
@@ -2687,6 +3143,8 @@ function renderIntradayCharts(data) {
             barWidth: '80%'
         }]
     }, true)  // 🔧 关键：使用true完全替换配置，清除graphic
+    
+    console.log('✅ 成交量图表setOption完成')
 }
 
 /**
@@ -2921,10 +3379,10 @@ function updateTicker(tickersData) {
     }
     
     // 🔧 从新的数据结构中获取tickers和message
-    const tickers = tickersData.items || []
+    const trade_records = tickersData.items || []
     const message = tickersData.message || '无成交明细'
     
-    if (tickers.length === 0) {
+    if (trade_records.length === 0) {
         container.innerHTML = `
             <div style="text-align:center; padding:20px; color:#9ca3af;">
                 <div style="font-size:13px;">${message}</div>
@@ -2936,7 +3394,7 @@ function updateTicker(tickersData) {
     container.innerHTML = ''
     
     // ... existing code ...
-    tickers.forEach(tick => {
+    trade_records.forEach(tick => {
         const div = document.createElement('div')
         div.style.cssText = 'display:flex; justify-content:space-between; padding:3px 0; border-bottom:1px solid #f3f4f6;'
         const color = tick.type === 'buy' ? '#ef4444' : '#10b981'

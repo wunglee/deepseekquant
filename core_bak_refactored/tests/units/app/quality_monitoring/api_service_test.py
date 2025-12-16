@@ -374,3 +374,171 @@ class TestDataQualityAPIService:
         # 此方法已迁移到 quality_monitor._generate_recommendations
         # 现在由监控服务负责，不再API服务的直接职责
         pass
+
+
+class TestBatchIntradayData:
+    """测试批量获取分时数据接口"""
+    
+    @pytest.fixture
+    def mock_config(self):
+        """Mock配置管理器"""
+        from core_bak_refactored.core.share.config_manager import ConfigManager
+        return ConfigManager()
+    
+    @pytest.fixture
+    def mock_chart_assembler(self):
+        """Mock图表数据组装器"""
+        from unittest.mock import Mock
+        assembler = Mock()
+        # 模拟批量请求返回数据
+        assembler.assemble_intraday_data.return_value = {
+            'symbol': '600036.SH',
+            'name': '招商银行',
+            'times': ['09:30:00', '09:31:00', '09:32:00'],
+            'prices': [10.0, 10.1, 10.2],
+            'volumes': [1000, 1100, 1200],
+            'order_book': {'bids': [[10.0, 100]], 'asks': [[10.1, 100]]},
+            'should_poll': True
+        }
+        return assembler
+    
+    @pytest.fixture
+    def api_service(self, mock_config):
+        """Create API service instance"""
+        return DataQualityAPIService(mock_config)
+    
+    @pytest.fixture
+    def client(self, api_service):
+        """Flask测试客户端"""
+        api_service.app.config['TESTING'] = True
+        return api_service.app.test_client()
+    
+    @patch('core_bak_refactored.app.quality_monitoring.api.chart_data.ChartDataAssembler')
+    def test_batch_request_multiple_batches(self, mock_assembler_class, client):
+        """测试批量请求多个批次"""
+        # 配置Mock返回
+        mock_instance = Mock()
+        mock_instance.assemble_intraday_data.return_value = {
+            'symbol': '600036.SH',
+            'name': '招商银行',
+            'times': ['09:30:00', '09:31:00', '09:32:00'],
+            'prices': [10.0, 10.1, 10.2],
+            'volumes': [1000, 1100, 1200],
+            'order_book': {'bids': [[10.0, 100]], 'asks': [[10.1, 100]]},
+            'should_poll': True
+        }
+        mock_assembler_class.return_value = mock_instance
+        
+        batches = [
+            {"index": 1, "timestamp": 1000},
+            {"index": 2, "timestamp": 1001},
+            {"index": 3, "timestamp": 1002}
+        ]
+        
+        resp = client.get(
+            '/api/v1/intraday/data?symbol=600036.SH&'
+            f'batches={json.dumps(batches)}&'
+            'simulation_mode=intraday'
+        )
+        
+        assert resp.status_code == 200
+        data = json.loads(resp.data)
+        
+        assert data['status'] == 'success'
+        assert 'data' in data
+        assert 'times' in data['data']
+        assert len(data['data']['times']) > 0
+    
+    @patch('core_bak_refactored.app.quality_monitoring.api.chart_data.ChartDataAssembler')
+    def test_batch_request_before_open_mode(self, mock_assembler_class, client):
+        """测试盘前模式批量请求"""
+        # 配置Mock返回 - 盘前模式只有盘口数据
+        mock_instance = Mock()
+        mock_instance.assemble_intraday_data.return_value = {
+            'symbol': '600036.SH',
+            'name': '招商银行',
+            'times': [],  # 盘前没有分时tick
+            'prices': [],
+            'volumes': [],
+            'order_book': {'bids': [[10.0, 100]], 'asks': [[10.1, 100]]},
+            'should_poll': True
+        }
+        mock_assembler_class.return_value = mock_instance
+        
+        batches = [{"index": 1, "timestamp": 1000}]
+        
+        resp = client.get(
+            '/api/v1/intraday/data?symbol=600036.SH&'
+            f'batches={json.dumps(batches)}&'
+            'simulation_mode=before_open'
+        )
+        
+        assert resp.status_code == 200
+        data = json.loads(resp.data)
+        
+        assert data['status'] == 'success'
+        assert 'data' in data
+        # 盘前模式应该只有盘口数据，没有分时tick
+        assert len(data['data']['times']) == 0
+        assert 'order_book' in data['data']
+    
+    @patch('core_bak_refactored.app.quality_monitoring.api.chart_data.ChartDataAssembler')
+    def test_batch_request_different_batch_ranges(self, mock_assembler_class, client):
+        """测试不同批次范围的请求"""
+        mock_instance = Mock()
+        
+        # 第一次调用返回批次[1,2,3]的数据
+        mock_instance.assemble_intraday_data.side_effect = [
+            {
+                'symbol': '600036.SH',
+                'name': '招商银行',
+                'times': ['09:30:00', '10:00:00', '10:30:00'],
+                'prices': [10.0, 10.1, 10.2],
+                'volumes': [1000, 1100, 1200],
+                'order_book': {'bids': [[10.0, 100]], 'asks': [[10.1, 100]]},
+                'should_poll': True
+            },
+            {
+                'symbol': '600036.SH',
+                'name': '招商银行',
+                'times': ['11:00:00', '13:30:00', '14:00:00'],
+                'prices': [10.3, 10.4, 10.5],
+                'volumes': [1300, 1400, 1500],
+                'order_book': {'bids': [[10.3, 100]], 'asks': [[10.4, 100]]},
+                'should_poll': True
+            }
+        ]
+        mock_assembler_class.return_value = mock_instance
+        
+        # 第一批：批次[1,2,3]
+        batches1 = [
+            {"index": 1, "timestamp": 1000},
+            {"index": 2, "timestamp": 1001},
+            {"index": 3, "timestamp": 1002}
+        ]
+        resp1 = client.get(
+            '/api/v1/intraday/data?symbol=600036.SH&'
+            f'batches={json.dumps(batches1)}&'
+            'simulation_mode=intraday'
+        )
+        data1 = json.loads(resp1.data)['data']
+        
+        # 第二批：批次[4,5,6]
+        batches2 = [
+            {"index": 4, "timestamp": 1003},
+            {"index": 5, "timestamp": 1004},
+            {"index": 6, "timestamp": 1005}
+        ]
+        resp2 = client.get(
+            '/api/v1/intraday/data?symbol=600036.SH&'
+            f'batches={json.dumps(batches2)}&'
+            'simulation_mode=intraday'
+        )
+        data2 = json.loads(resp2.data)['data']
+        
+        # 验证两批数据的时间范围不同
+        assert len(data1['times']) > 0
+        assert len(data2['times']) > 0
+        # 第二批的时间应该晚于第一批
+        assert data1['times'][0] == '09:30:00'
+        assert data2['times'][0] == '11:00:00'

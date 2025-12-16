@@ -163,7 +163,7 @@ class YahooFinanceDataProvider(BaseDataProvider, HistoricalDataProvider):
         """获取测试符号"""
         return "^GSPC"  # 标普500指数
     
-    def _fetch_with_retry(self, ticker: str, start_date: Union[str, datetime], end_date: Union[str, datetime], max_retries: int = 3) -> pd.DataFrame:
+    def _fetch_with_retry(self, trade_record: str, start_date: Union[str, datetime], end_date: Union[str, datetime], max_retries: int = 3) -> pd.DataFrame:
         """
         带重试机制的数据获取方法
         
@@ -173,7 +173,7 @@ class YahooFinanceDataProvider(BaseDataProvider, HistoricalDataProvider):
         - 使用自定义 Session 和请求限速避免 429
         
         Args:
-            ticker: 股票或指数代码
+            trade_record: 股票或指数代码
             start_date: 开始日期
             end_date: 结束日期
             max_retries: 最大重试次数
@@ -189,24 +189,24 @@ class YahooFinanceDataProvider(BaseDataProvider, HistoricalDataProvider):
                 # 指数退避：第1次 5s, 第2次 10s, 第3次 20s, 第4次 40s
                 if attempt > 0:
                     delay = 5 * (2 ** (attempt - 1)) + random.uniform(0, 2)
-                    logger.info(f"Attempt {attempt + 1}/{max_retries + 1} for {ticker}, waiting {delay:.1f}s before retry (exponential backoff)")
+                    logger.info(f"Attempt {attempt + 1}/{max_retries + 1} for {trade_record}, waiting {delay:.1f}s before retry (exponential backoff)")
                     time.sleep(delay)
                 
                 # 💚 请求限速（关键！避免 429）
                 self._throttle_request()
                 
                 # 使用自定义 Session（关键！避免 429）
-                ticker_obj = self.yf.Ticker(ticker, session=self._session)
+                ticker_obj = self.yf.Ticker(trade_record, session=self._session)
                 data = ticker_obj.history(start=start_date, end=end_date)
                 
                 # 检查数据是否有效
                 if data is not None and not data.empty:
-                    logger.info(f"Successfully fetched {len(data)} rows for {ticker}")
+                    logger.info(f"Successfully fetched {len(data)} rows for {trade_record}")
                     return data
                     
             except Exception as e:
                 error_msg = str(e)
-                logger.warning(f"Attempt {attempt + 1} failed for {ticker}: {e}")
+                logger.warning(f"Attempt {attempt + 1} failed for {trade_record}: {e}")
                 
                 # 特殊处理速率限制错误
                 if "Too Many Requests" in error_msg or "429" in error_msg or "Rate limited" in error_msg:
@@ -216,7 +216,7 @@ class YahooFinanceDataProvider(BaseDataProvider, HistoricalDataProvider):
                     else:
                         # 最后一次尝试失败，提供友好的错误信息
                         raise ValueError(
-                            f"Yahoo Finance 速率限制 ({ticker})\n"
+                            f"Yahoo Finance 速率限制 ({trade_record})\n"
                             f"建议: 1) 等待 5-10 分钟后重试\n"
                             f"      2) 或使用其他数据源 (AKShare/Tushare)\n"
                             f"      3) 或在 data_provider.yml 中启用代理: yahoo_finance.use_proxy: true"
@@ -227,7 +227,7 @@ class YahooFinanceDataProvider(BaseDataProvider, HistoricalDataProvider):
                 continue
                 
         # 如果所有重试都失败了，抛出异常
-        raise RuntimeError(f"Failed to fetch data for {ticker} after {max_retries + 1} attempts")
+        raise RuntimeError(f"Failed to fetch data for {trade_record} after {max_retries + 1} attempts")
     
     def get_index_prices(
         self,
@@ -262,7 +262,8 @@ class YahooFinanceDataProvider(BaseDataProvider, HistoricalDataProvider):
                 raise ValueError(f"No data returned for {index_id}")
                 
             # 标准化数据格式
-            standardized_data = self._standardize_format(data, index_id)
+            from core_bak_refactored.core.share.market.market_utils import MarketUtils
+            standardized_data = MarketUtils.standardize_format_to_price_data(data, index_id)
             
             logger.info(f"Successfully fetched {len(standardized_data.records)} records for {index_id}")
             return standardized_data
@@ -304,7 +305,8 @@ class YahooFinanceDataProvider(BaseDataProvider, HistoricalDataProvider):
                 raise ValueError(f"No data returned for {stock_id}")
                 
             # 标准化数据格式
-            standardized_data = self._standardize_format(data, stock_id)
+            from core_bak_refactored.core.share.market.market_utils import MarketUtils
+            standardized_data = MarketUtils.standardize_format_to_price_data(data, stock_id)
             
             logger.info(f"Successfully fetched {len(standardized_data.records)} records for {stock_id}")
             return standardized_data
@@ -334,80 +336,7 @@ class YahooFinanceDataProvider(BaseDataProvider, HistoricalDataProvider):
         else:
             return self.get_stock_prices(symbol, start_date, end_date)
     
-    def _standardize_format(self, data: pd.DataFrame, symbol: str) -> PriceData:
-        """
-        标准化Yahoo Finance返回的数据格式
-        
-        Args:
-            data: Yahoo Finance返回的原始数据
-            symbol: 证券代码
-            
-        Returns:
-            PriceData: 标准化后的数据
-        """
-        if data is None or data.empty:
-            # 空数据返回空的PriceData
-            return PriceData(
-                symbol=symbol, 
-                records=[], 
-                start_date=pd.Timestamp.now(),
-                end_date=pd.Timestamp.now(),
-                count=0
-            )
-        
-        # 处理MultiIndex列结构
-        if isinstance(data.columns, pd.MultiIndex):
-            # 对于MultiIndex，我们需要提取正确的列
-            # 通常格式是 [('Close', 'AAPL'), ('High', 'AAPL'), ...]
-            close_col = ('Close', symbol) if ('Close', symbol) in data.columns else 'Close'
-            high_col = ('High', symbol) if ('High', symbol) in data.columns else 'High'
-            low_col = ('Low', symbol) if ('Low', symbol) in data.columns else 'Low'
-            open_col = ('Open', symbol) if ('Open', symbol) in data.columns else 'Open'
-            volume_col = ('Volume', symbol) if ('Volume', symbol) in data.columns else 'Volume'
-        else:
-            # 普通列名
-            close_col = 'Close'
-            high_col = 'High'
-            low_col = 'Low'
-            open_col = 'Open'
-            volume_col = 'Volume'
-        
-        # 确保必要的列存在
-        required_columns = [close_col, high_col, low_col, open_col, volume_col]
-        for col in required_columns:
-            if col not in data.columns:
-                logger.warning(f"Missing column {col} in data for {symbol}")
-                # 如果缺少某些列，使用默认值填充
-                if col not in data.columns:
-                    data[col] = np.nan
-        
-        records = []
-        for timestamp, row in data.iterrows():
-            try:
-                record = OHLCVRecord(
-                    date=pd.to_datetime(timestamp),  # 使用date而非timestamp
-                    open=float(row.get(open_col, np.nan)),
-                    high=float(row.get(high_col, np.nan)),
-                    low=float(row.get(low_col, np.nan)),
-                    close=float(row.get(close_col, np.nan)),
-                    volume=int(row.get(volume_col, 0)) if not np.isnan(row.get(volume_col, np.nan)) else 0
-                )
-                records.append(record)
-            except (ValueError, TypeError) as e:
-                logger.warning(f"Skipping invalid row for {symbol} at {timestamp}: {e}")
-                continue
-        
-        # 计算start_date和end_date
-        start_date = records[0].date if records else pd.Timestamp.now()
-        end_date = records[-1].date if records else pd.Timestamp.now()
-        
-        return PriceData(
-            symbol=symbol, 
-            records=records,
-            start_date=start_date,
-            end_date=end_date,
-            count=len(records)
-        )
+    # _standardize_format method has been moved to MarketUtils.standardize_format_to_price_data
     
     # validate_data_quality方法已迁移到data_quality_utils.py
     # 请使用: from core_bak_refactored.core.data.quality.data_quality_utils import validate_data_quality

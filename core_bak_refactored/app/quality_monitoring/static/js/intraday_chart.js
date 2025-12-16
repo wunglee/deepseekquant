@@ -11,6 +11,7 @@ let intradayUpdateTimer = null
 let lastIntradayBatchIndex = 0
 let lastIntradayRequestTime = 0
 let intradayDataMode = 'mock'  // 'mock' 或 'real'
+let virtualIntradayTime = 0  // 🎮 虚拟交易时间（秒），用于模拟模式
 
 // ==================== 核心函数：彻底重建分时图布局 ====================
 
@@ -190,6 +191,8 @@ window.IntradayChart = {
     setBatchIndex: (index) => { lastIntradayBatchIndex = index },
     getRequestTime: () => lastIntradayRequestTime,
     setRequestTime: (time) => { lastIntradayRequestTime = time },
+    getVirtualTime: () => virtualIntradayTime,  // 🎮 获取虚拟时间
+    setVirtualTime: (time) => { virtualIntradayTime = time },  // 🎮 设置虚拟时间
     
     // 核心功能
     rebuildLayout: rebuildIntradayLayout,
