@@ -232,6 +232,7 @@ class BaseDataProvider(ABC,HistoricalDataProvider):
             index_id: 指数代码
             start_date: 开始日期 (YYYY-MM-DD)
             end_date: 结束日期 (YYYY-MM-DD)
+            current_time: 当前时间
         
         Returns:
             PriceData 对象
@@ -239,45 +240,56 @@ class BaseDataProvider(ABC,HistoricalDataProvider):
         # 1. 尝试内存缓存
         cache_key = self._make_cache_key(index_id, start_date, end_date)
         cached_df = self._get_from_memory_cache(cache_key)
-        
         if cached_df is not None:
             # 转换为 PriceData
-            return PriceData.from_dataframe(cached_df, index_id)
-        
-        # 2. 尝试数据库缓存
-        cached_df = self._get_from_db_cache(index_id, start_date, end_date)
-        
-        if cached_df is not None:
-            # 写入内存缓存
-            self._set_to_memory_cache(cache_key, cached_df)
-            # 转换为 PriceData
-            return PriceData.from_dataframe(cached_df, index_id)
-        
-        # 3. 调用外部API（子类实现）
-        logger.info(f"🌐 缓存未命中，调用外部API: {index_id}")
-        price_data = self._fetch_from_external_api(index_id, start_date, end_date)
-        
+            price_data = PriceData.from_dataframe(cached_df, index_id)
+        else:
+            # 2. 尝试数据库缓存
+            cached_df = self._get_from_db_cache(index_id, start_date, end_date)
+            if cached_df is not None:
+                # ✅ 数据库缓存命中：仅写入内存缓存
+                self._set_to_memory_cache(cache_key, cached_df)
+                # 转换为 PriceData
+                price_data = PriceData.from_dataframe(cached_df, index_id)
+            else:
+                # 3. 调用外部API（子类实现）
+                logger.info(f"🌐 缓存未命中，调用外部API: {index_id}")
+                price_data = self._fetch_from_external_api(index_id, start_date, end_date)
+                
+                # ✅ 仅在外部API调用成功后写入缓存
+                if price_data and price_data.count > 0:
+                    df = price_data.to_dataframe()
+                    # 写入数据库缓存
+                    self._set_to_db_cache(index_id, df)
+                    # 写入内存缓存
+                    self._set_to_memory_cache(cache_key, df)
+
+        # ✅ 无论从哪个来源获取数据，都设置 needs_realtime_kline 标记
         if price_data and price_data.count > 0:
-            # 转换为 DataFrame
-            df = price_data.to_dataframe()
-            
-            # 写入数据库缓存
-            self._set_to_db_cache(index_id, df)
-            
-            # 写入内存缓存
-            self._set_to_memory_cache(cache_key, df)
-        self.set_needs_realtime_kline(price_data,current_time)
+            self.set_needs_realtime_kline(price_data, current_time)
+        
         return price_data
 
-    def set_needs_realtime_kline(self,price_data:PriceData,current_time: datetime):
-        market_code=MarketUtils.infer_market_from_symbol(price_data.symbol)
+    def set_needs_realtime_kline(self, price_data: PriceData, current_time: datetime):
+        """设置 needs_realtime_kline 标记
+        
+        根据当前交易时段判断是否需要获取实时K线：
+        - 盘前/盘中/午盘：需要获取实时K线（True）
+        - 盘后：不需要（False，当天K柱已在历史数据中）
+        
+        Args:
+            price_data: 价格数据对象
+            current_time: 当前时间
+        """
+        market_code = MarketUtils.infer_market_from_symbol(price_data.symbol)
         trading_phase = MarketUtils.determine_trading_phase(market_code, current_time)
-        needs_realtime_kline = trading_phase in [
+        
+        # 🔧 直接修改 price_data 对象的属性
+        price_data.needs_realtime_kline = trading_phase in [
             TradingPhase.BEFORE_OPEN,
             TradingPhase.TRADING,
             TradingPhase.NOON_BREAK
         ]
-        return needs_realtime_kline
     
     # ========================================================================
     # 数据获取接口（对外提供，自动使用缓存）

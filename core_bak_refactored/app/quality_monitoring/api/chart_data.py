@@ -75,7 +75,8 @@ class ChartDataAssembler:
             {
                 'kline': [...],  # K线数据（包含MA）
                 'indicators': {...},  # 技术指标数据
-                'events': [...]  # 事件数据
+                'events': [...],  # 事件数据
+                'needs_realtime_kline': bool  # 🔧 是否需要获取实时K线（盘前/盘中/午盘为True，盘后为False）
             }
         
         Raises:
@@ -123,13 +124,14 @@ class ChartDataAssembler:
             events = self._detect_events(price_data_requested)
             logger.info(f"事件检测成功，共 {len(events)} 个事件")
             
-            # 4. 组装返回数据
+            # 4. 组装返回数据（包含 needs_realtime_kline 标记）
             result = {
                 'kline': kline_with_ma,
                 'indicators': indicators_data,
-                'events': events
+                'events': events,
+                'needs_realtime_kline': price_data_full.needs_realtime_kline  # 🔧 从 PriceData 中获取标记
             }
-            logger.info(f"图表数据组装完成: kline={len(kline_with_ma)} 条, indicators={len(indicators_data)} 个, events={len(events)} 个")
+            logger.info(f"图表数据组装完成: kline={len(kline_with_ma)} 条, indicators={len(indicators_data)} 个, events={len(events)} 个, needs_realtime_kline={price_data_full.needs_realtime_kline}")
             return result
         
         except Exception as e:
@@ -172,7 +174,10 @@ class ChartDataAssembler:
         days_needed = count * multiplier * 2  # 预留冗余
         
         if before:
-            end_date = datetime.strptime(before, '%Y-%m-%d')
+            # 🔧 关键修复：before 表示获取此日期**之前**的数据（不包含当天）
+            # 需要将 end_date 设置为 before 的前一天，避免数据重复
+            before_date = datetime.strptime(before, '%Y-%m-%d')
+            end_date = before_date - timedelta(days=1)
         else:
             end_date = datetime.now()
         

@@ -2362,12 +2362,18 @@ function loadKline(indexId) {
             allIndicatorsData = chartData.indicators || {}  // 🔧 保存后端计算的指标数据
             
             console.log('🎯 后端指标数据:', allIndicatorsData)
+            console.log('🎯 needs_realtime_kline:', chartData.needs_realtime_kline)
             
             renderKline(allKlineData, allEvents)
             
-            // 🔧 启动实时K线（仅限日线周期）
-            if (currentPeriod === 'daily') {
+            // 🔧 根据后端返回的 needs_realtime_kline 标记决定是否启动实时K线
+            // - 盘前/盘中/午盘：needs_realtime_kline = true，需要获取当天动态K柱
+            // - 盘后：needs_realtime_kline = false，当天K柱已在历史数据中
+            if (currentPeriod === 'daily' && chartData.needs_realtime_kline) {
+                console.log('✅ 需要实时K线，启动轮询')
                 setTimeout(() => startRealtimeKline(), 500)  // 延迟启动，避免与图表渲染冲突
+            } else if (currentPeriod === 'daily') {
+                console.log('⏸️ 盘后时段，无需实时K线')
             }
         })
         .catch(err => {
