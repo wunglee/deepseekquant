@@ -483,7 +483,7 @@ class QualityMonitoringService:
             start_date = (datetime.now() - timedelta(days=100)).strftime('%Y-%m-%d')
             
             try:
-                data = self.data_provider.get_index_prices(index_id, start_date, end_date,)
+                data = self.data_provider.get_index_prices(index_id, start_date, end_date, datetime.now())
             except Exception as e:
                 # 如果真实数据获取失败，使用示例数据演示功能
                 logger.warning(f"真实数据获取失败，使用示例数据: {e}")

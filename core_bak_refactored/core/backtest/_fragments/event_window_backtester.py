@@ -91,6 +91,8 @@ class HistoricalDataProvider(Protocol):
 # 事件窗口回测引擎（回测模块业务逻辑）
 # =============================================================================
 
+from datetime import datetime
+
 class EventWindowBacktester:
     """
     事件窗口回测引擎（功能碎片业务逻辑）
@@ -245,7 +247,7 @@ class EventWindowBacktester:
         start_date, end_date = event.period
         
         # 获取基准指数数据
-        prices = self.data_provider.get_index_prices(benchmark_index, start_date, end_date)
+        prices = self.data_provider.get_index_prices(benchmark_index, start_date, end_date, datetime.now())
         
         if len(prices) < 2:
             logger.warning(f"数据不足: {benchmark_index}, {start_date}-{end_date}")

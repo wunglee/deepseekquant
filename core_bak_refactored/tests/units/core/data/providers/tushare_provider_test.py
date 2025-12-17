@@ -85,7 +85,7 @@ class TushareProviderAPITest(unittest.TestCase):
             
             # 尝试获取数据应该抛出异常
             with self.assertRaises(RuntimeError) as context:
-                provider.get_index_prices('000300.SH', '2023-01-01', '2023-01-10')
+                provider.get_index_prices('000300.SH', '2023-01-01', '2023-01-10', datetime.now())
             
             # 验证错误消息
             self.assertIn('Tushare API not available', str(context.exception))
@@ -116,7 +116,7 @@ class TushareProviderAPITest(unittest.TestCase):
         with patch('core_bak_refactored.core.data.providers.tushare_provider.TushareDataProvider._load_token_from_config', return_value="test_token"):
             provider = TushareDataProvider()
             
-            result = provider.get_index_prices('000300.SH', '2023-01-03', '2023-01-05')
+            result = provider.get_index_prices('000300.SH', '2023-01-03', '2023-01-05', datetime.now())
             
             # 验证返回的是 PriceData 对象
             self.assertIsInstance(result, PriceData)
@@ -150,7 +150,7 @@ class TushareProviderAPITest(unittest.TestCase):
         with patch('core_bak_refactored.core.data.providers.tushare_provider.TushareDataProvider._load_token_from_config', return_value="test_token"):
             provider = TushareDataProvider()
             
-            result = provider.get_stock_prices('000001.SZ', '2023-01-03', '2023-01-04')
+            result = provider.get_stock_prices('000001.SZ', '2023-01-03', '2023-01-04', datetime.now())
             
             # 验证返回的是 PriceData 对象
             self.assertIsInstance(result, PriceData)

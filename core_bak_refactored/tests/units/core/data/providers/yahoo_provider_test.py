@@ -46,7 +46,7 @@ class TestYahooFinanceDataProvider(unittest.TestCase):
         mock_download.return_value = mock_data
         
         # 测试获取指数价格数据
-        result = self.provider.get_index_prices('^GSPC', '2023-01-01', '2023-01-03')
+        result = self.provider.get_index_prices('^GSPC', '2023-01-01', '2023-01-03', datetime.now())
         
         # 验证结果
         self.assertIsInstance(result, PriceData)
@@ -70,7 +70,7 @@ class TestYahooFinanceDataProvider(unittest.TestCase):
         
         # 应该抛出ValueError异常
         with self.assertRaises(ValueError) as context:
-            self.provider.get_index_prices('^GSPC', '2023-01-01', '2023-01-03')
+            self.provider.get_index_prices('^GSPC', '2023-01-01', '2023-01-03', datetime.now())
             
         # 错误消息被包装在"Failed to fetch data"中
         self.assertIn("Failed to fetch data for ^GSPC", str(context.exception))
@@ -83,7 +83,7 @@ class TestYahooFinanceDataProvider(unittest.TestCase):
         
         # 应该抛出ValueError异常
         with self.assertRaises(ValueError) as context:
-            self.provider.get_index_prices('^GSPC', '2023-01-01', '2023-01-03')
+            self.provider.get_index_prices('^GSPC', '2023-01-01', '2023-01-03', datetime.now())
             
         # 错误消息被包装在"Failed to fetch data"中
         self.assertIn("Failed to fetch data for ^GSPC", str(context.exception))
@@ -103,7 +103,7 @@ class TestYahooFinanceDataProvider(unittest.TestCase):
         mock_download.return_value = mock_data
         
         # 测试获取个股价格数据
-        result = self.provider.get_stock_prices('AAPL', '2023-01-01', '2023-01-03')
+        result = self.provider.get_stock_prices('AAPL', '2023-01-01', '2023-01-03', datetime.now())
         
         # 验证结果
         self.assertIsInstance(result, PriceData)
@@ -119,7 +119,7 @@ class TestYahooFinanceDataProvider(unittest.TestCase):
         
         # 应该抛出ValueError异常
         with self.assertRaises(ValueError) as context:
-            self.provider.get_stock_prices('AAPL', '2023-01-01', '2023-01-03')
+            self.provider.get_stock_prices('AAPL', '2023-01-01', '2023-01-03', datetime.now())
             
         # 错误消息被包装在"Failed to fetch data"中
         self.assertIn("Failed to fetch data for AAPL", str(context.exception))
@@ -142,7 +142,7 @@ class TestYahooFinanceDataProvider(unittest.TestCase):
         start_date = datetime(2023, 1, 1)
         end_date = datetime(2023, 1, 1)
         
-        result = self.provider.get_index_prices('^GSPC', start_date, end_date)
+        result = self.provider.get_index_prices('^GSPC', start_date, end_date, datetime.now())
         
         self.assertIsInstance(result, PriceData)
         self.assertEqual(len(result.records), 1)
@@ -164,7 +164,7 @@ class TestYahooFinanceDataProvider(unittest.TestCase):
         
         mock_download.return_value = mock_data
         
-        result = self.provider.get_index_prices('^GSPC', '2023-01-01', '2023-01-02')
+        result = self.provider.get_index_prices('^GSPC', '2023-01-01', '2023-01-02', datetime.now())
         
         self.assertIsInstance(result, PriceData)
         self.assertEqual(len(result.records), 2)
@@ -364,7 +364,7 @@ class TestYahooProxyConfiguration(unittest.TestCase):
         mock_fetch.return_value = mock_data
         
         provider = YahooFinanceDataProvider()
-        result = provider.get_index_prices('^GSPC', '2023-01-01', '2023-01-02')
+        result = provider.get_index_prices('^GSPC', '2023-01-01', '2023-01-02', datetime.now())
         
         # 验证数据获取成功
         self.assertIsInstance(result, PriceData)
@@ -395,7 +395,7 @@ class TestYahooRateLimit(unittest.TestCase):
         # 模拟连续请求
         test_symbols = ['^GSPC']  # 只测试一个符号，避免MultiIndex问题
         for symbol in test_symbols:
-            result = provider.get_index_prices(symbol, '2023-01-01', '2023-01-01')
+            result = provider.get_index_prices(symbol, '2023-01-01', '2023-01-01', datetime.now())
             self.assertIsInstance(result, PriceData)
         
         # 验证请求成功（实际项目中的重试机制会处理限速）
@@ -420,7 +420,7 @@ class TestYahooRateLimit(unittest.TestCase):
             provider = YahooFinanceDataProvider()
             self.assertIsNotNone(provider.yf)
             
-            result = provider.get_index_prices('^GSPC', '2023-01-01', '2023-01-01')
+            result = provider.get_index_prices('^GSPC', '2023-01-01', '2023-01-01', datetime.now())
             self.assertIsInstance(result, PriceData)
     
     @patch('core_bak_refactored.core.data.providers.yahoo_provider.YahooFinanceDataProvider._fetch_with_retry')
@@ -446,7 +446,7 @@ class TestYahooRateLimit(unittest.TestCase):
         
         for symbol in test_symbols:
             try:
-                result = provider.get_index_prices(symbol, '2023-01-01', '2023-01-01')
+                result = provider.get_index_prices(symbol, '2023-01-01', '2023-01-01', datetime.now())
                 if isinstance(result, PriceData):
                     success_count += 1
             except Exception:

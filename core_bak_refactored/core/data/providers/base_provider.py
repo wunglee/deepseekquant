@@ -475,7 +475,7 @@ class BaseDataProvider(ABC,HistoricalDataProvider):
                 start_time = time.time()
                 
                 # 执行测试查询
-                test_data = test_instance.get_index_prices(test_symbol, start_date, end_date)
+                test_data = test_instance.get_index_prices(test_symbol, start_date, end_date, datetime.now())
                 
                 latency_ms = int((time.time() - start_time) * 1000)
                 

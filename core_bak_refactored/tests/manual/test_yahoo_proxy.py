@@ -170,7 +170,8 @@ def test_yfinance_provider():
         price_data = provider.get_index_prices(
             '^GSPC',
             start_date.strftime('%Y-%m-%d'),
-            end_date.strftime('%Y-%m-%d')
+            end_date.strftime('%Y-%m-%d'),
+            datetime.now()
         )
         
         print(f"✅ 成功获取数据")

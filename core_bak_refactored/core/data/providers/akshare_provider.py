@@ -147,7 +147,7 @@ class AKShareDataProvider(BaseDataProvider):
         Returns:
             Series with date index and return values
         """
-        price_data = self.get_index_prices(index_id, start_date, end_date)
+        price_data = self.get_index_prices(index_id, start_date, end_date, datetime.now())
         prices = price_data.to_dataframe().set_index('date')
         returns = prices['close'].pct_change().dropna()
         return returns
