@@ -1,4 +1,3 @@
-<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
@@ -699,7 +698,7 @@ function adjustDataZoomAfterPrepend(oldLength, prependLength) {
 }
 
 // ==================== 全局变量（K线图相关） ====================
-let currentMarketKey = null  // 🔧 当前市场标识
+// 🔧 删除：currentMarketKey - 前端不再判断市场，完全依赖后端 should_poll
 let currentIndex = null
 let currentPeriod = 'daily'
 let currentIndicator = 'VOL'
@@ -1291,7 +1290,6 @@ function switchChartType(type) {
  */
 function switchIntradayDataMode(mode) {
     const oldMode = IntradayChart.getMode()
-    console.log(`🔄 切换数据模式: ${oldMode} → ${mode}`)
     IntradayChart.setMode(mode)
     
     // 🔧 显示/隐藏交易时段选择器（只有模拟模式才显示）
@@ -1302,16 +1300,11 @@ function switchIntradayDataMode(mode) {
         phaseSelector.style.display = 'none'
     }
     
-    // 清空当前数据，重新加载
     if (currentIndex && currentChartType === 'intraday') {
-        // 🔥 彻底重建布局
-        // 🔧 修复：使用 currentIndex.type 判断是否为指数
         const isIndex = currentIndex.type === 'index'
         const isStock = !isIndex
-        console.log(`🔍 switchIntradayDataMode: currentIndex.id=${currentIndex.id}, type=${currentIndex.type}, isIndex=${isIndex}, isStock=${isStock}`)
         IntradayChart.rebuildLayout(isStock)
         
-        // 重新加载数据
         loadIntradayData(currentIndex.id, true)
     }
 }
@@ -1320,12 +1313,8 @@ function switchIntradayDataMode(mode) {
  * 🔧 切换交易时段（盘前/盘中/盘后）
  */
 function switchIntradayPhase(phase) {
-    console.log(`🔄 切换交易时段: ${phase}`)
-    
-    // 🔧 将选择的时段保存到全局变量
     window.selectedTradingPhase = phase
     
-    // 重新加载数据
     if (currentIndex && currentChartType === 'intraday') {
         loadIntradayData(currentIndex.id, true)
     }
@@ -2591,13 +2580,9 @@ function showIntradayError(message) {
 /**
  * 🔧 判断是否处于交易时段（根据市场）
  */
-function isTradingTime() {
-    // 🔧 使用IntradayChart模块的交易时段判断
-    return IntradayChart.isTradingTime(currentMarketKey)
-}
+// 🔧 删除：isTradingTime() - 前端不再判断交易时段，完全依赖后端 should_poll
 
 function loadIntradayData(symbol, isInitial = true) {
-    console.log(isInitial ? '🆕 首次加载分时数据:' : '🔄 增量更新分时数据:', symbol)
     
     // 🔧 只有首次加载才清空旧数据和显示加载状态
     if (isInitial) {
@@ -2609,10 +2594,8 @@ function loadIntradayData(symbol, isInitial = true) {
         // 🎮 模拟模式：初始化虚拟时间为 09:30:00
         const mode = IntradayChart.getMode()
         if (mode === 'mock') {
-            // 🔧 直接使用固定字符串，完全不依赖系统时间
             const virtualStartTime = '2024-12-14 09:30:00'
             IntradayChart.setVirtualTime(virtualStartTime)
-            console.log(`📅 模拟模式 - 初始化虚拟时间: ${virtualStartTime}`)
         }
     }
     
@@ -2636,29 +2619,26 @@ function loadIntradayData(symbol, isInitial = true) {
             const newMinutes = totalMinutes % 60
             currentTime = `${date} ${String(newHours).padStart(2, '0')}:${String(newMinutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
             IntradayChart.setVirtualTime(currentTime)
-            console.log(`🕜 虚拟时间递增: ${currentTime}`)
         }
     } else {
         // 📊 真实模式：使用系统实际时间
         currentTime = Math.floor(Date.now() / 1000)  // 当前时间（秒）
     }
     
-    // 构建 TickRange 对象
+    // 🔧 构建 TickRange 对象
+    // 规则：
+    // 1. 模拟模式：盘中时始终生成（首次+增量）
+    // 2. 真实模式：只在增量更新时生成（有 lastRequestTime）
     let tickRange = null
+    const lastRequestTime = IntradayChart.getRequestTime()
     
-    // 🔧 关键：判断是否需要生成 TickRange
-    const isTradingHours = isTradingTime()  // 🔧 使用统一的市场交易时间判断
+    let simulationMode = window.selectedTradingPhase || 'trading'
     
-    // 🔧 获取用户选择的交易时段（只在模拟模式下有效）
-    let simulationMode = window.selectedTradingPhase || 'trading'  // 默认盘中
-    
-    // 🔧 模拟模式：始终生成 TickRange
-    // 🔧 真实模式：首次加载不生成（交易时段拉取当前数据，非交易时段拉取上一交易日完整数据）
-    //             增量更新时生成（用于标记时间戳）
-    
-    // 🔧 关键修复：模拟模式下，盘后不应该生成 TickRange
-    const shouldGenerateTickRange = mode === 'mock' && simulationMode === 'trading' && (isInitial || !isInitial)
-                                    || (mode === 'real' && isTradingHours && !isInitial)
+    // 🔧 判断是否生成 TickRange
+    // 模拟模式：盘中时始终生成
+    // 真实模式：只在增量更新时生成（有 lastRequestTime）
+    const shouldGenerateTickRange = (mode === 'mock' && simulationMode === 'trading')
+                                    || (mode === 'real' && !isInitial && lastRequestTime)
     
     if (shouldGenerateTickRange) {
         if (isInitial) {
@@ -2676,37 +2656,42 @@ function loadIntradayData(symbol, isInitial = true) {
                 period_seconds: 5
             }
             
-            // 🔧 关键：同步虚拟时间和请求时间到结束时间，下次增量从这里开始
             IntradayChart.setVirtualTime(endTime)
             IntradayChart.setRequestTime(endTime)
-            
-            console.log(`🎮 模拟模式 - 首次加载 1 小时数据: ${startTime} ~ ${endTime}，虚拟时间同步到: ${endTime}`)
         } else {
             // 🎯 增量更新：每次增加 1 分钟（从上次结束时间到新的结束时间）
             const lastRequestTime = IntradayChart.getRequestTime()
-            const newStartTime = lastRequestTime  // 从上次结束时间开始
-            const newEndTime = currentTime  // 到当前虚拟时间
+            let newStartTime, newEndTime
+            
+            if (mode === 'mock') {
+                // 模拟模式：使用虚拟时间
+                newStartTime = lastRequestTime  // 从上次结束时间开始
+                newEndTime = currentTime  // 到当前虚拟时间
+            } else {
+                // 🔧 真实模式：使用系统时间戳转换为格式化时间
+                const now = new Date()
+                const dateStr = now.toISOString().split('T')[0]  // YYYY-MM-DD
+                const timeStr = now.toTimeString().split(' ')[0]  // HH:MM:SS
+                newEndTime = `${dateStr} ${timeStr}`
+                
+                // 如果有lastRequestTime，使用它；否则使用开盘时间
+                if (lastRequestTime) {
+                    newStartTime = lastRequestTime
+                } else {
+                    // 首次增量更新，从开盘到现在
+                    newStartTime = `${dateStr} 09:30:00`
+                }
+            }
             
             tickRange = {
                 start_time: newStartTime,
                 end_time: newEndTime,
                 period_seconds: 5
             }
-            
-            console.log(`${mode === 'mock' ? '🎮 模拟' : '📊 真实'}模式 - 增量更新 1 分钟: ${newStartTime} ~ ${newEndTime}`)
-            
-            IntradayChart.setRequestTime(currentTime)
-        }
-    } else {
-        // 🔧 真实模式首次加载或非交易时段：不生成 TickRange
-        if (mode === 'real' && isInitial && isTradingHours) {
-            console.log(`📊 真实模式 - 首次加载（交易时段），获取当前时刻之前全部数据`)
-        } else if (mode === 'real' && !isTradingHours) {
-            console.log(`📊 真实模式 - 首次加载或增量更新，获取历史数据（后端将返回should_poll）`)
+            IntradayChart.setRequestTime(newEndTime)
         }
     }
     
-    // 🔧 根据 mode 决定调用不同的 API 端点
     let url
     if (mode === 'mock') {
         // 模拟模式：调用 /api/v1/intraday/mock
@@ -2722,7 +2707,6 @@ function loadIntradayData(symbol, isInitial = true) {
         url = `/api/v1/intraday/data?symbol=${encodeURIComponent(symbol)}`
     }
     
-    // 🔧 传递 tick_range（如果存在）
     if (tickRange) {
         url += `&tick_range=${encodeURIComponent(JSON.stringify(tickRange))}`
     }
@@ -2747,12 +2731,19 @@ function loadIntradayData(symbol, isInitial = true) {
                 return
             }
             
-            // 🔧 关键：增量更新逻辑
             if (isInitial) {
-                // 首次加载：全量更新
                 IntradayChart.setData(res.data)
-                console.log(`🆕 初始加载完成: ${res.data.times.length}个点位`)
-                console.log(`🆕 是否指数: ${res.data.is_index}`)
+                
+                if (res.data.times && res.data.times.length > 0) {
+                    const lastTime = res.data.times[res.data.times.length - 1]
+                    if (mode === 'real') {
+                        // 真实模式：记录完整时间戳（日期+时间）
+                        const now = new Date()
+                        const dateStr = now.toISOString().split('T')[0]
+                        const lastRequestTime = `${dateStr} ${lastTime}`
+                        IntradayChart.setRequestTime(lastRequestTime)
+                    }
+                }
                 
                 renderIntradayCharts(res.data)
 
@@ -2764,31 +2755,14 @@ function loadIntradayData(symbol, isInitial = true) {
                 
                 // 🔧 mode 已经在上面定义，不需要重复定义
                 
-                if (mode === 'mock') {
-                    if (res.data.should_poll) {
-                        // 盘中或盘前：启动定时器（5秒）
-                        console.log(`🎮 模拟模式，启动定时器（5秒）`)
-                        const newTimer = setInterval(() => {
-                            if (currentChartType === 'intraday' && currentIndex) {
-                                loadIntradayData(currentIndex.id, false)
-                            }
-                        }, 5000)
-                        IntradayChart.setTimer(newTimer)
-                    } else {
-                        // 盘后：不启动定时器
-                        console.log(`⏸️ 模拟模式，不启动定时器`)
-                    }
-                } else if (mode === 'real') {
-                    if (res.data.should_poll) {
-                        const newTimer = setInterval(() => {
-                            if (currentChartType === 'intraday' && currentIndex) {
-                                loadIntradayData(currentIndex.id, false)
-                            }
-                        }, 1000)
-                        IntradayChart.setTimer(newTimer)
-                    } else{
-                        console.log('⏸️ 盘后时段，不启动定时器')
-                    }
+                if (res.data.should_poll) {
+                    const pollInterval = mode === 'mock' ? 5000 : 1000
+                    const newTimer = setInterval(() => {
+                        if (currentChartType === 'intraday' && currentIndex) {
+                            loadIntradayData(currentIndex.id, false)
+                        }
+                    }, pollInterval)
+                    IntradayChart.setTimer(newTimer)
                 }
                 
                 // 🔧 如果不是指数，更新盘口和成交明细（等待DOM渲染完成）
@@ -2809,36 +2783,26 @@ function loadIntradayData(symbol, isInitial = true) {
                 
                 showIntradayLoading(false)
             } else {
-                // 增量更新：只更新最新数据
                 const intradayData = IntradayChart.getData()
                 if (!intradayData) {
-                    console.warn('⚠️ 增量更新时intradayData为空，跳过')
-                    return  // 如果没有初始数据，忽略增量更新
+                    return
                 }
                 
-                // 🔧 检查是否是重复数据（时间范围相同）
                 if (intradayData.times && intradayData.times.length > 0 && 
                     res.data.times && res.data.times.length > 0) {
                     const lastTime = intradayData.times[intradayData.times.length - 1]
                     const newLastTime = res.data.times[res.data.times.length - 1]
                     if (lastTime === newLastTime) {
-                        // 数据重复，跳过本次更新
                         return
                     }
                 }
                 
-                console.log(`🔄 开始增量更新，后端返回${res.data.times.length}个tick，时间范围: ${res.data.times[0]} - ${res.data.times[res.data.times.length-1]}`)
-                console.log(`📊 详细数据: times=${JSON.stringify(res.data.times)}, prices=${JSON.stringify(res.data.prices)}`)
-                
-                // 🔧 更新当前价格、涨跌信息
                 intradayData.current_price = res.data.current_price
                 intradayData.change = res.data.change
                 intradayData.change_percent = res.data.change_percent
                 
-                // 🔧 增量更新图表数据（不重新渲染，只追加新数据）
                 updateIntradayChartsIncremental(res.data)
                 
-                // 🔧 更新盘口和成交明细（如果不是指数）
                 if (!res.data.is_index) {
                     updateOrderBook(res.data.order_book)
                     updateTicker(res.data.trade_records)
@@ -2897,8 +2861,6 @@ function renderIntradayCharts(data) {
         }
     }
     console.log(`🕒 生成完整时间轴: ${fullTradingTimes.length}个点位`)
-    
-    // 🔧 将实际数据映射到完整时间轴（未到达的时间点为null）
     const priceData = new Array(fullTradingTimes.length).fill(null)
     const avgPriceData = new Array(fullTradingTimes.length).fill(null)
     const volumeData = new Array(fullTradingTimes.length).fill(null)
@@ -2927,39 +2889,7 @@ function renderIntradayCharts(data) {
         })
     }
     
-    // 🔧 调试信息：检查数据映射情况
-    const priceCount = priceData.filter(v => v !== null).length
-    const volumeCount = volumeData.filter(v => v !== null).length
-    console.log(`📊 【全量渲染】数据映射结果: 后端返回${hasTicks ? data.times.length : 0}个tick, 映射后: 价格${priceCount}个, 成交量${volumeCount}个`)
-    console.log(`📊 【全量渲染】前端生成时间轴: ${fullTradingTimes.length}个点`)
-    if (hasTicks) {
-        console.log(`📊 【全量渲染】后端时间范围: ${data.times[0]} - ${data.times[data.times.length-1]}`)
-        console.log(`📊 【全量渲染】映射后前10个价格: ${priceData.filter(v => v !== null).slice(0, 10).map(p => p.toFixed(2)).join(', ')}`)
-        // 🔧 新增：检查是否有未映射的数据点
-        const unmappedTimes = data.times.filter(time => !fullTradingTimes.includes(time))
-        if (unmappedTimes.length > 0) {
-            console.warn(`⚠️ 发现 ${unmappedTimes.length} 个无法映射的时间点:`, unmappedTimes.slice(0, 10))
-        }
-        // 🔧 检查数据点的分布情况
-        const intervals = []
-        for (let i = 1; i < Math.min(100, data.times.length); i++) {
-            const t1 = data.times[i-1].split(':')
-            const t2 = data.times[i].split(':')
-            const seconds1 = parseInt(t1[0])*3600 + parseInt(t1[1])*60 + parseInt(t1[2])
-            const seconds2 = parseInt(t2[0])*3600 + parseInt(t2[1])*60 + parseInt(t2[2])
-            intervals.push(seconds2 - seconds1)
-        }
-        const avgInterval = intervals.reduce((a, b) => a + b, 0) / intervals.length
-        const uniqueIntervals = [...new Set(intervals)]
-        console.log(`📊 【数据间隔分析】前100个点的平均间隔: ${avgInterval.toFixed(2)}秒, 不同间隔值: ${uniqueIntervals.sort((a,b) => a-b).join(', ')}秒`)
-    }
-    
-    // 🔧 参考K线图逻辑：先clear()清空图表（包括"加载中"提示）
     const charts = IntradayChart.getCharts()
-    console.log('📊 【renderIntradayCharts】获取图表实例:', { 
-        price: charts.price ? 'OK' : 'NULL', 
-        volume: charts.volume ? 'OK' : 'NULL' 
-    })
     
     if (!charts.price) {
         console.error('❌ 价格图表实例为空，无法渲染！')
@@ -2972,22 +2902,6 @@ function renderIntradayCharts(data) {
     
     charts.price.clear()
     charts.volume.clear()
-    
-    // 🔧 检查图表DOM元素状态
-    const priceChartDom = document.getElementById('intradayPriceChart')
-    const volumeChartDom = document.getElementById('intradayVolumeChart')
-    console.log('📋 【DOM检查】价格图表DOM:', {
-        exists: !!priceChartDom,
-        width: priceChartDom?.offsetWidth,
-        height: priceChartDom?.offsetHeight,
-        visible: priceChartDom?.offsetParent !== null
-    })
-    console.log('📋 【DOM检查】成交量图表DOM:', {
-        exists: !!volumeChartDom,
-        width: volumeChartDom?.offsetWidth,
-        height: volumeChartDom?.offsetHeight,
-        visible: volumeChartDom?.offsetParent !== null
-    })
     
     charts.price.setOption({
         title: {
@@ -3037,10 +2951,24 @@ function renderIntradayCharts(data) {
         yAxis: {
             type: 'value',
             scale: true,
+            // 🔧 关键修复：以昨收价为中心点，确保昨收线在图表中间
+            min: function(value) {
+                // 计算价格范围与昨收价的最大偏离
+                const dataMin = value.min
+                const dataMax = value.max
+                const maxOffset = Math.max(Math.abs(dataMax - yesterdayClose), Math.abs(yesterdayClose - dataMin))
+                // 以昨收为中心，对称设置 Y 轴范围
+                return yesterdayClose - maxOffset * 1.1  // 1.1 留出 10% 的边距
+            },
+            max: function(value) {
+                const dataMin = value.min
+                const dataMax = value.max
+                const maxOffset = Math.max(Math.abs(dataMax - yesterdayClose), Math.abs(yesterdayClose - dataMin))
+                return yesterdayClose + maxOffset * 1.1
+            },
             splitLine: {
                 lineStyle: { type: 'dashed', color: '#e5e7eb' }
             },
-            // 添加昨收基准线
             axisLine: { onZero: false }
         },
         series: [
@@ -3066,14 +2994,54 @@ function renderIntradayCharts(data) {
                 connectNulls: true,  // 🔧 连接null值，否则数据太稀疏无法显示
                 markLine: {
                     symbol: 'none',
+                    silent: false,
+                    animation: false,
                     data: [
                         {
+                            // 🔧 昨收横线
                             yAxis: yesterdayClose,
-                            label: { formatter: '昨收: {c}' },
-                            lineStyle: { color: '#9ca3af', type: 'dashed', width: 1 }
+                            label: { 
+                                show: true,
+                                formatter: '昨收: {c}',
+                                position: 'end',
+                                color: '#6b7280',
+                                fontSize: 11
+                            },
+                            lineStyle: { 
+                                color: '#9ca3af', 
+                                type: 'dashed', 
+                                width: 2,  // 🔧 加粗昨收线
+                                opacity: 0.9
+                            }
+                        },
+                        {
+                            // 🔧 11:30 午盘分割线（上午收盘）
+                            xAxis: '11:30:00',
+                            label: { 
+                                show: false
+                            },
+                            lineStyle: { 
+                                color: '#9ca3af',  // 🔧 加深颜色
+                                type: 'solid', 
+                                width: 2,  // 🔧 加粗
+                                opacity: 0.8  // 🔧 增加不透明度
+                            }
+                        },
+                        {
+                            // 🔧 13:00 午盘分割线（下午开盘）
+                            xAxis: '13:00:00',
+                            label: { 
+                                show: false
+                            },
+                            lineStyle: { 
+                                color: '#9ca3af',  // 🔧 加深颜色
+                                type: 'solid', 
+                                width: 2,  // 🔧 加粗
+                                opacity: 0.8  // 🔧 增加不透明度
+                            }
                         }
                     ]
-                }
+                },
             },
             {
                 name: '均价',
@@ -3087,21 +3055,6 @@ function renderIntradayCharts(data) {
             }
         ]
     }, true)  // 🔧 关键：使用true完全替换配置，清除graphic
-    
-    console.log('✅ 价格图表setOption完成')
-    console.log('📊 【价格图表配置】series[0].data前10个非null值:', priceData.filter(v => v !== null).slice(0, 10))
-    console.log('📊 【价格图表配置】series[0].data总长度:', priceData.length, '非null数量:', priceData.filter(v => v !== null).length)
-    console.log('📊 【价格图表配置】昨收价格:', yesterdayClose, '当前价格:', currentPrice)
-    console.log('📊 【价格图表配置】价格范围:', {
-        最小价格: Math.min(...priceData.filter(v => v !== null)),
-        最大价格: Math.max(...priceData.filter(v => v !== null))
-    })
-    
-    // 🔧 强制调用 resize() 确保图表尺寸正确
-    setTimeout(() => {
-        charts.price.resize()
-        console.log('🔄 已调用 price.resize()')
-    }, 100)
     
     // 渲染成交量
     charts.volume.setOption({
@@ -3154,10 +3107,24 @@ function renderIntradayCharts(data) {
 function updateIntradayChartsIncremental(newData) {
     if (!intradayData || !newData) return
     
+    // 🔧 关键：昨收价格从首次加载的 intradayData 中获取，不使用 newData
     const yesterdayClose = parseFloat(intradayData.yesterday_close)
-    const currentPrice = parseFloat(newData.current_price)
-    const change = parseFloat(newData.change)
-    const changePercent = parseFloat(newData.change_percent)
+    
+    const hasNewData = newData.times && newData.times.length > 0
+    
+    let currentPrice, change, changePercent
+    if (hasNewData) {
+        // 有新数据：使用 newData 的价格
+        currentPrice = parseFloat(newData.current_price)
+        change = parseFloat(newData.change)
+        changePercent = parseFloat(newData.change_percent)
+    } else {
+        // 无新数据：保持 intradayData 的原价格
+        currentPrice = parseFloat(intradayData.current_price)
+        change = parseFloat(intradayData.change)
+        changePercent = parseFloat(intradayData.change_percent)
+        console.log('⚠️ 增量更新无新数据，保持原价格:', currentPrice)
+    }
     
     // 🔧 生成完整交易时段（与 renderIntradayCharts 相同，5秒级别）
     const fullTradingTimes = []
@@ -3179,25 +3146,18 @@ function updateIntradayChartsIncremental(newData) {
         }
     }
     
-    // 🔧 累积新批次数据到全局数据（而非替换）
-    console.log(`🔍 累积前: intradayData有${intradayData.times.length}个点, newData有${newData.times.length}个点`)
-    console.log(`🔍 累积前时间范围: ${intradayData.times[0]} - ${intradayData.times[intradayData.times.length-1]}`)
-    console.log(`🔍 newData时间范围: ${newData.times[0]} - ${newData.times[newData.times.length-1]}`)
+    if (hasNewData) {
+        newData.times.forEach((time, idx) => {
+            // 检查是否已存在（避免重复）
+            if (!intradayData.times.includes(time)) {
+                intradayData.times.push(time)
+                intradayData.prices.push(newData.prices[idx])
+                intradayData.avg_prices.push(newData.avg_prices[idx])
+                intradayData.volumes.push(newData.volumes[idx])
+            }
+        })
+    }
     
-    newData.times.forEach((time, idx) => {
-        // 检查是否已存在（避免重复）
-        if (!intradayData.times.includes(time)) {
-            intradayData.times.push(time)
-            intradayData.prices.push(newData.prices[idx])
-            intradayData.avg_prices.push(newData.avg_prices[idx])
-            intradayData.volumes.push(newData.volumes[idx])
-        }
-    })
-    
-    console.log(`📈 累积数据: 新增${newData.times.length}个点位, 总计${intradayData.times.length}个点位, 最新时间: ${newData.times[newData.times.length - 1]}, 价格: ${currentPrice}`)
-    console.log(`🔍 累积后的时间范围: ${intradayData.times[0]} - ${intradayData.times[intradayData.times.length - 1]}, 价格范围: ${Math.min(...intradayData.prices).toFixed(2)} - ${Math.max(...intradayData.prices).toFixed(2)}`)
-    
-    // 🔧 映射累积的数据到完整时间轴
     const priceData = new Array(fullTradingTimes.length).fill(null)
     const avgPriceData = new Array(fullTradingTimes.length).fill(null)
     const volumeData = new Array(fullTradingTimes.length).fill(null)
@@ -3211,32 +3171,6 @@ function updateIntradayChartsIncremental(newData) {
         }
     })
     
-    // 🔧 调试：检查映射后非null的数据点数量
-    const validPriceCount = priceData.filter(v => v !== null).length
-    const validVolumeCount = volumeData.filter(v => v !== null).length
-    console.log(`🗺️ 映射结果: 价格${validPriceCount}个有效点, 成交量${validVolumeCount}个有效点`)
-    
-    // 🔧 找到最后一个非null的成交量数据位置
-    let lastValidVolumeIndex = -1
-    for (let i = volumeData.length - 1; i >= 0; i--) {
-        if (volumeData[i] !== null) {
-            lastValidVolumeIndex = i
-            break
-        }
-    }
-    
-    if (lastValidVolumeIndex >= 0) {
-        const startIdx = Math.max(0, lastValidVolumeIndex - 19)
-        const endIdx = lastValidVolumeIndex + 1
-        const sampleVolumes = volumeData.slice(startIdx, endIdx)
-        const sampleTimes = fullTradingTimes.slice(startIdx, endIdx)
-        console.log(`📊 成交量数据样本(最后20个有效位置):`, sampleVolumes.map((v, i) => `[${sampleTimes[i]}]=${v}`).join(', '))
-    } else {
-        console.warn(`⚠️ 未找到有效的成交量数据！`)
-    }
-    
-    // 🔧 关键修改：批量更新两个图表，确保垂直对齐和同步渲染
-    // 先准备好两个图表的配置，然后一次性设置
     const priceOption = {
         title: {
             subtext: `昨收: ${yesterdayClose.toFixed(2)}  现价: ${currentPrice.toFixed(2)}  涨跌: ${change >= 0 ? '+' : ''}${change.toFixed(2)} (${changePercent.toFixed(2)}%)`,
@@ -3246,7 +3180,56 @@ function updateIntradayChartsIncremental(newData) {
             }
         },
         series: [
-            { data: priceData },
+            { 
+                data: priceData,
+                // 🔧 关键：增量更新时也要设置 markLine，配置必须与首次渲染完全一致
+                markLine: {
+                    symbol: 'none',
+                    silent: false,
+                    animation: false,
+                    data: [
+                        {
+                            // 🔧 昨收横线
+                            yAxis: yesterdayClose,
+                            label: { 
+                                show: true,
+                                formatter: '昨收: {c}',
+                                position: 'end',
+                                color: '#6b7280',
+                                fontSize: 11
+                            },
+                            lineStyle: { 
+                                color: '#9ca3af', 
+                                type: 'dashed', 
+                                width: 2,
+                                opacity: 0.9
+                            }
+                        },
+                        {
+                            // 🔧 11:30 午盘分割线
+                            xAxis: '11:30:00',
+                            label: { show: false },
+                            lineStyle: { 
+                                color: '#9ca3af',  // 🔧 加深颜色
+                                type: 'solid', 
+                                width: 2,  // 🔧 加粗
+                                opacity: 0.8  // 🔧 增加不透明度
+                            }
+                        },
+                        {
+                            // 🔧 13:00 午盘分割线
+                            xAxis: '13:00:00',
+                            label: { show: false },
+                            lineStyle: { 
+                                color: '#9ca3af',  // 🔧 加深颜色
+                                type: 'solid', 
+                                width: 2,  // 🔧 加粗
+                                opacity: 0.8  // 🔧 增加不透明度
+                            }
+                        }
+                    ]
+                }
+            },
             { data: avgPriceData }
         ]
     }
@@ -3285,14 +3268,10 @@ function updateIntradayChartsIncremental(newData) {
         echarts.connect([intradayPriceChart, intradayVolumeChart])
     }
     
-    // 🔧 使用 requestAnimationFrame 确保批量更新在同一帧内完成
     requestAnimationFrame(() => {
         try {
-            console.log('🎨 开始更新图表...')
             intradayPriceChart.setOption(priceOption)
-            // 🔧 关键：使用 replaceMerge 只替换 series 部分，保留其他配置
             intradayVolumeChart.setOption(volumeOption, { replaceMerge: ['series'] })
-            console.log('✅ 图表更新完成')
         } catch (error) {
             console.error('❌ 图表更新失败:', error)
             // 尝试重新初始化
@@ -3301,8 +3280,6 @@ function updateIntradayChartsIncremental(newData) {
             intradayVolumeChart.setOption(volumeOption, { replaceMerge: ['series'] })
         }
     })
-    
-    console.log('✅ 增量更新分时图，最新时间:', newData.times[newData.times.length - 1], '价格:', currentPrice)
 }
 
 /**

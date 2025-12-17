@@ -600,7 +600,10 @@ class ChartDataAssembler:
             logger.info(f"开始组装分时数据: symbol={symbol}, tick_range={tick_range}")
             
             # 🔧 获取分时数据（调用DataProvider的get_intraday_data接口）
-            intraday_data = self._data_provider.get_intraday_data(symbol)
+            # 重要：传递 tick_range 参数
+            # - 首次加载（tick_range=None）：返回开盘到当前的全部数据
+            # - 增量更新（tick_range有值）：只返回指定时间范围的增量数据
+            intraday_data = self._data_provider.get_intraday_data(symbol, tick_range=tick_range)
             
             # 转换为前端需要的格式
             times = [tick.time for tick in intraday_data.ticks]

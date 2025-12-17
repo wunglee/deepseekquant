@@ -38,6 +38,7 @@ from core_bak_refactored.core.data.providers.protocols import (HistoricalDataPro
 from core_bak_refactored.core.share.market import MarketUtils
 from core_bak_refactored.core.share.market.market_enums import TradingPhase
 from core_bak_refactored.core.data.providers.protocols import TickRange
+from core_bak_refactored.core.share.config_manager import ConfigManager
 import akshare as ak
 logger = logging.getLogger(__name__)
 
@@ -67,6 +68,7 @@ class AKShareDataProvider(BaseDataProvider, HistoricalDataProvider):
         self.available = False
         self._load_us_symbol_mapping()
         self._initialize()
+        self.config_manager = ConfigManager()
 
     def get_test_symbol(self) -> str:
         """获取测试符号"""
@@ -402,18 +404,18 @@ class AKShareDataProvider(BaseDataProvider, HistoricalDataProvider):
         trade_date = now.strftime('%Y-%m-%d')
         intraday_data = None
         trading_phase = MarketUtils.determine_trading_phase(market_code, now)
-
+        trading_hours = self.config_manager.get_trading_hours(market_code.value)
         if trading_phase == TradingPhase.BEFORE_OPEN:
             # 集合竞价时段（9:00-9:30）：返回空数据，用于清空分时图
             logger.info(f"集合竞价时段（{market_code.value}），返回空数据用于清空分时图")
 
             # 生成空 DataFrame
-            empty_df = self._generate_empty_data(symbol, trade_date, trading_phase)
+            empty_df = self._generate_empty_data(symbol)
 
             # 构建 IntradayData（集合竞价时段也要尝试获取盘口）
             intraday_data = self._build_intraday_data(
                 empty_df, symbol, trade_date,
-                fetch_realtime=True, enable_cache=False
+                fetch_trade_records=True, should_poll=True,enable_cache=False
             )
         elif trading_phase == TradingPhase.AFTER_CLOSE:
             last_trade_date = MarketUtils.get_last_trade_date(market_code, trade_date, now)
@@ -431,7 +433,7 @@ class AKShareDataProvider(BaseDataProvider, HistoricalDataProvider):
                         # 构建 IntradayData（盘后不获取实时盘口）
                         intraday_data = self._build_intraday_data(
                             df, symbol, last_trade_date,
-                            fetch_realtime=False, enable_cache=True
+                            fetch_trade_records=False, should_poll=False,enable_cache=True
                         )
                 except Exception as e:
                     # 其他异常（如网络错误、API错误），记录警告并fallback
@@ -443,42 +445,47 @@ class AKShareDataProvider(BaseDataProvider, HistoricalDataProvider):
             logger.info(f"午盘休市时段（{market_code.value}），返回上午数据 + 盘口")
 
             # 构建上午时间范围（9:30-11:30）
-            from core_bak_refactored.core.share.config_manager import ConfigManager
-            config_manager = ConfigManager()
-            trading_hours = config_manager.get_trading_hours(market_code.value)
-
             morning_start = trading_hours['open']  # 09:30
             morning_end = trading_hours['lunch_start']  # 11:30
-
-            morning_tick_range = TickRange(
-                start_time=pd.Timestamp(f"{trade_date} {morning_start}"),
-                end_time=pd.Timestamp(f"{trade_date} {morning_end}"),
-            )
-
+            if tick_range is None:
+                tick_range = TickRange(
+                    start_time=pd.Timestamp(f"{trade_date} {morning_start}"),
+                    end_time=pd.Timestamp(f"{trade_date} {morning_end}"),
+                )
             # 获取上午的分时数据
-            df = self._fetch_real_intraday_from_akshare(symbol, trade_date, tick_range=morning_tick_range)
+            df = self._fetch_real_intraday_from_akshare(symbol, trade_date, tick_range=tick_range)
 
             # 构建 IntradayData（午休时段获取上午收盘时的盘口）
             intraday_data = self._build_intraday_data(
                 df, symbol, trade_date,
-                fetch_realtime=True, enable_cache=False
+                fetch_trade_records=True, should_poll=False, enable_cache=False
             )
 
         elif trading_phase == TradingPhase.TRADING:
             # 交易时段（上午或下午）：返回当前时刻之前的数据 + 实时盘口
             logger.info(f"交易时段（{trading_phase.value}），返回实时数据 + 盘口")
 
+            # 🔧 关键：盘中必须有tick_range，如果前端未提供，则自动创建（开盘到当前时刻）
+            if tick_range is None:
+                # 创建从开盘到当前时刻的tick_range
+                tick_range = TickRange(
+                    start_time=pd.Timestamp(f"{trade_date} {trading_hours['open']}"),
+                    end_time=pd.Timestamp(now),
+                    period_seconds=5
+                )
+                logger.info(f"📅 自动创建 TickRange（盘中首次加载）: {tick_range.start_time} ~ {tick_range.end_time}")
+
             # 🔧 尝试从 AKShare 获取真实数据（盘中不使用缓存，实时获取）
             logger.info(f"📊 真实数据模式 - 从 AKShare 获取 (phase={trading_phase.value})")
             try:
-                # 获取原始DataFrame
+                # 获取原始DataFrame（传入current_time用于判断时间范围）
                 df = self._fetch_real_intraday_from_akshare(symbol, trade_date, tick_range)
 
                 if df is not None:
                     # 构建 IntradayData（交易时段获取实时盘口并缓存）
                     intraday_data = self._build_intraday_data(
                         df, symbol, trade_date,
-                        fetch_realtime=True, enable_cache=False
+                        fetch_trade_records=True,should_poll=True, enable_cache=False
                     )
                 else:
                     intraday_data = None
@@ -514,7 +521,7 @@ class AKShareDataProvider(BaseDataProvider, HistoricalDataProvider):
         logger.debug(f"✅ 写入内存缓存: {cache_key}")
 
     def _build_intraday_data(self, df, symbol: str, trade_date: str,
-                             fetch_realtime: bool = True, enable_cache: bool = False) -> IntradayData:
+                             fetch_trade_records: bool = True, should_poll:bool= True, enable_cache: bool = False) -> IntradayData:
         """
         构建 IntradayData 对象（统一处理盘口获取和数据转换）
 
@@ -522,8 +529,9 @@ class AKShareDataProvider(BaseDataProvider, HistoricalDataProvider):
             df: AKShare 返回的 DataFrame
             symbol: 证券代码
             trade_date: 交易日期
-            fetch_realtime: 是否获取实时盘口数据
+            fetch_trade_records: 是否获取盘口数据
             enable_cache: 是否缓存结果
+
 
         Returns:
             IntradayData 对象
@@ -535,7 +543,7 @@ class AKShareDataProvider(BaseDataProvider, HistoricalDataProvider):
             interpolate_func=self._interpolate_to_5_seconds
         )
         # 获取盘口和成交明细
-        if fetch_realtime:
+        if fetch_trade_records:
             order_book_bids, order_book_asks, trade_records, order_book_message, trade_records_message = \
                 self._fetch_order_book_and_trades(symbol)
             # 设置盘口和成交明细
@@ -544,8 +552,7 @@ class AKShareDataProvider(BaseDataProvider, HistoricalDataProvider):
             intraday_data.trade_records = trade_records
             intraday_data.order_book_message = order_book_message
             intraday_data.trade_records_message = trade_records_message
-            intraday_data.should_poll = True
-
+        intraday_data.should_poll = should_poll
         # 缓存数据（如果需要）
         if enable_cache and self._enable_memory_cache:
             cache_key = f"intraday_{symbol}_{trade_date}_TRADING"
@@ -570,34 +577,30 @@ class AKShareDataProvider(BaseDataProvider, HistoricalDataProvider):
         if not self.available or self.ak is None:
             raise RuntimeError("AKShare不可用")
 
-        # 转换symbol为AKShare格式（分时数据API需要纯数字，不需要市场前缀）
+        # 转换symbol为AKShare格式（分时数据API不需要市场前缀）
         ak_symbol = self._map_to_akshare(symbol, with_market_prefix=False)
 
         # 构建查询时间范围
         if tick_range is not None:
-            # 如果提供了 tick_range，使用其时间范围
+            # 如果提供了 tick_range，使用其时间范围（增量获取或盘中首次加载）
             start_time = tick_range.start_time.strftime('%Y-%m-%d %H:%M:%S')
             end_time = tick_range.end_time.strftime('%Y-%m-%d %H:%M:%S')
             logger.info(f"使用tick_range时间范围: {start_time} ~ {end_time}")
         else:
-            # 默认查询全天数据：从ConfigManager获取市场交易时间
+            # tick_range=None：盘后获取全天数据
             from core_bak_refactored.core.share.market.market_utils import MarketUtils
             from core_bak_refactored.core.share.config_manager import ConfigManager
 
             # 获取市场代码
             market_code = MarketUtils.infer_market_from_symbol(symbol)
-
-            # 获取该市场的交易时间
-            config_manager = ConfigManager()
-            trading_hours = config_manager.get_trading_hours(market_code.value)
-
+            trading_hours = self.config_manager.get_trading_hours(market_code.value)
             # 构建全天时间范围（从开盘到收盘）
             morning_start = trading_hours['open']
             afternoon_end = trading_hours['close']
 
             start_time = f"{trade_date} {morning_start}"
             end_time = f"{trade_date} {afternoon_end}"
-            logger.info(f"使用市场{market_code.value}的交易时间范围: {start_time} ~ {end_time}")
+            logger.info(f"📅 盘后模式，使用市场{market_code.value}的全天范围: {start_time} ~ {end_time}")
 
         logger.info(f"调用AKShare API: symbol={ak_symbol}, 时间范围: {start_time} ~ {end_time}")
 
@@ -611,8 +614,7 @@ class AKShareDataProvider(BaseDataProvider, HistoricalDataProvider):
                 adjust=''
             )
 
-            if df is None or df.empty:
-                logger.warning(f"AKShare返回空数据: {ak_symbol}")
+            if df is None:
                 return None
             if tick_range is None:
                 # 一个完整交易日应该有270分钟的数据（09:30-12:00 = 150分钟，13:00-15:00 = 120分钟）
@@ -663,17 +665,32 @@ class AKShareDataProvider(BaseDataProvider, HistoricalDataProvider):
                 logger.warning(f"无法获取盘口数据: {symbol}")
                 return [], []
 
-            # 解析盘口数据（字段：buy_1~buy_5, sell_1~sell_5）
+            # 🔧 AKShare返回长格式数据（item, value），需要转换
+            # 示例：
+            #    item      value
+            # 0  sell_5    41.41
+            # 1  sell_5_vol 13100.00
+            # 2  buy_1     41.35
+            # 3  buy_1_vol  1000.00
+            
+            # 将长格式转换为字典
+            data_dict = {}
+            for _, row in df.iterrows():
+                item_name = str(row['item'])
+                item_value = row['value']
+                data_dict[item_name] = item_value
+
+            # 解析盘口数据
             order_book_bids = []
             order_book_asks = []
 
             # 买盘（buy_1是最高价）
             for i in range(1, 6):
                 price_key = f'buy_{i}'
-                volume_key = f'buy_{i}_volume'
-                if price_key in df.columns and volume_key in df.columns:
-                    price = float(df[price_key].iloc[0])
-                    volume = int(df[volume_key].iloc[0])
+                volume_key = f'buy_{i}_vol'  # 🔧 注意：是_vol不是_volume
+                if price_key in data_dict and volume_key in data_dict:
+                    price = float(data_dict[price_key])
+                    volume = int(float(data_dict[volume_key]))
                     order_book_bids.append(OrderBookLevel(
                         price=round(price, 2),
                         volume=volume
@@ -682,10 +699,10 @@ class AKShareDataProvider(BaseDataProvider, HistoricalDataProvider):
             # 卖盘（sell_1是最低价）
             for i in range(1, 6):
                 price_key = f'sell_{i}'
-                volume_key = f'sell_{i}_volume'
-                if price_key in df.columns and volume_key in df.columns:
-                    price = float(df[price_key].iloc[0])
-                    volume = int(df[volume_key].iloc[0])
+                volume_key = f'sell_{i}_vol'  # 🔧 注意：是_vol不是_volume
+                if price_key in data_dict and volume_key in data_dict:
+                    price = float(data_dict[price_key])
+                    volume = int(float(data_dict[volume_key]))
                     order_book_asks.append(OrderBookLevel(
                         price=round(price, 2),
                         volume=volume
@@ -803,14 +820,12 @@ class AKShareDataProvider(BaseDataProvider, HistoricalDataProvider):
             logger.warning(f"获取实时成交明细失败: {e}")
             return []
 
-    def _generate_empty_data(self, symbol: str, trade_date: str, trading_phase=None):
+    def _generate_empty_data(self, symbol: str):
         """
         生成空的DataFrame（与AKShare API返回格式一致，但包含初始化信息）
 
         Args:
             symbol: 证券代码
-            trade_date: 交易日期
-            trading_phase: 交易状态（默认为 before_open）
 
         Returns:
             pandas.DataFrame: 包含初始化信息的空DataFrame
@@ -823,15 +838,6 @@ class AKShareDataProvider(BaseDataProvider, HistoricalDataProvider):
         from core_bak_refactored.core.share.market.market_enums import TradingPhase
         from core_bak_refactored.core.share.market.market_utils import MarketUtils
 
-        # 默认值
-        if trading_phase is None:
-            trading_phase = TradingPhase.BEFORE_OPEN
-
-        name = self._index_name_cache.get(symbol, symbol)
-
-        # 判断是否为指数：指数不可交易，个股可交易
-        is_index = MarketUtils.is_index(symbol)
-
         # 创建空的DataFrame，列名与AKShare API返回格式一致
         # AKShare返回格式：时间,开盘,收盘,最高,最低,成交量,成交额,振幅,涨跌幅,涨跌额,换手率
         empty_df = pd.DataFrame(columns=[
@@ -841,8 +847,8 @@ class AKShareDataProvider(BaseDataProvider, HistoricalDataProvider):
 
         # 在DataFrame的attrs中保存初始化信息，供_convert_akshare_df_to_intraday使用
         empty_df.attrs['_init_info'] = {
-            'name': name,
-            'is_index': is_index,
+            'name': self._index_name_cache.get(symbol, symbol),
+            'is_index': MarketUtils.is_index(symbol),
         }
 
         return empty_df

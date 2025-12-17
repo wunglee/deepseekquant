@@ -26,8 +26,6 @@ function rebuildIntradayLayout(isStock) {
         return
     }
     
-    console.log(`🔥 彻底重建分时图布局: ${isStock ? '股票(左右布局)' : '指数(单列布局)'}`)
-    
     // 🔧 1. 停止定时器
     if (intradayUpdateTimer) {
         clearInterval(intradayUpdateTimer)
@@ -67,8 +65,8 @@ function rebuildIntradayLayout(isStock) {
             <div style="display:grid; grid-template-columns: 2fr 1fr; gap:12px; width:100%;">
                 <!-- 左侧：分时曲线+成交量容器 -->
                 <div style="min-width:0; overflow:hidden; display:flex; flex-direction:column;">
-                    <div id="intradayPriceChart" style="height:280px; width:100%;"></div>
-                    <div id="intradayVolumeChart" style="height:140px; width:100%; margin-top:8px;"></div>
+                    <div id="intradayPriceChart" style="height:360px; width:100%;"></div>
+                    <div id="intradayVolumeChart" style="height:180px; width:100%; margin-top:8px;"></div>
                 </div>
                 <!-- 右侧：挂单+成交明细 -->
                 <div style="min-width:0; overflow:hidden;">
@@ -96,8 +94,8 @@ function rebuildIntradayLayout(isStock) {
         // 指数：单列布局（只有图表）
         container.innerHTML = `
             <div style="display:flex; flex-direction:column;">
-                <div id="intradayPriceChart" style="height:280px; width:100%;"></div>
-                <div id="intradayVolumeChart" style="height:140px; width:100%; margin-top:8px;"></div>
+                <div id="intradayPriceChart" style="height:360px; width:100%;"></div>
+                <div id="intradayVolumeChart" style="height:180px; width:100%; margin-top:8px;"></div>
             </div>
         `
     }
@@ -113,10 +111,7 @@ function rebuildIntradayLayout(isStock) {
         // 连接两个图表，确保 tooltip 同步
         echarts.connect([intradayPriceChart, intradayVolumeChart])
         
-        // 显示加载状态
         showIntradayLoading(true)
-        
-        console.log('✅ 分时图表实例重建完成')
     } else {
         console.error('❌ 无法找到图表DOM元素')
     }
@@ -152,30 +147,8 @@ function showIntradayLoading(show) {
     }
 }
 
-/**
- * 判断是否处于交易时段（根据市场）
- */
-function isTradingTime(currentMarket) {
-    const now = new Date()
-    const isWeekday = now.getDay() >= 1 && now.getDay() <= 5
-    const hour = now.getHours()
-    const minute = now.getMinutes()
-    
-    if (!currentMarket) return false
-    
-    if (currentMarket === 'cn_stock') {
-        // A股：周一至周五 9:30-11:30, 13:00-15:00
-        return isWeekday && ((hour === 9 && minute >= 30) || (hour >= 10 && hour < 11) || (hour === 11 && minute <= 30) || (hour >= 13 && hour < 15) || (hour === 15 && minute === 0))
-    } else if (currentMarket === 'hk_stock') {
-        // 港股：周一至周五 9:30-12:00, 13:00-16:00
-        return isWeekday && ((hour === 9 && minute >= 30) || (hour >= 10 && hour < 12) || (hour >= 13 && hour < 16) || (hour === 16 && minute === 0))
-    } else if (currentMarket === 'us_stock') {
-        // 美股：周一至周五 9:30-16:00 ET
-        return isWeekday && ((hour === 9 && minute >= 30) || (hour >= 10 && hour < 16) || (hour === 16 && minute === 0))
-    } else {
-        return false
-    }
-}
+// 🔧 删除：isTradingTime() - 前端不再判断交易时段，完全依赖后端 should_poll
+// 原因：所有控制前端行为的参数必须来自后端
 
 // ==================== 导出接口 ====================
 window.IntradayChart = {
@@ -196,6 +169,6 @@ window.IntradayChart = {
     
     // 核心功能
     rebuildLayout: rebuildIntradayLayout,
-    showLoading: showIntradayLoading,
-    isTradingTime: isTradingTime
+    showLoading: showIntradayLoading
+    // 🔧 删除：isTradingTime - 前端不再提供交易时段判断功能
 }
