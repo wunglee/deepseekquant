@@ -40,10 +40,11 @@ from core_bak_refactored.core.share.market.market_enums import TradingPhase
 from core_bak_refactored.core.data.providers.protocols import TickRange
 from core_bak_refactored.core.share.config_manager import ConfigManager
 import akshare as ak
+
 logger = logging.getLogger(__name__)
 
 
-class AKShareDataProvider(BaseDataProvider, HistoricalDataProvider):
+class AKShareDataProvider(BaseDataProvider):
     """
     基于AKShare的数据提供者
 
@@ -129,7 +130,29 @@ class AKShareDataProvider(BaseDataProvider, HistoricalDataProvider):
             '399006.SZ': '创业板指'
         }
 
-    def get_prices(self, symbol: str, start_date: Union[str, datetime], end_date: Union[str, datetime]) -> PriceData:
+    def get_index_returns(
+            self,
+            index_id: str,
+            start_date: str,
+            end_date: str
+    ) -> pd.Series:
+        """
+        获取指数收益率序列（实现HistoricalDataProvider接口）
+
+        Args:
+            index_id: 指数代码
+            start_date: 开始日期 'YYYY-MM-DD' 或 datetime 对象
+            end_date: 结束日期 'YYYY-MM-DD' 或 datetime 对象
+
+        Returns:
+            Series with date index and return values
+        """
+        price_data = self.get_index_prices(index_id, start_date, end_date)
+        prices = price_data.to_dataframe().set_index('date')
+        returns = prices['close'].pct_change().dropna()
+        return returns
+
+    def _fetch_from_external_api(self, symbol: str, start_date: str, end_date: str) -> PriceData:
         """
         获取历史价格数据（适用于个股和指数）
 
@@ -185,90 +208,6 @@ class AKShareDataProvider(BaseDataProvider, HistoricalDataProvider):
             logger.error(f"AKShare failed for {symbol}: {e}")
             # 更详细的错误信息，帮助调试
             raise ValueError(f"Failed to fetch data for {symbol}: {str(e)}") from e
-
-    def get_index_prices(
-            self,
-            index_id: str,
-            start_date: Union[str, datetime],
-            end_date: Union[str, datetime]
-    ) -> PriceData:
-        """
-        获取指数历史价格数据（实现HistoricalDataProvider接口）
-
-        Args:
-            index_id: 指数代码
-            start_date: 开始日期 'YYYY-MM-DD' 或 datetime 对象
-            end_date: 结束日期 'YYYY-MM-DD' 或 datetime 对象
-
-        Returns:
-            PriceData: 包含标准OHLCV数据的结构化对象
-
-        Raises:
-            ValueError: 日期格式错误或数据不可用（fallback禁用时）
-        """
-        # 直接委托给通用方法
-        return self.get_prices(index_id, start_date, end_date)
-
-    def get_index_returns(
-            self,
-            index_id: str,
-            start_date: Union[str, datetime],
-            end_date: Union[str, datetime]
-    ) -> pd.Series:
-        """
-        获取指数收益率序列（实现HistoricalDataProvider接口）
-
-        Args:
-            index_id: 指数代码
-            start_date: 开始日期 'YYYY-MM-DD' 或 datetime 对象
-            end_date: 结束日期 'YYYY-MM-DD' 或 datetime 对象
-
-        Returns:
-            Series with date index and return values
-        """
-        price_data = self.get_index_prices(index_id, start_date, end_date)
-        prices = price_data.to_dataframe().set_index('date')
-        returns = prices['close'].pct_change().dropna()
-        return returns
-
-    def get_stock_prices(self, symbol: str, start_date: Union[str, datetime],
-                         end_date: Union[str, datetime]) -> PriceData:
-        """
-        获取个股历史价格数据
-
-        💚 注意: 此方法由基类处理缓存，不需覆写
-
-        Args:
-            symbol: 股票代码（支持市场后缀，如 '000001.SZ'）
-            start_date: 开始日期
-            end_date: 结束日期
-
-        Returns:
-            标准化的个股价格数据
-        """
-        # 💚 由基类自动处理缓存，此处不需实现
-        # 这是为了兼容性保留的方法
-        return super().get_stock_prices(symbol, start_date, end_date)
-
-    def _fetch_from_external_api(self, symbol: str, start_date: str, end_date: str) -> PriceData:
-        """
-        从 AKShare API 获取数据（实现基类抽象方法）
-
-        💚 注意:
-        - 此方法仅供内部使用
-        - 外部调用者应使用 get_index_prices()
-        - 基类已自动处理缓存
-
-        Args:
-            symbol: 股票/指数代码
-            start_date: 开始日期 (YYYY-MM-DD)
-            end_date: 结束日期 (YYYY-MM-DD)
-
-        Returns:
-            PriceData: 价格数据对象
-        """
-        # 复用原有的 get_prices 逻辑
-        return self.get_prices(symbol, start_date, end_date)
 
     def _map_to_akshare(self, symbol: str, with_market_prefix: bool = True) -> str:
         """
@@ -415,7 +354,7 @@ class AKShareDataProvider(BaseDataProvider, HistoricalDataProvider):
             # 构建 IntradayData（集合竞价时段也要尝试获取盘口）
             intraday_data = self._build_intraday_data(
                 empty_df, symbol, trade_date,
-                fetch_trade_records=True, should_poll=True,enable_cache=False
+                fetch_trade_records=True, should_poll=True, enable_cache=False
             )
         elif trading_phase == TradingPhase.AFTER_CLOSE:
             last_trade_date = MarketUtils.get_last_trade_date(market_code, trade_date, now)
@@ -433,7 +372,7 @@ class AKShareDataProvider(BaseDataProvider, HistoricalDataProvider):
                         # 构建 IntradayData（盘后不获取实时盘口）
                         intraday_data = self._build_intraday_data(
                             df, symbol, last_trade_date,
-                            fetch_trade_records=False, should_poll=False,enable_cache=True
+                            fetch_trade_records=False, should_poll=False, enable_cache=True
                         )
                 except Exception as e:
                     # 其他异常（如网络错误、API错误），记录警告并fallback
@@ -485,7 +424,7 @@ class AKShareDataProvider(BaseDataProvider, HistoricalDataProvider):
                     # 构建 IntradayData（交易时段获取实时盘口并缓存）
                     intraday_data = self._build_intraday_data(
                         df, symbol, trade_date,
-                        fetch_trade_records=True,should_poll=True, enable_cache=False
+                        fetch_trade_records=True, should_poll=True, enable_cache=False
                     )
                 else:
                     intraday_data = None
@@ -521,7 +460,8 @@ class AKShareDataProvider(BaseDataProvider, HistoricalDataProvider):
         logger.debug(f"✅ 写入内存缓存: {cache_key}")
 
     def _build_intraday_data(self, df, symbol: str, trade_date: str,
-                             fetch_trade_records: bool = True, should_poll:bool= True, enable_cache: bool = False) -> IntradayData:
+                             fetch_trade_records: bool = True, should_poll: bool = True,
+                             enable_cache: bool = False) -> IntradayData:
         """
         构建 IntradayData 对象（统一处理盘口获取和数据转换）
 
@@ -672,7 +612,7 @@ class AKShareDataProvider(BaseDataProvider, HistoricalDataProvider):
             # 1  sell_5_vol 13100.00
             # 2  buy_1     41.35
             # 3  buy_1_vol  1000.00
-            
+
             # 将长格式转换为字典
             data_dict = {}
             for _, row in df.iterrows():
@@ -971,7 +911,7 @@ class AKShareDataProvider(BaseDataProvider, HistoricalDataProvider):
                             ratio = (j * 5) / time_diff_seconds
                             interpolated_price = current_tick.price + (next_tick.price - current_tick.price) * ratio
                             interpolated_avg_price = current_tick.avg_price + (
-                                        next_tick.avg_price - current_tick.avg_price) * ratio
+                                    next_tick.avg_price - current_tick.avg_price) * ratio
 
                             interpolated_ticks.append(IntradayTickRecord(
                                 time=interpolated_time.strftime('%H:%M:%S'),

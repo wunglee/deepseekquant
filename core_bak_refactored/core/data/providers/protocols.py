@@ -10,6 +10,7 @@
 - Protocol接口，支持鸭子类型
 - 接口稳定，向后兼容
 """
+from abc import ABC
 
 import pandas as pd
 from typing import Protocol, Dict, Any, List, Union, Optional
@@ -360,6 +361,7 @@ class PriceData:
     start_date: pd.Timestamp
     end_date: pd.Timestamp
     count: int
+    needs_realtime_kline: bool = False  # 是否需要获取实时K线（盘前/盘中/午盘为True，盘后为False）
     
     def __post_init__(self):
         """验证数据结构"""
@@ -458,7 +460,7 @@ class HistoricalDataProvider(Protocol):
     - 不得包含缺失值（NaN）
     """
 
-    def get_index_prices(self, index_id: str, start_date: str, end_date: str) -> PriceData:
+    def get_index_prices(self, index_id: str, start_date: str, end_date: str,current_time: datetime) -> PriceData:
         """
         获取指数价格数据
         
@@ -501,7 +503,7 @@ class HistoricalDataProvider(Protocol):
         """
         ...
 
-    def get_stock_prices(self, symbol: str, start_date: Union[str, datetime], end_date: Union[str, datetime]) -> PriceData:
+    def get_stock_prices(self, symbol: str, start_date: str, end_date: str, current_time: datetime) -> PriceData:
         """
         获取个股历史价格数据
 

@@ -29,7 +29,7 @@ from .numeric_utils import (
 )
 
 from .statistical_calculators import StatisticalCalculator
-from .timeseries_calculator import TimeSeriesCalculator, TechnicalIndicators
+from .timeseries_calculator import TimeSeriesCalculator
 
 # 新增的数据质量计算工具
 from .statistical_quality_metrics import StatisticalQualityMetrics
@@ -102,7 +102,6 @@ __all__ = [
     # 统计与时序计算
     'StatisticalCalculator',
     'TimeSeriesCalculator',
-    'TechnicalIndicators',  # 别名兼容
     
     # 数据质量计算工具
     'StatisticalQualityMetrics',

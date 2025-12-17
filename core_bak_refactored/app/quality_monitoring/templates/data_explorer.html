@@ -2220,6 +2220,21 @@ function fetchRealtimeKline() {
 function updateRealtimeKlineOnChart(realtimeData) {
     if (!allKlineData || !allKlineData.length) return
     
+    // 🔧 验证实时数据的完整性
+    if (!realtimeData.date) {
+        console.error('❌ 实时K线数据缺少date字段:', realtimeData)
+        return
+    }
+    
+    console.log('📊 更新实时K线:', {
+        date: realtimeData.date,
+        open: realtimeData.open,
+        high: realtimeData.high,
+        low: realtimeData.low,
+        close: realtimeData.close,
+        volume: realtimeData.volume
+    })
+    
     // 检查是否已存在当天数据
     const todayDate = realtimeData.date
     const existingIndex = allKlineData.findIndex(d => {

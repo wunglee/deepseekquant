@@ -47,7 +47,7 @@ class YahooFinanceConfig:
     max_retries: int = 3  # 最大重试次数
 
 
-class YahooFinanceDataProvider(BaseDataProvider, HistoricalDataProvider):
+class YahooFinanceDataProvider(BaseDataProvider):
     """Yahoo Finance数据提供者"""
     
     def __init__(self):
@@ -229,11 +229,11 @@ class YahooFinanceDataProvider(BaseDataProvider, HistoricalDataProvider):
         # 如果所有重试都失败了，抛出异常
         raise RuntimeError(f"Failed to fetch data for {trade_record} after {max_retries + 1} attempts")
     
-    def get_index_prices(
+    def _inter_get_index_prices(
         self,
         index_id: str,
-        start_date: Union[str, datetime],
-        end_date: Union[str, datetime]
+        start_date:str,
+        end_date: str,
     ) -> PriceData:
         """
         获取指数历史价格数据
@@ -272,11 +272,11 @@ class YahooFinanceDataProvider(BaseDataProvider, HistoricalDataProvider):
             logger.error(f"Failed to fetch data for {index_id}: {e}")
             raise ValueError(f"Failed to fetch data for {index_id}: {str(e)}")
     
-    def get_stock_prices(
+    def _inter_get_stock_prices(
         self,
         stock_id: str,
-        start_date: Union[str, datetime],
-        end_date: Union[str, datetime]
+        start_date: str,
+        end_date:str,
     ) -> PriceData:
         """
         获取个股历史价格数据
@@ -285,7 +285,7 @@ class YahooFinanceDataProvider(BaseDataProvider, HistoricalDataProvider):
             stock_id: 股票ID（如 "AAPL"）
             start_date: 开始日期
             end_date: 结束日期
-            
+            current_time:当前时间
         Returns:
             PriceData: 标准化的价格数据
             
@@ -332,9 +332,9 @@ class YahooFinanceDataProvider(BaseDataProvider, HistoricalDataProvider):
         """
         # 判断是指数还是个股（以 ^ 开头的是指数）
         if symbol.startswith('^'):
-            return self.get_index_prices(symbol, start_date, end_date)
+            return self._inter_get_index_prices(symbol, start_date, end_date)
         else:
-            return self.get_stock_prices(symbol, start_date, end_date)
+            return self._inter_get_stock_prices(symbol, start_date, end_date)
     
     # _standardize_format method has been moved to MarketUtils.standardize_format_to_price_data
     

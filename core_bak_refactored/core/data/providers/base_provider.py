@@ -19,12 +19,15 @@ from datetime import datetime, timedelta
 import yaml
 import pandas as pd
 
+from core_bak_refactored.core.data.providers.protocols import PriceData, HistoricalDataProvider
 from core_bak_refactored.core.share import ConfigManager
+from core_bak_refactored.core.share.market import MarketUtils
+from core_bak_refactored.core.share.market.market_enums import TradingPhase, MarketCode
 
 logger = logging.getLogger('DeepSeekQuant.DataProviders')
 
 
-class BaseDataProvider(ABC):
+class BaseDataProvider(ABC,HistoricalDataProvider):
     """
     数据提供者基类 - 三层数据架构
     
@@ -105,16 +108,16 @@ class BaseDataProvider(ABC):
                 self._db_initialized = True
         
         return self._db_service
-    
+
     def _make_cache_key(self, index_id: str, start_date: str, end_date: str) -> str:
         """
         生成缓存键
-        
+
         Args:
             index_id: 指数代码
             start_date: 开始日期
             end_date: 结束日期
-        
+
         Returns:
             缓存键字符串
         """
@@ -216,7 +219,7 @@ class BaseDataProvider(ABC):
         except Exception as e:
             logger.warning(f"缓存数据到数据库失败: {e}")
     
-    def _get_with_cache(self, index_id: str, start_date: str, end_date: str):
+    def _get_with_cache(self, index_id: str, start_date: str, end_date: str,current_time: datetime):
         """
         三层数据获取（核心方法）
         
@@ -239,7 +242,7 @@ class BaseDataProvider(ABC):
         
         if cached_df is not None:
             # 转换为 PriceData
-            return self._dataframe_to_price_data(cached_df, index_id)
+            return PriceData.from_dataframe(cached_df, index_id)
         
         # 2. 尝试数据库缓存
         cached_df = self._get_from_db_cache(index_id, start_date, end_date)
@@ -248,7 +251,7 @@ class BaseDataProvider(ABC):
             # 写入内存缓存
             self._set_to_memory_cache(cache_key, cached_df)
             # 转换为 PriceData
-            return self._dataframe_to_price_data(cached_df, index_id)
+            return PriceData.from_dataframe(cached_df, index_id)
         
         # 3. 调用外部API（子类实现）
         logger.info(f"🌐 缓存未命中，调用外部API: {index_id}")
@@ -263,29 +266,24 @@ class BaseDataProvider(ABC):
             
             # 写入内存缓存
             self._set_to_memory_cache(cache_key, df)
-        
+        self.set_needs_realtime_kline(price_data,current_time)
         return price_data
-    
-    @staticmethod
-    def _dataframe_to_price_data(df: pd.DataFrame, symbol: str):
-        """
-        将 DataFrame 转换为 PriceData 对象
-        
-        Args:
-            df: DataFrame
-            symbol: 股票/指数代码
-        
-        Returns:
-            PriceData 对象
-        """
-        from core_bak_refactored.core.data.providers.protocols import PriceData
-        return PriceData.from_dataframe(df, symbol)
+
+    def set_needs_realtime_kline(self,price_data:PriceData,current_time: datetime):
+        market_code=MarketUtils.infer_market_from_symbol(price_data.symbol)
+        trading_phase = MarketUtils.determine_trading_phase(market_code, current_time)
+        needs_realtime_kline = trading_phase in [
+            TradingPhase.BEFORE_OPEN,
+            TradingPhase.TRADING,
+            TradingPhase.NOON_BREAK
+        ]
+        return needs_realtime_kline
     
     # ========================================================================
     # 数据获取接口（对外提供，自动使用缓存）
     # ========================================================================
     
-    def get_index_prices(self, index_id: str, start_date: str, end_date: str):
+    def get_index_prices(self, index_id: str, start_date: str, end_date: str,current_time: datetime):
         """
         获取指数价格数据（对外接口，自动使用三层缓存）
         
@@ -298,13 +296,14 @@ class BaseDataProvider(ABC):
             index_id: 指数代码
             start_date: 开始日期 (YYYY-MM-DD)
             end_date: 结束日期 (YYYY-MM-DD)
-        
+            current_time:操作时间
         Returns:
             PriceData: 价格数据对象
+
         """
-        return self._get_with_cache(index_id, start_date, end_date)
+        return self._get_with_cache(index_id, start_date, end_date,current_time)
     
-    def get_stock_prices(self, stock_id: str, start_date: str, end_date: str):
+    def get_stock_prices(self, stock_id: str, start_date: str, end_date: str,current_time: datetime):
         """
         获取股票价格数据（对外接口，自动使用三层缓存）
         
@@ -312,12 +311,12 @@ class BaseDataProvider(ABC):
             stock_id: 股票代码
             start_date: 开始日期 (YYYY-MM-DD)
             end_date: 结束日期 (YYYY-MM-DD)
-        
+            current_time:操作时间
         Returns:
             PriceData: 价格数据对象
         """
         # 股票数据也使用相同的缓存策略
-        return self._get_with_cache(stock_id, start_date, end_date)
+        return self._get_with_cache(stock_id, start_date, end_date,current_time)
     
     # ========================================================================
     # 内部接口（子类必须实现）

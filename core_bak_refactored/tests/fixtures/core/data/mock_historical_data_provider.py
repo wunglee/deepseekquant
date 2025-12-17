@@ -1,3 +1,5 @@
+from datetime import datetime
+
 import numpy as np
 import pandas as pd
 from typing import Dict, Any
@@ -110,7 +112,7 @@ class MockHistoricalDataProvider:
 
         return prices
 
-    def get_index_prices(self, index_id: str, start_date: str, end_date: str) -> pd.DataFrame:
+    def get_index_prices(self, index_id: str, start_date: str, end_date: str,current_time:datetime) -> pd.DataFrame:
         """
         获取指数价格数据
         

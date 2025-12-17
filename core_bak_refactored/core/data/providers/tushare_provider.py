@@ -160,8 +160,9 @@ class TushareDataProvider(BaseDataProvider):
     def get_index_prices(
         self,
         index_id: str,
-        start_date: Union[str, datetime],
-        end_date: Union[str, datetime]
+        start_date:str,
+        end_date: str,
+        current_time: datetime
     ) -> PriceData:
         """
         获取指数历史价格数据
@@ -195,7 +196,7 @@ class TushareDataProvider(BaseDataProvider):
             
             # 标准化数据格式
             standardized_data = self._standardize_format(df, index_id)
-            
+            self.set_needs_realtime_kline(standardized_data, current_time)
             logger.info(f"Successfully fetched {len(standardized_data.records)} records for {index_id}")
             return standardized_data
             
@@ -206,8 +207,9 @@ class TushareDataProvider(BaseDataProvider):
     def get_stock_prices(
         self,
         stock_id: str,
-        start_date: Union[str, datetime],
-        end_date: Union[str, datetime]
+        start_date: str,
+        end_date:str,
+        current_time: datetime
     ) -> PriceData:
         """
         获取个股历史价格数据
@@ -226,7 +228,7 @@ class TushareDataProvider(BaseDataProvider):
             ValueError: 当无法获取有效数据时
         """
         # 💚 由基类自动处理缓存
-        return super().get_stock_prices(stock_id, start_date, end_date)
+        return super().get_stock_prices(stock_id, start_date, end_date,current_time)
     
     def _fetch_from_external_api(self, symbol: str, start_date: str, end_date: str) -> PriceData:
         """

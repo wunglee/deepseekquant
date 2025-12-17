@@ -183,8 +183,9 @@ class FinnhubDataProvider(BaseDataProvider, HistoricalDataProvider):
     def get_index_prices(
         self,
         index_id: str,
-        start_date: Union[str, datetime],
-        end_date: Union[str, datetime]
+        start_date:str,
+        end_date: str,
+        current_time: datetime
     ) -> PriceData:
         """
         获取指数历史价格数据
@@ -254,7 +255,9 @@ class FinnhubDataProvider(BaseDataProvider, HistoricalDataProvider):
             logger.info(f"Successfully fetched {len(df)} rows for {symbol}")
             
             # 返回PriceData对象
-            return PriceData.from_dataframe(df, index_id)
+            price_data = PriceData.from_dataframe(df, index_id)
+            self.set_needs_realtime_kline(price_data, current_time)
+            return price_data
             
         except Exception as e:
             # 不重新抛出RuntimeError，保持异常类型一致性
@@ -303,9 +306,10 @@ class FinnhubDataProvider(BaseDataProvider, HistoricalDataProvider):
 
     def get_stock_prices(
         self,
-        symbol: str,
-        start_date: Union[str, datetime],
-        end_date: Union[str, datetime]
+        stock_id: str,
+        start_date: str,
+        end_date:str,
+        current_time: datetime
     ) -> PriceData:
         """
         获取个股价格数据
@@ -321,7 +325,7 @@ class FinnhubDataProvider(BaseDataProvider, HistoricalDataProvider):
             PriceData: 包含标准OHLCV数据的结构化对象
         """
         # 💚 由基类自动处理缓存
-        return super().get_stock_prices(symbol, start_date, end_date)
+        return super().get_stock_prices(stock_id, start_date, end_date,current_time)
     
     def _fetch_from_external_api(self, symbol: str, start_date: str, end_date: str) -> PriceData:
         """

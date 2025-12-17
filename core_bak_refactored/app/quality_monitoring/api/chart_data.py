@@ -60,7 +60,8 @@ class ChartDataAssembler:
                            period: str = 'daily',
                            count: int = 120,
                            before: Optional[str] = None,
-                           indicators: Optional[str] = 'all') -> Dict[str, Any]:
+                           indicators: Optional[str] = 'all',
+                           current_time:datetime=datetime.now()) -> Dict[str, Any]:
         """组装完整的图表数据（全程使用强类型 PriceData）
         
         Args:
@@ -87,7 +88,7 @@ class ChartDataAssembler:
             # 1. 获取K线数据（🔧 额外获取30条用于指标预热，返回 PriceData）
             logger.info("步骤1: 获取K线数据...")
             warmup_count = 30  # 预热数据条数（足够MACD/RSI/KDJ计算）
-            price_data_full = self._fetch_kline_data(index_id, period, count + warmup_count, before)
+            price_data_full = self._fetch_kline_data(index_id, period, count + warmup_count, before,current_time)
             logger.info(f"K线数据获取成功，共 {price_data_full.count} 条（包含{warmup_count}条预热数据）")
             
             # 2. 计算技术指标（使用完整 PriceData）
@@ -146,7 +147,8 @@ class ChartDataAssembler:
                          index_id: str,
                          period: str,
                          count: int,
-                         before: Optional[str]) -> PriceData:
+                         before: Optional[str],
+                         current_time: datetime) -> PriceData:
         """获取K线数据（DataProvider 已内置三层缓存）
         
         💚 DataProvider 自动处理:
@@ -182,7 +184,8 @@ class ChartDataAssembler:
         price_data = self._data_provider.get_index_prices(
             index_id,
             start_date_str,
-            end_date_str
+            end_date_str,
+            current_time
         )
         
         # 验证数据

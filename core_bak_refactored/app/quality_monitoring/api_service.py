@@ -64,8 +64,9 @@ from core_bak_refactored.app.quality_monitoring.api.exporter import DataExporter
 from core_bak_refactored.app.quality_monitoring.api.health import HealthChecker
 from core_bak_refactored.app.quality_monitoring.api.system_metrics import MetricsCollector
 from core_bak_refactored.app.quality_monitoring.api.system_status import SystemStatusManager
+from core_bak_refactored.core.share import MarketCode
 from core_bak_refactored.core.share.config_manager import ConfigManager
-
+from core_bak_refactored.core.signal.indicator_service import TechnicalIndicators
 if TYPE_CHECKING:
     from core_bak_refactored.app.quality_monitoring.monitoring_service import QualityMonitoringService
 
@@ -138,7 +139,7 @@ class DataQualityAPIService:
         Returns:
             ChartDataAssembler: 图表数据组装器实例
         """
-        from core_bak_refactored.core.signal.indicator_service import TechnicalIndicators
+
         from core_bak_refactored.core.share.market import MarketUtils
         
         # 1. 使用领域层服务选择数据提供者
@@ -431,18 +432,10 @@ class DataQualityAPIService:
                     logger.info(f"🎭 使用模拟数据源: {index_id}")
                     # 使用MockDataProvider
                     from core_bak_refactored.core.data.providers.mock_provider import MockDataProvider
-                    from core_bak_refactored.core.signal.indicator_service import TechnicalIndicators
-                    from core_bak_refactored.core.share.market import MarketUtils
-                    
                     mock_provider = MockDataProvider()
-                    
-                    # 创建指标服务（与真实模式相同）
-                    market_code = MarketUtils.infer_market_from_symbol(index_id)
-                    market = market_code.value
-                    indicator_service = TechnicalIndicators(market=market, timeframe=period)
-                    
+                    # 3. 创建指标服务（根据市场）
+                    indicator_service = TechnicalIndicators(market=MarketCode.CN, timeframe=period)
                     # 创建使用Mock Provider的chart_assembler
-                    from core_bak_refactored.app.quality_monitoring.api.chart_data import ChartDataAssembler
                     chart_assembler = ChartDataAssembler(
                         data_provider=mock_provider,
                         indicator_service=indicator_service
@@ -458,7 +451,8 @@ class DataQualityAPIService:
                     period=period,
                     count=count,
                     before=before,
-                    indicators=indicators
+                    indicators=indicators,
+                    current_time=datetime.now()
                 )
                 
                 return jsonify({
@@ -2009,7 +2003,7 @@ class DataQualityAPIService:
                 provider = getattr(self.quality_monitor, 'data_provider', None)
                 if not provider or not hasattr(provider, 'get_index_prices'):
                     return jsonify({'status': 'error', 'message': '数据提供者不可用', 'error_code': 'DATA_PROVIDER_UNAVAILABLE'}), 503
-                df = provider.get_index_prices(index_id, start_date, end_date)
+                df = provider.get_index_prices(index_id, start_date, end_date,datetime.now())
                 data = df.to_dict(orient='records') if hasattr(df, 'to_dict') else []
                 return jsonify({'status': 'success', 'data': data, 'count': len(data), 'timestamp': datetime.now().isoformat()})
             except Exception as e:
@@ -2132,7 +2126,7 @@ class DataQualityAPIService:
                         start_date = end_date - timedelta(days=days_needed)
                         
                         # 获取原始日线数据
-                        df = mock_provider.get_index_prices(index_id, start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'))
+                        df = mock_provider.get_index_prices(index_id, start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'),datetime.now())
                         if hasattr(df, 'empty') and df.empty:
                             return jsonify({'status': 'error', 'message': '无数据', 'error_code': 'NO_DATA'}), 404
                         
@@ -2202,7 +2196,7 @@ class DataQualityAPIService:
                         end_date = datetime.now()
                     
                     start_date = end_date - timedelta(days=days_needed)
-                    df = provider.get_index_prices(index_id, start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'))
+                    df = provider.get_index_prices(index_id, start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'),datetime.now())
                     if hasattr(df, 'empty') and df.empty:
                         # 生产环境：真实数据为空时返回错误，不降级为Mock
                         return jsonify({'status': 'error', 'message': '无数据', 'error_code': 'NO_DATA'}), 404
@@ -2263,9 +2257,6 @@ class DataQualityAPIService:
                 return jsonify({'status': 'error', 'message': str(e), 'error_code': 'KLINE_FETCH_FAILED'}), 500
 
         # 🆕 新增：实时K线柱数据（用于盘前/盘中实时更新当天K线）
-        # 🔧 Mock模式实时K线缓存（在全局范围维护）
-        mock_realtime_cache = {}
-        
         # 模拟模式端点
         @self.app.route('/api/v1/data/kline/realtime/mock')
         def get_realtime_kline_mock():
@@ -2319,28 +2310,14 @@ class DataQualityAPIService:
                 
                 from core_bak_refactored.core.data.providers.mock_provider import MockDataProvider
                 
-                # 🔧 从缓存中获取历史数据
-                nonlocal mock_realtime_cache
-                cache_key = f"{index_id}_{trade_date}"
-                cached = mock_realtime_cache.get(cache_key)
-                
-                # 🔧 调用领域层，显式传入参数（包括cached）
+                # 🔧 调用领域层，显式传入参数
                 provider = MockDataProvider()
                 result = provider.get_realtime_kline(
                     symbol=index_id,
                     trade_date=trade_date,
                     trading_phase=trading_phase,
-                    is_index=is_index,
-                    cached=cached  # 🔧 传入缓存，用于维护历史极值
+                    is_index=is_index
                 )
-                
-                # 🔧 更新缓存（保存open/high/low/volume用于下次调用）
-                mock_realtime_cache[cache_key] = {
-                    'open': result['open'],
-                    'high': result['high'],
-                    'low': result['low'],
-                    'volume': result['volume']
-                }
                 
                 return jsonify({
                     'status': 'success',
