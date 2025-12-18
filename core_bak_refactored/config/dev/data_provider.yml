@@ -32,6 +32,7 @@ providers:
   - 宏观数据
   installation: pip install akshare
   last_test: '2025-12-09T08:43:19.749738'
+  supports_period: false  # 不支持直接查询周线/月线，需要从日线转换
 - id: yahoo
   name: Yahoo Finance
   type: 商业API
@@ -52,6 +53,7 @@ providers:
   - 期权数据
   installation: pip install yfinance
   last_test: '2025-12-12T00:06:49.701765'
+  supports_period: true  # 支持直接查询周线/月线
 - id: tushare
   name: Tushare Pro
   type: 社区数据
@@ -71,6 +73,7 @@ providers:
   - 财务数据
   installation: pip install tushare
   registration: https://tushare.pro/register
+  supports_period: false  # 不支持直接查询周线/月线，需要从日线转换
 - id: finnhub
   name: Finnhub
   type: 商业API
@@ -93,3 +96,26 @@ providers:
   - 社交情绪分析
   installation: pip install finnhub-python
   registration: https://finnhub.io/
+  supports_period: true  # 支持直接查询周线/月线
+- id: mock
+  name: Mock Data Provider
+  type: 模拟数据
+  description: 用于开发和测试的模拟数据源
+  status: passed
+  adapter_module: core_bak_refactored.core.data.providers.mock_provider
+  adapter_class: MockDataProvider
+  markets:
+  - CN
+  - HK
+  - US
+  - EU
+  - JP
+  - SG
+  requires_auth: false
+  rate_limit: 无限制
+  features:
+  - 模拟实时数据
+  - 模拟历史数据
+  - 模拟分时数据
+  installation: 内置
+  supports_period: false  # 不支持直接查询周线/月线，需要从日线转换

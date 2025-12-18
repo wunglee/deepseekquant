@@ -128,7 +128,8 @@ class DataProviderFactory:
                     'id', 'name', 'type', 'description', 'status',
                     'adapter_module', 'adapter_class', 'markets',
                     'requires_auth', 'auth_type', 'rate_limit',
-                    'features', 'installation', 'registration', 'last_test'
+                    'features', 'installation', 'registration', 'last_test',
+                    'supports_period'  # 🔧 数据源特性，不传给构造函数
                 }
                 
                 kwargs = {k: v for k, v in provider_config.items() if k not in excluded_fields}

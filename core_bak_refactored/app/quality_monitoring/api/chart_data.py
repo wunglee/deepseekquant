@@ -90,6 +90,17 @@ class ChartDataAssembler:
             logger.info("步骤1: 获取K线数据...")
             warmup_count = 30  # 预热数据条数（足够MACD/RSI/KDJ计算）
             price_data_full = self._fetch_kline_data(index_id, period, count + warmup_count, before,current_time)
+            
+            # 🔧 关键修复：数据为空时直接返回空结果（无限滚动到头）
+            if price_data_full is None or price_data_full.count == 0:
+                logger.info(f"⚠️ 无数据：{index_id}，返回空结果（可能是无限滚动到头）")
+                return {
+                    'kline': [],
+                    'indicators': {},
+                    'events': [],
+                    'needs_realtime_kline': False
+                }
+            
             logger.info(f"K线数据获取成功，共 {price_data_full.count} 条（包含{warmup_count}条预热数据）")
             
             # 2. 计算技术指标（使用完整 PriceData）
@@ -169,39 +180,92 @@ class ChartDataAssembler:
         """
         from datetime import datetime, timedelta
         
-        # 计算日期范围
-        multiplier = {'daily': 1, 'weekly': 7, 'monthly': 30}.get(period, 1)
-        days_needed = count * multiplier * 2  # 预留冗余
-        
+        # 🔧 无限滚动处理：根据周期调整 end_date
         if before:
-            # 🔧 关键修复：before 表示获取此日期**之前**的数据（不包含当天）
-            # 需要将 end_date 设置为 before 的前一天，避免数据重复
             before_date = datetime.strptime(before, '%Y-%m-%d')
-            end_date = before_date - timedelta(days=1)
+            # 💡 关键修复：不同周期使用不同的偏移量
+            if period == 'monthly':
+                # 月线：往前推1个月（避免重复返回同一个月的数据）
+                # 例如：before=2021-01-31 → end_date=2020-12-31
+                if before_date.month == 1:
+                    end_date = datetime(before_date.year - 1, 12, 31)
+                else:
+                    # 上个月的最后一天
+                    end_date = datetime(before_date.year, before_date.month, 1) - timedelta(days=1)
+            elif period == 'weekly':
+                # 周线：往前推7天
+                end_date = before_date - timedelta(days=7)
+            else:
+                # 日线：往前推1天
+                end_date = before_date - timedelta(days=1)
+            logger.info(f"🔄 无限滚动：before={before}, period={period}, end_date={end_date.strftime('%Y-%m-%d')}")
         else:
             end_date = datetime.now()
+        
+        # 🔧 根据周期调整查询范围，确保获取足够的数据点
+        # 💡 关键：akshare等数据源可能限制历史数据范围，需要足够的冗余
+        if period == 'monthly':
+            # 月线：60条月线 = 5年，考虑数据源限制，查询10年 = 3600天
+            # AKShare等数据源通常只返回近2-3年数据，需要大幅提高查询范围
+            days_needed = count * 60  # 增加到60天/条（原42天不够）
+        elif period == 'weekly':
+            # 周线：60条周线 = 420天，加冗余 → 800天
+            days_needed = count * 14  # 增加到14天/条（原10天）
+        else:
+            # 日线：60条日线 = 60天，加冗余（周末/节假日）→ 120天
+            days_needed = count * 2
         
         start_date = end_date - timedelta(days=days_needed)
         start_date_str = start_date.strftime('%Y-%m-%d')
         end_date_str = end_date.strftime('%Y-%m-%d')
         
         # 💚 直接调用 DataProvider，三层缓存已封装在内
+        # 🔧 对于不支持直接查询的数据源（如 AKShare），会返回日线数据
         price_data = self._data_provider.get_index_prices(
             index_id,
             start_date_str,
             end_date_str,
-            current_time
+            current_time,
+            period  # 传递周期参数给数据源
         )
         
-        # 验证数据
+        # 🔧 根据配置决定是否需要周期转换
+        # 流程：股票代码 → 市场代码 → 数据源ID → supports_period 特性
+        from core_bak_refactored.core.share.config_manager import ConfigManager
+        
+        if period != 'daily' and price_data.count > 0:
+            config_manager = ConfigManager()
+            
+            # 1. 根据 symbol 获取数据源ID
+            provider_id = config_manager.get_provider_for_symbol(index_id)
+            
+            if provider_id:
+                # 2. 检查数据源是否支持直接查询周线/月线
+                supports_period = config_manager.get_provider_supports_period(provider_id)
+                
+                if not supports_period:
+                    # 不支持直接查询，需要转换
+                    logger.info(f"数据源 {provider_id} 不支持直接查询 {period}，需要从日线转换（{price_data.count} 条日线数据）")
+                    # 🔧 关键修复：不传递 count，让 _convert_period 返回所有转换后的数据
+                    price_data = self._convert_period(price_data, period)
+                else:
+                    logger.debug(f"数据源 {provider_id} 支持直接查询 {period}，无需转换")
+            else:
+                logger.warning(f"无法确定 {index_id} 的数据源，跳过周期转换")
+        
+        # 🔧 关键修复：数据为空时直接返回，不抛异常（无限滚动到头是正常情况）
         if price_data is None or price_data.count == 0:
-            raise ValueError(f"无数据：{index_id}")
+            logger.info(f"⚠️ 无数据：{index_id}，返回空 PriceData（可能是无限滚动到头）")
+            # 返回空 PriceData 对象，而非抛异常
+            return price_data if price_data else PriceData(
+                records=[],
+                symbol=index_id,
+                start_date=pd.Timestamp.now(),
+                end_date=pd.Timestamp.now(),
+                count=0
+            )
         
         logger.info(f"获取到 {price_data.count} 条数据，symbol={price_data.symbol}, 时间范围: {price_data.start_date} to {price_data.end_date}")
-        
-        # 周期转换（如需要）
-        if period != 'daily':
-            price_data = self._convert_period(price_data, period, count)
         
         return price_data
     
@@ -227,20 +291,28 @@ class ChartDataAssembler:
     
     def _convert_period(self,
                        price_data: PriceData,
-                       period: str,
-                       count: int) -> PriceData:
-        """周期转换（日线→周线/月线）（使用强类型 PriceData）
+                       period: str) -> PriceData:
+        """周期转换（日线→周线/月线）
         
+        🎯 统一的周期转换逻辑：所有不支持直接查询的数据源都在这里转换
         💚 强类型: 输入/输出都是 PriceData
         📝 注: 内部使用 pandas.resample()，但仅作为实现细节，对外仍是强类型
         
+        适用场景：
+        - AKShare: 没有周线/月线 API，必须从日线转换
+        - Tushare: 根据 API 支持情况决定
+        - 其他不支持直接查询的数据源
+        
         Args:
             price_data: 日线数据（PriceData对象）
-            period: 目标周期
-            count: 目标条数
+            period: 目标周期 ('weekly' 或 'monthly')
         
         Returns:
-            转换后的 PriceData 对象
+            转换后的 PriceData 对象（包含所有转换后的数据，不裁剪）
+        
+        Note:
+            🔧 关键变更：不再使用 tail(count) 裁剪，返回所有转换后的数据
+            这样可以确保无限滚动时获取的是正确的时间范围内的数据
         """
         # 临时转换为 DataFrame 进行周期重采样（这是 pandas 的优势）
         df = price_data.to_dataframe()
@@ -256,7 +328,8 @@ class ChartDataAssembler:
                 'volume': 'sum'
             })
         elif period == 'monthly':
-            df_copy = df_copy.resample('M').agg({
+            # 🔧 使用 'ME' 而不是 'M' 避免 FutureWarning
+            df_copy = df_copy.resample('ME').agg({
                 'open': 'first',
                 'high': 'max',
                 'low': 'min',
@@ -265,7 +338,10 @@ class ChartDataAssembler:
             })
         
         df_copy = df_copy.reset_index()
-        df_copy = df_copy.tail(count)
+        
+        # 🔧 关键变更：不再使用 tail(count) 裁剪
+        # 返回所有转换后的数据，让调用者决定是否裁剪
+        # df_copy = df_copy.tail(count)  # <-- 已移除
         
         # 转换回 PriceData 强类型
         records = [

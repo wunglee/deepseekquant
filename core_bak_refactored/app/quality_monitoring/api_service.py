@@ -427,12 +427,25 @@ class DataQualityAPIService:
                         'error_code': 'INVALID_COUNT'
                     }), 400
                 
-                # 🔧 根据use_mock参数选择数据源
+                # 🔧 根捪use_mock参数选择数据源
                 if use_mock:
                     logger.info(f"🎭 使用模拟数据源: {index_id}")
                     # 使用MockDataProvider
                     from core_bak_refactored.core.data.providers.mock_provider import MockDataProvider
+                    from core_bak_refactored.core.share.market.market_enums import TradingPhase
+                                    
                     mock_provider = MockDataProvider()
+                                    
+                    # 🎭 关键：从前端获取trading_phase参数（用于needs_realtime_kline判断）
+                    trading_phase_str = request.args.get('trading_phase', 'TRADING')  # 默认盘中
+                    try:
+                        trading_phase = TradingPhase[trading_phase_str.upper()]
+                        mock_provider.set_mock_trading_phase(trading_phase)
+                        logger.info(f"🎭 Mock模式 - trading_phase={trading_phase.name}")
+                    except KeyError:
+                        logger.warning(f"🎭 无效的trading_phase: {trading_phase_str}，使用默认TRADING")
+                        mock_provider.set_mock_trading_phase(TradingPhase.TRADING)
+                                    
                     # 3. 创建指标服务（根据市场）
                     indicator_service = TechnicalIndicators(market=MarketCode.CN, timeframe=period)
                     # 创建使用Mock Provider的chart_assembler

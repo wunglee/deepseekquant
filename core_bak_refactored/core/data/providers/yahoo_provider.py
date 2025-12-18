@@ -163,7 +163,7 @@ class YahooFinanceDataProvider(BaseDataProvider):
         """获取测试符号"""
         return "^GSPC"  # 标普500指数
     
-    def _fetch_with_retry(self, trade_record: str, start_date: Union[str, datetime], end_date: Union[str, datetime], max_retries: int = 3) -> pd.DataFrame:
+    def _fetch_with_retry(self, trade_record: str, start_date: Union[str, datetime], end_date: Union[str, datetime], period: str = 'daily', max_retries: int = 3) -> pd.DataFrame:
         """
         带重试机制的数据获取方法
         
@@ -176,6 +176,7 @@ class YahooFinanceDataProvider(BaseDataProvider):
             trade_record: 股票或指数代码
             start_date: 开始日期
             end_date: 结束日期
+            period: 周期 ('daily', 'weekly', 'monthly')
             max_retries: 最大重试次数
             
         Returns:
@@ -195,9 +196,17 @@ class YahooFinanceDataProvider(BaseDataProvider):
                 # 💚 请求限速（关键！避免 429）
                 self._throttle_request()
                 
+                # 🔧 将 period 转换为 yfinance 的 interval 参数
+                interval_map = {
+                    'daily': '1d',
+                    'weekly': '1wk',
+                    'monthly': '1mo'
+                }
+                interval = interval_map.get(period, '1d')
+                
                 # 使用自定义 Session（关键！避免 429）
                 ticker_obj = self.yf.Ticker(trade_record, session=self._session)
-                data = ticker_obj.history(start=start_date, end=end_date)
+                data = ticker_obj.history(start=start_date, end=end_date, interval=interval)
                 
                 # 检查数据是否有效
                 if data is not None and not data.empty:
@@ -234,6 +243,7 @@ class YahooFinanceDataProvider(BaseDataProvider):
         index_id: str,
         start_date:str,
         end_date: str,
+        period: str = 'daily'
     ) -> PriceData:
         """
         获取指数历史价格数据
@@ -242,6 +252,7 @@ class YahooFinanceDataProvider(BaseDataProvider):
             index_id: 指数ID（如 "^GSPC"）
             start_date: 开始日期
             end_date: 结束日期
+            period: 周期 ('daily', 'weekly', 'monthly')
             
         Returns:
             PriceData: 标准化的价格数据
@@ -252,11 +263,11 @@ class YahooFinanceDataProvider(BaseDataProvider):
         if self.yf is None:
             raise RuntimeError("yfinance not available")
             
-        logger.info(f"Fetching index data for {index_id} from {start_date} to {end_date}")
+        logger.info(f"Fetching index data for {index_id} from {start_date} to {end_date}, period={period}")
         
         try:
             # 使用带重试机制的方法获取数据
-            data = self._fetch_with_retry(index_id, start_date, end_date)
+            data = self._fetch_with_retry(index_id, start_date, end_date, period)
             
             if data is None or data.empty:
                 raise ValueError(f"No data returned for {index_id}")
@@ -277,6 +288,7 @@ class YahooFinanceDataProvider(BaseDataProvider):
         stock_id: str,
         start_date: str,
         end_date:str,
+        period: str = 'daily'
     ) -> PriceData:
         """
         获取个股历史价格数据
@@ -285,7 +297,7 @@ class YahooFinanceDataProvider(BaseDataProvider):
             stock_id: 股票ID（如 "AAPL"）
             start_date: 开始日期
             end_date: 结束日期
-            current_time:当前时间
+            period: 周期 ('daily', 'weekly', 'monthly')
         Returns:
             PriceData: 标准化的价格数据
             
@@ -295,11 +307,11 @@ class YahooFinanceDataProvider(BaseDataProvider):
         if self.yf is None:
             raise RuntimeError("yfinance not available")
             
-        logger.info(f"Fetching stock data for {stock_id} from {start_date} to {end_date}")
+        logger.info(f"Fetching stock data for {stock_id} from {start_date} to {end_date}, period={period}")
         
         try:
             # 使用带重试机制的方法获取数据
-            data = self._fetch_with_retry(stock_id, start_date, end_date)
+            data = self._fetch_with_retry(stock_id, start_date, end_date, period)
             
             if data is None or data.empty:
                 raise ValueError(f"No data returned for {stock_id}")
@@ -315,7 +327,7 @@ class YahooFinanceDataProvider(BaseDataProvider):
             logger.error(f"Failed to fetch data for {stock_id}: {e}")
             raise ValueError(f"Failed to fetch data for {stock_id}: {str(e)}")
     
-    def _fetch_from_external_api(self, symbol: str, start_date: str, end_date: str) -> PriceData:
+    def _fetch_from_external_api(self, symbol: str, start_date: str, end_date: str, period: str = 'daily') -> PriceData:
         """
         从 Yahoo Finance API 获取数据（实现基类抽象方法）
         
@@ -326,15 +338,16 @@ class YahooFinanceDataProvider(BaseDataProvider):
             symbol: 证券代码（如 "^GSPC", "AAPL"）
             start_date: 开始日期 (YYYY-MM-DD)
             end_date: 结束日期 (YYYY-MM-DD)
+            period: 周期 ('daily', 'weekly', 'monthly')
         
         Returns:
             PriceData: 标准化的价格数据
         """
         # 判断是指数还是个股（以 ^ 开头的是指数）
         if symbol.startswith('^'):
-            return self._inter_get_index_prices(symbol, start_date, end_date)
+            return self._inter_get_index_prices(symbol, start_date, end_date, period)
         else:
-            return self._inter_get_stock_prices(symbol, start_date, end_date)
+            return self._inter_get_stock_prices(symbol, start_date, end_date, period)
     
     # _standardize_format method has been moved to MarketUtils.standardize_format_to_price_data
     

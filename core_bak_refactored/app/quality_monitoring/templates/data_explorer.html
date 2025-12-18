@@ -327,14 +327,6 @@ function startInfiniteScrollDetection() {
             if (Math.abs(currentStart - lastStartValue) > 0.5 && !isAdjustingBySystem) {
                 userIsMoving = true
                 
-                // 如果用户向左拖动（start 减小），允许重新触发加载
-                if (currentStart < lastStartValue) {
-                    if (lastLoadPosition !== -1) {
-                        console.log('🔄 用户继续向左拖动，重置加载标记')
-                        lastLoadPosition = -1
-                    }
-                }
-                
                 // 清除之前的定时器
                 if (movingResetTimer) {
                     clearTimeout(movingResetTimer)
@@ -351,15 +343,22 @@ function startInfiniteScrollDetection() {
             
             // 🎯 渐进式预加载机制（仅在用户正在拖动时才允许触发加载）
             // 🔧 优化：提前预加载阈值，避免数据延迟和窗口跳跃
-            if (hasMoreData && !isLoadingMore && userIsMoving) {
+            // 🔧 关键修复：在 start < 20 时不需要 userIsMoving 限制（避免拖不动）
+            if (hasMoreData && !isLoadingMore) {
                 var shouldLoad = false
                 var triggerReason = ''
+                var needsUserMoving = true  // 默认需要用户拖动
                 
-                if (currentStart < 40 && lastLoadPosition !== 40) {
+                if (currentStart < 20 && lastLoadPosition !== 20) {
+                    shouldLoad = true
+                    triggerReason = '紧急加载(start < 20%)'
+                    lastLoadPosition = 20
+                    needsUserMoving = false  // 紧急情况，不需要 userIsMoving
+                } else if (currentStart < 40 && lastLoadPosition !== 40 && userIsMoving) {
                     shouldLoad = true
                     triggerReason = '预加载1(start < 40%)'
                     lastLoadPosition = 40
-                } else if (currentStart < 60 && currentStart >= 40 && lastLoadPosition !== 60) {
+                } else if (currentStart < 60 && currentStart >= 40 && lastLoadPosition !== 60 && userIsMoving) {
                     shouldLoad = true
                     triggerReason = '预加载2(start < 60%)'
                     lastLoadPosition = 60
@@ -375,6 +374,17 @@ function startInfiniteScrollDetection() {
                             console.log('✅ 已到达最早数据')
                         }
                     })
+                }
+            } else {
+                // 🔧 调试日志：输出为什么没有触发加载
+                if (currentStart < 60 && Math.abs(currentStart - lastStartValue) > 0.5) {
+                    const reasons = []
+                    if (!hasMoreData) reasons.push('hasMoreData=false')
+                    if (isLoadingMore) reasons.push('isLoadingMore=true')
+                    if (!userIsMoving) reasons.push('userIsMoving=false')
+                    if (reasons.length > 0 && currentStart < 40) {
+                        console.log('⚠️ 未触发加载 (start=' + currentStart.toFixed(2) + '%): ' + reasons.join(', '))
+                    }
                 }
             }
         } catch(e) {
@@ -402,6 +412,8 @@ function loadMoreHistoryData(callback) {
     // 检查是否有当前数据
     if (!allKlineData || allKlineData.length === 0) {
         console.warn('没有当前数据，无法加载更多')
+        // 🔧 关键修复：失败时也要重置 lastLoadPosition
+        lastLoadPosition = -1
         callback(false)
         return
     }
@@ -436,9 +448,24 @@ function loadMoreHistoryData(callback) {
             const newEvents = chartData.events || []
             const newIndicators = chartData.indicators || {}  // 🔧 新加载的指标数据
             
+            // 🔧 详细日志：帮助诊断是否真到头
+            console.log('📦 API返回数据:', {
+                status: res.status,
+                newDataLength: newData.length,
+                hasKline: !!chartData.kline,
+                beforeDate: beforeDate
+            })
+            
             // 检查是否有新数据
             if (newData.length === 0) {
-                console.log('已到达最早数据')
+                console.warn('⚠️ API返回空数据！可能原因:')
+                console.warn('  1. 真的到达最早数据（数据源只有这么多）')
+                console.warn('  2. 缓存到头但未增量更新（需要清空缓存重试）')
+                console.warn('  3. API错误或数据格式问题')
+                console.warn('  当前 hasMoreData 将被设为 false，不会再触发请求')
+                console.warn('  如需重试，请刷新页面或切换周期')
+                // 🔧 关键修复：失败时也要重置 lastLoadPosition
+                lastLoadPosition = -1
                 callback(false)
                 return
             }
@@ -464,7 +491,11 @@ function loadMoreHistoryData(callback) {
             
             // 调整 dataZoom 位置（保持视图不跳跃）
             adjustDataZoomAfterPrepend(oldLength, newData.length)
-            
+
+            // 🔧 关键修复：加载成功后重置加载位置标记，允许继续触发下一次加载
+            lastLoadPosition = -1
+            console.log('🔄 重置加载标记，允许下一次触发')
+
             callback(true)
         })
         .catch(err => {
@@ -473,6 +504,8 @@ function loadMoreHistoryData(callback) {
             if (err instanceof TypeError && err.message.includes('fetch')) {
                 showEmpty(klineChart, '网络连接失败，请检查网络设置')
             }
+            // 🔧 关键修复：异常时也要重置 lastLoadPosition
+            lastLoadPosition = -1
             callback(false)
         })
 }
@@ -2165,7 +2198,7 @@ let mockTradingPhase = 'TRADING'  // 🔧 模拟控制：BEFORE_OPEN, TRADING, A
 let useMockMode = false  // 是否使用mock模式
 
 /**
- * 获取实时K线数据
+ * 获取实时K线数据（Mock和真实使用相同机制）
  */
 function fetchRealtimeKline() {
     if (!currentIndex || !currentIndex.id) return
@@ -2174,7 +2207,7 @@ function fetchRealtimeKline() {
     let url
     
     if (useMockMode) {
-        // 🔧 Mock模式：前端显式传入trading_phase参数
+        // 🎭 Mock模式：使用mock接口，但机制与真实模式完全一样
         url = `/api/v1/data/kline/realtime/mock?index_id=${encodeURIComponent(indexId)}&trading_phase=${mockTradingPhase}`
         console.log('🎭 Mock模式 - 获取实时K线, trading_phase:', mockTradingPhase)
     } else {
@@ -2310,9 +2343,9 @@ function setMockTradingPhase(phase) {
     })
     document.querySelector(`[data-phase="${phase}"]`)?.classList.add('active')
     
-    // 重新获取实时K线
+    // 重新加载K线数据（触发needs_realtime_kline判断）
     if (useMockMode && currentIndex && currentIndex.id) {
-        fetchRealtimeKline()
+        loadKline(currentIndex.id)
     }
 }
 
@@ -2330,7 +2363,9 @@ function loadKline(indexId) {
     
     // 🔧 添加use_mock参数，统一切换数据源
     const useMockParam = useMockMode ? '&use_mock=true' : ''
-    const url = `/api/v1/chart/data?index_id=${encodeURIComponent(indexId)}&period=${currentPeriod}&count=${count}&indicators=all${useMockParam}`
+    // 🎭 Mock模式需要传递trading_phase参数（用于needs_realtime_kline判断）
+    const tradingPhaseParam = useMockMode ? `&trading_phase=${mockTradingPhase}` : ''
+    const url = `/api/v1/chart/data?index_id=${encodeURIComponent(indexId)}&period=${currentPeriod}&count=${count}&indicators=all${useMockParam}${tradingPhaseParam}`
     console.log('Fetching:', url)
     fetch(url)
         .then(r => {
@@ -2360,6 +2395,11 @@ function loadKline(indexId) {
             allKlineData = data
             allEvents = chartData.events || []
             allIndicatorsData = chartData.indicators || {}  // 🔧 保存后端计算的指标数据
+            
+            // 🔧 关键修复：加载新股票时重置无限滚动状态
+            hasMoreData = true
+            lastLoadPosition = -1
+            console.log('🔄 已重置无限滚动状态，允许加载更多历史数据')
             
             console.log('🎯 后端指标数据:', allIndicatorsData)
             console.log('🎯 needs_realtime_kline:', chartData.needs_realtime_kline)

@@ -109,7 +109,7 @@ class BaseDataProvider(ABC,HistoricalDataProvider):
         
         return self._db_service
 
-    def _make_cache_key(self, index_id: str, start_date: str, end_date: str) -> str:
+    def _make_cache_key(self, index_id: str, start_date: str, end_date: str, period: str = 'daily') -> str:
         """
         生成缓存键
 
@@ -117,11 +117,12 @@ class BaseDataProvider(ABC,HistoricalDataProvider):
             index_id: 指数代码
             start_date: 开始日期
             end_date: 结束日期
+            period: 周期
 
         Returns:
             缓存键字符串
         """
-        return f"{index_id}:{start_date}:{end_date}"
+        return f"{index_id}:{start_date}:{end_date}:{period}"
     
     def _get_from_memory_cache(self, cache_key: str) -> Optional[pd.DataFrame]:
         """
@@ -177,6 +178,10 @@ class BaseDataProvider(ABC,HistoricalDataProvider):
         Returns:
             DataFrame 或 None
         """
+        # 🔧 检查数据库缓存是否启用（Mock数据不使用数据库缓存）
+        if not self._enable_db_cache:
+            return None
+        
         db_service = self._get_db_service()
         if not db_service:
             return None
@@ -205,6 +210,10 @@ class BaseDataProvider(ABC,HistoricalDataProvider):
             index_id: 指数代码
             data: 数据
         """
+        # 🔧 检查数据库缓存是否启用（Mock数据不会被缓存）
+        if not self._enable_db_cache:
+            return
+        
         db_service = self._get_db_service()
         if not db_service or data is None or data.empty:
             return
@@ -219,7 +228,7 @@ class BaseDataProvider(ABC,HistoricalDataProvider):
         except Exception as e:
             logger.warning(f"缓存数据到数据库失败: {e}")
     
-    def _get_with_cache(self, index_id: str, start_date: str, end_date: str,current_time: datetime):
+    def _get_with_cache(self, index_id: str, start_date: str, end_date: str, current_time: datetime, period: str = 'daily'):
         """
         三层数据获取（核心方法）
         
@@ -233,12 +242,13 @@ class BaseDataProvider(ABC,HistoricalDataProvider):
             start_date: 开始日期 (YYYY-MM-DD)
             end_date: 结束日期 (YYYY-MM-DD)
             current_time: 当前时间
+            period: 周期 ('daily', 'weekly', 'monthly')
         
         Returns:
             PriceData 对象
         """
         # 1. 尝试内存缓存
-        cache_key = self._make_cache_key(index_id, start_date, end_date)
+        cache_key = self._make_cache_key(index_id, start_date, end_date, period)
         cached_df = self._get_from_memory_cache(cache_key)
         if cached_df is not None:
             # 转换为 PriceData
@@ -253,8 +263,8 @@ class BaseDataProvider(ABC,HistoricalDataProvider):
                 price_data = PriceData.from_dataframe(cached_df, index_id)
             else:
                 # 3. 调用外部API（子类实现）
-                logger.info(f"🌐 缓存未命中，调用外部API: {index_id}")
-                price_data = self._fetch_from_external_api(index_id, start_date, end_date)
+                logger.info(f"🌐 缓存未命中，调用外部API: {index_id}, period={period}")
+                price_data = self._fetch_from_external_api(index_id, start_date, end_date, period)
                 
                 # ✅ 仅在外部API调用成功后写入缓存
                 if price_data and price_data.count > 0:
@@ -265,8 +275,11 @@ class BaseDataProvider(ABC,HistoricalDataProvider):
                     self._set_to_memory_cache(cache_key, df)
 
         # ✅ 无论从哪个来源获取数据，都设置 needs_realtime_kline 标记
+        # 🔧 关键修复：确保 price_data 存在且调用方法返回计算结果
         if price_data and price_data.count > 0:
             self.set_needs_realtime_kline(price_data, current_time)
+            # 🔧 添加日志确认设置成功
+            logger.debug(f"✅ needs_realtime_kline已设置为: {price_data.needs_realtime_kline}")
         
         return price_data
 
@@ -295,7 +308,7 @@ class BaseDataProvider(ABC,HistoricalDataProvider):
     # 数据获取接口（对外提供，自动使用缓存）
     # ========================================================================
     
-    def get_index_prices(self, index_id: str, start_date: str, end_date: str,current_time: datetime):
+    def get_index_prices(self, index_id: str, start_date: str, end_date: str, current_time: datetime, period: str = 'daily'):
         """
         获取指数价格数据（对外接口，自动使用三层缓存）
         
@@ -309,13 +322,14 @@ class BaseDataProvider(ABC,HistoricalDataProvider):
             start_date: 开始日期 (YYYY-MM-DD)
             end_date: 结束日期 (YYYY-MM-DD)
             current_time:操作时间
+            period: 周期 ('daily', 'weekly', 'monthly')
         Returns:
             PriceData: 价格数据对象
 
         """
-        return self._get_with_cache(index_id, start_date, end_date,current_time)
+        return self._get_with_cache(index_id, start_date, end_date, current_time, period)
     
-    def get_stock_prices(self, stock_id: str, start_date: str, end_date: str,current_time: datetime):
+    def get_stock_prices(self, stock_id: str, start_date: str, end_date: str, current_time: datetime, period: str = 'daily'):
         """
         获取股票价格数据（对外接口，自动使用三层缓存）
         
@@ -324,18 +338,19 @@ class BaseDataProvider(ABC,HistoricalDataProvider):
             start_date: 开始日期 (YYYY-MM-DD)
             end_date: 结束日期 (YYYY-MM-DD)
             current_time:操作时间
+            period: 周期 ('daily', 'weekly', 'monthly')
         Returns:
             PriceData: 价格数据对象
         """
         # 股票数据也使用相同的缓存策略
-        return self._get_with_cache(stock_id, start_date, end_date,current_time)
+        return self._get_with_cache(stock_id, start_date, end_date, current_time, period)
     
     # ========================================================================
     # 内部接口（子类必须实现）
     # ========================================================================
     
     @abstractmethod
-    def _fetch_from_external_api(self, symbol: str, start_date: str, end_date: str):
+    def _fetch_from_external_api(self, symbol: str, start_date: str, end_date: str, period: str = 'daily'):
         """
         从外部API获取数据（抽象方法，子类必须实现）
         
@@ -348,6 +363,7 @@ class BaseDataProvider(ABC,HistoricalDataProvider):
             symbol: 股票/指数代码
             start_date: 开始日期 (YYYY-MM-DD)
             end_date: 结束日期 (YYYY-MM-DD)
+            period: 周期 ('daily', 'weekly', 'monthly')
         
         Returns:
             PriceData: 价格数据对象

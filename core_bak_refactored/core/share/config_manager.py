@@ -554,3 +554,70 @@ class ConfigManager:
             return default_hours
         
         return market_hours
+    
+    def get_provider_for_symbol(self, symbol: str) -> Optional[str]:
+        """根据股票代码获取数据源ID
+        
+        流程：
+        1. 从 symbol 推断 market_code
+        2. 从 market.yml 的 market_sources 获取数据源ID
+        
+        Args:
+            symbol: 股票代码（如 '000300.SH', 'AAPL'）
+        
+        Returns:
+            数据源ID（如 'akshare', 'yahoo'），如果找不到返回 None
+        
+        Examples:
+            >>> config_manager = ConfigManager()
+            >>> config_manager.get_provider_for_symbol('000300.SH')
+            'akshare'
+            >>> config_manager.get_provider_for_symbol('AAPL')
+            'yahoo'
+        """
+        from core_bak_refactored.core.share.market.market_utils import MarketUtils
+        
+        # 1. 推断市场代码
+        market_code = MarketUtils.infer_market_from_symbol(symbol)
+        
+        # 2. 获取数据源
+        market_config = self._config.get('market', {})
+        market_sources = market_config.get('market_sources', {})
+        provider_id = market_sources.get(market_code.value)
+        
+        if not provider_id:
+            logger.warning(f"未找到市场 {market_code.value} 的数据源配置")
+            return None
+        
+        return provider_id
+    
+    def get_provider_supports_period(self, provider_id: str) -> bool:
+        """检查数据源是否支持直接查询周线/月线
+        
+        Args:
+            provider_id: 数据源ID（如 'akshare', 'yahoo'）
+        
+        Returns:
+            True 表示支持直接查询周线/月线
+            False 表示需要从日线转换
+        
+        Examples:
+            >>> config_manager = ConfigManager()
+            >>> config_manager.get_provider_supports_period('akshare')
+            False  # AKShare 不支持直接查询，需要转换
+            >>> config_manager.get_provider_supports_period('yahoo')
+            True   # Yahoo Finance 支持直接查询
+        
+        Note:
+            配置从 data_provider.yml 的 providers[].supports_period 字段读取
+        """
+        data_config = self._config.get('data_provider', {})
+        providers = data_config.get('providers', [])
+        
+        for provider in providers:
+            if provider.get('id') == provider_id:
+                # 默认为 False（不支持直接查询）
+                return provider.get('supports_period', False)
+        
+        logger.warning(f"未找到数据源 {provider_id} 的配置，默认为不支持直接查询")
+        return False

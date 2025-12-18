@@ -49,21 +49,65 @@ class MockDataProvider(BaseDataProvider):
         '^GSPC': 'S&P 500',
         'AAPL': 'Apple Inc.'
     }
+    
+    # 🔧 Mock模式的实时K线缓存（内存缓存，独立于真实数据）
+    # key格式: "mock_realtime_{symbol}_{date}_{trading_phase}"
+    _mock_realtime_cache = {}
 
     def __init__(self):
         """初始化生成器"""
         super().__init__()
-
-    def _fetch_from_external_api(self, symbol: str, start_date: str, end_date: str):
+        # 🔧 Mock数据禁用所有缓存，避免污染真实数据缓存
+        self._enable_memory_cache = False
+        self._enable_db_cache = False
+        # 🎭 Mock模式存储前端传入的trading_phase（用于needs_realtime_kline判断）
+        self._mock_trading_phase = None
+    
+    def set_mock_trading_phase(self, trading_phase: TradingPhase):
+        """设置Mock模式的交易时段（由前端控制）"""
+        self._mock_trading_phase = trading_phase
+        logger.info(f"🎭 设置Mock交易时段: {trading_phase.name}")
+    
+    def set_needs_realtime_kline(self, price_data, current_time: datetime):
         """
-        生成模拟历史K线数据（参考AKShareProvider.get_prices实现）
+        🎭 Mock模式：根据前端传入的trading_phase设置needs_realtime_kline
+        
+        覆写基类方法，不使用current_time判断，而是使用前端传入的trading_phase
+        
+        Args:
+            price_data: 价格数据对象
+            current_time: 当前时间（Mock模式忽略此参数）
+        """
+        # 🎭 关键：使用前端传入的trading_phase，不使用current_time判断
+        if self._mock_trading_phase:
+            price_data.needs_realtime_kline = self._mock_trading_phase in [
+                TradingPhase.BEFORE_OPEN,
+                TradingPhase.TRADING,
+                TradingPhase.NOON_BREAK
+            ]
+            logger.info(f"🎭 Mock模式 - trading_phase={self._mock_trading_phase.name}, needs_realtime_kline={price_data.needs_realtime_kline}")
+        else:
+            # 如果没有设置Mock时段，默认不需要实时K线
+            price_data.needs_realtime_kline = False
+            logger.warning("🎭 Mock模式未设置trading_phase，默认needs_realtime_kline=False")
+
+    def _fetch_from_external_api(self, symbol: str, start_date: str, end_date: str, period: str = 'daily'):
+        """
+        生成模拟历史K线数据
 
         注意：历史K线都是已完成的交易日数据，不涉及交易时段判断
+        
+        🔧 Mock数据不使用缓存，每次都重新生成（避免真实数据和模拟数据混淆）
+        
+        🎭 Mock模式规则：
+        - 盘后（AFTER_CLOSE）：历史数据生成到今天（今天的K线已完成）
+        - 盘前/盘中（BEFORE_OPEN/TRADING）：历史数据只生成到昨天（今天的K线由实时接口提供）
 
         Args:
             symbol: 证券代码
             start_date: 开始日期 (YYYY-MM-DD)
             end_date: 结束日期 (YYYY-MM-DD)
+            period: 周期 ('daily', 'weekly', 'monthly') - Mock数据忽略此参数，总是生成日线
 
         Returns:
             PriceData: 包含OHLCV数据的结构化对象
@@ -72,11 +116,25 @@ class MockDataProvider(BaseDataProvider):
         from core_bak_refactored.core.data.providers.protocols import PriceData
         from datetime import datetime, timedelta
 
-        logger.info(f"📊 生成模拟历史K线: {symbol}, {start_date} ~ {end_date}")
+        logger.info(f"📊 生成模拟K线: {symbol}, {start_date} ~ {end_date}")
 
         # 转换日期
         start_dt = pd.to_datetime(start_date)
         end_dt = pd.to_datetime(end_date)
+        
+        # 🎭 关键：根据_mock_trading_phase决定是否包含今天
+        today = datetime.now().date()
+        if end_dt.date() == today and end_dt.weekday() < 5:  # 周一到周五
+            # 如果是盘前或盘中，历史数据只到昨天
+            if self._mock_trading_phase in [TradingPhase.BEFORE_OPEN, TradingPhase.TRADING, TradingPhase.NOON_BREAK]:
+                end_dt = end_dt - timedelta(days=1)
+                logger.info(f"🎭 盘前/盘中时段，历史K线只到昨天: {end_dt.strftime('%Y-%m-%d')}")
+            elif self._mock_trading_phase == TradingPhase.AFTER_CLOSE:
+                logger.info(f"🎭 盘后时段，历史K线包含今天: {end_dt.strftime('%Y-%m-%d')}")
+            else:
+                # 如果没有设置_mock_trading_phase，默认不包含今天
+                end_dt = end_dt - timedelta(days=1)
+                logger.warning(f"🎭 未设置trading_phase，默认历史K线只到昨天: {end_dt.strftime('%Y-%m-%d')}")
 
         # 生成交易日期序列（跳过周末）
         dates = []
@@ -431,148 +489,161 @@ class MockDataProvider(BaseDataProvider):
         注意：MockProvider用于前端开发测试，需要前端显式传入trading_phase进行模拟控制
         
         职责：
-        1. 生成模拟分时数据
-        2. 根据分时数据计算OHLCV
-        3. 使用缓存优化（开盘价、最高价、最低价）
-        4. 盘前时段返回集合竞价价格
-        5. 🔧 盘中时段：生成动态变化的实时数据（每次调用都不同）
+        1. 根据交易时段生成模拟数据
+        2. 使用独立内存缓存维护开盘价和极值（避免污染真实缓存）
+        3. 盘前时段：只返回开盘价（high/low/close都等于open）
+        4. 盘中时段：返回完整OHLCV，在缓存基础上维护极值
+        5. 盘后时段：返回完整K线数据
         
         Args:
             symbol: 证券代码
             trade_date: 交易日期 (YYYY-MM-DD)
             trading_phase: 交易时段（由前端控制，用于模拟）
             is_index: 是否为指数
-            cached: 缓存的K线数据（包含 open/high/low）
+            cached: （已废弃，保留用于兼容）
         
         Returns:
             {
                 'date': str,
-                'open': float,
-                'high': float,
-                'low': float,
-                'close': float,
+                'open': float,       # 盘前/盘中/盘后都有
+                'high': float | None,  # 盘前为None，盘中/盘后有值
+                'low': float | None,   # 盘前为None，盘中/盘后有值
+                'close': float,      # 盘前/盘中/盘后都有
                 'volume': int,
-                'trading_phase': str,  # 交易时段：BEFORE_OPEN, TRADING, AFTER_CLOSE等
-                'should_poll': bool  # 服务器根据 trading_phase 决定，前端只依赖此字段控制行为
+                'trading_phase': str,
+                'should_poll': bool
             }
         """
         import time
         from datetime import datetime
 
+        # 🔧 构建Mock专用缓存key（避免与真实缓存冲突）
+        cache_key = f"mock_realtime_{symbol}_{trade_date}_{trading_phase.name}"
+        
         # 🔧 是否应该启动轮询（盘前或盘中）
         should_poll = trading_phase in [TradingPhase.BEFORE_OPEN, TradingPhase.TRADING]
-
-        # 🔧 盘中时段：生成动态变化的实时数据
-        if trading_phase == TradingPhase.TRADING:
-            # 使用当前时间戳作为随机种子，让每次调用都生成不同的数据
-            current_timestamp = int(time.time() * 1000)  # 毫秒级别
-            random.seed(symbol + trade_date + str(current_timestamp))
-
-            # 生成基准价格
-            base_price = 3000 + random.random() * 300
-            yesterday_close = base_price
-
-            # 使用cached中的open价，如果没有则生成
-            if cached and 'open' in cached:
-                open_price = cached['open']
-                # 从开盘价开始波动
-                current_price = open_price + (random.random() - 0.5) * open_price * 0.02  # ±2%波动
-            else:
-                # 首次调用，生成开盘价
-                open_price = base_price * (1 + (random.random() - 0.5) * 0.01)
-                current_price = open_price + (random.random() - 0.5) * open_price * 0.01
-
-            # 使用cached中的high/low，并更新
-            if cached and 'high' in cached and 'low' in cached:
-                high_price = max(cached['high'], current_price)
-                low_price = min(cached['low'], current_price)
-            else:
-                high_price = max(open_price, current_price)
-                low_price = min(open_price, current_price)
-
-            # 生成成交量（累积增加）
-            if cached and 'volume' in cached:
-                base_volume = cached['volume']
-                volume = base_volume + random.randint(10000, 50000)
-            else:
-                volume = random.randint(100000, 500000)
-
-            kline_data = {
+        
+        # 生成基准价格
+        random.seed(symbol + trade_date)
+        base_price = 3000 + random.random() * 300
+        
+        # 🔧 盘前时段：只返回开盘价（模拟集合竞价）
+        if trading_phase == TradingPhase.BEFORE_OPEN:
+            # 检查缓存，如果没有则初始化
+            if cache_key not in self._mock_realtime_cache:
+                # 初始化：生成开盘价（在基准价±1%范围内波动）
+                random.seed(symbol + trade_date + str(int(time.time() * 1000)))
+                open_price = base_price * (1 + (random.random() - 0.5) * 0.02)
+                
+                self._mock_realtime_cache[cache_key] = {
+                    'open': open_price,
+                    'high': open_price,  # 盘前 high=open
+                    'low': open_price,   # 盘前 low=open
+                    'volume': 0
+                }
+                logger.info(f"🎭 盘前初始化缓存: open={open_price:.2f}")
+            
+            cached_data = self._mock_realtime_cache[cache_key]
+            
+            return {
                 'date': trade_date,
-                'open': round(open_price, 2),
-                'high': round(high_price, 2),
-                'low': round(low_price, 2),
-                'close': round(current_price, 2),  # 当前价（动态变化）
-                'volume': volume,
+                'open': round(cached_data['open'], 2),
+                'high': round(cached_data['high'], 2),  # 盘前 high=open
+                'low': round(cached_data['low'], 2),    # 盘前 low=open
+                'close': round(cached_data['open'], 2),  # 盘前收盘价=开盘价
+                'volume': 0,
                 'trading_phase': trading_phase.name,
                 'should_poll': should_poll
             }
-
+        
+        # 🔧 盘中时段：返回完整OHLCV，维护极值
+        elif trading_phase == TradingPhase.TRADING:
+            # 使用当前时间戳作为随机种子，让每次调用都生成不同的数据
+            current_timestamp = int(time.time() * 1000)
+            random.seed(symbol + trade_date + str(current_timestamp))
+            
+            # 检查缓存，如果没有则从盘前缓存继承，或者初始化
+            if cache_key not in self._mock_realtime_cache:
+                # 尝试从盘前缓存继承开盘价
+                before_cache_key = f"mock_realtime_{symbol}_{trade_date}_BEFORE_OPEN"
+                if before_cache_key in self._mock_realtime_cache:
+                    open_price = self._mock_realtime_cache[before_cache_key]['open']
+                    logger.info(f"🎭 从盘前继承开盘价: {open_price:.2f}")
+                else:
+                    # 如果没有盘前数据，初始化开盘价
+                    open_price = base_price * (1 + (random.random() - 0.5) * 0.01)
+                    logger.info(f"🎭 盘中初始化开盘价: {open_price:.2f}")
+                
+                # 初始化缓存
+                current_price = open_price + (random.random() - 0.5) * open_price * 0.01
+                self._mock_realtime_cache[cache_key] = {
+                    'open': open_price,
+                    'high': max(open_price, current_price),
+                    'low': min(open_price, current_price),
+                    'volume': random.randint(100000, 200000)
+                }
+            
+            # 获取缓存数据
+            cached_data = self._mock_realtime_cache[cache_key]
+            
+            # 生成当前价格（在开盘价±2%范围内波动）
+            current_price = cached_data['open'] + (random.random() - 0.5) * cached_data['open'] * 0.04
+            
+            # 维护极值
+            cached_data['high'] = max(cached_data['high'], current_price)
+            cached_data['low'] = min(cached_data['low'], current_price)
+            cached_data['volume'] += random.randint(10000, 50000)  # 累加成交量
+            
             logger.info(
-                f"📊 盘中实时K线: open={open_price:.2f}, close={current_price:.2f}, high={high_price:.2f}, low={low_price:.2f}, volume={volume}")
-            return kline_data
-        # 其他时段（盘前/盘后）：使用原有逻辑
-        intraday_data = self.generate(
-            symbol=symbol,
-            trade_date=trade_date,
-            tick_range=None,
-            trading_phase=trading_phase,
-            last_price=None,
-            is_index=is_index
-        )
-
-        # 🔧 构建K线数据（缓存优化）
-        if intraday_data.ticks and len(intraday_data.ticks) > 0:
-            prices = [tick.price for tick in intraday_data.ticks]
-            volumes = [tick.volume for tick in intraday_data.ticks]
-
-            # 如果有缓存，复用开盘价
-            if cached and 'open' in cached:
-                open_price = cached['open']
-            else:
-                open_price = prices[0]
-
-            kline_data = {
+                f"📊 盘中实时K线: open={cached_data['open']:.2f}, close={current_price:.2f}, "
+                f"high={cached_data['high']:.2f}, low={cached_data['low']:.2f}, volume={cached_data['volume']}")
+            
+            return {
                 'date': trade_date,
-                'open': open_price,
-                'high': max(prices),
-                'low': min(prices),
-                'close': prices[-1],  # 当前价
-                'volume': sum(volumes),
+                'open': round(cached_data['open'], 2),
+                'high': round(cached_data['high'], 2),
+                'low': round(cached_data['low'], 2),
+                'close': round(current_price, 2),
+                'volume': cached_data['volume'],
                 'trading_phase': trading_phase.name,
-                'should_poll': should_poll  # 🔧 服务器根据 trading_phase 决定
+                'should_poll': should_poll
             }
+        
+        # 🔧 盘后时段：返回完整的当天K线数据（不再变化）
         else:
-            # 🔧 盘前时段：使用集合竞价价格（非空数据）
-            # 盘前有价格波动，不是固定的昨收价
-            if trading_phase == TradingPhase.BEFORE_OPEN:
-                # 模拟集合竞价的价格波动（在昨收价±1%范围内）
-                import time
-                from datetime import datetime
-                random.seed(int(datetime.now().timestamp() * 1000))
-                auction_price = intraday_data.yesterday_close * (1 + random.uniform(-0.01, 0.01))
-
-                kline_data = {
+            # 尝试从盘中缓存获取数据
+            trading_cache_key = f"mock_realtime_{symbol}_{trade_date}_TRADING"
+            if trading_cache_key in self._mock_realtime_cache:
+                cached_data = self._mock_realtime_cache[trading_cache_key]
+                logger.info(f"🌙 盘后使用盘中数据: {cached_data}")
+                
+                return {
                     'date': trade_date,
-                    'open': auction_price,
-                    'high': auction_price,
-                    'low': auction_price,
-                    'close': auction_price,  # 集合竞价价格
-                    'volume': 0,  # 盘前无成交量
+                    'open': round(cached_data['open'], 2),
+                    'high': round(cached_data['high'], 2),
+                    'low': round(cached_data['low'], 2),
+                    'close': round(cached_data['open'] + (random.random() - 0.5) * cached_data['open'] * 0.02, 2),
+                    'volume': cached_data['volume'],
                     'trading_phase': trading_phase.name,
-                    'should_poll': should_poll  # 🔧 服务器根据 trading_phase 决定
+                    'should_poll': False
                 }
             else:
-                # 其他时段：使用昨收价
-                kline_data = {
+                # 如果没有盘中数据，生成固定的K线数据
+                open_price = base_price * (1 + (random.random() - 0.5) * 0.01)
+                close_price = open_price + (random.random() - 0.5) * open_price * 0.02
+                high_price = max(open_price, close_price) + random.random() * open_price * 0.01
+                low_price = min(open_price, close_price) - random.random() * open_price * 0.01
+                volume = random.randint(500000, 1000000)
+                
+                logger.info(f"🌙 盘后生成完整K线数据")
+                
+                return {
                     'date': trade_date,
-                    'open': intraday_data.yesterday_close,
-                    'high': intraday_data.yesterday_close,
-                    'low': intraday_data.yesterday_close,
-                    'close': intraday_data.yesterday_close,
-                    'volume': 0,
+                    'open': round(open_price, 2),
+                    'high': round(high_price, 2),
+                    'low': round(low_price, 2),
+                    'close': round(close_price, 2),
+                    'volume': volume,
                     'trading_phase': trading_phase.name,
-                    'should_poll': should_poll  # 🔧 服务器根据 trading_phase 决定
+                    'should_poll': False
                 }
-
-        return kline_data

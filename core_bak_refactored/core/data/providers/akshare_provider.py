@@ -64,6 +64,10 @@ class AKShareDataProvider(BaseDataProvider):
         """初始化AKShare数据提供者"""
         # 💚 调用基类构造函数（初始化缓存）
         super().__init__()
+        
+        # 🔧 禁用数据库缓存（避免 iCloud 路径的 disk I/O error）
+        self._enable_db_cache = False
+        logger.info("💾 已禁用数据库缓存（仅使用内存缓存）")
 
         self.ak = None
         self.available = False
@@ -152,7 +156,7 @@ class AKShareDataProvider(BaseDataProvider):
         returns = prices['close'].pct_change().dropna()
         return returns
 
-    def _fetch_from_external_api(self, symbol: str, start_date: str, end_date: str) -> PriceData:
+    def _fetch_from_external_api(self, symbol: str, start_date: str, end_date: str, period: str = 'daily') -> PriceData:
         """
         获取历史价格数据（适用于个股和指数）
 
@@ -160,6 +164,7 @@ class AKShareDataProvider(BaseDataProvider):
             symbol: 股票或指数代码（支持市场后缀，如 '000001.SZ' 或 '^GSPC'）
             start_date: 开始日期
             end_date: 结束日期
+            period: 周期 ('daily', 'weekly', 'monthly')
 
         Returns:
             标准化的价格数据
@@ -168,6 +173,8 @@ class AKShareDataProvider(BaseDataProvider):
         - 职责单一：只负责数据获取和标准化
         - 日期处理：统一转换为datetime对象
         - 异常处理：网络失败直接抛出异常，符合透明失败原则
+        
+        🔧 AKShare 没有周线/月线 API，需要从日线数据转换
         """
         if not self.available or self.ak is None:
             raise RuntimeError("AKShare API不可用，请安装: pip install akshare")
@@ -175,11 +182,24 @@ class AKShareDataProvider(BaseDataProvider):
         try:
             logger.info(f"Fetching price data for {symbol} from {start_date} to {end_date}")
 
+            # 🔧 关键修复：传递日期范围参数给 _fetch_by_market
             # 根据代码格式自动判断市场，调用对应的AKShare API
-            df = self._fetch_by_market(symbol)
+            df = self._fetch_by_market(symbol, start_date=start_date, end_date=end_date)
 
+            # 🔧 关键修复：从 AKShare 获取的数据为空，返回空 PriceData（不是错误）
+            # 根据业务场景，这可能是：
+            # 1. 无限滚动到头了（before 早于数据源最早日期）
+            # 2. 该股票/指数确实没有数据
             if df is None or df.empty:
-                raise ValueError(f"No data returned for {symbol}")
+                logger.warning(f"⚠️ AKShare 返回空数据: {symbol} ({start_date} to {end_date})。可能原因：1.无限滚动到头 2.该股票没有数据")
+                # 返回空 PriceData 对象，使用查询的日期范围
+                return PriceData(
+                    records=[],
+                    symbol=symbol,
+                    start_date=pd.to_datetime(start_date),
+                    end_date=pd.to_datetime(end_date),
+                    count=0
+                )
 
             # 🔧 先标准化格式（处理列名差异）
             from core_bak_refactored.core.share.market.market_utils import MarketUtils
@@ -197,17 +217,30 @@ class AKShareDataProvider(BaseDataProvider):
                 (standardized_data['date'] >= start_dt) & (standardized_data['date'] <= end_dt)
                 ]
 
+            # 🔧 关键修复：筛选后数据为空，返回空 PriceData（不是错误）
             if standardized_data.empty:
-                raise ValueError(f"No data in date range {start_date} to {end_date}")
+                logger.warning(f"⚠️ 日期范围筛选后数据为空: {symbol} ({start_date} to {end_date})。可能原因：1.无限滚动到头 2.该时间段没有数据")
+                # 返回空 PriceData 对象，使用查询的日期范围
+                return PriceData(
+                    records=[],
+                    symbol=symbol,
+                    start_date=start_dt,  # 已经转换为 pd.Timestamp
+                    end_date=end_dt,      # 已经转换为 pd.Timestamp
+                    count=0
+                )
 
             logger.info(f"Successfully fetched {len(standardized_data)} rows for {symbol}")
             # 返回PriceData对象而不是原始DataFrame
-            return PriceData.from_dataframe(standardized_data, symbol)
+            # 🔧 AKShare 只返回日线数据，周期转换由 ChartDataAssembler 统一处理
+            price_data = PriceData.from_dataframe(standardized_data, symbol)
+            return price_data
 
         except Exception as e:
             logger.error(f"AKShare failed for {symbol}: {e}")
             # 更详细的错误信息，帮助调试
             raise ValueError(f"Failed to fetch data for {symbol}: {str(e)}") from e
+    
+
 
     def _map_to_akshare(self, symbol: str, with_market_prefix: bool = True) -> str:
         """
@@ -254,12 +287,14 @@ class AKShareDataProvider(BaseDataProvider):
         # 其他：直接返回（港股、其他市场）
         return symbol
 
-    def _fetch_by_market(self, symbol_id: str) -> pd.DataFrame:
+    def _fetch_by_market(self, symbol_id: str, start_date: str = None, end_date: str = None) -> pd.DataFrame:
         """
         根据原始代码格式判断市场，调用对应的AKShare API
 
         Args:
             symbol_id: 原始代码
+            start_date: 开始日期（YYYY-MM-DD格式，可选）
+            end_date: 结束日期（YYYY-MM-DD格式，可选）
 
         Returns:
             AKShare返回的原始DataFrame
@@ -268,6 +303,8 @@ class AKShareDataProvider(BaseDataProvider):
         - 职责单一：只负责根据市场调用对应API
         - 代码格式转换已在 _map_to_akshare 完成
         - 市场判断逻辑集中在此方法
+        
+        🔧 优先使用支持日期范围的API（如index_zh_a_hist）
         """
         # 映射代码
         ak_symbol = self._map_to_akshare(symbol_id)
@@ -280,9 +317,38 @@ class AKShareDataProvider(BaseDataProvider):
         try:
             # 根据市场选择 API
             if market == MarketCode.CN:
-                # A股指数API
-                logger.debug(f"调用A股指数API: stock_zh_index_daily({ak_symbol})")
-                return self.ak.stock_zh_index_daily(symbol=ak_symbol)
+                # 🔧 A股指数：优先使用支持日期范围的 index_zh_a_hist API
+                # 移除市场前缀（index_zh_a_hist只需要纯数字代码）
+                pure_code = ak_symbol.replace('sh', '').replace('sz', '')
+                
+                # 转换日期格式（YYYY-MM-DD → YYYYMMDD）
+                start_dt = start_date.replace('-', '') if start_date else '19900101'
+                end_dt = end_date.replace('-', '') if end_date else datetime.now().strftime('%Y%m%d')
+                
+                logger.debug(f"调用A股指数API: index_zh_a_hist({pure_code}, period='daily', start_date={start_dt}, end_date={end_dt})")
+                df = self.ak.index_zh_a_hist(
+                    symbol=pure_code,
+                    period='daily',
+                    start_date=start_dt,
+                    end_date=end_dt
+                )
+                
+                # 重命名列（index_zh_a_hist使用中文列名）
+                column_mapping = {
+                    '日期': 'date',
+                    '开盘': 'open',
+                    '收盘': 'close',
+                    '最高': 'high',
+                    '最低': 'low',
+                    '成交量': 'volume',
+                    '成交额': 'amount',
+                    '振幅': 'amplitude',
+                    '涨跌幅': 'pct_change',
+                    '涨跌额': 'change',
+                    '换手率': 'turnover'
+                }
+                df = df.rename(columns=column_mapping)
+                return df
 
             elif market == MarketCode.HK:
                 # 港股指数API
@@ -296,8 +362,22 @@ class AKShareDataProvider(BaseDataProvider):
 
             else:
                 # 默认使用A股指数API
-                logger.debug(f"默认调用A股指数API: stock_zh_index_daily({ak_symbol})")
-                return self.ak.stock_zh_index_daily(symbol=ak_symbol)
+                pure_code = ak_symbol.replace('sh', '').replace('sz', '')
+                start_dt = start_date.replace('-', '') if start_date else '19900101'
+                end_dt = end_date.replace('-', '') if end_date else datetime.now().strftime('%Y%m%d')
+                logger.debug(f"默认调用A股指数API: index_zh_a_hist({pure_code})")
+                df = self.ak.index_zh_a_hist(
+                    symbol=pure_code,
+                    period='daily',
+                    start_date=start_dt,
+                    end_date=end_dt
+                )
+                column_mapping = {
+                    '日期': 'date', '开盘': 'open', '收盘': 'close',
+                    '最高': 'high', '最低': 'low', '成交量': 'volume'
+                }
+                df = df.rename(columns=column_mapping)
+                return df
         except Exception as e:
             logger.error(f"AKShare API调用失败 for {symbol_id} (market: {market.value}): {e}")
             # 提供更友好的错误信息
@@ -992,7 +1072,7 @@ class AKShareDataProvider(BaseDataProvider):
                             'trading_phase': trading_phase.name,
                             'should_poll': True
                         }
-                        self._set_to_memory_cache(cache_key, cached)
+                        self._set_to_memory_cache_obj(cache_key, cached)
                     else:
                         # 分时数据为空时返回空K线
                         kline_data['date'] = trade_date
@@ -1032,7 +1112,7 @@ class AKShareDataProvider(BaseDataProvider):
                         }
 
                         # 更新缓存
-                        self._set_to_memory_cache(cache_key, kline_data)
+                        self._set_to_memory_cache_obj(cache_key, kline_data)
                     else:
                         # akshare无数据时使用缓存
                         kline_data = cached.copy()
@@ -1040,14 +1120,14 @@ class AKShareDataProvider(BaseDataProvider):
                         kline_data['should_poll'] = True
 
                 except Exception as e:
-                    self.logger.warning(f"获取akshare分钟数据失败: {e}，使用缓存数据")
+                    logger.warning(f"获取akshare分钟数据失败: {e}，使用缓存数据")
                     # API失败时使用缓存
                     kline_data = cached.copy()
                     kline_data['trading_phase'] = trading_phase.name
                     kline_data['should_poll'] = True
 
             except Exception as e:
-                self.logger.error(f"获取实时K线失败: {e}")
+                logger.error(f"获取实时K线失败: {e}")
                 kline_data['date'] = trade_date
                 kline_data['trading_phase'] = trading_phase.name
                 kline_data['should_poll'] = True
@@ -1073,7 +1153,7 @@ class AKShareDataProvider(BaseDataProvider):
                     'should_poll': True
                 }
             except Exception as e:
-                self.logger.error(f"获取集合竞价价格失败: {e}")
+                logger.error(f"获取集合竞价价格失败: {e}")
                 kline_data['date'] = trade_date
                 kline_data['trading_phase'] = trading_phase.name
                 kline_data['should_poll'] = True
