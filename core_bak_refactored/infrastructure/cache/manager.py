@@ -181,71 +181,48 @@ class ThreeLayerCacheManager:
         
         logger.info(f"✅ {self._cache_mode}命中: {len(cached_windows)}/{len(window_keys)} 个窗口")
         
-        # ========== 第3步：处理缺失窗口（逐个三层查询）==========
+        # ========== 第3步：处理缺失窗口（合并连续窗口，批量查询）==========
         if missing_windows:
             logger.info(f"🔍 缺失 {len(missing_windows)} 个窗口，开始三层查询")
             
-            for window_key in missing_windows:
-                # 计算窗口的日期范围
-                window_start, window_end = self._window_mgr.window_key_to_date_range(window_key, period)
+            # 🔧 关键优化：合并连续未命中窗口，减少网络请求次数
+            merged_ranges = self._merge_continuous_windows(missing_windows, period)
+            logger.info(f"🔧 合并后: {len(merged_ranges)} 个连续范围 (原 {len(missing_windows)} 个窗口)")
+            
+            for range_info in merged_ranges:
+                range_start = range_info['start']
+                range_end = range_info['end']
+                range_windows = range_info['windows']  # 该范围包含的窗口键列表
                 
-                logger.debug(f"🔍 查询窗口: {window_key} ({window_start} ~ {window_end})")
+                logger.info(f"📊 批量查询: {range_start} ~ {range_end} (包含 {len(range_windows)} 个窗口)")
                 
-                # 3.1 尝试从数据库获取
+                # 3.1 尝试从数据库获取大范围数据
                 db_df = None
                 if db_fetch_func:
-                    db_df = db_fetch_func(window_start, window_end)
+                    db_df = db_fetch_func(range_start, range_end)
                 
                 if db_df is not None and not db_df.empty:
-                    # 数据库命中，回写快速缓存
-                    logger.info(f"✅ 数据库命中: {window_key} ({len(db_df)} 条)")
-                    self._fast_cache.set(symbol, period, window_key, db_df)
-                    cached_windows[window_key] = db_df
+                    logger.info(f"✅ 数据库批量命中: {range_start} ~ {range_end} ({len(db_df)} 条)")
+                    # 分配数据到各个窗口
+                    self._distribute_data_to_windows(symbol, period, db_df, range_windows, cached_windows, current_window_key, start_date)
                     continue
                 
                 # 3.2 数据库也未命中，调用外部 API
-                logger.info(f"🌐 API查询: {window_key}")
+                logger.info(f"🌐 API批量查询: {range_start} ~ {range_end}")
                 
                 try:
-                    # 调用外部API获取该窗口数据
                     api_df = None
                     if api_fetch_func:
-                        api_df = api_fetch_func(window_start, window_end)
+                        api_df = api_fetch_func(range_start, range_end)
                     
                     if api_df is not None and not api_df.empty:
-                        logger.info(f"✅ API返回: {window_key} ({len(api_df)} 条)")
-                        
-                        # 判断是否为起始窗口
-                        # 核心逻辑：查询条件要求的最早日期 < 数据源返回的最早日期
-                        # 说明查询要求更早的数据但数据源无法提供，返回的就是最早数据
-                        is_first_window = False
-                        if 'date' in api_df.columns:
-                            actual_start = pd.to_datetime(api_df['date'].min())
-                            query_start = pd.to_datetime(start_date)
-                            
-                            # 检查是否为当前窗口（需要排除当前窗口）
-                            is_current_window = (window_key == current_window_key)
-                            
-                            # 起始窗口判断条件：
-                            # 1. 非当前窗口（当前窗口会每天刷新，不需要标记）
-                            # 2. 查询起始 < 数据源返回的最早日期
-                            #    → 说明这是数据源的最早数据（如上市日）
-                            if not is_current_window and query_start < actual_start:
-                                is_first_window = True
-                                logger.info(f"🅰️ 检测到起始窗口: {window_key} (查询从 {query_start.date()}，但数据源最早从 {actual_start.date()} 开始)")
-                                
-                                # 回溯更新：检查是否有其他窗口包含这个起始日期但未标记
-                                # 场景：首次查询正好从上市日开始，未检测到起始窗口
-                                #       第二次查询包含更早日期，检测到起始，需回溯更新第一次的缓存
-                                self._backfill_first_window_flag(symbol, period, actual_start, window_keys)
-                        
-                        # 写入快速缓存（数据库由 api_fetch_func 自行写入）
-                        self._fast_cache.set(symbol, period, window_key, api_df, is_first_window=is_first_window)
-                        cached_windows[window_key] = api_df
+                        logger.info(f"✅ API批量返回: {range_start} ~ {range_end} ({len(api_df)} 条)")
+                        # 分配数据到各个窗口
+                        self._distribute_data_to_windows(symbol, period, api_df, range_windows, cached_windows, current_window_key, start_date)
                     else:
-                        logger.warning(f"⚠️ API无数据: {window_key}")
+                        logger.warning(f"⚠️ API无数据: {range_start} ~ {range_end}")
                 except Exception as e:
-                    logger.error(f"❌ API查询失败: {window_key}, error={e}")
+                    logger.error(f"❌ API批量查询失败: {range_start} ~ {range_end}, error={e}")
         
         # ========== 第4步：合并所有窗口数据并返回 ==========
         if not cached_windows:
@@ -266,6 +243,143 @@ class ThreeLayerCacheManager:
         
         logger.info(f"✅ 返回数据: {len(result_df)} 条 (来自 {len(cached_windows)} 个窗口)")
         return result_df
+    
+    def _merge_continuous_windows(self, window_keys: list, period: str) -> list:
+        """
+        合并连续的窗口键，减少网络请求次数
+        
+        Args:
+            window_keys: 缺失窗口键列表 (已排序)
+            period: 数据粒度
+        
+        Returns:
+            合并后的连续范围列表，每个元素包含:
+            - start: 范围起始日期
+            - end: 范围结束日期
+            - windows: 该范围包含的窗口键列表
+        
+        Example:
+            Input: ['2024-01_01', '2024-02_02', '2024-03_03', '2024-05_05', '2024-06_06']
+            Output: [
+                {'start': '2024-01-01', 'end': '2024-03-31', 'windows': ['2024-01_01', '2024-02_02', '2024-03_03']},
+                {'start': '2024-05-01', 'end': '2024-06-30', 'windows': ['2024-05_05', '2024-06_06']}
+            ]
+        """
+        if not window_keys:
+            return []
+        
+        # 按窗口键排序
+        sorted_keys = sorted(window_keys)
+        
+        merged_ranges = []
+        current_range_windows = [sorted_keys[0]]
+        
+        for i in range(1, len(sorted_keys)):
+            prev_key = sorted_keys[i-1]
+            curr_key = sorted_keys[i]
+            
+            # 检查是否连续：下一个窗口紧跟上一个窗口
+            if self._is_consecutive_windows(prev_key, curr_key, period):
+                # 连续，加入当前范围
+                current_range_windows.append(curr_key)
+            else:
+                # 不连续，保存当前范围，开始新范围
+                range_start, _ = self._window_mgr.window_key_to_date_range(current_range_windows[0], period)
+                _, range_end = self._window_mgr.window_key_to_date_range(current_range_windows[-1], period)
+                merged_ranges.append({
+                    'start': range_start,
+                    'end': range_end,
+                    'windows': current_range_windows.copy()
+                })
+                current_range_windows = [curr_key]
+        
+        # 添加最后一个范围
+        range_start, _ = self._window_mgr.window_key_to_date_range(current_range_windows[0], period)
+        _, range_end = self._window_mgr.window_key_to_date_range(current_range_windows[-1], period)
+        merged_ranges.append({
+            'start': range_start,
+            'end': range_end,
+            'windows': current_range_windows.copy()
+        })
+        
+        return merged_ranges
+    
+    def _is_consecutive_windows(self, key1: str, key2: str, period: str) -> bool:
+        """
+        判断两个窗口是否连续
+        
+        Args:
+            key1: 第一个窗口键
+            key2: 第二个窗口键
+            period: 数据粒度
+        
+        Returns:
+            True 表示连续，False 表示不连续
+        """
+        from datetime import datetime, timedelta
+        
+        # 获取两个窗口的日期范围
+        _, end1 = self._window_mgr.window_key_to_date_range(key1, period)
+        start2, _ = self._window_mgr.window_key_to_date_range(key2, period)
+        
+        # 转换为datetime对象
+        end1_dt = datetime.strptime(end1, '%Y-%m-%d')
+        start2_dt = datetime.strptime(start2, '%Y-%m-%d')
+        
+        # 通用判断：如果第二个窗口的起始日期 = 第一个窗口的结束日期 + 1天，则连续
+        return (start2_dt - end1_dt).days == 1
+    
+    def _distribute_data_to_windows(self, symbol: str, period: str, data: pd.DataFrame, 
+                                   window_keys: list, cached_windows: dict, 
+                                   current_window_key: str, query_start_date: str) -> None:
+        """
+        将大范围数据分配到各个窗口，并写入缓存
+        
+        Args:
+            symbol: 股票/指数代码
+            period: 数据粒度
+            data: 大范围查询返回的数据
+            window_keys: 需要分配的窗口键列表
+            cached_windows: 已缓存窗口字典 (输出参数)
+            current_window_key: 当前窗口键
+            query_start_date: 查询起始日期（用于判断起始窗口）
+        """
+        if data.empty:
+            return
+        
+        # 确保数据有 date 列
+        if 'date' not in data.columns:
+            logger.warning("⚠️ 数据缺少 date 列，无法分配到窗口")
+            return
+        
+        data['date'] = pd.to_datetime(data['date'])
+        actual_start = data['date'].min()
+        query_start = pd.to_datetime(query_start_date)
+        
+        # 分配数据到各个窗口
+        for window_key in window_keys:
+            window_start, window_end = self._window_mgr.window_key_to_date_range(window_key, period)
+            window_start_dt = pd.to_datetime(window_start)
+            window_end_dt = pd.to_datetime(window_end)
+            
+            # 筛选该窗口的数据
+            window_data = data[(data['date'] >= window_start_dt) & (data['date'] <= window_end_dt)].copy()
+            
+            if not window_data.empty:
+                # 判断是否为起始窗口
+                is_current_window = (window_key == current_window_key)
+                is_first_window = False
+                
+                if not is_current_window and query_start < actual_start:
+                    # 查询起始 < 数据源返回的最早日期，检查是否包含最早数据
+                    if actual_start >= window_start_dt and actual_start <= window_end_dt:
+                        is_first_window = True
+                        logger.info(f"🅰️ 检测到起始窗口: {window_key} (查询从 {query_start.date()}，但数据源最早从 {actual_start.date()} 开始)")
+                
+                # 写入缓存
+                self._fast_cache.set(symbol, period, window_key, window_data, is_first_window=is_first_window)
+                cached_windows[window_key] = window_data
+                logger.debug(f"  ✅ 窗口 {window_key}: {len(window_data)} 条")
     
     def _backfill_first_window_flag(self, symbol: str, period: str, actual_start: pd.Timestamp, current_window_keys: list) -> None:
         """

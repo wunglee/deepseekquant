@@ -55,14 +55,10 @@ class WindowManager:
             '2025-01_03'  # 1月到3月 (3个月窗口)
         """
         if period == 'daily':
-            # Daily窗口：对齐到周一，window_size天一个窗口
-            # 找到date所在周的周一
-            weekday = date.weekday()  # 0=周一, 6=周日
-            week_start = date - pd.Timedelta(days=weekday)
-            
-            # 计算从年初开始的天数，按window_size分组
+            # Daily窗口：按window_size天一个窗口
+            # 🔧 修复BUG：直接使用date计算，而不是对齐到周一
             year_start = pd.Timestamp(f'{date.year}-01-01')
-            days_from_year_start = (week_start - year_start).days
+            days_from_year_start = (date - year_start).days
             window_index = days_from_year_start // window_size
             
             # 计算窗口边界

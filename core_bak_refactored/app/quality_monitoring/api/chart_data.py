@@ -86,9 +86,15 @@ class ChartDataAssembler:
         try:
             logger.info(f"开始组装图表数据: index_id={index_id}, period={period}, count={count}, before={before}")
             
-            # 1. 获取K线数据（🔧 额外获取30条用于指标预热，返回 PriceData）
+            # 1. 获取K线数据（🔧 额外获取预热数据用于指标计算，返回 PriceData）
             logger.info("步骤1: 获取K线数据...")
-            warmup_count = 30  # 预热数据条数（足够MACD/RSI/KDJ计算）
+            # 🔧 根据周期类型调整预热数量：月线3条、周线10条、日线30条
+            if period == 'monthly':
+                warmup_count = 3  # 月线：3个月预热（MACD需要26个周期，但月线数据量少）
+            elif period == 'weekly':
+                warmup_count = 10  # 周线：10周预热（约2.5个月）
+            else:
+                warmup_count = 30  # 日线：30天预热（约1个月）
             price_data_full = self._fetch_kline_data(index_id, period, count + warmup_count, before,current_time)
             
             # 🔧 关键修复：数据为空时直接返回空结果（无限滚动到头）
@@ -200,22 +206,27 @@ class ChartDataAssembler:
                 end_date = before_date - timedelta(days=1)
             logger.info(f"🔄 无限滚动：before={before}, period={period}, end_date={end_date.strftime('%Y-%m-%d')}")
         else:
+            # 初次加载：end_date = 今天
             end_date = datetime.now()
         
         # 🔧 根据周期调整查询范围，确保获取足够的数据点
         # 💡 关键：akshare等数据源可能限制历史数据范围，需要足够的冗余
         if period == 'monthly':
-            # 月线：60条月线 = 5年，考虑数据源限制，查询10年 = 3600天
-            # AKShare等数据源通常只返回近2-3年数据，需要大幅提高查询范围
-            days_needed = count * 60  # 增加到60天/条（原42天不够）
+            # 🔧 关键修复：月线使用月份计算，不用天数估算
+            # 从 end_date 往前推 count 个月
+            from dateutil.relativedelta import relativedelta
+            start_date = end_date - relativedelta(months=count)
+            # 设置为月初，确保获取完整月份数据
+            start_date = start_date.replace(day=1)
+            logger.info(f"📅 月线查询范围：{start_date.strftime('%Y-%m-%d')} 到 {end_date.strftime('%Y-%m-%d')} (共{count}个月)")
         elif period == 'weekly':
             # 周线：60条周线 = 420天，加冗余 → 800天
             days_needed = count * 14  # 增加到14天/条（原10天）
+            start_date = end_date - timedelta(days=days_needed)
         else:
             # 日线：60条日线 = 60天，加冗余（周末/节假日）→ 120天
             days_needed = count * 2
-        
-        start_date = end_date - timedelta(days=days_needed)
+            start_date = end_date - timedelta(days=days_needed)
         start_date_str = start_date.strftime('%Y-%m-%d')
         end_date_str = end_date.strftime('%Y-%m-%d')
         
