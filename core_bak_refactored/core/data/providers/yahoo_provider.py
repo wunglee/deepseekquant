@@ -21,7 +21,6 @@ import logging
 import random
 import time
 import requests
-import json
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Union
@@ -31,7 +30,7 @@ import pandas as pd
 
 from core_bak_refactored.core.data.providers.base_provider import BaseDataProvider
 # 导入新的数据结构
-from core_bak_refactored.core.data.providers.protocols import PriceData, OHLCVRecord, HistoricalDataProvider
+from core_bak_refactored.core.data.providers.protocols import PriceData
 from core_bak_refactored.core.share.config_manager import ConfigManager
 # 导入 HTTP/2 补丁
 from core_bak_refactored.core.data.providers.yfinance_http2_patch import patch_yfinance

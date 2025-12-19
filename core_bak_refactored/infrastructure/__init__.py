@@ -46,14 +46,8 @@ from .anomaly_detectors import ZScoreDetector, IQRDetector, RollingStdDetector, 
 # HTTP客户端基础设施（2025-11-28 从core/data/http迁移）
 from .http import setup_http_client, close_http_client
 
-# 缓存基础设施（2025-11-28 从core/data/cache迁移）
-from .cache import (
-    MemoryTTLCache,
-    RedisCacheAdapter,
-    setup_redis_cache,
-    get_cached_data,
-    cache_data
-)
+# 缓存基础设施（2025-12-19 重构为三层缓存架构）
+from .cache import ThreeLayerCacheManager
 
 # 连接管理基础设施（2025-11-28 从core/data/connection迁移）
 from .connection import DataConnectionManager
@@ -124,11 +118,7 @@ __all__ = [
     'close_http_client',
     
     # 缓存系统
-    'MemoryTTLCache',
-    'RedisCacheAdapter',
-    'setup_redis_cache',
-    'get_cached_data',
-    'cache_data',
+    'ThreeLayerCacheManager',
     
     # 连接管理
     'DataConnectionManager',

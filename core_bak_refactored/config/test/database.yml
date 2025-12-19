@@ -1,5 +1,6 @@
-# 数据库配置 - 开发环境
+# 数据库配置 - 测试环境
 # 用于存储和缓存市场数据，提升性能和稳定性
+# 2025-12-19 更新：支持四层缓存架构（Memory → Redis → DB → API）
 
 # 数据库类型: sqlite, postgresql, mysql
 database_type: sqlite
@@ -25,21 +26,49 @@ sqlite:
   pool_timeout: 30  # 连接池超时时间（秒）
   pool_recycle: 3600  # 连接回收时间（秒）
 
-# 数据缓存策略
+# 数据缓存策略（三层缓存架构）
 cache_strategy:
   # 启用数据库缓存
   enabled: true
   
+  # 缓存模式选择（互斥，二选一）
+  cache_mode: memory  # 测试环境使用内存缓存
+  
+  # 内存缓存配置
+  memory:
+    max_windows: 100  # 测试环境较小缓存
+    ttl: 60  # 过期时间（1分钟，便于测试TTL）
+    eviction_policy: lru
+  
+  # Redis缓存配置
+  redis:
+    host: localhost
+    port: 6379
+    db: 1  # 使用不同的数据库编号
+    password: null
+    ttl: 300  # 5分钟
+    compression: true
+    max_connections: 10
+    socket_timeout: 5
+    socket_connect_timeout: 5
+  
+  # 数据库缓存配置
+  database:
+    enabled: true
+  
   # 数据保留策略
   retention:
-    # 保留天数（0表示永久保留）
     keep_days: 0
-    
-    # 自动清理旧数据
     auto_cleanup: false
+    cleanup_schedule: "0 2 * * 0"
+  
+  # 窗口化缓存策略
+  window_strategy:
+    enabled: true
+    default_period: weekly  # 最小粒度为周
+    incremental_fetch: true
     
-    # 清理计划（cron表达式）
-    cleanup_schedule: "0 2 * * 0"  # 每周日凌晨2点
+    # 示例：查询12月-6月，缓存有1月、3月 → 只查询12月、2月、4月、5月、6月
   
   # 增量更新策略
   incremental_update:

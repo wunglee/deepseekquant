@@ -605,61 +605,7 @@ class RiskCalculator:
             # 数据提取委托给预处理器
             returns = self.preprocessor.extract_returns_from_dict(data)
             market_returns = self.preprocessor.extract_market_returns_from_dict(data)
-            # 智能缓存失效触发（波动率或重大事件）
-            try:
-                from core_bak_refactored.infrastructure.cache import get_smart_invalidation_manager, CacheManager
-                # 需要传入 CacheManager 实例
-                cache_mgr = getattr(self, '_currency_converter', None)
-                if cache_mgr is None or not hasattr(cache_mgr, 'memory_cache'):
-                    cache_mgr = CacheManager({'cache_enabled': True, 'cache_ttl': 3600})
-                manager = get_smart_invalidation_manager(cache_mgr)
-                returns_std = float(np.std(returns.values)) if returns is not None and len(returns) > 0 else 0.0
-                base_threshold = float(self.config.get('volatility_spike_threshold', self.config.get('market_configs', {}).get(self.market_type, {}).get('volatility_spike_threshold', 0.05)))
-                vol_tier = 'NORMAL'
-                if returns_std > base_threshold * 2.0:
-                    vol_tier = 'EXTREME'
-                elif returns_std > base_threshold * 1.5:
-                    vol_tier = 'HIGH'
-                elif returns_std > base_threshold:
-                    vol_tier = 'MEDIUM'
-                market_status = 'EXTREME' if (vol_tier == 'EXTREME' or bool(data.get('liquidity_stressed', False))) else ('VOLATILE' if vol_tier in ('HIGH','MEDIUM') else 'NORMAL')
-                context = {
-                    'time_window': str(int(time.time())),
-                    'param_version': str(self.config.get('param_version', 'v1')),
-                    'market_data_updated': bool(data.get('market_data_updated', False)),
-                    'volatility': returns_std,
-                    'market_type': self.market_type,
-                    'portfolio_size': len(data.get('portfolio_state', {}).get('allocations', {})) if isinstance(data.get('portfolio_state'), dict) else (len(getattr(data.get('portfolio_state'), 'allocations', {})) if data.get('portfolio_state') else 0),
-                    'data_quality_rating': data_quality.get('quality_rating'),
-                    'volatility_tier': vol_tier,
-                    'market_status': market_status,
-                    'circuit_breaker_triggered': bool(data.get('circuit_breaker_triggered', False)),
-                    'extreme_correlation_breakdown': bool(data.get('extreme_correlation_breakdown', False)),
-                    'limit_hit_ratio': float(data.get('limit_hit_ratio', 0.0)),
-                    'major_market_event': bool(data.get('major_market_event', False))
-                }
-                threshold = float(self.config.get('volatility_spike_threshold', self.config.get('market_configs', {}).get(self.market_type, {}).get('volatility_spike_threshold', 0.05)))
-                limit_threshold = float(self.config.get('limit_hit_ratio_threshold', self.config.get('market_configs', {}).get(self.market_type, {}).get('limit_hit_ratio_threshold', 0.3)))
-                event_trigger = bool(data.get('circuit_breaker_triggered', False)) or bool(data.get('extreme_correlation_breakdown', False)) or (float(data.get('limit_hit_ratio', 0.0)) > limit_threshold) or bool(data.get('major_market_event', False))
-                weights = self.config.get('market_configs', {}).get(self.market_type, {}).get('event_weights', {})
-                trigger_score = (returns_std / threshold if threshold > 0 else 0.0)
-                trigger_score += (weights.get('circuit_breaker', 0.0) if bool(data.get('circuit_breaker_triggered', False)) else 0.0)
-                trigger_score += (weights.get('extreme_correlation', 0.0) if bool(data.get('extreme_correlation_breakdown', False)) else 0.0)
-                trigger_score += (weights.get('limit_hits', 0.0) if float(data.get('limit_hit_ratio', 0.0)) > limit_threshold else 0.0)
-                trigger_score += (weights.get('major_event', 0.0) if bool(data.get('major_market_event', False)) else 0.0)
-                context['trigger_score'] = float(trigger_score)
-                # 影响范围估算
-                try:
-                    if isinstance(data.get('portfolio_state'), dict):
-                        context['affected_symbols_count'] = len(data.get('portfolio_state', {}).get('allocations', {}))
-                    else:
-                        context['affected_symbols_count'] = len(getattr(data.get('portfolio_state'), 'allocations', {})) if data.get('portfolio_state') else 0
-                except Exception:
-                    context['affected_symbols_count'] = 0
-                if returns_std > threshold or event_trigger:
-                    manager.check_and_invalidate(context)
-            except Exception:
-                pass
+            # 智能缓存失效功能已移除（旧 CacheManager 已废弃）
             start_time = time.time()
             
             # 验证数据有效性

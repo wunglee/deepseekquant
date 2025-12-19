@@ -1,7 +1,6 @@
 from typing import Any, Callable, Dict, List, Optional
 
 from core_bak_refactored.core.share import MarketData
-from core_bak_refactored.infrastructure.cache import CacheManager
 from core_bak_refactored.core.share.market.market_status_service import MarketStatusService
 from core_bak_refactored.core.data.providers.fundamental_data_service import FundamentalDataService
 import asyncio
@@ -15,9 +14,9 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 class DataFetcherOrchestrator:
     """数据获取编排器（职责：路由、fallback、编排）
     - 职责单一：仅负责数据源路由和编排逻辑
-    - 委派缓存管理给 CacheManager
     - 委派市场状态给 MarketStatusService
     - 委派基本面数据给 FundamentalDataService
+    - 缓存管理由各 Provider 自行处理（BaseDataProvider 的三层缓存）
     """
 
     def __init__(self, config: Dict[str, Any], custom_sources: Optional[Dict[str, Callable]] = None) -> None:
@@ -35,9 +34,6 @@ class DataFetcherOrchestrator:
             'data_points_processed': 0,
             'last_update': ''
         }
-        
-        # 组件：缓存管理器
-        self.cache_manager = CacheManager(config)
         
         # HTTP会话
         self.aiohttp_session = aiohttp.ClientSession()
@@ -74,21 +70,7 @@ class DataFetcherOrchestrator:
         failed_symbols: List[str] = []
         
         try:
-            # 生成缓存键
-            cache_key = self.cache_manager.generate_key(symbols, period, interval, data_type, adjustments)
-            
-            # 检查缓存
-            cached = await self.cache_manager.get(cache_key)
-            if cached:
-                # 更新缓存统计（与DataFetcher等效）
-                self.performance_metrics['cache_hits'] = self.performance_metrics.get('cache_hits', 0) + 1
-                self.logger.debug(f"缓存命中: {cache_key}")
-                return cached
-            
-            # 缓存未命中统计（与DataFetcher等效）
-            self.performance_metrics['cache_misses'] = self.performance_metrics.get('cache_misses', 0) + 1
-            
-            # 并发获取所有符号的数据
+            # 并发获取所有符号的数据（缓存由各 Provider 内部处理）
             tasks = [self._fetch_symbol_data(s, period, interval, data_type, adjustments) for s in symbols]
             symbol_results = await asyncio.gather(*tasks, return_exceptions=True)
             
@@ -108,10 +90,6 @@ class DataFetcherOrchestrator:
                 self.logger.warning(f"主数据源失败，尝试备用数据源: {failed_symbols}")
                 fallback_results = await self._try_fallback_sources(failed_symbols, period, interval, data_type, adjustments)
                 results.update(fallback_results)
-            
-            # 缓存结果
-            if results:
-                await self.cache_manager.set(cache_key, results)
             
             # 更新性能指标
             duration = time.time() - start_time
@@ -240,8 +218,7 @@ class DataFetcherOrchestrator:
         return await self.market_status_service.get_market_status()
 
     def get_data_quality_metrics(self) -> Dict[str, Any]:
-        """获取数据质量指标（与DataFetcher等效）"""
-        cache_stats = self.cache_manager.get_stats()
+        """获取数据质量指标"""
         return {
             'completeness_score': 0.95,
             'timeliness_score': 0.92,
@@ -252,7 +229,5 @@ class DataFetcherOrchestrator:
             'source_reliability': 'high',
             'error_rate': 0.02,
             'coverage_ratio': 0.98,
-            'cache_hits': self.performance_metrics.get('cache_hits', 0),  # 从performance_metrics读取
-            'cache_misses': self.performance_metrics.get('cache_misses', 0),  # 从performance_metrics读取
             'timestamp': datetime.now().isoformat()
         }

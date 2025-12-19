@@ -113,8 +113,9 @@ def create_config_service() -> Any:
     return get_global_config_manager()
 
 def create_cache_service() -> Any:
-    from .cache import CacheManager
-    return CacheManager({'cache_enabled': True, 'cache_ttl': 300})
+    """创建缓存服务（使用 ThreeLayerCacheManager）"""
+    from .cache import ThreeLayerCacheManager
+    return ThreeLayerCacheManager()
 
 def create_event_bus_service() -> Any:
     from .event_bus_service import EventBusService

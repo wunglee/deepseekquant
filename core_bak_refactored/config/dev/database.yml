@@ -1,5 +1,6 @@
 # 数据库配置 - 开发环境
 # 用于存储和缓存市场数据，提升性能和稳定性
+# 2025-12-19 更新：支持四层缓存架构（Memory → Redis → DB → API）
 
 # 数据库类型: sqlite, postgresql, mysql
 database_type: sqlite
@@ -25,10 +26,37 @@ sqlite:
   pool_timeout: 30  # 连接池超时时间（秒）
   pool_recycle: 3600  # 连接回收时间（秒）
 
-# 数据缓存策略
+# 数据缓存策略（三层缓存架构）
 cache_strategy:
   # 启用数据库缓存
   enabled: true
+  
+  # 缓存模式选择（互斥，二选一）
+  # 选项：'memory' - 内存缓存（快速，但仅限当前进程）
+  #       'redis' - Redis缓存（跨进程共享，适合多实例部署）
+  cache_mode: memory  # 开发环境使用内存缓存，生产环境建议使用 redis
+  
+  # 内存缓存配置（仅当 cache_mode=memory 时生效）
+  memory:
+    max_windows: 1000  # 最多缓存1000个时间窗口（月/周）
+    ttl: 300  # 过期时间（5分钟）
+    eviction_policy: lru  # 淘汰策略：LRU（最近最少使用）
+  
+  # Redis缓存配置（仅当 cache_mode=redis 时生效）
+  redis:
+    host: localhost
+    port: 6379
+    db: 0  # 数据库编号
+    password: null  # 密码（如果有）
+    ttl: 3600  # 过期时间（1小时）
+    compression: true  # 启用压缩（使用zlib压缩，节省存储空间）
+    max_connections: 50  # 最大连接数
+    socket_timeout: 5  # socket超时（秒）
+    socket_connect_timeout: 5  # 连接超时（秒）
+  
+  # 数据库缓存配置（第二层）
+  database:
+    enabled: true  # 数据库层缓存
   
   # 数据保留策略
   retention:
@@ -40,6 +68,21 @@ cache_strategy:
     
     # 清理计划（cron表达式）
     cleanup_schedule: "0 2 * * 0"  # 每周日凌晨2点
+  
+  # 窗口化缓存策略
+  window_strategy:
+    # 启用窗口化缓存（按月/周粒度缓存）
+    enabled: true
+    
+    # 默认窗口周期：monthly, weekly
+    # 注意：不再支持 daily，最小粒度为周，避免过度碎片化
+    default_period: weekly
+    
+    # 精细化缓存利用：只查询缺失窗口
+    incremental_fetch: true
+    
+    # 示例：查询12月1日-6月30日，缓存有1月、未有2月5-6月28日的周数据
+    #        → 只查询12月、缺失的2月周数据
   
   # 增量更新策略
   incremental_update:

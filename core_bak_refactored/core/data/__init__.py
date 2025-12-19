@@ -31,7 +31,7 @@ TODO:
 
 # 重构新架构 - SOLID原则（推荐使用）
 from .fetcher.fetcher_orchestrator import DataFetcherOrchestrator
-from core_bak_refactored.infrastructure.cache import CacheManager
+# 💚 修复：三层缓存架构（内部自动使用，不导出）
 from core_bak_refactored.core.share.market.market_status_service import MarketStatusService
 
 
@@ -67,7 +67,7 @@ from .validation import (
 __all__ = [
     # 重构新架构（推荐使用）
     'DataFetcherOrchestrator',
-    'CacheManager',
+    # 💚 三层缓存架构（内部自动使用）
     'MarketStatusService',
     
     # 数据枚举

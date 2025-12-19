@@ -69,15 +69,8 @@ class FactorModelEstimator:
         self.specific_variance = None  # 特质方差向量 (N,)
         self.factor_covariance = None  # 因子协方差矩阵 (K x K)
         
-        # P0-3: 缓存集成
-        if cache_service is None:
-            try:
-                from core_bak_refactored.infrastructure.cache import CacheManager
-                self.cache_service = CacheManager({'cache_enabled': True, 'cache_ttl': 3600})
-            except Exception:
-                self.cache_service = None
-        else:
-            self.cache_service = cache_service
+        # P0-3: 缓存集成（可选，由外部注入）
+        self.cache_service = cache_service
         if self.cache_service:
             logger.info("因子模型缓存已启用 (P0-3优化)")
         # 内部L1缓存（进程内，TTL）

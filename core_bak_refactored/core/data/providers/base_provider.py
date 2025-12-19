@@ -1,12 +1,19 @@
-"""
-Provider 基类 - 三层数据架构封装
+"""  
+Provider 基类 - 数据提供者封装
 
-三层数据获取策略:
-1. 内存缓存（最快）- 毫秒级
-2. 数据库缓存（次快）- 0.1-0.3秒
-3. 外部API（最慢）- 4-8秒
+核心职责:
+- 对外提供统一的数据接口
+- 封装缓存管理器，自动处理缓存读写
+- 子类实现具体的 API 调用逻辑
 
-对外透明: 调用者无需关心数据来源，Provider自动选择最优策略
+使用示例:
+    provider = AKShareDataProvider()
+    price_data = provider.get_index_prices(
+        index_id='000300.SH',
+        start_date='2025-01-01',
+        end_date='2025-01-31',
+        current_time=datetime.now()
+    )
 """
 import logging
 import os
@@ -22,266 +29,208 @@ import pandas as pd
 from core_bak_refactored.core.data.providers.protocols import PriceData, HistoricalDataProvider
 from core_bak_refactored.core.share import ConfigManager
 from core_bak_refactored.core.share.market import MarketUtils
+from core_bak_refactored.core.share.market.data_types import OHLCVRecord
 from core_bak_refactored.core.share.market.market_enums import TradingPhase, MarketCode
 
 logger = logging.getLogger('DeepSeekQuant.DataProviders')
 
 
-class BaseDataProvider(ABC,HistoricalDataProvider):
+class BaseDataProvider(ABC, HistoricalDataProvider):
     """
-    数据提供者基类 - 三层数据架构
+    数据提供者基类（封装缓存管理）
     
-    核心责任:
-    1. 封装三层数据获取逻辑（内存、数据库、API）
-    2. 对外提供统一的数据接口
-    3. 自动处理缓存读写，对调用者透明
+    核心职责:
+    1. 对外提供统一的数据接口
+    2. 封装缓存管理器，自动处理缓存读写
+    3. 子类实现具体的 API 调用逻辑
     
-    数据获取流程:
-    get_index_prices() → _get_with_cache()
-        ↓
-    1. 检查内存缓存 (毫秒级)
-        └─ 命中 → 返回
-        ↓
-    2. 检查数据库缓存 (0.1-0.3秒)
-        └─ 命中 → 写入内存 → 返回
-        ↓
-    3. 调用外部API (4-8秒)
-        └─ 成功 → 写入数据库 → 写入内存 → 返回
+    子类必须实现:
+    - _fetch_from_external_api(symbol, start_date, end_date, period) -> PriceData
     """
     
     def __init__(self):
-        """初始化数据提供者"""
-        # 💚 内存缓存（粀单字典，可后续替换为 LRU Cache）
-        self._memory_cache: Dict[str, Dict[str, Any]] = {}
-        
-        # 💚 数据库服务（延迟初始化）
-        self._db_service = None
-        self._db_initialized = False
-        
-        # 缓存配置
-        self._cache_ttl = 300  # 内存缓存TTL（秒）
-        self._enable_memory_cache = True
-        self._enable_db_cache = True
-        
-        # 加载配置
-        self._load_cache_config()
-    
-    def _load_cache_config(self):
-        """加载缓存配置"""
-        try:
-            config_manager = ConfigManager()
-            # 💚 修复：使用 config 属性而不是 get_config 方法
-            if hasattr(config_manager, 'config'):
-                data_config = config_manager.config.get('data', {})
-                
-                if data_config:
-                    self._cache_ttl = data_config.get('cache_ttl', 300)
-                    self._enable_memory_cache = data_config.get('cache_enabled', True)
-                
-                # 检查数据库配置
-                db_config = config_manager.config.get('database', {})
-                if db_config:
-                    cache_strategy = db_config.get('cache_strategy', {})
-                    self._enable_db_cache = cache_strategy.get('enabled', True)
-        except Exception as e:
-            logger.debug(f"加载缓存配置失败，使用默认值: {e}")
-    
-    def _get_db_service(self):
-        """
-        获取数据库服务（延迟初始化）
-        
-        Returns:
-            DatabaseService 或 None
-        """
-        if not self._enable_db_cache:
-            return None
-        
-        if not self._db_initialized:
-            try:
-                from core_bak_refactored.infrastructure.database_service import get_database_service
-                self._db_service = get_database_service()
-                logger.info("数据库服务已启用")
-            except Exception as e:
-                logger.warning(f"数据库服务初始化失败，将不使用数据库缓存: {e}")
-                self._db_service = None
-            finally:
-                self._db_initialized = True
-        
-        return self._db_service
-
-    def _make_cache_key(self, index_id: str, start_date: str, end_date: str, period: str = 'daily') -> str:
-        """
-        生成缓存键
-
-        Args:
-            index_id: 指数代码
-            start_date: 开始日期
-            end_date: 结束日期
-            period: 周期
-
-        Returns:
-            缓存键字符串
-        """
-        return f"{index_id}:{start_date}:{end_date}:{period}"
-    
-    def _get_from_memory_cache(self, cache_key: str) -> Optional[pd.DataFrame]:
-        """
-        从内存缓存获取数据
-        
-        Args:
-            cache_key: 缓存键
-        
-        Returns:
-            DataFrame 或 None
-        """
-        if not self._enable_memory_cache:
-            return None
-        
-        cached = self._memory_cache.get(cache_key)
-        if cached:
-            # 检查是否过期
-            if time.time() - cached['timestamp'] < self._cache_ttl:
-                logger.debug(f"✅ 内存缓存命中: {cache_key}")
-                return cached['data']
-            else:
-                # 过期，删除
-                del self._memory_cache[cache_key]
-        
-        return None
-    
-    def _set_to_memory_cache(self, cache_key: str, data: pd.DataFrame):
-        """
-        写入内存缓存
-        
-        Args:
-            cache_key: 缓存键
-            data: 数据
-        """
-        if not self._enable_memory_cache or data is None or data.empty:
-            return
-        
-        self._memory_cache[cache_key] = {
-            'data': data.copy(),
-            'timestamp': time.time()
-        }
-        logger.debug(f"✅ 写入内存缓存: {cache_key}")
-    
-    def _get_from_db_cache(self, index_id: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
-        """
-        从数据库缓存获取数据
-        
-        Args:
-            index_id: 指数代码
-            start_date: 开始日期
-            end_date: 结束日期
-        
-        Returns:
-            DataFrame 或 None
-        """
-        # 🔧 检查数据库缓存是否启用（Mock数据不使用数据库缓存）
-        if not self._enable_db_cache:
-            return None
-        
-        db_service = self._get_db_service()
-        if not db_service:
-            return None
-        
-        try:
-            df = db_service.get_cached_data(
-                index_id,
-                start_date,
-                end_date,
-                source=self.__class__.__name__
-            )
-            
-            if df is not None and not df.empty:
-                logger.info(f"✅ 数据库缓存命中: {index_id} ({len(df)} 条)")
-                return df
-        except Exception as e:
-            logger.warning(f"从数据库获取缓存失败: {e}")
-        
-        return None
-    
-    def _set_to_db_cache(self, index_id: str, data: pd.DataFrame):
-        """
-        写入数据库缓存
-        
-        Args:
-            index_id: 指数代码
-            data: 数据
-        """
-        # 🔧 检查数据库缓存是否启用（Mock数据不会被缓存）
-        if not self._enable_db_cache:
-            return
-        
-        db_service = self._get_db_service()
-        if not db_service or data is None or data.empty:
-            return
-        
-        try:
-            db_service.cache_data(
-                index_id,
-                data,
-                source=self.__class__.__name__
-            )
-            logger.info(f"✅ 数据已缓存到数据库: {index_id} ({len(data)} 条)")
-        except Exception as e:
-            logger.warning(f"缓存数据到数据库失败: {e}")
+        """初始化数据提供者（从工厂获取缓存管理器）"""
+        # 使用工厂方法创建缓存管理器（自动加载配置）
+        from core_bak_refactored.infrastructure.cache import create_cache_manager
+        self._cache_manager = create_cache_manager()
     
     def _get_with_cache(self, index_id: str, start_date: str, end_date: str, current_time: datetime, period: str = 'daily'):
         """
-        三层数据获取（核心方法）
-        
-        数据获取顺序:
-        1. 内存缓存 → 命中则返回
-        2. 数据库缓存 → 命中则写入内存并返回
-        3. 外部API → 写入数据库和内存后返回
+        带缓存的数据获取（核心方法）
         
         Args:
             index_id: 指数代码
             start_date: 开始日期 (YYYY-MM-DD)
             end_date: 结束日期 (YYYY-MM-DD)
             current_time: 当前时间
-            period: 周期 ('daily', 'weekly', 'monthly')
+            period: 数据粒度 ('daily'/'weekly'/'monthly'，传给API，默认 daily)
         
         Returns:
             PriceData 对象
         """
-        # 1. 尝试内存缓存
-        cache_key = self._make_cache_key(index_id, start_date, end_date, period)
-        cached_df = self._get_from_memory_cache(cache_key)
-        if cached_df is not None:
-            # 转换为 PriceData
-            price_data = PriceData.from_dataframe(cached_df, index_id)
+        logger.debug(f"📋 带缓存查询: {index_id}, {start_date} ~ {end_date}, period={period}")
+        
+        # 使用缓存管理器获取数据（period 是数据的本质属性，必须传给缓存层）
+        result_df = self._cache_manager.get_data(
+            symbol=index_id,
+            start_date=start_date,
+            end_date=end_date,
+            period=period,  # 数据粒度/K线类型，必须作为缓存键的一部分
+            db_fetch_func=None,  # ThreeLayerCacheManager 内部处理数据库缓存
+            api_fetch_func=lambda s, e: self._fetch_from_api(index_id, s, e, period)
+        )
+        
+        # 转换为 PriceData
+        if result_df is not None and not result_df.empty:
+            price_data = PriceData.from_dataframe(result_df, index_id)
+            logger.info(f"✅ 返回数据: {len(result_df)} 条")
         else:
-            # 2. 尝试数据库缓存
-            cached_df = self._get_from_db_cache(index_id, start_date, end_date)
-            if cached_df is not None:
-                # ✅ 数据库缓存命中：仅写入内存缓存
-                self._set_to_memory_cache(cache_key, cached_df)
-                # 转换为 PriceData
-                price_data = PriceData.from_dataframe(cached_df, index_id)
-            else:
-                # 3. 调用外部API（子类实现）
-                logger.info(f"🌐 缓存未命中，调用外部API: {index_id}, period={period}")
-                price_data = self._fetch_from_external_api(index_id, start_date, end_date, period)
-                
-                # ✅ 仅在外部API调用成功后写入缓存
-                if price_data and price_data.count > 0:
-                    df = price_data.to_dataframe()
-                    # 写入数据库缓存
-                    self._set_to_db_cache(index_id, df)
-                    # 写入内存缓存
-                    self._set_to_memory_cache(cache_key, df)
-
-        # ✅ 无论从哪个来源获取数据，都设置 needs_realtime_kline 标记
-        # 🔧 关键修复：确保 price_data 存在且调用方法返回计算结果
+            # 返回空 PriceData
+            price_data = PriceData(
+                records=[],
+                symbol=index_id,
+                start_date=pd.to_datetime(start_date),
+                end_date=pd.to_datetime(end_date),
+                count=0
+            )
+            logger.warning(f"⚠️ 所有缓存都无数据: {index_id} {start_date}~{end_date}")
+        
+        # 设置 needs_realtime_kline 标记
         if price_data and price_data.count > 0:
             self.set_needs_realtime_kline(price_data, current_time)
-            # 🔧 添加日志确认设置成功
             logger.debug(f"✅ needs_realtime_kline已设置为: {price_data.needs_realtime_kline}")
         
         return price_data
+    
+    def _fetch_from_api(self, index_id: str, start_date: str, end_date: str, period: str) -> Optional[pd.DataFrame]:
+        """
+        从 API 获取数据（为缓存管理器提供回调）
+        
+        Args:
+            index_id: 指数代码
+            start_date: 开始日期
+            end_date: 结束日期
+            period: 周期
+        
+        Returns:
+            DataFrame 或 None
+        """
+        try:
+            # 🔧 根据配置决定是否需要周期转换
+            # 流程：股票代码 → 市场代码 → 数据源ID → supports_period 特性
+            from core_bak_refactored.core.share.config_manager import ConfigManager
+            
+            # 获取数据源ID和特性
+            config_manager = ConfigManager()
+            provider_id = config_manager.get_provider_for_symbol(index_id)
+            
+            # 调用外部API获取数据（始终请求日线数据）
+            result = self._fetch_from_external_api(index_id, start_date, end_date, 'daily')
+            
+            # 处理不同类型的返回值（支持 mock 测试）
+            if isinstance(result, pd.DataFrame):
+                # Mock 返回的 DataFrame
+                price_data = PriceData.from_dataframe(result, index_id) if not result.empty else None
+            elif result and hasattr(result, 'count') and result.count > 0:
+                # PriceData 对象
+                price_data = result
+            else:
+                price_data = None
+            
+            if price_data and price_data.count > 0:
+                # 🔧 如果需要周期转换（非daily且数据源不支持直接查询）
+                if period != 'daily' and provider_id:
+                    # 检查数据源是否支持直接查询周线/月线
+                    supports_period = config_manager.get_provider_supports_period(provider_id)
+                    
+                    if not supports_period:
+                        # 不支持直接查询，需要转换
+                        logger.info(f"数据源 {provider_id} 不支持直接查询 {period}，需要从日线转换（{price_data.count} 条日线数据）")
+                        # 🔧 关键修复：不传递 count，让 _convert_period 返回所有转换后的数据
+                        price_data = self._convert_period(price_data, period)
+                    else:
+                        logger.debug(f"数据源 {provider_id} 支持直接查询 {period}，无需转换")
+                
+                # 转换为 DataFrame 返回
+                df = price_data.to_dataframe()
+                return df if not df.empty else None
+        except Exception as e:
+            logger.error(f"❌ API查询失败: {index_id} {start_date}~{end_date}, error={e}")
+        
+        return None
+    
+    def _convert_period(self, price_data: PriceData, period: str) -> PriceData:
+        """周期转换（日线→周线/月线）
+        
+        🎯 统一的周期转换逻辑：所有不支持直接查询的数据源都在这里转换
+        💚 强类型: 输入/输出都是 PriceData
+        📝 注: 内部使用 pandas.resample()，但仅作为实现细节，对外仍是强类型
+        
+        适用场景：
+        - AKShare: 没有周线/月线 API，必须从日线转换
+        - Tushare: 根据 API 支持情况决定
+        - 其他不支持直接查询的数据源
+        
+        Args:
+            price_data: 日线数据（PriceData对象）
+            period: 目标周期 ('weekly' 或 'monthly')
+        
+        Returns:
+            转换后的 PriceData 对象（包含所有转换后的数据，不裁剪）
+        
+        Note:
+            🔧 关键变更：不再使用 tail(count) 裁剪，返回所有转换后的数据
+            这样可以确保无限滚动时获取的是正确的时间范围内的数据
+        """
+        # 临时转换为 DataFrame 进行周期重采样（这是 pandas 的优势）
+        df = price_data.to_dataframe()
+        df['date'] = pd.to_datetime(df['date'])
+        df_copy = df.set_index('date')
+        
+        if period == 'weekly':
+            df_copy = df_copy.resample('W').agg({
+                'open': 'first',
+                'high': 'max',
+                'low': 'min',
+                'close': 'last',
+                'volume': 'sum'
+            })
+        elif period == 'monthly':
+            # 🔧 使用 'ME' 而不是 'M' 避免 FutureWarning
+            df_copy = df_copy.resample('ME').agg({
+                'open': 'first',
+                'high': 'max',
+                'low': 'min',
+                'close': 'last',
+                'volume': 'sum'
+            })
+        
+        df_copy = df_copy.reset_index()
+        
+        # 🔧 关键变更：不再使用 tail(count) 裁剪
+        # 返回所有转换后的数据，让调用者决定是否裁剪
+        # df_copy = df_copy.tail(count)  # <-- 已移除
+        
+        # 转换回 PriceData 强类型
+        records = [
+            OHLCVRecord(
+                date=pd.Timestamp(row['date']),
+                open=float(row['open']),
+                high=float(row['high']),
+                low=float(row['low']),
+                close=float(row['close']),
+                volume=float(row['volume'])
+            )
+            for _, row in df_copy.iterrows()
+        ]
+        
+        return PriceData(
+            records=records,
+            symbol=price_data.symbol,
+            start_date=records[0].date if records else price_data.start_date,
+            end_date=records[-1].date if records else price_data.end_date,
+            count=len(records)
+        )
 
     def set_needs_realtime_kline(self, price_data: PriceData, current_time: datetime):
         """设置 needs_realtime_kline 标记
@@ -310,39 +259,34 @@ class BaseDataProvider(ABC,HistoricalDataProvider):
     
     def get_index_prices(self, index_id: str, start_date: str, end_date: str, current_time: datetime, period: str = 'daily'):
         """
-        获取指数价格数据（对外接口，自动使用三层缓存）
-        
-        💚 三层数据策略:
-        1. 内存缓存 → 毫秒级
-        2. 数据库缓存 → 0.1-0.3秒
-        3. 外部API → 4-8秒
+        获取指数价格数据（对外接口，自动使用缓存）
         
         Args:
             index_id: 指数代码
             start_date: 开始日期 (YYYY-MM-DD)
             end_date: 结束日期 (YYYY-MM-DD)
-            current_time:操作时间
-            period: 周期 ('daily', 'weekly', 'monthly')
+            current_time: 操作时间
+            period: 数据粒度 ('daily'/'weekly'/'monthly'，默认 daily)
+        
         Returns:
             PriceData: 价格数据对象
-
         """
         return self._get_with_cache(index_id, start_date, end_date, current_time, period)
     
     def get_stock_prices(self, stock_id: str, start_date: str, end_date: str, current_time: datetime, period: str = 'daily'):
         """
-        获取股票价格数据（对外接口，自动使用三层缓存）
+        获取股票价格数据（对外接口，自动使用缓存）
         
         Args:
             stock_id: 股票代码
             start_date: 开始日期 (YYYY-MM-DD)
             end_date: 结束日期 (YYYY-MM-DD)
-            current_time:操作时间
-            period: 周期 ('daily', 'weekly', 'monthly')
+            current_time: 操作时间
+            period: 数据粒度 ('daily'/'weekly'/'monthly'，默认 daily)
+        
         Returns:
             PriceData: 价格数据对象
         """
-        # 股票数据也使用相同的缓存策略
         return self._get_with_cache(stock_id, start_date, end_date, current_time, period)
     
     # ========================================================================
@@ -354,16 +298,11 @@ class BaseDataProvider(ABC,HistoricalDataProvider):
         """
         从外部API获取数据（抽象方法，子类必须实现）
         
-        💚 注意:
-        - 此方法仅供内部使用，不对外暴露
-        - 外部调用者应使用 get_index_prices() 或 get_stock_prices()
-        - 基类会自动处理缓存，子类只需实现API调用
-        
         Args:
             symbol: 股票/指数代码
             start_date: 开始日期 (YYYY-MM-DD)
             end_date: 结束日期 (YYYY-MM-DD)
-            period: 周期 ('daily', 'weekly', 'monthly')
+            period: 数据粒度 ('daily'/'weekly'/'monthly'，告诉API返回什么粒度，默认 daily)
         
         Returns:
             PriceData: 价格数据对象
@@ -749,6 +688,12 @@ class BaseDataProvider(ABC,HistoricalDataProvider):
             import traceback
             logger.error(traceback.format_exc())
             return False
+
+
+
+
+
+
 
 
 

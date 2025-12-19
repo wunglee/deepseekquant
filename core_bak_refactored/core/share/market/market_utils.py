@@ -12,6 +12,7 @@ from typing import Optional
 
 import pandas as pd
 
+from core_bak_refactored.core.share.market.data_types import OHLCVRecord
 from core_bak_refactored.core.share.market.market_enums import MarketCode, TradingPhase
 from datetime import datetime as dt, timedelta
 logger = logging.getLogger(__name__)
@@ -319,7 +320,7 @@ class MarketUtils:
             PriceData: 标准化后的数据对象
         """
         # 局部导入避免循环依赖
-        from core_bak_refactored.core.data.providers.protocols import OHLCVRecord, PriceData
+        from core_bak_refactored.core.data.providers.protocols import PriceData
         
         if df is None or df.empty:
             # 空数据返回空的PriceData
