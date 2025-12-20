@@ -213,7 +213,13 @@ class ThreeLayerCacheManager:
                 # 3.1 尝试从数据库获取大范围数据
                 db_df = None
                 if db_fetch_func:
-                    db_df = db_fetch_func(range_start, range_end)
+                    # 检查函数是否支持period参数
+                    import inspect
+                    sig = inspect.signature(db_fetch_func)
+                    if 'period' in sig.parameters:
+                        db_df = db_fetch_func(range_start, range_end, period=period)
+                    else:
+                        db_df = db_fetch_func(range_start, range_end)
                 
                 if db_df is not None and not db_df.empty:
                     logger.info(f"✅ 数据库批量命中: {range_start} ~ {range_end} ({len(db_df)} 条)")
@@ -227,7 +233,13 @@ class ThreeLayerCacheManager:
                 try:
                     api_df = None
                     if api_fetch_func:
-                        api_df = api_fetch_func(range_start, range_end)
+                        # 检查函数是否支持period参数
+                        import inspect
+                        sig = inspect.signature(api_fetch_func)
+                        if 'period' in sig.parameters:
+                            api_df = api_fetch_func(range_start, range_end, period=period)
+                        else:
+                            api_df = api_fetch_func(range_start, range_end)
                     
                     if api_df is not None and not api_df.empty:
                         logger.info(f"✅ API批量返回: {range_start} ~ {range_end} ({len(api_df)} 条)")
@@ -483,7 +495,7 @@ class ThreeLayerCacheManager:
 
 
     
-    def _backfill_first_window_flag(self, symbol: str, period: str, actual_start: pd.Timestamp, current_window_keys: list) -> None:
+    def _backfill_first_window_flag(self, symbol: str, period: str, actual_start: pd.Timestamp, current_window_keys: list,market_code: MarketCode=MarketCode.CN) -> None:
         """
         回溯更新起始窗口标记
         

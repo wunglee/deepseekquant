@@ -125,7 +125,7 @@ class BaseDataProvider(ABC, HistoricalDataProvider):
             provider_id = config_manager.get_provider_for_symbol(index_id)
             
             # 调用外部API获取数据（始终请求日线数据）
-            result = self._fetch_from_external_api(index_id, start_date, end_date, 'daily')
+            result = self._fetch_from_external_api(index_id, start_date, end_date, period)
             
             # 处理不同类型的返回值（支持 mock 测试）
             if isinstance(result, pd.DataFrame):
