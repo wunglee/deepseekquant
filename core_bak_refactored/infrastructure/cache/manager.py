@@ -102,8 +102,8 @@ class ThreeLayerCacheManager:
         end_date: str,
         period: str = 'daily',
         market_code: Optional[MarketCode] = None,
-        db_fetch_func: Callable[[str, str], pd.DataFrame] = None,
-        api_fetch_func: Callable[[str, str], pd.DataFrame] = None
+        db_fetch_func: Callable[..., pd.DataFrame] = None,
+        api_fetch_func: Callable[..., pd.DataFrame] = None
     ) -> pd.DataFrame:
         """
         获取数据（三层缓存核心方法）
@@ -128,8 +128,8 @@ class ThreeLayerCacheManager:
             period: 数据粒度/K线类型 (daily/weekly/monthly，默认 daily)
                     注意：period 必须 ≤ window_size
             market_code: 市场代码枚举 (MarketCode.CN/US/HK/JP/EU/SG)，用于交易日历判断，如为None则从 symbol 推断
-            db_fetch_func: 数据库查询函数，签名为 func(start_date, end_date) -> DataFrame
-            api_fetch_func: API查询函数，签名为 func(start_date, end_date) -> DataFrame
+            db_fetch_func: 数据库查询函数，签名为 func(start_date, end_date, period) -> DataFrame
+            api_fetch_func: API查询函数，签名为 func(start_date, end_date, period) -> DataFrame
         
         Returns:
             完整的 DataFrame
