@@ -17,6 +17,7 @@
 import logging
 from typing import Dict, List, Callable
 import pandas as pd
+from jinja2.utils import missing
 
 from .window_manager import WindowManager
 from .memory import MemoryCache
@@ -142,13 +143,18 @@ class ThreeLayerCacheManager:
         today_ts = pd.Timestamp(today)
         current_window_key = self._window_mgr.make_window_key(today_ts, period, self._window_size)
         logger.debug(f"📅 当前窗口: {current_window_key}")
-        
         for window_key in window_keys:
             cached_value = self._fast_cache.get(symbol, period, window_key)
-            
             if cached_value is not None:
-                cached_df = cached_value.get('data')
-                is_first = cached_value.get('is_first_window', False)
+                # 兼容两种缓存：MemoryCache返回dict，RedisCache返回DataFrame
+                if isinstance(cached_value, dict):
+                    # MemoryCache: 返回 {'data': df, 'is_first_window': bool, 'timestamp': float}
+                    cached_df = cached_value.get('data')
+                    is_first = cached_value.get('is_first_window', False)
+                else:
+                    # RedisCache: 直接返回 DataFrame
+                    cached_df = cached_value
+                    is_first = False  # RedisCache不支持is_first_window标记
                 
                 # 记录起始窗口
                 if is_first:
@@ -306,7 +312,7 @@ class ThreeLayerCacheManager:
     
     def _is_consecutive_windows(self, key1: str, key2: str, period: str) -> bool:
         """
-        判断两个窗口是否连续
+        判断两个窗口是否连续（考虑交易日连续性）
         
         Args:
             key1: 第一个窗口键
@@ -315,6 +321,10 @@ class ThreeLayerCacheManager:
         
         Returns:
             True 表示连续，False 表示不连续
+            
+        注意：
+            - 对于日线/周线：考虑周末连续性（周五→下周一）
+            - 对于月线：直接判断日历连续性（月末→月初）
         """
         from datetime import datetime, timedelta
         
@@ -326,8 +336,26 @@ class ThreeLayerCacheManager:
         end1_dt = datetime.strptime(end1, '%Y-%m-%d')
         start2_dt = datetime.strptime(start2, '%Y-%m-%d')
         
-        # 通用判断：如果第二个窗口的起始日期 = 第一个窗口的结束日期 + 1天，则连续
-        return (start2_dt - end1_dt).days == 1
+        # 计算日期间隔
+        days_gap = (start2_dt - end1_dt).days
+        
+        # 判断连续性：
+        # 1. 相邻日（1天间隔）
+        # 2. 跨周末（3天间隔）- 周五→下周一
+        # 3. 跨长假期（4天以内）- 考虑节假日情况
+        if days_gap == 1:
+            # 普通相邻日
+            return True
+        elif days_gap == 3:
+            # 检查是否为周五→下周一
+            if end1_dt.weekday() == 4:  # 4=周五
+                return True
+        elif days_gap == 4:
+            # 检查是否为周四→下周一（周五是节假日）
+            if end1_dt.weekday() == 3:  # 3=周四
+                return True
+        
+        return False
     
     def _distribute_data_to_windows(self, symbol: str, period: str, data: pd.DataFrame, 
                                    window_keys: list, cached_windows: dict, 
@@ -354,8 +382,8 @@ class ThreeLayerCacheManager:
         
         data['date'] = pd.to_datetime(data['date'])
         actual_start = data['date'].min()
+        actual_end = data['date'].max()
         query_start = pd.to_datetime(query_start_date)
-        
         # 分配数据到各个窗口
         for window_key in window_keys:
             window_start, window_end = self._window_mgr.window_key_to_date_range(window_key, period)
@@ -364,7 +392,7 @@ class ThreeLayerCacheManager:
             
             # 筛选该窗口的数据
             window_data = data[(data['date'] >= window_start_dt) & (data['date'] <= window_end_dt)].copy()
-            
+
             if not window_data.empty:
                 # 判断是否为起始窗口
                 is_current_window = (window_key == current_window_key)
@@ -376,10 +404,17 @@ class ThreeLayerCacheManager:
                         is_first_window = True
                         logger.info(f"🅰️ 检测到起始窗口: {window_key} (查询从 {query_start.date()}，但数据源最早从 {actual_start.date()} 开始)")
                 
-                # 写入缓存
-                self._fast_cache.set(symbol, period, window_key, window_data, is_first_window=is_first_window)
+                # 写入缓存（兼容两种缓存类型）
+                if self._cache_mode == 'memory':
+                    # MemoryCache: 支持is_first_window参数
+                    self._fast_cache.set(symbol, period, window_key, window_data, is_first_window=is_first_window)
+                else:
+                    # RedisCache: 不支持is_first_window参数
+                    self._fast_cache.set(symbol, period, window_key, window_data)
                 cached_windows[window_key] = window_data
                 logger.debug(f"  ✅ 窗口 {window_key}: {len(window_data)} 条")
+
+
     
     def _backfill_first_window_flag(self, symbol: str, period: str, actual_start: pd.Timestamp, current_window_keys: list) -> None:
         """
