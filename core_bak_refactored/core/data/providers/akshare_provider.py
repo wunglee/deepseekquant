@@ -231,14 +231,81 @@ class AKShareDataProvider(BaseDataProvider):
 
             logger.info(f"Successfully fetched {len(standardized_data)} rows for {symbol}")
             # 返回PriceData对象而不是原始DataFrame
-            # 🔧 AKShare 只返回日线数据，周期转换由 ChartDataAssembler 统一处理
             price_data = PriceData.from_dataframe(standardized_data, symbol)
+            
+            # 🔧 AKShare 不支持直接查询周线/月线，需要从日线转换
+            if period != 'daily':
+                logger.info(f"AKShare 不支持直接查询 {period}，从日线转换（{price_data.count} 条日线数据）")
+                price_data = self._convert_period(price_data, period)
+            
             return price_data
 
         except Exception as e:
             logger.error(f"AKShare failed for {symbol}: {e}")
             # 更详细的错误信息，帮助调试
             raise ValueError(f"Failed to fetch data for {symbol}: {str(e)}") from e
+    
+    def _convert_period(self, price_data: PriceData, period: str) -> PriceData:
+        """周期转换（日线→周线/月线）
+        
+        🎯 AKShare 不支持直接查询周线/月线，必须从日线转换
+        💚 强类型: 输入/输出都是 PriceData
+        📝 注: 内部使用 pandas.resample()，但仅作为实现细节，对外仍是强类型
+        
+        Args:
+            price_data: 日线数据（PriceData对象）
+            period: 目标周期 ('weekly' 或 'monthly')
+        
+        Returns:
+            转换后的 PriceData 对象（包含所有转换后的数据，不裁剪）
+        """
+        from core_bak_refactored.core.share.market.data_types import OHLCVRecord
+        
+        # 临时转换为 DataFrame 进行周期重采样（这是 pandas 的优势）
+        df = price_data.to_dataframe()
+        df['date'] = pd.to_datetime(df['date'])
+        df_copy = df.set_index('date')
+        
+        if period == 'weekly':
+            df_copy = df_copy.resample('W').agg({
+                'open': 'first',
+                'high': 'max',
+                'low': 'min',
+                'close': 'last',
+                'volume': 'sum'
+            })
+        elif period == 'monthly':
+            # 🔧 使用 'ME' 而不是 'M' 避免 FutureWarning
+            df_copy = df_copy.resample('ME').agg({
+                'open': 'first',
+                'high': 'max',
+                'low': 'min',
+                'close': 'last',
+                'volume': 'sum'
+            })
+        
+        df_copy = df_copy.reset_index()
+        
+        # 转换回 PriceData 强类型
+        records = [
+            OHLCVRecord(
+                date=pd.Timestamp(row['date']),
+                open=float(row['open']),
+                high=float(row['high']),
+                low=float(row['low']),
+                close=float(row['close']),
+                volume=float(row['volume'])
+            )
+            for _, row in df_copy.iterrows()
+        ]
+        
+        return PriceData(
+            records=records,
+            symbol=price_data.symbol,
+            start_date=records[0].date if records else price_data.start_date,
+            end_date=records[-1].date if records else price_data.end_date,
+            count=len(records)
+        )
     
 
 
