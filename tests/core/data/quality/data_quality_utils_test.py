@@ -29,7 +29,7 @@ class TestDataQualityUtils(unittest.TestCase):
             detect_outliers,
             validate_data_quality
         )
-        from core_bak_refactored.core.data.providers.protocols import PriceData, OHLCVRecord
+        from core_bak_refactored.core.data.providers.protocols import PriceData
         
         self.calculate_consistency_score = calculate_consistency_score
         self.calculate_accuracy_score = calculate_accuracy_score

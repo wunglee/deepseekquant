@@ -145,16 +145,11 @@ class ThreeLayerCacheManager:
         logger.debug(f"📅 当前窗口: {current_window_key}")
         for window_key in window_keys:
             cached_value = self._fast_cache.get(symbol, period, window_key)
+            
             if cached_value is not None:
-                # 兼容两种缓存：MemoryCache返回dict，RedisCache返回DataFrame
-                if isinstance(cached_value, dict):
-                    # MemoryCache: 返回 {'data': df, 'is_first_window': bool, 'timestamp': float}
-                    cached_df = cached_value.get('data')
-                    is_first = cached_value.get('is_first_window', False)
-                else:
-                    # RedisCache: 直接返回 DataFrame
-                    cached_df = cached_value
-                    is_first = False  # RedisCache不支持is_first_window标记
+                # 两种缓存现在都返回dict：{'data': df, 'is_first_window': bool, 'timestamp': float}
+                cached_df = cached_value.get('data')
+                is_first = cached_value.get('is_first_window', False)
                 
                 # 记录起始窗口
                 if is_first:
@@ -404,13 +399,8 @@ class ThreeLayerCacheManager:
                         is_first_window = True
                         logger.info(f"🅰️ 检测到起始窗口: {window_key} (查询从 {query_start.date()}，但数据源最早从 {actual_start.date()} 开始)")
                 
-                # 写入缓存（兼容两种缓存类型）
-                if self._cache_mode == 'memory':
-                    # MemoryCache: 支持is_first_window参数
-                    self._fast_cache.set(symbol, period, window_key, window_data, is_first_window=is_first_window)
-                else:
-                    # RedisCache: 不支持is_first_window参数
-                    self._fast_cache.set(symbol, period, window_key, window_data)
+                # 写入缓存（两种缓存现在都支持is_first_window参数）
+                self._fast_cache.set(symbol, period, window_key, window_data, is_first_window=is_first_window)
                 cached_windows[window_key] = window_data
                 logger.debug(f"  ✅ 窗口 {window_key}: {len(window_data)} 条")
 

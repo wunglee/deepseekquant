@@ -427,22 +427,22 @@ class DataFetcher:
                                 data_type: str, adjustments: bool) -> Optional[List[MarketData]]:
         """从Yahoo Finance获取数据 - 完整实现"""
         try:
-            ticker = yf.Ticker(symbol)
+            trade_record = yf.Ticker(symbol)
 
             # 根据数据类型获取不同的数据
             if data_type == 'ohlcv':
-                hist = ticker.history(
+                hist = trade_record.history(
                     period=period,
                     interval=interval,
                     auto_adjust=adjustments,
                     actions=False
                 )
             elif data_type == 'dividends':
-                hist = ticker.dividends
+                hist = trade_record.dividends
             elif data_type == 'splits':
-                hist = ticker.splits
+                hist = trade_record.splits
             elif data_type == 'all':
-                hist = ticker.history(
+                hist = trade_record.history(
                     period=period,
                     interval=interval,
                     auto_adjust=adjustments,
@@ -1027,13 +1027,13 @@ class DataFetcher:
     async def _get_yahoo_fundamentals(self, symbol: str) -> Dict[str, Any]:
         """从Yahoo Finance获取基本面数据 - 完整生产实现"""
         try:
-            ticker = yf.Ticker(symbol)
-            info = ticker.info
+            trade_record = yf.Ticker(symbol)
+            info = trade_record.info
 
             # 获取财务报表
-            financials = ticker.financials
-            balance_sheet = ticker.balance_sheet
-            cash_flow = ticker.cashflow
+            financials = trade_record.financials
+            balance_sheet = trade_record.balance_sheet
+            cash_flow = trade_record.cashflow
 
             return {
                 'company_name': info.get('longName'),
@@ -1144,22 +1144,22 @@ class DataFetcher:
     async def _get_options_chain(self, symbol: str, expiration: str) -> Dict[str, Any]:
         """获取期权链数据"""
         try:
-            ticker = yf.Ticker(symbol)
+            trade_record = yf.Ticker(symbol)
 
             if expiration:
-                options = ticker.option_chain(expiration)
+                options = trade_record.option_chain(expiration)
             else:
                 # 获取最近的到期日
-                expirations = ticker.options
+                expirations = trade_record.options
                 if not expirations:
                     return {}
-                options = ticker.option_chain(expirations[0])
+                options = trade_record.option_chain(expirations[0])
 
             return {
                 'calls': options.calls.to_dict('records'),
                 'puts': options.puts.to_dict('records'),
                 'expiration': expiration or expirations[0],
-                'underlying_price': ticker.info.get('regularMarketPrice'),
+                'underlying_price': trade_record.info.get('regularMarketPrice'),
                 'timestamp': datetime.now().isoformat()
             }
 

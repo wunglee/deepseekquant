@@ -41,8 +41,10 @@ class MemoryCacheTest(unittest.TestCase):
         result = self.cache.get('399006.SZ', 'monthly', '2025-01')
         
         self.assertIsNotNone(result)
-        self.assertEqual(len(result), 5)
-        pd.testing.assert_frame_equal(result, df)
+        # get()返回的是字典，包含'data'、'is_first_window'、'timestamp'
+        self.assertIn('data', result)
+        self.assertEqual(len(result['data']), 5)
+        pd.testing.assert_frame_equal(result['data'], df)
     
     def test_get_non_existent(self):
         """测试读取不存在的缓存"""
@@ -77,8 +79,8 @@ class MemoryCacheTest(unittest.TestCase):
         result1 = self.cache.get('399006.SZ', 'monthly', '2025-01')
         result2 = self.cache.get('000001.SZ', 'monthly', '2025-01')
         
-        self.assertEqual(len(result1), 3)
-        self.assertEqual(len(result2), 4)
+        self.assertEqual(len(result1['data']), 3)
+        self.assertEqual(len(result2['data']), 4)
     
     def test_multiple_periods(self):
         """测试多个不同period的缓存"""
@@ -91,8 +93,8 @@ class MemoryCacheTest(unittest.TestCase):
         result_monthly = self.cache.get('399006.SZ', 'monthly', '2025-01')
         result_daily = self.cache.get('399006.SZ', 'daily', '2025-01-01')
         
-        self.assertEqual(len(result_monthly), 3)
-        self.assertEqual(len(result_daily), 4)
+        self.assertEqual(len(result_monthly['data']), 3)
+        self.assertEqual(len(result_daily['data']), 4)
     
     # ========== LRU 淘汰机制测试 ==========
     
@@ -174,7 +176,7 @@ class MemoryCacheTest(unittest.TestCase):
         # 应仍可读取
         result = self.cache.get('399006.SZ', 'monthly', '2025-01')
         self.assertIsNotNone(result)
-        self.assertEqual(len(result), 5)
+        self.assertEqual(len(result['data']), 5)
     
     def test_expired_entry_removed_on_access(self):
         """测试过期条目在访问时被移除"""
@@ -266,7 +268,8 @@ class MemoryCacheTest(unittest.TestCase):
         df.iloc[0, df.columns.get_loc('close')] = 999
         
         # 从缓存读取
-        cached_df = self.cache.get('399006.SZ', 'monthly', '2025-01')
+        cached_result = self.cache.get('399006.SZ', 'monthly', '2025-01')
+        cached_df = cached_result['data']
         
         # 缓存中的数据应未被修改
         self.assertEqual(cached_df.iloc[0]['close'], original_value)
@@ -282,7 +285,7 @@ class MemoryCacheTest(unittest.TestCase):
         result = self.cache.get('399006.SZ', 'daily', '2025-01-01')
         
         self.assertIsNotNone(result)
-        self.assertEqual(len(result), 10000)
+        self.assertEqual(len(result['data']), 10000)
     
     def test_special_characters_in_symbol(self):
         """测试symbol中的特殊字符"""

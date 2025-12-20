@@ -38,7 +38,9 @@ class RedisCacheTest(unittest.TestCase):
         result = self.cache.get('399006.SZ', 'monthly', '2025-01')
         
         self.assertIsNotNone(result)
-        pd.testing.assert_frame_equal(result, df)
+        # get()返回的是字典，包含'data'、'is_first_window'、'timestamp'
+        self.assertIn('data', result)
+        pd.testing.assert_frame_equal(result['data'], df)
     
     def test_get_non_existent(self):
         """测试读取不存在的缓存"""
@@ -73,7 +75,7 @@ class RedisCacheTest(unittest.TestCase):
         result = cache_compressed.get('399006.SZ', 'monthly', '2025-01')
         
         self.assertIsNotNone(result)
-        pd.testing.assert_frame_equal(result, df)
+        pd.testing.assert_frame_equal(result['data'], df)
     
     def test_compression_disabled(self):
         """测试禁用压缩"""
@@ -84,7 +86,7 @@ class RedisCacheTest(unittest.TestCase):
         result = cache_uncompressed.get('399006.SZ', 'monthly', '2025-01')
         
         self.assertIsNotNone(result)
-        pd.testing.assert_frame_equal(result, df)
+        pd.testing.assert_frame_equal(result['data'], df)
     
     # ========== 数据完整性测试 ==========
     
@@ -100,9 +102,10 @@ class RedisCacheTest(unittest.TestCase):
         self.cache.set('399006.SZ', 'monthly', '2025-01', df)
         result = self.cache.get('399006.SZ', 'monthly', '2025-01')
         
-        self.assertEqual(result['int_col'].dtype, df['int_col'].dtype)
-        self.assertEqual(result['float_col'].dtype, df['float_col'].dtype)
-        self.assertEqual(result['str_col'].dtype, df['str_col'].dtype)
+        result_df = result['data']
+        self.assertEqual(result_df['int_col'].dtype, df['int_col'].dtype)
+        self.assertEqual(result_df['float_col'].dtype, df['float_col'].dtype)
+        self.assertEqual(result_df['str_col'].dtype, df['str_col'].dtype)
     
     def test_large_dataframe(self):
         """测试大DataFrame序列化"""
@@ -112,8 +115,8 @@ class RedisCacheTest(unittest.TestCase):
         result = self.cache.get('399006.SZ', 'daily', '2025-01-01')
         
         self.assertIsNotNone(result)
-        self.assertEqual(len(result), 10000)
-        pd.testing.assert_frame_equal(result, large_df)
+        self.assertEqual(len(result['data']), 10000)
+        pd.testing.assert_frame_equal(result['data'], large_df)
     
     # ========== 键格式测试 ==========
     
@@ -140,8 +143,8 @@ class RedisCacheTest(unittest.TestCase):
         result1 = self.cache.get('399006.SZ', 'monthly', '2025-01')
         result2 = self.cache.get('000001.SZ', 'monthly', '2025-01')
         
-        self.assertEqual(len(result1), 3)
-        self.assertEqual(len(result2), 4)
+        self.assertEqual(len(result1['data']), 3)
+        self.assertEqual(len(result2['data']), 4)
     
     # ========== 清空缓存测试 ==========
     

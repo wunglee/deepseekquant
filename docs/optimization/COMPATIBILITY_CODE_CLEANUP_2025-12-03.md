@@ -139,7 +139,7 @@ from core_bak_refactored.core.signal.indicator_service import TechnicalIndicator
 #### 6.2 默认索引配置不一致（非本次清理引入）
 - `config_manager_test.py::test_get_data_config` 期望 `primary_source='yahoo'`，实际为 `'mock'`
 - `config_manager_test.py::test_load_config` 期望 `default_index='MSFT'`，实际为 `'^GSPC'`
-  - 原因：配置文件 `config/dev/data.yml` 的默认值与测试期望不一致
+  - 原因：配置文件 `config/dev/data_provider.yml` 的默认值与测试期望不一致
   - 状态：与兼容清理无关，属于原有问题
   - 建议：在后续迭代中统一测试期望或配置默认值
 
@@ -152,7 +152,7 @@ from core_bak_refactored.core.signal.indicator_service import TechnicalIndicator
 
 #### 7.2 配置清理
 - 建议统一 `config/dev/monitoring.yml` 与 `MonitoringConfig` 的字段定义
-- 建议统一 `config/dev/data.yml` 的默认值与测试期望
+- 建议统一 `config/dev/data_provider.yml` 的默认值与测试期望
 - 建议在后续迭代中执行配置Schema验证，避免字段不一致
 
 #### 7.3 测试维护
