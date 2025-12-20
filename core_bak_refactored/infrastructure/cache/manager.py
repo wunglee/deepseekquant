@@ -142,7 +142,7 @@ class ThreeLayerCacheManager:
         logger.debug(f"🌏 使用市场代码: {market_code}")
         
         # ========== 第1步：生成所需的所有窗口键 ==========
-        window_keys = self._window_mgr.generate_window_keys(start_date, end_date, period, self._window_size)
+        window_keys = self._window_mgr.generate_window_keys(start_date, end_date, period, self._window_size, market_code)
         logger.info(f"📦 需要 {len(window_keys)} 个窗口 (period={period}, window_size={self._window_size})")
         
         # ========== 第2步：从快速缓存获取已有窗口 ==========
@@ -154,7 +154,7 @@ class ThreeLayerCacheManager:
         import datetime
         today = datetime.datetime.now().date()
         today_ts = pd.Timestamp(today)
-        current_window_key = self._window_mgr.make_window_key(today_ts, period, self._window_size)
+        current_window_key = self._window_mgr.make_window_key(today_ts, period, self._window_size, market_code)
         logger.debug(f"📅 当前窗口: {current_window_key}")
         for window_key in window_keys:
             cached_value = self._fast_cache.get(symbol, period, window_key)
@@ -432,7 +432,7 @@ class ThreeLayerCacheManager:
             current_window_keys: 当前查询涉及的窗口键列表（避免重复更新）
         """
         # 生成包含 actual_start 的窗口键
-        first_data_window_key = self._window_mgr.make_window_key(actual_start, period, self._window_size)
+        first_data_window_key = self._window_mgr.make_window_key(actual_start, period, self._window_size, market_code)
         
         # 如果当前查询已经处理过这个窗口，无需回溯
         if first_data_window_key in current_window_keys:

@@ -38,9 +38,11 @@ class WindowManagerTest(unittest.TestCase):
     
     def test_make_window_key_daily(self):
         """测试日度窗口键生成"""
-        date = pd.Timestamp('2025-03-15')
+        # 使用一个确定是交易日的日期
+        date = pd.Timestamp('2025-03-10')  # 周一，交易日
         key = self.mgr.make_window_key(date, 'daily', window_size=1)
-        # window_size=1时，是从年初开始的第74天（0-based index），所以是20250101_20250101窗口范围内的某一天
+        # window_size=1时，是从年初开始的第69天（0-based index）
+        self.assertIsNotNone(key)
         self.assertTrue('2025' in key)
     
     def test_generate_window_keys_single_month(self):
@@ -70,8 +72,10 @@ class WindowManagerTest(unittest.TestCase):
     
     def test_generate_window_keys_daily(self):
         """测试生成日度窗口键（window_size=1，每天一个窗口）"""
-        keys = self.mgr.generate_window_keys('2025-01-01', '2025-01-05', 'daily', window_size=1)
+        # 使用一个不包含节假日的区间（避免调整）
+        keys = self.mgr.generate_window_keys('2025-03-10', '2025-03-14', 'daily', window_size=1)
         # window_size=1时，每天是一个独立的窗口，格式为YYYYMMDD_YYYYMMDD
+        # 3月10-14日是周一至周五，5个交易日
         self.assertEqual(len(keys), 5)
         # 验证每个键都是单日窗口格式
         for key in keys:
@@ -97,8 +101,9 @@ class WindowManagerTest(unittest.TestCase):
         keys = self.mgr.generate_window_keys('2025-02-01', '2025-02-28', 'monthly', window_size=1)
         self.assertEqual(len(keys), 1)
         
-        # 2月29日不应存在
-        keys_daily = self.mgr.generate_window_keys('2025-02-28', '2025-03-01', 'daily', window_size=1)
+        # 2月29日不应存在，使用交易日测试
+        # 2025-02-27（周四）和2025-02-28（周五）是交易日
+        keys_daily = self.mgr.generate_window_keys('2025-02-27', '2025-02-28', 'daily', window_size=1)
         self.assertEqual(len(keys_daily), 2)
     
     def test_generate_window_keys_month_end_boundaries(self):
@@ -117,7 +122,9 @@ class WindowManagerTest(unittest.TestCase):
         self.assertEqual(len(keys), 2)
         self.assertEqual(keys, ['2024-12_12', '2025-01_01'])
         
-        keys_daily = self.mgr.generate_window_keys('2024-12-31', '2025-01-01', 'daily', window_size=1)
+        # 🔧 注意：2025-01-01是元旦，窗口起始日会调整到交易日
+        # 使用不包含节假日的区间测试日度窗口
+        keys_daily = self.mgr.generate_window_keys('2024-12-30', '2024-12-31', 'daily', window_size=1)
         self.assertEqual(len(keys_daily), 2)
     
     # ========== 窗口键转换测试 ==========

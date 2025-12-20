@@ -21,9 +21,12 @@
 """
 
 import logging
-from typing import List, Tuple
+from typing import List, Tuple, Optional, Union
 from datetime import datetime, timedelta
 import pandas as pd
+
+from core_bak_refactored.core.share.market.market_enums import MarketCode
+from core_bak_refactored.core.share.market.trading_calendar_service import get_trading_calendar_service
 
 logger = logging.getLogger('DeepSeekQuant.WindowManager')
 
@@ -31,8 +34,12 @@ logger = logging.getLogger('DeepSeekQuant.WindowManager')
 class WindowManager:
     """时间窗口管理工具类（重构版）"""
     
-    @staticmethod
-    def make_window_key(date: pd.Timestamp, period: str, window_size: int) -> str:
+    def __init__(self):
+        """初始化窗口管理器"""
+        self._calendar_service = get_trading_calendar_service()
+    
+    def make_window_key(self, date: pd.Timestamp, period: str, window_size: int, 
+                       market_code: Optional[Union[str, MarketCode]] = None) -> Optional[str]:
         """
         生成时间窗口键
         
@@ -42,7 +49,7 @@ class WindowManager:
             window_size: 窗口大小（period的整数倍）
         
         Returns:
-            窗口键字符串
+            窗口键字符串，如果窗口无效（调整后window_start > window_end）则返回None
         
         Examples:
             >>> make_window_key(pd.Timestamp('2025-01-15'), 'daily', 7)
@@ -54,6 +61,10 @@ class WindowManager:
             >>> make_window_key(pd.Timestamp('2025-02-15'), 'monthly', 3)
             '2025-01_03'  # 1月到3月 (3个月窗口)
         """
+        # 默认为中国市场
+        if market_code is None:
+            market_code = MarketCode.CN
+        
         if period == 'daily':
             # Daily窗口：按window_size天一个窗口
             # 🔧 修复BUG：直接使用date计算，而不是对齐到周一
@@ -64,6 +75,40 @@ class WindowManager:
             # 计算窗口边界
             window_start = year_start + pd.Timedelta(days=window_index * window_size)
             window_end = window_start + pd.Timedelta(days=window_size - 1)
+            
+            # 🔧 关键：调整窗口边界到交易日
+            # window_start: 向后推到下一个交易日
+            # window_end: 向前推到上一个交易日
+            # 这个调整是确定性的，只依赖于窗口边界本身，不依赖查询时间
+            window_start_dt = window_start.to_pydatetime()
+            window_end_dt = window_end.to_pydatetime()
+            
+            # 调整window_start到下一个交易日
+            if not self._calendar_service.is_trading_day(market_code, window_start_dt):
+                next_trading = self._calendar_service.get_next_trading_day(market_code, window_start_dt)
+                if next_trading:
+                    window_start = pd.Timestamp(next_trading)
+                    logger.debug(f"📅 窗口起始日调整: {window_start_dt.date()} (非交易日) → {next_trading.date()} (交易日)")
+                else:
+                    logger.warning(f"⚠️ 无法找到 {window_start_dt.date()} 之后的交易日，返回None")
+                    return None
+            
+            # 调整window_end到上一个交易日
+            if not self._calendar_service.is_trading_day(market_code, window_end_dt):
+                prev_trading = self._calendar_service.get_previous_trading_day(market_code, window_end_dt)
+                if prev_trading:
+                    window_end = pd.Timestamp(prev_trading)
+                    logger.debug(f"📅 窗口结束日调整: {window_end_dt.date()} (非交易日) → {prev_trading.date()} (交易日)")
+                else:
+                    logger.warning(f"⚠️ 无法找到 {window_end_dt.date()} 之前的交易日，返回None")
+                    return None
+            
+            # 检查调整后的窗口是否有效（起始日期必须早于或等于结束日期）
+            if window_start > window_end:
+                logger.warning(
+                    f"⚠️ 调整后窗口无效: window_start ({window_start.date()}) > window_end ({window_end.date()})，返回None"
+                )
+                return None
             
             return f"{window_start.strftime('%Y%m%d')}_{window_end.strftime('%Y%m%d')}"
         
@@ -90,8 +135,8 @@ class WindowManager:
         else:
             raise ValueError(f"不支持的 period: {period}，必须是 'daily', 'weekly' 或 'monthly'")
     
-    @staticmethod
-    def generate_window_keys(start_date: str, end_date: str, period: str, window_size: int) -> List[str]:
+    def generate_window_keys(self, start_date: str, end_date: str, period: str, window_size: int,
+                            market_code: Optional[Union[str, MarketCode]] = None) -> List[str]:
         """
         生成指定范围内的所有窗口键
         
@@ -136,11 +181,12 @@ class WindowManager:
         else:
             raise ValueError(f"不支持的 period: {period}")
         
-        # 为每个日期生成窗口键，去重
+        # 为每个日期生成窗口键，去重，过滤None
         window_keys = set()
         for date in dates:
-            window_key = WindowManager.make_window_key(date, period, window_size)
-            window_keys.add(window_key)
+            window_key = self.make_window_key(date, period, window_size, market_code)
+            if window_key is not None:  # 过滤无效窗口
+                window_keys.add(window_key)
         
         # 排序返回
         return sorted(list(window_keys))
