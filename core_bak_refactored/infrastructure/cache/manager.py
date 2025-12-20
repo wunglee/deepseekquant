@@ -24,6 +24,8 @@ from .memory import MemoryCache
 from .redis import RedisCache
 from .db import DBCache
 from core_bak_refactored.core.share.market.trading_calendar_service import get_trading_calendar_service
+from core_bak_refactored.core.share.market.market_utils import MarketUtils
+from core_bak_refactored.core.share.market.market_enums import MarketCode
 
 logger = logging.getLogger('DeepSeekQuant.CacheManager')
 
@@ -99,7 +101,7 @@ class ThreeLayerCacheManager:
         start_date: str,
         end_date: str,
         period: str = 'daily',
-        market_code: Optional[str] = None,
+        market_code: Optional[MarketCode] = None,
         db_fetch_func: Callable[[str, str], pd.DataFrame] = None,
         api_fetch_func: Callable[[str, str], pd.DataFrame] = None
     ) -> pd.DataFrame:
@@ -125,7 +127,7 @@ class ThreeLayerCacheManager:
             end_date: 结束日期（YYYY-MM-DD）
             period: 数据粒度/K线类型 (daily/weekly/monthly，默认 daily)
                     注意：period 必须 ≤ window_size
-            market_code: 市场代码 (CN/US/HK/JP/EU/SG)，用于交易日历判断，如为None则从 symbol 推断
+            market_code: 市场代码枚举 (MarketCode.CN/US/HK/JP/EU/SG)，用于交易日历判断，如为None则从 symbol 推断
             db_fetch_func: 数据库查询函数，签名为 func(start_date, end_date) -> DataFrame
             api_fetch_func: API查询函数，签名为 func(start_date, end_date) -> DataFrame
         
@@ -136,7 +138,7 @@ class ThreeLayerCacheManager:
         
         # 推断市场代码（用于交易日历）
         if market_code is None:
-            market_code = self._infer_market_code(symbol)
+            market_code = MarketUtils.infer_market_from_symbol(symbol)
         logger.debug(f"🌏 使用市场代码: {market_code}")
         
         # ========== 第1步：生成所需的所有窗口键 ==========
@@ -256,7 +258,7 @@ class ThreeLayerCacheManager:
         logger.info(f"✅ 返回数据: {len(result_df)} 条 (来自 {len(cached_windows)} 个窗口)")
         return result_df
     
-    def _merge_continuous_windows(self, window_keys: list, period: str, market_code: str) -> list:
+    def _merge_continuous_windows(self, window_keys: list, period: str, market_code: MarketCode) -> list:
         """
         合并连续的窗口键，减少网络请求次数
         
@@ -317,7 +319,7 @@ class ThreeLayerCacheManager:
         
         return merged_ranges
     
-    def _is_consecutive_windows(self, key1: str, key2: str, period: str, market_code: str) -> bool:
+    def _is_consecutive_windows(self, key1: str, key2: str, period: str, market_code: MarketCode) -> bool:
         """
         判断两个窗口是否连续（基于交易日历）
         
@@ -325,7 +327,7 @@ class ThreeLayerCacheManager:
             key1: 第一个窗口键
             key2: 第二个窗口键
             period: 数据粒度
-            market_code: 市场代码（CN/US/HK/JP/EU/SG）
+            market_code: 市场代码枚举（MarketCode.CN/US/HK/JP/EU/SG）
         
         Returns:
             True 表示连续，False 表示不连续
@@ -350,7 +352,7 @@ class ThreeLayerCacheManager:
     
     def _distribute_data_to_windows(self, symbol: str, period: str, data: pd.DataFrame, 
                                    window_keys: list, cached_windows: dict, 
-                                   current_window_key: str, query_start_date: str, market_code: str) -> None:
+                                   current_window_key: str, query_start_date: str, market_code: MarketCode) -> None:
         """
         将大范围数据分配到各个窗口，并写入缓存
         
@@ -362,7 +364,7 @@ class ThreeLayerCacheManager:
             cached_windows: 已缓存窗口字典 (输出参数)
             current_window_key: 当前窗口键
             query_start_date: 查询起始日期（用于判断起始窗口）
-            market_code: 市场代码，用于交易日历判断
+            market_code: 市场代码枚举，用于交易日历判断
         """
         if data.empty:
             return
@@ -457,48 +459,4 @@ class ThreeLayerCacheManager:
             self._cache_mode: self._fast_cache.get_stats()
         }
     
-    def _infer_market_code(self, symbol: str) -> str:
-        """
-        从 symbol 推断市场代码
-        
-        Args:
-            symbol: 股票/指数代码
-        
-        Returns:
-            市场代码 (CN/US/HK/JP/EU/SG)
-        
-        Examples:
-            >>> manager._infer_market_code('000001.SZ')
-            'CN'
-            >>> manager._infer_market_code('AAPL')
-            'US'
-            >>> manager._infer_market_code('0700.HK')
-            'HK'
-        """
-        if not symbol:
-            return 'CN'  # 默认中国市场
-        
-        symbol_upper = symbol.upper()
-        
-        # 中国市场：.SH 或 .SZ 后缀
-        if '.SH' in symbol_upper or '.SZ' in symbol_upper:
-            return 'CN'
-        
-        # 香港市场：.HK 后缀
-        if '.HK' in symbol_upper:
-            return 'HK'
-        
-        # 日本市场：.T 或 .JP 后缀
-        if '.T' in symbol_upper or '.JP' in symbol_upper:
-            return 'JP'
-        
-        # 新加坡市场：.SI 或 .SG 后缀
-        if '.SI' in symbol_upper or '.SG' in symbol_upper:
-            return 'SG'
-        
-        # 欧洲市场：.L 或 .LON 后缀
-        if '.L' in symbol_upper or '.LON' in symbol_upper:
-            return 'EU'
-        
-        # 默认为美国市场（无后缀）
-        return 'US'
+

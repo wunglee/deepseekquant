@@ -18,8 +18,10 @@
 
 import logging
 from datetime import datetime, timedelta
-from typing import Optional, List
+from typing import Optional, List, Union
 import pandas as pd
+
+from core_bak_refactored.core.share.market.market_enums import MarketCode
 
 logger = logging.getLogger(__name__)
 
@@ -66,12 +68,12 @@ class TradingCalendarService:
             logger.warning("⚠️ 交易日历服务降级: pandas_market_calendars 不可用，仅支持周末判断")
             self._available = False
     
-    def _get_calendar(self, market_code: str):
+    def _get_calendar(self, market_code: Union[str, MarketCode]):
         """
-        获取指定市场的交易日历
+                获取指定市场的交易日历
         
         Args:
-            market_code: 市场代码 (CN/US/HK/JP/EU/SG)
+            market_code: 市场代码枚举或字符串 (MarketCode.CN 或 'CN')
         
         Returns:
             交易日历对象，如果不可用则返回None
@@ -79,30 +81,33 @@ class TradingCalendarService:
         if not self._available:
             return None
         
-        if market_code not in self._calendars:
+        # 支持 MarketCode 枚举和字符串
+        market_code_str = str(market_code) if isinstance(market_code, MarketCode) else market_code
+        
+        if market_code_str not in self._calendars:
             mcal = _get_mcal()
-            exchange_code = self.MARKET_CALENDAR_MAP.get(market_code)
+            exchange_code = self.MARKET_CALENDAR_MAP.get(market_code_str)
             
             if not exchange_code:
-                logger.warning(f"未知市场代码: {market_code}，回退到NYSE")
+                logger.warning(f"未知市场代码: {market_code_str}，回退到NYSE")
                 exchange_code = 'NYSE'
             
             try:
                 calendar = mcal.get_calendar(exchange_code)
-                self._calendars[market_code] = calendar
-                logger.debug(f"加载交易日历: {market_code} -> {exchange_code}")
+                self._calendars[market_code_str] = calendar
+                logger.debug(f"加载交易日历: {market_code_str} -> {exchange_code}")
             except Exception as e:
-                logger.error(f"加载交易日历失败 ({market_code}): {e}")
+                logger.error(f"加载交易日历失败 ({market_code_str}): {e}")
                 return None
         
-        return self._calendars.get(market_code)
+        return self._calendars.get(market_code_str)
     
-    def is_trading_day(self, market_code: str, date: datetime) -> bool:
+    def is_trading_day(self, market_code: Union[str, MarketCode], date: datetime) -> bool:
         """
         判断指定日期是否为交易日
         
         Args:
-            market_code: 市场代码 (CN/US/HK/JP/EU/SG)
+            market_code: 市场代码枚举或字符串 (MarketCode.CN 或 'CN')
             date: 日期
         
         Returns:
@@ -110,13 +115,16 @@ class TradingCalendarService:
         
         Examples:
             >>> service = TradingCalendarService()
-            >>> service.is_trading_day('CN', datetime(2024, 10, 1))  # 国庆节
+            >>> service.is_trading_day(MarketCode.CN, datetime(2024, 10, 1))  # 国庆节
             False
             >>> service.is_trading_day('CN', datetime(2024, 10, 8))  # 工作日
             True
         """
+        # 支持 MarketCode 枚举和字符串
+        market_code_str = str(market_code) if isinstance(market_code, MarketCode) else market_code
+        
         # 缓存键
-        cache_key = f"{market_code}_{date.strftime('%Y-%m-%d')}"
+        cache_key = f"{market_code_str}_{date.strftime('%Y-%m-%d')}"
         if cache_key in self._cache:
             return self._cache[cache_key]
         
@@ -127,7 +135,7 @@ class TradingCalendarService:
             return result
         
         # 使用交易日历
-        calendar = self._get_calendar(market_code)
+        calendar = self._get_calendar(market_code_str)
         if calendar is None:
             # 回退到周末判断
             result = date.weekday() < 5
@@ -150,18 +158,18 @@ class TradingCalendarService:
             self._cache[cache_key] = result
             return result
         except Exception as e:
-            logger.warning(f"交易日判断失败 ({market_code}, {date}): {e}，回退到周末判断")
+            logger.warning(f"交易日判断失败 ({market_code_str}, {date}): {e}，回退到周末判断")
             result = date.weekday() < 5
             self._cache[cache_key] = result
             return result
     
-    def get_trading_days_between(self, market_code: str, start_date: datetime, 
+    def get_trading_days_between(self, market_code: Union[str, MarketCode], start_date: datetime, 
                                  end_date: datetime) -> List[datetime]:
         """
         获取两个日期之间的所有交易日
         
         Args:
-            market_code: 市场代码
+            market_code: 市场代码枚举或字符串
             start_date: 起始日期（包含）
             end_date: 结束日期（包含）
         
@@ -170,11 +178,13 @@ class TradingCalendarService:
         
         Examples:
             >>> service = TradingCalendarService()
-            >>> days = service.get_trading_days_between('CN', 
+            >>> days = service.get_trading_days_between(MarketCode.CN, 
             ...     datetime(2024, 9, 30), datetime(2024, 10, 8))
             >>> len(days)  # 跳过国庆假期
             2  # 9月30日 和 10月8日
         """
+        # 支持 MarketCode 枚举和字符串
+        market_code_str = str(market_code) if isinstance(market_code, MarketCode) else market_code
         # 降级模式：仅排除周末
         if not self._available:
             trading_days = []
@@ -186,7 +196,7 @@ class TradingCalendarService:
             return trading_days
         
         # 使用交易日历
-        calendar = self._get_calendar(market_code)
+        calendar = self._get_calendar(market_code_str)
         if calendar is None:
             # 回退到周末判断
             trading_days = []
@@ -207,7 +217,7 @@ class TradingCalendarService:
             trading_days = [dt.to_pydatetime() for dt in schedule.index]
             return trading_days
         except Exception as e:
-            logger.warning(f"获取交易日列表失败 ({market_code}): {e}，回退到周末判断")
+            logger.warning(f"获取交易日列表失败 ({market_code_str}): {e}，回退到周末判断")
             trading_days = []
             current = start_date
             while current <= end_date:
@@ -216,13 +226,13 @@ class TradingCalendarService:
                 current += timedelta(days=1)
             return trading_days
     
-    def is_consecutive_trading_days(self, market_code: str, date1: datetime, 
+    def is_consecutive_trading_days(self, market_code: Union[str, MarketCode], date1: datetime, 
                                     date2: datetime) -> bool:
         """
         判断两个日期是否为连续交易日（中间没有其他交易日）
         
         Args:
-            market_code: 市场代码
+            market_code: 市场代码枚举或字符串
             date1: 第一个日期（应早于date2）
             date2: 第二个日期
         
@@ -232,11 +242,11 @@ class TradingCalendarService:
         Examples:
             >>> service = TradingCalendarService()
             >>> # 周五 -> 下周一（连续）
-            >>> service.is_consecutive_trading_days('CN',
+            >>> service.is_consecutive_trading_days(MarketCode.CN,
             ...     datetime(2024, 1, 5), datetime(2024, 1, 8))
             True
             >>> # 国庆前 -> 国庆后（不连续，中间有假期）
-            >>> service.is_consecutive_trading_days('CN',
+            >>> service.is_consecutive_trading_days(MarketCode.CN,
             ...     datetime(2024, 9, 30), datetime(2024, 10, 8))
             True  # 实际上是连续的（因为中间都是假期）
         """
@@ -252,12 +262,12 @@ class TradingCalendarService:
         
         return False
     
-    def get_next_trading_day(self, market_code: str, date: datetime) -> Optional[datetime]:
+    def get_next_trading_day(self, market_code: Union[str, MarketCode], date: datetime) -> Optional[datetime]:
         """
         获取下一个交易日
         
         Args:
-            market_code: 市场代码
+            market_code: 市场代码枚举或字符串
             date: 当前日期
         
         Returns:
@@ -269,12 +279,12 @@ class TradingCalendarService:
         
         return trading_days[0] if trading_days else None
     
-    def get_previous_trading_day(self, market_code: str, date: datetime) -> Optional[datetime]:
+    def get_previous_trading_day(self, market_code: Union[str, MarketCode], date: datetime) -> Optional[datetime]:
         """
         获取上一个交易日
         
         Args:
-            market_code: 市场代码
+            market_code: 市场代码枚举或字符串
             date: 当前日期
         
         Returns:
