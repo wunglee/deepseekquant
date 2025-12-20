@@ -321,34 +321,103 @@ class ThreeLayerCacheManager:
     
     def _is_consecutive_windows(self, key1: str, key2: str, period: str, market_code: MarketCode) -> bool:
         """
-        判断两个窗口是否连续（基于交易日历）
+        判断两个窗口是否连续（基于不同周期的判断逻辑）
         
         Args:
             key1: 第一个窗口键
             key2: 第二个窗口键
-            period: 数据粒度
+            period: 数据粒度 (daily/weekly/monthly)
             market_code: 市场代码枚举（MarketCode.CN/US/HK/JP/EU/SG）
         
         Returns:
             True 表示连续，False 表示不连续
             
-        注意：
-            - 使用交易日历服务判断连续性
-            - 考虑周末和节假日（如春节、国庆、感恩节等）
-            - 降级模式：如果交易日历不可用，则仅判断周末
+        逻辑：
+            - daily: 使用交易日历判断连续性（考虑节假日）
+            - weekly: 判断ISO周号是否连续
+            - monthly: 判断月份是否连续
         """
         from datetime import datetime
         
-        # 获取两个窗口的日期范围
-        _, end1 = self._window_mgr.window_key_to_date_range(key1, period)
-        start2, _ = self._window_mgr.window_key_to_date_range(key2, period)
+        if period == 'daily':
+            # Daily周期：使用交易日历判断连续性
+            # 获取两个窗口的日期范围
+            _, end1 = self._window_mgr.window_key_to_date_range(key1, period)
+            start2, _ = self._window_mgr.window_key_to_date_range(key2, period)
+            
+            # 转换为datetime对象
+            end1_dt = datetime.strptime(end1, '%Y-%m-%d')
+            start2_dt = datetime.strptime(start2, '%Y-%m-%d')
+            
+            # 使用交易日历服务判断连续性
+            return self._calendar_service.is_consecutive_trading_days(market_code, end1_dt, start2_dt)
         
-        # 转换为datetime对象
-        end1_dt = datetime.strptime(end1, '%Y-%m-%d')
-        start2_dt = datetime.strptime(start2, '%Y-%m-%d')
+        elif period == 'weekly':
+            # Weekly周期：判断ISO周号是否连续
+            # 窗口键格式：YYYY-Www_Www（例如：2025-W01_W01）
+            try:
+                # 解析key1的结束周
+                parts1 = key1.split('_')
+                year1_week = parts1[0]  # YYYY-Www
+                end_week1 = parts1[1]   # Www
+                year1 = int(year1_week.split('-W')[0])
+                week1_end = int(end_week1.replace('W', ''))
+                
+                # 解析key2的起始周
+                parts2 = key2.split('_')
+                year2_week = parts2[0]  # YYYY-Www
+                start_week2_str = year2_week.split('-W')[1]
+                year2 = int(year2_week.split('-W')[0])
+                week2_start = int(start_week2_str)
+                
+                # 判断连续性
+                if year1 == year2:
+                    # 同一年：周号连续（week1_end + 1 == week2_start）
+                    return (week1_end + 1) == week2_start
+                elif year1 + 1 == year2:
+                    # 跨年：year1的最后一周 → year2的第1周
+                    # year1的最后一周号通常是52或53
+                    return week1_end >= 52 and week2_start == 1
+                else:
+                    return False
+            except (ValueError, IndexError) as e:
+                logger.warning(f"⚠️ 解析周窗口键失败: {key1}, {key2}, error: {e}")
+                return False
         
-        # 使用交易日历服务判断连续性
-        return self._calendar_service.is_consecutive_trading_days(market_code, end1_dt, start2_dt)
+        elif period == 'monthly':
+            # Monthly周期：判断月份是否连续
+            # 窗口键格式：YYYY-MM_MM（例如：2025-01_03）
+            try:
+                # 解析key1的结束月
+                parts1 = key1.split('_')
+                year_month1 = parts1[0]  # YYYY-MM
+                end_month1_str = parts1[1]  # MM
+                year1 = int(year_month1.split('-')[0])
+                month1_end = int(end_month1_str)
+                
+                # 解析key2的起始月
+                parts2 = key2.split('_')
+                year_month2 = parts2[0]  # YYYY-MM
+                month2_start_str = year_month2.split('-')[1]
+                year2 = int(year_month2.split('-')[0])
+                month2_start = int(month2_start_str)
+                
+                # 判断连续性
+                if year1 == year2:
+                    # 同一年：月份连续（month1_end + 1 == month2_start）
+                    return (month1_end + 1) == month2_start
+                elif year1 + 1 == year2:
+                    # 跨年：year1的12月 → year2的1月
+                    return month1_end == 12 and month2_start == 1
+                else:
+                    return False
+            except (ValueError, IndexError) as e:
+                logger.warning(f"⚠️ 解析月窗口键失败: {key1}, {key2}, error: {e}")
+                return False
+        
+        else:
+            logger.warning(f"⚠️ 不支持的周期: {period}")
+            return False
     
     def _distribute_data_to_windows(self, symbol: str, period: str, data: pd.DataFrame, 
                                    window_keys: list, cached_windows: dict, 

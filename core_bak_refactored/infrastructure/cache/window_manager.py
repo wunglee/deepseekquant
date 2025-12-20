@@ -105,9 +105,6 @@ class WindowManager:
             
             # 检查调整后的窗口是否有效（起始日期必须早于或等于结束日期）
             if window_start > window_end:
-                logger.warning(
-                    f"⚠️ 调整后窗口无效: window_start ({window_start.date()}) > window_end ({window_end.date()})，返回None"
-                )
                 return None
             
             return f"{window_start.strftime('%Y%m%d')}_{window_end.strftime('%Y%m%d')}"
