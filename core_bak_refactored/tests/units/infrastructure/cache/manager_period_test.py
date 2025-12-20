@@ -2,9 +2,8 @@
 ThreeLayerCacheManager Period参数传递测试
 
 测试缓存管理器是否正确传递period参数给fetch函数：
-1. db_fetch_func支持period参数
-2. api_fetch_func支持period参数
-3. 不支持period参数的向后兼容性
+1. db_fetch_func必须支持period参数
+2. api_fetch_func必须支持period参数
 """
 
 import unittest
@@ -33,7 +32,7 @@ class ManagerPeriodTest(unittest.TestCase):
     # ========== API Fetch Period参数测试 ==========
     
     def test_api_fetch_with_period_parameter(self):
-        """测试api_fetch_func支持period参数时正确传递"""
+        """测试api_fetch_func必须接收period参数"""
         # 创建真实函数（支持period参数）
         call_log = []
         def api_fetch_with_period(start_date, end_date, period=None):
@@ -57,26 +56,6 @@ class ManagerPeriodTest(unittest.TestCase):
         # 验证api_fetch_func被调用，且传入了period参数
         self.assertTrue(len(call_log) > 0)
         self.assertEqual(call_log[0]['period'], 'daily')
-    
-    def test_api_fetch_without_period_parameter(self):
-        """测试api_fetch_func不支持period参数时的向后兼容"""
-        # 创建不接受period参数的函数
-        def api_fetch_legacy(start_date, end_date):
-            return self._create_test_df()
-        
-        # 调用缓存管理器（不应抛出异常）
-        result = self.cache.get_data(
-            symbol='000001.SZ',
-            period='daily',
-            start_date='2025-03-10',
-            end_date='2025-03-14',
-            api_fetch_func=api_fetch_legacy,
-            market_code=MarketCode.CN
-        )
-        
-        # 验证结果
-        self.assertIsNotNone(result)
-        self.assertFalse(result.empty)
     
     def test_api_fetch_weekly_period(self):
         """测试weekly周期传递period参数"""
@@ -117,7 +96,7 @@ class ManagerPeriodTest(unittest.TestCase):
     # ========== DB Fetch Period参数测试 ==========
     
     def test_db_fetch_with_period_parameter(self):
-        """测试db_fetch_func支持period参数时正确传递"""
+        """测试db_fetch_func必须接收period参数"""
         # 创建真实函数（支持period参数）
         db_call_log = []
         def db_fetch_with_period(start_date, end_date, period=None):
@@ -139,29 +118,6 @@ class ManagerPeriodTest(unittest.TestCase):
         # 验证db_fetch_func被调用，且传入了period参数
         self.assertTrue(len(db_call_log) > 0)
         self.assertEqual(db_call_log[0]['period'], 'daily')
-    
-    def test_db_fetch_without_period_parameter(self):
-        """测试db_fetch_func不支持period参数时的向后兼容"""
-        # 创建不接受period参数的函数
-        def db_fetch_legacy(start_date, end_date):
-            return None  # 无数据
-        
-        api_fetch_func = Mock(return_value=self._create_test_df())
-        
-        # 调用缓存管理器（不应抛出异常）
-        result = self.cache.get_data(
-            symbol='000001.SZ',
-            period='daily',
-            start_date='2025-03-10',
-            end_date='2025-03-14',
-            db_fetch_func=db_fetch_legacy,
-            api_fetch_func=api_fetch_func,
-            market_code=MarketCode.CN
-        )
-        
-        # 验证结果
-        self.assertIsNotNone(result)
-        self.assertFalse(result.empty)
     
     # ========== 综合场景测试 ==========
     
@@ -193,35 +149,6 @@ class ManagerPeriodTest(unittest.TestCase):
         self.assertTrue(len(api_call_log) > 0)
         self.assertEqual(db_call_log[0]['period'], 'weekly')
         self.assertEqual(api_call_log[0]['period'], 'weekly')
-    
-    def test_mixed_support_db_has_period_api_not(self):
-        """测试DB支持period但API不支持"""
-        db_call_log = []
-        
-        def db_fetch_with_period(start_date, end_date, period=None):
-            db_call_log.append({'start_date': start_date, 'end_date': end_date, 'period': period})
-            return None
-        
-        def api_fetch_legacy(start_date, end_date):
-            return self._create_test_df()
-        
-        result = self.cache.get_data(
-            symbol='000001.SZ',
-            period='daily',
-            start_date='2025-03-10',
-            end_date='2025-03-14',
-            db_fetch_func=db_fetch_with_period,
-            api_fetch_func=api_fetch_legacy,
-            market_code=MarketCode.CN
-        )
-        
-        # 验证结果
-        self.assertIsNotNone(result)
-        self.assertFalse(result.empty)
-        
-        # 验证DB收到period参数，API按旧方式调用
-        self.assertTrue(len(db_call_log) > 0)
-        self.assertEqual(db_call_log[0]['period'], 'daily')
 
 
 if __name__ == '__main__':
