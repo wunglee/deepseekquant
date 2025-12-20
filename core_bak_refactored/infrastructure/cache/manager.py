@@ -215,8 +215,8 @@ class ThreeLayerCacheManager:
                 
                 if db_df is not None and not db_df.empty:
                     logger.info(f"✅ 数据库批量命中: {range_start} ~ {range_end} ({len(db_df)} 条)")
-                    # 分配数据到各个窗口
-                    self._distribute_data_to_windows(symbol, period, db_df, range_windows, cached_windows, current_window_key, start_date)
+                    # 分配数据到各个穗口
+                    self._distribute_data_to_windows(symbol, period, db_df, range_windows, cached_windows, current_window_key, start_date, market_code)
                     continue
                 
                 # 3.2 数据库也未命中，调用外部 API
@@ -229,8 +229,8 @@ class ThreeLayerCacheManager:
                     
                     if api_df is not None and not api_df.empty:
                         logger.info(f"✅ API批量返回: {range_start} ~ {range_end} ({len(api_df)} 条)")
-                        # 分配数据到各个窗口
-                        self._distribute_data_to_windows(symbol, period, api_df, range_windows, cached_windows, current_window_key, start_date)
+                        # 分配数据到各个穗口
+                        self._distribute_data_to_windows(symbol, period, api_df, range_windows, cached_windows, current_window_key, start_date, market_code)
                     else:
                         logger.warning(f"⚠️ API无数据: {range_start} ~ {range_end}")
                 except Exception as e:
@@ -350,7 +350,7 @@ class ThreeLayerCacheManager:
     
     def _distribute_data_to_windows(self, symbol: str, period: str, data: pd.DataFrame, 
                                    window_keys: list, cached_windows: dict, 
-                                   current_window_key: str, query_start_date: str) -> None:
+                                   current_window_key: str, query_start_date: str, market_code: str) -> None:
         """
         将大范围数据分配到各个窗口，并写入缓存
         
@@ -362,6 +362,7 @@ class ThreeLayerCacheManager:
             cached_windows: 已缓存窗口字典 (输出参数)
             current_window_key: 当前窗口键
             query_start_date: 查询起始日期（用于判断起始窗口）
+            market_code: 市场代码，用于交易日历判断
         """
         if data.empty:
             return
@@ -375,7 +376,16 @@ class ThreeLayerCacheManager:
         actual_start = data['date'].min()
         actual_end = data['date'].max()
         query_start = pd.to_datetime(query_start_date)
-        # 分配数据到各个窗口
+        
+        # 🔧 关键修复：将 query_start 调整到下一个交易日（如果不是交易日）
+        query_start_dt = query_start.to_pydatetime()
+        if not self._calendar_service.is_trading_day(market_code, query_start_dt):
+            next_trading_day = self._calendar_service.get_next_trading_day(market_code, query_start_dt)
+            if next_trading_day:
+                query_start = pd.Timestamp(next_trading_day)
+                logger.debug(f"📅 调整查询起始日期: {query_start_dt.date()} (非交易日) → {next_trading_day.date()} (交易日)")
+        
+        # 分配数据到各个穗口
         for window_key in window_keys:
             window_start, window_end = self._window_mgr.window_key_to_date_range(window_key, period)
             window_start_dt = pd.to_datetime(window_start)
