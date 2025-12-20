@@ -50,6 +50,7 @@ dependencies:
 
   - pip
   - cachetools>=5.0.0
+  - pandas-market-calendars>=4.1.0
   - pip:
     - prometheus-client>=0.14.0
     - alpha-vantage>=2.3.0

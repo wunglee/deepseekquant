@@ -15,7 +15,7 @@
 """
 
 import logging
-from typing import Dict, List, Callable
+from typing import Dict, List, Callable, Optional
 import pandas as pd
 from jinja2.utils import missing
 
@@ -23,6 +23,7 @@ from .window_manager import WindowManager
 from .memory import MemoryCache
 from .redis import RedisCache
 from .db import DBCache
+from core_bak_refactored.core.share.market.trading_calendar_service import get_trading_calendar_service
 
 logger = logging.getLogger('DeepSeekQuant.CacheManager')
 
@@ -87,6 +88,9 @@ class ThreeLayerCacheManager:
         # 数据库缓存
         self._db_cache = DBCache(db_service=db_service)
         
+        # 交易日历服务（用于判断连续性）
+        self._calendar_service = get_trading_calendar_service()
+        
         logger.info(f"✅ ThreeLayerCacheManager 初始化完成: cache_mode={cache_mode}, window_size={window_size}")
     
     def get_data(
@@ -95,6 +99,7 @@ class ThreeLayerCacheManager:
         start_date: str,
         end_date: str,
         period: str = 'daily',
+        market_code: Optional[str] = None,
         db_fetch_func: Callable[[str, str], pd.DataFrame] = None,
         api_fetch_func: Callable[[str, str], pd.DataFrame] = None
     ) -> pd.DataFrame:
@@ -120,6 +125,7 @@ class ThreeLayerCacheManager:
             end_date: 结束日期（YYYY-MM-DD）
             period: 数据粒度/K线类型 (daily/weekly/monthly，默认 daily)
                     注意：period 必须 ≤ window_size
+            market_code: 市场代码 (CN/US/HK/JP/EU/SG)，用于交易日历判断，如为None则从 symbol 推断
             db_fetch_func: 数据库查询函数，签名为 func(start_date, end_date) -> DataFrame
             api_fetch_func: API查询函数，签名为 func(start_date, end_date) -> DataFrame
         
@@ -127,6 +133,11 @@ class ThreeLayerCacheManager:
             完整的 DataFrame
         """
         logger.debug(f"📋 三层缓存查询: {symbol}, {start_date} ~ {end_date}, window_size={self._window_size}, mode={self._cache_mode}")
+        
+        # 推断市场代码（用于交易日历）
+        if market_code is None:
+            market_code = self._infer_market_code(symbol)
+        logger.debug(f"🌏 使用市场代码: {market_code}")
         
         # ========== 第1步：生成所需的所有窗口键 ==========
         window_keys = self._window_mgr.generate_window_keys(start_date, end_date, period, self._window_size)
@@ -187,7 +198,7 @@ class ThreeLayerCacheManager:
             logger.info(f"🔍 缺失 {len(missing_windows)} 个窗口，开始三层查询")
             
             # 🔧 关键优化：合并连续未命中窗口，减少网络请求次数
-            merged_ranges = self._merge_continuous_windows(missing_windows, period)
+            merged_ranges = self._merge_continuous_windows(missing_windows, period, market_code)
             logger.info(f"🔧 合并后: {len(merged_ranges)} 个连续范围 (原 {len(missing_windows)} 个窗口)")
             
             for range_info in merged_ranges:
@@ -245,13 +256,14 @@ class ThreeLayerCacheManager:
         logger.info(f"✅ 返回数据: {len(result_df)} 条 (来自 {len(cached_windows)} 个窗口)")
         return result_df
     
-    def _merge_continuous_windows(self, window_keys: list, period: str) -> list:
+    def _merge_continuous_windows(self, window_keys: list, period: str, market_code: str) -> list:
         """
         合并连续的窗口键，减少网络请求次数
         
         Args:
             window_keys: 缺失窗口键列表 (已排序)
             period: 数据粒度
+            market_code: 市场代码，用于交易日历判断
         
         Returns:
             合并后的连续范围列表，每个元素包含:
@@ -280,7 +292,7 @@ class ThreeLayerCacheManager:
             curr_key = sorted_keys[i]
             
             # 检查是否连续：下一个窗口紧跟上一个窗口
-            if self._is_consecutive_windows(prev_key, curr_key, period):
+            if self._is_consecutive_windows(prev_key, curr_key, period, market_code):
                 # 连续，加入当前范围
                 current_range_windows.append(curr_key)
             else:
@@ -305,25 +317,23 @@ class ThreeLayerCacheManager:
         
         return merged_ranges
     
-    def _is_consecutive_windows(self, key1: str, key2: str, period: str) -> bool:
+    def _is_consecutive_windows(self, key1: str, key2: str, period: str, market_code: str) -> bool:
         """
-        判断两个窗口是否连续（仅判断周末，不判断节假日）
+        判断两个窗口是否连续（基于交易日历）
         
         Args:
             key1: 第一个窗口键
             key2: 第二个窗口键
             period: 数据粒度
+            market_code: 市场代码（CN/US/HK/JP/EU/SG）
         
         Returns:
             True 表示连续，False 表示不连续
             
         注意：
-            - 仅判断周末连续性（3天间隔 = 周五→下周一）
-            - 不判断节假日（因为不同市场的节假日不同，无法通过weekday()判断）
-            - 节假日导致的非连续窗口会被当作缺失窗口，重新查询数据
-            - 比如：
-              - days_gap=4: 可能是周四→下周一（周五节假日），但无法确定
-              - days_gap>4: 更长的假期（如春节、7天，国庆、7天）
+            - 使用交易日历服务判断连续性
+            - 考虑周末和节假日（如春节、国庆、感恩节等）
+            - 降级模式：如果交易日历不可用，则仅判断周末
         """
         from datetime import datetime
         
@@ -335,23 +345,8 @@ class ThreeLayerCacheManager:
         end1_dt = datetime.strptime(end1, '%Y-%m-%d')
         start2_dt = datetime.strptime(start2, '%Y-%m-%d')
         
-        # 计算日期间隔
-        days_gap = (start2_dt - end1_dt).days
-        
-        # 判断连续性：
-        # 1. 相邻日（1天间隔）
-        # 2. 跨周末（3天间隔）- 周五→下周一
-        if days_gap == 1:
-            # 普通相邻日（例如：周一→周二）
-            return True
-        elif days_gap == 3:
-            # 检查是否为周五→下周一
-            if end1_dt.weekday() == 4:  # 4=周五
-                return True
-        
-        # 其他情况（包括节假日）视为不连续
-        # 这些情况会被当作缺失窗口，重新查询数据
-        return False
+        # 使用交易日历服务判断连续性
+        return self._calendar_service.is_consecutive_trading_days(market_code, end1_dt, start2_dt)
     
     def _distribute_data_to_windows(self, symbol: str, period: str, data: pd.DataFrame, 
                                    window_keys: list, cached_windows: dict, 
@@ -451,3 +446,49 @@ class ThreeLayerCacheManager:
             'cache_mode': self._cache_mode,
             self._cache_mode: self._fast_cache.get_stats()
         }
+    
+    def _infer_market_code(self, symbol: str) -> str:
+        """
+        从 symbol 推断市场代码
+        
+        Args:
+            symbol: 股票/指数代码
+        
+        Returns:
+            市场代码 (CN/US/HK/JP/EU/SG)
+        
+        Examples:
+            >>> manager._infer_market_code('000001.SZ')
+            'CN'
+            >>> manager._infer_market_code('AAPL')
+            'US'
+            >>> manager._infer_market_code('0700.HK')
+            'HK'
+        """
+        if not symbol:
+            return 'CN'  # 默认中国市场
+        
+        symbol_upper = symbol.upper()
+        
+        # 中国市场：.SH 或 .SZ 后缀
+        if '.SH' in symbol_upper or '.SZ' in symbol_upper:
+            return 'CN'
+        
+        # 香港市场：.HK 后缀
+        if '.HK' in symbol_upper:
+            return 'HK'
+        
+        # 日本市场：.T 或 .JP 后缀
+        if '.T' in symbol_upper or '.JP' in symbol_upper:
+            return 'JP'
+        
+        # 新加坡市场：.SI 或 .SG 后缀
+        if '.SI' in symbol_upper or '.SG' in symbol_upper:
+            return 'SG'
+        
+        # 欧洲市场：.L 或 .LON 后缀
+        if '.L' in symbol_upper or '.LON' in symbol_upper:
+            return 'EU'
+        
+        # 默认为美国市场（无后缀）
+        return 'US'
