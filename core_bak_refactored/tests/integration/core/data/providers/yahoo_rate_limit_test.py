@@ -25,8 +25,10 @@ print("=" * 70)
 
 # 读取配置
 config = ConfigManager()
-use_proxy = config.get('data_providers.yahoo_finance.use_proxy', default=False)
-proxy_config = config.get_proxies_from_config()
+provider_config = config.get_provider_config()
+yahoo_provider = next((p for p in provider_config.providers if p.get('id') == 'yahoo'), {})
+use_proxy = yahoo_provider.get('use_proxy', False)
+proxy_config = config.get_proxies_from_config() if use_proxy else None
 
 print(f"\n📋 当前配置:")
 print(f"   use_proxy: {use_proxy}")

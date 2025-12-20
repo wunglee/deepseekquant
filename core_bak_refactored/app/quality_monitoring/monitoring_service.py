@@ -35,29 +35,24 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional
-from dataclasses import asdict
 
+from core_bak_refactored.core.data.providers.factory import get_global_factory
 from core_bak_refactored.core.data.quality import (
-    DataQualityChecker,
-    DataQualityReport
+    DataQualityChecker
 )
 from core_bak_refactored.core.monitoring.alert_manager import (
     AlertManager,
     AlertConfig,
-    AlertSeverity,
-    AlertRecord
+    AlertSeverity
 )
-from core_bak_refactored.core.share import (
+from core_bak_refactored.infrastructure import (
     PerformanceStatsManager,
     ConfigManager,
-    MonitoringConfig,
-    AlertingConfig
 )
 from core_bak_refactored.infrastructure import (
     SystemHealthCalculators,
     QualityAnalysisCalculators
 )
-from core_bak_refactored.core.data.providers.factory import get_global_factory
 
 logger = logging.getLogger('DeepSeekQuant.MonitoringService')
 
@@ -106,14 +101,15 @@ class QualityMonitoringService:
         # 初始化数据提供者（通过配置映射自动选择）
         # 从配置获取默认指数和对应市场
         factory = get_global_factory()
-        data_config = self.config_manager.get_data_config()
+        data_config = self.config_manager.get_provider_config()
         default_index = data_config.default_index  # 例如: '000300.SH'
         
         # 根据指数代码推断市场
         market = self._infer_market_from_index(default_index)
         
-        # 从 market_sources 映射获取该市场的数据源ID
-        market_sources = data_config.market_sources or {}
+        # 从 MarketConfig 的 market_sources 映射获取该市场的数据源ID
+        market_config = self.config_manager.get_market_config()
+        market_sources = market_config.market_sources or {}
         provider_id = market_sources.get(market, 'akshare')  # 默认使用 akshare
         
         # 通过工厂创建对应的provider
@@ -379,7 +375,7 @@ class QualityMonitoringService:
     def _calculate_throughput(self, uptime_seconds: float) -> float:
         """计算吞吐量（数据点/秒）"""
         if uptime_seconds > 0:
-            return self._performance_stats['data_points_processed'] / uptime_seconds
+            return self.performance_stats_manager.get_stats_dict()['data_points_processed'] / uptime_seconds
         return 0.0
     
     def _analyze_quality(self, quality_history: List[Dict]) -> Dict[str, Any]:
@@ -458,7 +454,6 @@ class QualityMonitoringService:
             - alerts_triggered: 触发的告警数
             - quality_score: 质量得分
         """
-        import pandas as pd
         cycle_start = datetime.now()
         summary = {
             'cycle_time': 0.0,
@@ -476,7 +471,7 @@ class QualityMonitoringService:
             logger.info("开始监控检查周期")
             
             # 使用真实数据提供者获取数据（禁止模拟数据）
-            index_id = self.config_manager.get_data_config().default_index
+            index_id = self.config_manager.get_provider_config().default_index
             if not index_id:
                 raise RuntimeError("未配置默认指数代码，禁止使用模拟数据。请在配置中设置 data.default_index")
             end_date = datetime.now().strftime('%Y-%m-%d')

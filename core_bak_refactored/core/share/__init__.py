@@ -6,16 +6,16 @@
 - 统一管理共享枚举、配置和工具函数
 """
 
-from .market.market_config import MarketConfigManager, MarketCode
+from .market.market_config import MarketConfig, MarketCode
 from .market.market_enums import DataSource
 from .exchange_rates import MockExchangeRateAdapter, CurrencyConverter
 from .models import MarketData
-from .config_manager import ConfigManager, MonitoringConfig, AlertingConfig, DataConfig, SystemConfig
-from .performance_stats import PerformanceStatsManager, PerformanceMetrics
+from .config_manager import ConfigManager, MonitoringConfig, AlertingConfig, ProvidersConfig, SystemConfig, CacheConfig
+
 
 __all__ = [
     # 市场配置
-    'MarketConfigManager',
+    'MarketConfig',
     'MarketCode',
     
     # 市场枚举
@@ -29,12 +29,9 @@ __all__ = [
     'ConfigManager',
     'MonitoringConfig',
     'AlertingConfig',
-    'DataConfig',
+    'ProvidersConfig',
     'SystemConfig',
-    
-    # 性能统计
-    'PerformanceStatsManager',
-    'PerformanceMetrics',
+    'CacheConfig',
     
     # 数据模型
     'MarketData',

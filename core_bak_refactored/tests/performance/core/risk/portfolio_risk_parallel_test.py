@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 from datetime import datetime, timedelta
 from core_bak_refactored.core.risk.portfolio_risk import PortfolioRiskAnalyzer
-from core_bak_refactored.core.share.market.market_config import MarketConfigManager
+from core_bak_refactored.core.share.market.market_config import MarketConfig
 
 
 class MockPortfolioState:
@@ -30,7 +30,7 @@ class TestPortfolioRiskParallel(unittest.TestCase):
         np.random.seed(42)
         
         # 生成配置
-        config_manager = MarketConfigManager()
+        config_manager = MarketConfig()
         self.config = config_manager.generate_config_template('CN')
         
         # 创建分析器（启用并行）

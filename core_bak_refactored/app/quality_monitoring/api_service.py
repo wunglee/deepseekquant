@@ -160,6 +160,56 @@ class DataQualityAPIService:
             data_provider=data_provider,
             indicator_service=indicator_service
         )
+    
+    def _create_provider_instance(self, provider: Dict[str, Any], credentials: Dict[str, Any] = None, proxy_config: Dict[str, Any] = None):
+        """创建数据提供者实例（使用 factory.py 的功能）
+        
+        Args:
+            provider: 数据提供者配置字典
+            credentials: 凭证信息（可选）
+            proxy_config: 代理配置（可选）
+        
+        Returns:
+            数据提供者实例，失败返回 None
+        
+        Note:
+            该方法利用 DataProviderFactory 的动态加载功能，
+            并支持传入自定义凭证和代理配置。
+        """
+        try:
+            provider_id = provider.get('id')
+            if not provider_id:
+                logger.error(f"数据提供者配置不完整: {provider}")
+                return None
+            
+            # 使用 DataProviderFactory 的 _get_provider_class 逻辑
+            # 但需要支持自定义凭证和代理，所以直接使用动态导入
+            adapter_module = provider.get('adapter_module')
+            adapter_class = provider.get('adapter_class')
+            
+            if not adapter_module or not adapter_class:
+                logger.error(f"Provider '{provider_id}' 配置不完整：缺少 adapter_module 或 adapter_class")
+                return None
+            
+            # 动态导入模块（与 factory.py 一致）
+            import importlib
+            module = importlib.import_module(adapter_module)
+            provider_class = getattr(module, adapter_class)
+            
+            # 创建实例（支持自定义参数）
+            kwargs = {}
+            if credentials:
+                kwargs['credentials'] = credentials
+            if proxy_config:
+                kwargs['proxy_config'] = proxy_config
+            
+            instance = provider_class(**kwargs)
+            logger.debug(f"创建数据提供者实例成功: {provider_id}")
+            return instance
+            
+        except Exception as e:
+            logger.error(f"创建数据提供者实例失败: {e}", exc_info=True)
+            return None
 
     def _setup_routes(self):
         """设置API路由 - 完整生产实现"""
@@ -439,7 +489,7 @@ class DataQualityAPIService:
                     # 🎭 关键：从前端获取trading_phase参数（用于needs_realtime_kline判断）
                     trading_phase_str = request.args.get('trading_phase', 'TRADING')  # 默认盘中
                     try:
-                        trading_phase = TradingPhase[trading_phase_str.upper()]
+                        trading_phase = TradingPhase.parse(trading_phase_str)
                         mock_provider.set_mock_trading_phase(trading_phase)
                         logger.info(f"🎭 Mock模式 - trading_phase={trading_phase.name}")
                     except KeyError:
@@ -1113,20 +1163,24 @@ class DataQualityAPIService:
             """获取所有市场配置信息（从配置文件读取）"""
             try:
                 # 从配置文件读取真实配置
-                data_config = self.config_manager.get_data_config()
-
-                # 市场列表（固定）
+                data_provider_config = self.config_manager.get_provider_config()
+                
+                # 从 market.yml 的 market_registry 读取市场列表（包含UI展示信息）
+                market_config = self.config_manager.get_market_config()
+                market_registry = market_config.market_registry or {}
+                
+                # 从 market_registry 生成 UI 展示数据
                 markets = [
-                    {'code': 'CN', 'name': '中国 A股', 'icon': '🇨🇳'},
-                    {'code': 'HK', 'name': '香港', 'icon': '🇭🇰'},
-                    {'code': 'US', 'name': '美国', 'icon': '🇺🇸'},
-                    {'code': 'EU', 'name': '欧洲', 'icon': '🇪🇺'},
-                    {'code': 'JP', 'name': '日本', 'icon': '🇯🇵'},
-                    {'code': 'SG', 'name': '新加坡', 'icon': '🇸🇬'}
+                    {
+                        'code': code,
+                        'name': info.get('display_name', info.get('name', code)),  # 优先使用 display_name
+                        'icon': info.get('icon', '')
+                    }
+                    for code, info in market_registry.items()
                 ]
 
-                # 从 data_provider.yml 读取 providers 配置
-                providers_raw = data_config.providers or []
+                # 从 data_provider_config.yml 读取 providers 配置
+                providers_raw = data_provider_config.providers or []
                 
                 # 转换为前端需要的格式（过滤掉未实现的适配器）
                 providers = []
@@ -1179,9 +1233,9 @@ class DataQualityAPIService:
                             ]
                     
                     providers.append(provider_data)
-                
+                data_market_config = self.config_manager.get_market_config()
                 # 市场数据源配置
-                market_sources = data_config.market_sources or {}
+                market_sources = data_market_config.market_sources or {}
                 
                 # 从真实凭证文件读取凭证状态
                 import os
@@ -1247,14 +1301,14 @@ class DataQualityAPIService:
                 
                 # 使用 ConfigManager 的验证和保存方法
                 try:
-                    self.config_manager.save_market_sources(market_sources)
+                    self.config_manager.get_market_config().save_market_sources(market_sources)
                     
                     return jsonify({
                         'status': 'success',
                         'message': '市场配置已保存',
                         'data': {
                             'updated_markets': list(market_sources.keys()),
-                            'config_file': self.config_manager.get_config_path('data')
+                            'config_file': self.config_manager.get_config_path('market')
                         },
                         'timestamp': datetime.now().isoformat()
                     })
@@ -2013,7 +2067,7 @@ class DataQualityAPIService:
                 end_date = request.args.get('end_date', type=str)
                 if not all([index_id, start_date, end_date]):
                     return jsonify({'status': 'error', 'message': '缺少必要参数', 'error_code': 'MISSING_PARAMS'}), 400
-                provider = getattr(self.quality_monitor, 'data_provider', None)
+                provider = getattr(self.quality_monitor, 'data_provider_config', None)
                 if not provider or not hasattr(provider, 'get_index_prices'):
                     return jsonify({'status': 'error', 'message': '数据提供者不可用', 'error_code': 'DATA_PROVIDER_UNAVAILABLE'}), 503
                 df = provider.get_index_prices(index_id, start_date, end_date,datetime.now())
@@ -2032,7 +2086,7 @@ class DataQualityAPIService:
                 end_date = request.args.get('end_date', type=str)
                 if not all([index_id, start_date, end_date]):
                     return jsonify({'status': 'error', 'message': '缺少必要参数', 'error_code': 'MISSING_PARAMS'}), 400
-                provider = getattr(self.quality_monitor, 'data_provider', None)
+                provider = getattr(self.quality_monitor, 'data_provider_config', None)
                 if not provider or not hasattr(provider, 'get_index_returns'):
                     return jsonify({'status': 'error', 'message': '数据提供者不可用', 'error_code': 'DATA_PROVIDER_UNAVAILABLE'}), 503
                 series = provider.get_index_returns(index_id, start_date, end_date)
@@ -2063,13 +2117,13 @@ class DataQualityAPIService:
                         'error_code': 'MONITOR_NOT_INITIALIZED'
                     }), 503
                 
-                # 检查 data_provider 是否存在
-                provider = getattr(self.quality_monitor, 'data_provider', None)
+                # 检查 data_provider_config 是否存在
+                provider = getattr(self.quality_monitor, 'data_provider_config', None)
                 if not provider:
-                    logger.error(f"data_provider 不存在。quality_monitor 属性: {dir(self.quality_monitor)}")
+                    logger.error(f"data_provider_config 不存在。quality_monitor 属性: {dir(self.quality_monitor)}")
                     return jsonify({
                         'status': 'error',
-                        'message': '数据提供者未初始化，请检查数据源配置（config/dev/data_provider.yml）',
+                        'message': '数据提供者未初始化，请检查数据源配置（config/dev/data_provider_config.yml）',
                         'error_code': 'DATA_PROVIDER_NOT_FOUND',
                         'hint': '确保 primary_source 已配置且有效（如 tushare, yahoo, akshare）'
                     }), 503
@@ -2105,7 +2159,7 @@ class DataQualityAPIService:
         def get_cross_validation_log_api():
             """获取数据源交叉验证日志"""
             try:
-                provider = getattr(self.quality_monitor, 'data_provider', None)
+                provider = getattr(self.quality_monitor, 'data_provider_config', None)
                 if not provider or not hasattr(provider, 'get_cross_validation_log'):
                     return jsonify({'status': 'error', 'message': '数据提供者不可用', 'error_code': 'DATA_PROVIDER_UNAVAILABLE'}), 503
                 log = provider.get_cross_validation_log()
@@ -2194,7 +2248,7 @@ class DataQualityAPIService:
                         logger.error(f"模拟K线数据生成失败: {e}")
                         return jsonify({'status': 'error', 'message': str(e), 'error_code': 'MOCK_KLINE_FAILED'}), 500
                 # 否则走真实数据源路径
-                provider = getattr(self.quality_monitor, 'data_provider', None)
+                provider = getattr(self.quality_monitor, 'data_provider_config', None)
                 if not provider or not hasattr(provider, 'get_index_prices'):
                     # 生产环境：数据提供者不可用时返回错误，不降级为Mock
                     return jsonify({'status': 'error', 'message': '数据提供者不可用', 'error_code': 'DATA_PROVIDER_UNAVAILABLE'}), 503
@@ -2309,7 +2363,7 @@ class DataQualityAPIService:
                 
                 trading_phase_str = request.args.get('trading_phase', 'TRADING')  # 默认盘中
                 try:
-                    trading_phase = TradingPhase[trading_phase_str.upper()]  # 转为枚举
+                    trading_phase = TradingPhase.parse(trading_phase_str)  # 转为枚举
                 except KeyError:
                     return jsonify({
                         'status': 'error', 
@@ -2373,7 +2427,7 @@ class DataQualityAPIService:
                 if not index_id:
                     return jsonify({'status': 'error', 'message': '缺少index_id', 'error_code': 'MISSING_PARAMS'}), 400
                 
-                provider = getattr(self.quality_monitor, 'data_provider', None)
+                provider = getattr(self.quality_monitor, 'data_provider_config', None)
                 if not provider:
                     return jsonify({'status': 'error', 'message': '数据提供者不可用', 'error_code': 'DATA_PROVIDER_UNAVAILABLE'}), 503
                 
@@ -2530,7 +2584,7 @@ class DataQualityAPIService:
         @self.socketio.on('connect')
         def handle_connect():
             """客户端连接事件"""
-            logger.info(f"Socket.IO客户端已连接: {request.sid}")
+            logger.info("Socket.IO客户端已连接")
             emit('connection_response', {
                 'status': 'connected',
                 'message': '已连接到数据质量监控服务',
@@ -2540,7 +2594,7 @@ class DataQualityAPIService:
         @self.socketio.on('disconnect')
         def handle_disconnect():
             """客户端断开连接事件"""
-            logger.info(f"Socket.IO客户端已断开: {request.sid}")
+            logger.info("Socket.IO客户端已断开")
         
         @self.socketio.on('request_quality_data')
         def handle_quality_request():

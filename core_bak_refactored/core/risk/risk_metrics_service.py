@@ -25,7 +25,7 @@ except Exception:
     Histogram = None
 
 from core_bak_refactored.infrastructure.statistical_calculators import StatisticalCalculator
-from ..share.market.market_config import MarketConfigManager
+from ..share.market.market_config import MarketConfig
 from ..share.market.market_enums import MarketCode
 from .international_enhancements import InternationalEnhancements
 
@@ -116,7 +116,7 @@ class RiskMetricsService(InternationalEnhancements):
         
         # 国际化增强：市场类型和配置
         self.market_type = MarketCode.parse(config.get('market_type', 'CN'))  # 默认A股市场
-        self.config_manager = MarketConfigManager()
+        self.config_manager = MarketConfig()
         
         # 获取市场特定配置
         self.market_configs = config.get('market_configs', {})

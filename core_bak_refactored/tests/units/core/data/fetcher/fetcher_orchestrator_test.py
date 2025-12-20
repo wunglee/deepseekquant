@@ -42,7 +42,6 @@ async def test_cache_statistics_equivalence():
     config = {
         'primary': 'custom',
         'cache_enabled': True,
-        'cache_ttl': 300
     }
     orchestrator = DataFetcherOrchestrator(config, custom_sources={'custom': mock_fetch})
     

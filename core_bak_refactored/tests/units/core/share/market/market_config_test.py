@@ -1,12 +1,12 @@
 import unittest
 
-from core_bak_refactored.core.share.market.market_config import MarketConfigManager
+from core_bak_refactored.core.share.market.market_config import MarketConfig
 from core_bak_refactored.core.share.market.market_enums import MarketCode
 
 
 class MarketConfigTest(unittest.TestCase):
     def setUp(self):
-        self.manager = MarketConfigManager()
+        self.manager = MarketConfig()
 
     def test_get_market_info_cn(self):
         info = self.manager.get_market_info(MarketCode.CN.value)

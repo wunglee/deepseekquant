@@ -68,12 +68,19 @@ class AKShareDataProvider(BaseDataProvider):
         # 🔧 禁用数据库缓存（避免 iCloud 路径的 disk I/O error）
         self._enable_db_cache = False
         logger.info("💾 已禁用数据库缓存（仅使用内存缓存）")
+        
+        # 🔧 初始化分时数据专用的内存缓存（与历史数据缓存分开）
+        self._enable_memory_cache = True  # 启用分时数据内存缓存
+        self._memory_cache = {}  # 分时数据缓存字典
 
         self.ak = None
         self.available = False
         self._load_us_symbol_mapping()
         self._initialize()
         self.config_manager = ConfigManager()
+        
+        # 🔧 读取代理配置并处理环境变量
+        self._configure_proxy()
 
     def get_test_symbol(self) -> str:
         """获取测试符号"""
@@ -133,6 +140,46 @@ class AKShareDataProvider(BaseDataProvider):
             '399001.SZ': '深证成指',
             '399006.SZ': '创业板指'
         }
+    
+    def _configure_proxy(self):
+        """配置代理设置
+        
+        从 data_provider.yml 读取 use_proxy 配置，如果为 false，则禁用代理：
+        1. 清除环境变量中的代理设置
+        2. 设置 requests 库不使用代理
+        """
+        try:
+            # 从 ConfigManager 读取 providers 配置
+            provider_config = self.config_manager.get_provider_config()
+            
+            # 查找 akshare provider 的 use_proxy 配置
+            use_proxy = False
+            for provider in provider_config.providers:
+                if provider.get('id') == 'akshare':
+                    use_proxy = provider.get('use_proxy', False)
+                    break
+            
+            if not use_proxy:
+                logger.info("🚫 AKShare 配置为不使用代理，清除环境变量中的代理设置")
+                
+                # 清除环境变量中的代理
+                import os
+                proxy_vars = ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy']
+                for var in proxy_vars:
+                    if var in os.environ:
+                        logger.info(f"  清除环境变量: {var} = {os.environ[var]}")
+                        del os.environ[var]
+                
+                # 设置 requests 会话不使用代理
+                import requests
+                requests.Session().trust_env = False
+                
+                logger.info("✅ 代理已禁用")
+            else:
+                logger.info("🌐 AKShare 配置为使用代理")
+                
+        except Exception as e:
+            logger.warning(f"配置代理时出错: {e}，将使用默认设置")
 
     def get_index_returns(
             self,
@@ -542,6 +589,26 @@ class AKShareDataProvider(BaseDataProvider):
             'timestamp': time.time()
         }
         logger.debug(f"✅ 写入内存缓存: {cache_key}")
+    
+    def _get_from_memory_cache(self, cache_key: str) -> Any:
+        """
+        从内存缓存读取对象
+
+        Args:
+            cache_key: 缓存键
+
+        Returns:
+            缓存的对象或None
+        """
+        if not self._enable_memory_cache:
+            return None
+
+        cached = self._memory_cache.get(cache_key)
+        if cached:
+            logger.debug(f"✅ 内存缓存命中: {cache_key}")
+            return cached.get('data')
+        
+        return None
 
     def _build_intraday_data(self, df, symbol: str, trade_date: str,
                              fetch_trade_records: bool = True, should_poll: bool = True,

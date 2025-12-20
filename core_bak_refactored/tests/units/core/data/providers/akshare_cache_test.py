@@ -21,7 +21,8 @@ import pandas as pd
 from datetime import datetime, timedelta
 
 from core_bak_refactored.core.data.providers.akshare_provider import AKShareDataProvider
-from core_bak_refactored.core.data.providers.protocols import PriceData, OHLCVRecord
+from core_bak_refactored.core.data.providers.protocols import PriceData
+from core_bak_refactored.core.share.market.data_types import OHLCVRecord
 
 
 class AKShareCacheIntegrationTest(unittest.TestCase):

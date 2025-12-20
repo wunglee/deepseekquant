@@ -19,9 +19,9 @@
     
     # 方式2: 从配置获取（推荐）
     config_manager = ConfigManager()
-    data_config = config_manager.get_data_config()
+    market_config = config_manager.get_market_config()
     # 根据市场选择 provider
-    provider_id = data_config.market_sources.get('CN', 'akshare')
+    provider_id = market_config.market_sources.get('CN', 'akshare')
     provider = factory.get(provider_id)
 """
 
@@ -101,8 +101,8 @@ class HistoricalDataProvider(Protocol):
 #     from core_bak_refactored.core.share.config_manager import ConfigManager
 #     
 #     config_manager = ConfigManager()
-#     data_config = config_manager.get_data_config()
-#     provider_id = data_config.market_sources.get('CN', 'akshare')  # 从配置读取
+#     market_config = config_manager.get_market_config()
+#     provider_id = market_config.market_sources.get('CN', 'akshare')  # 从配置读取
 #     factory = get_global_factory()
 #     provider = factory.get(provider_id)
 

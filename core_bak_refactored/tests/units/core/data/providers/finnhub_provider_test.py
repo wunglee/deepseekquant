@@ -107,7 +107,7 @@ class FinnhubProviderTest(unittest.TestCase):
                     'adapter_class': 'FinnhubDataProvider'
                 }
             ]
-            mock_config_instance.get_data_config.return_value = mock_data_config
+            mock_config_instance.get_provider_config.return_value = mock_data_config
             
             # 测试 test_provider（不会真正调用 API，因为没有真实凭证）
             result = FinnhubDataProvider.test_provider('finnhub', credential='test_credential')

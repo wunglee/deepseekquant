@@ -39,25 +39,32 @@ def _load_risk_limits_config() -> Dict[str, Any]:
         FileNotFoundError: 配置文件不存在
         ValueError: 配置文件格式错误或缺少必需字段
     """
-    config_path = Path(__file__).parent.parent.parent / 'config' / 'dev' / 'risk_limits.yml'
+    config_path = Path(__file__).parent.parent.parent / 'config' / 'dev' / 'risk.yml'
     
     if not config_path.exists():
         raise FileNotFoundError(
             f"风险限额配置文件不存在: {config_path}\n"
-            f"请确保配置文件存在: core_bak_refactored/config/dev/risk_limits.yml"
+            f"请确保配置文件存在: core_bak_refactored/config/dev/risk.yml"
         )
     
     try:
         with open(config_path, 'r', encoding='utf-8') as f:
             config = yaml.safe_load(f)
         
-        # 验证必需字段
-        if 'threshold_tiers' not in config:
-            raise ValueError("配置文件缺少必需字段: threshold_tiers")
-        if 'priority_weights' not in config:
-            raise ValueError("配置文件缺少必需字段: priority_weights")
+        # 适配新的配置结构（limits 节点）
+        if 'limits' in config:
+            limits_config = config['limits']
+        else:
+            # 向后兼容：旧结构
+            limits_config = config
         
-        return config
+        # 验证必需字段
+        if 'threshold_tiers' not in limits_config:
+            raise ValueError("配置文件缺少必需字段: limits.threshold_tiers")
+        if 'priority_weights' not in limits_config:
+            raise ValueError("配置文件缺少必需字段: limits.priority_weights")
+        
+        return limits_config
     
     except yaml.YAMLError as e:
         raise ValueError(f"风险限额配置文件格式错误: {e}")
@@ -101,7 +108,7 @@ _MARKET_LIMITS_CONFIG = _load_market_limits_config()
 class ThresholdTier(Enum):
     """阈值层级枚举（从配置文件加载）
     
-    配置文件: core_bak_refactored/config/dev/risk_limits.yml
+    配置文件: core_bak_refactored/config/dev/risk.yml
     """
     GREEN = _RISK_LIMITS_CONFIG['threshold_tiers']['GREEN']
     YELLOW = _RISK_LIMITS_CONFIG['threshold_tiers']['YELLOW']
@@ -552,7 +559,7 @@ class BreachPrioritizer:
     def _calculate_breach_priority(self, breach: Dict[str, Any]) -> float:
         """计算违规优先级评分（专家修正：动态权重分配）
         
-        权重从配置文件加载: core_bak_refactored/config/dev/risk_limits.yml
+        权重从配置文件加载: core_bak_refactored/config/dev/risk.yml
         """
         # 基础权重配置（从配置文件加载）
         base_weights = _RISK_LIMITS_CONFIG['priority_weights']['normal']

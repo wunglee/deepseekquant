@@ -94,7 +94,7 @@ class ProviderSelector:
             从 config/dev/data_provider.yml 的 market_sources 字段读取
         """
         # 从配置文件获取 market_sources 映射
-        data_config = self.config_manager.get_data_config()
+        data_config = self.config_manager.get_market_config()
         market_sources = data_config.market_sources or {}
         
         # 查找对应的 provider_id
@@ -141,5 +141,5 @@ class ProviderSelector:
             >>> mapping
             {'CN': 'akshare', 'US': 'yahoo', 'HK': 'akshare', ...}
         """
-        data_config = self.config_manager.get_data_config()
+        data_config = self.config_manager.get_provider_config()
         return data_config.market_sources or {}

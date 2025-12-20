@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 from datetime import datetime, timedelta
 from core_bak_refactored.core.risk.portfolio_risk import PortfolioRiskAnalyzer
-from core_bak_refactored.core.share.market.market_config import MarketConfigManager
+from core_bak_refactored.core.share.market.market_config import MarketConfig
 
 
 class MockPortfolioState:
@@ -69,7 +69,7 @@ def benchmark_parallel_vs_serial():
     print("=" * 80)
     
     # 准备配置
-    config_manager = MarketConfigManager()
+    config_manager = MarketConfig()
     config = config_manager.generate_config_template('CN')
     
     # 创建分析器
@@ -175,7 +175,7 @@ def benchmark_optimization_impact():
     print("优化组件影响评估")
     print("=" * 80)
     
-    config_manager = MarketConfigManager()
+    config_manager = MarketConfig()
     config = config_manager.generate_config_template('CN')
     
     # 创建不同配置的分析器

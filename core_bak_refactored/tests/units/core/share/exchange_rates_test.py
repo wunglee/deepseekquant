@@ -6,7 +6,7 @@ import sys
 sys.path.insert(0, os.path.abspath('.'))
 
 from core_bak_refactored.core.share.exchange_rates import CurrencyConverter, MockExchangeRateAdapter
-from core_bak_refactored.core.share.market.market_config import MarketConfigManager
+from core_bak_refactored.core.share.market.market_config import MarketConfig
 
 
 def test_convert_portfolio_currency_to_usd():
@@ -50,7 +50,7 @@ def test_rate_lookup_nested_and_flat():
 
 
 def test_market_thresholds_config_values():
-    mcm = MarketConfigManager()
+    mcm = MarketConfig()
     cfg_cn = mcm.generate_config_template('CN')
     cn = cfg_cn['market_configs']['CN']
     assert cn['volatility_spike_threshold'] == 0.05
@@ -68,7 +68,7 @@ def test_market_thresholds_config_values():
 
 
 def test_event_weights_and_sensitivity_values():
-    mcm = MarketConfigManager()
+    mcm = MarketConfig()
     cfg_us = mcm.generate_config_template('US')
     us = cfg_us['market_configs']['US']
     assert us['major_event_sensitivity'] == 'HIGH'
@@ -89,7 +89,7 @@ def test_event_weights_and_sensitivity_values():
 
 
 def test_volatility_tiers_cache_ttl_values():
-    mcm = MarketConfigManager()
+    mcm = MarketConfig()
     cfg_us = mcm.generate_config_template('US')
     tiers = cfg_us['market_configs']['US']['volatility_tiers']
     assert tiers['NORMAL']['cache_ttl'] == 3600
@@ -99,7 +99,7 @@ def test_volatility_tiers_cache_ttl_values():
 
 
 def test_trading_days_per_year_by_market():
-    mcm = MarketConfigManager()
+    mcm = MarketConfig()
     expected = {'CN': 245, 'US': 252, 'HK': 247, 'JP': 245, 'EU': 255, 'SG': 250}
     for mt, days in expected.items():
         cfg = mcm.generate_config_template(mt)
@@ -107,7 +107,7 @@ def test_trading_days_per_year_by_market():
 
 
 def test_validate_market_config_errors():
-    mcm = MarketConfigManager()
+    mcm = MarketConfig()
     errors = mcm.validate_market_config({'market_type': 'ZZ', 'market_configs': {}})
     assert any('不支持的市场类型' in e for e in errors)
     errors2 = mcm.validate_market_config({'market_type': 'US', 'market_configs': {}})
@@ -115,7 +115,7 @@ def test_validate_market_config_errors():
 
 
 def test_cn_limit_thresholds_and_flags():
-    mcm = MarketConfigManager()
+    mcm = MarketConfig()
     cn = mcm.generate_config_template('CN')['market_configs']['CN']
     assert cn['has_limit_up_down'] is True
     lt = cn['limit_thresholds']
@@ -126,7 +126,7 @@ def test_cn_limit_thresholds_and_flags():
 
 
 def test_us_luld_and_circuit_breaker_levels():
-    mcm = MarketConfigManager()
+    mcm = MarketConfig()
     us = mcm.generate_config_template('US')['market_configs']['US']
     assert us['has_limit_up_down'] is False
     assert us['luld_threshold'] == 0.05
@@ -134,21 +134,21 @@ def test_us_luld_and_circuit_breaker_levels():
 
 
 def test_major_event_sensitivity_per_market():
-    mcm = MarketConfigManager()
+    mcm = MarketConfig()
     assert mcm.generate_config_template('US')['market_configs']['US']['major_event_sensitivity'] == 'HIGH'
     assert mcm.generate_config_template('CN')['market_configs']['CN']['major_event_sensitivity'] == 'MEDIUM'
     assert mcm.generate_config_template('EU')['market_configs']['EU']['major_event_sensitivity'] == 'HIGH'
 
 
 def test_volatility_tiers_structure_cn():
-    mcm = MarketConfigManager()
+    mcm = MarketConfig()
     tiers = mcm.generate_config_template('CN')['market_configs']['CN']['volatility_tiers']
     for k in ['NORMAL', 'MEDIUM', 'HIGH', 'EXTREME']:
         assert 'max' in tiers[k] and 'cache_ttl' in tiers[k]
 
 
 def test_default_trading_hours_map():
-    mcm = MarketConfigManager()
+    mcm = MarketConfig()
     for mt in ['CN', 'US', 'HK', 'JP', 'EU', 'SG']:
         cfg = mcm.generate_config_template(mt)
         hours = cfg['market_configs'][mt]['trading_hours']
@@ -157,13 +157,13 @@ def test_default_trading_hours_map():
 
 
 def test_brexit_risk_weight_lower_bound():
-    mcm = MarketConfigManager()
+    mcm = MarketConfig()
     weight_today = mcm._get_brexit_risk_weight()
     assert weight_today >= 1.0
 
 
 def test_var_method_priority_by_market():
-    mcm = MarketConfigManager()
+    mcm = MarketConfig()
     cn = mcm.generate_config_template('CN')['market_configs']['CN']
     us = mcm.generate_config_template('US')['market_configs']['US']
     hk = mcm.generate_config_template('HK')['market_configs']['HK']
@@ -179,7 +179,7 @@ def test_var_method_priority_by_market():
 
 
 def test_covariance_lookback_values():
-    mcm = MarketConfigManager()
+    mcm = MarketConfig()
     assert mcm.generate_config_template('CN')['market_configs']['CN']['covariance_lookback'] == 126
     assert mcm.generate_config_template('US')['market_configs']['US']['covariance_lookback'] == 756
     assert mcm.generate_config_template('HK')['market_configs']['HK']['covariance_lookback'] == 378
@@ -189,7 +189,7 @@ def test_covariance_lookback_values():
 
 
 def test_volatility_persistence_values():
-    mcm = MarketConfigManager()
+    mcm = MarketConfig()
     assert mcm.generate_config_template('CN')['market_configs']['CN']['volatility_persistence'] == 0.94
     assert mcm.generate_config_template('US')['market_configs']['US']['volatility_persistence'] == 0.97
     assert mcm.generate_config_template('HK')['market_configs']['HK']['volatility_persistence'] == 0.92
@@ -199,7 +199,7 @@ def test_volatility_persistence_values():
 
 
 def test_liquidity_risk_weight_values():
-    mcm = MarketConfigManager()
+    mcm = MarketConfig()
     assert mcm.generate_config_template('CN')['market_configs']['CN']['liquidity_risk_weight'] == 1.2
     assert mcm.generate_config_template('US')['market_configs']['US']['liquidity_risk_weight'] == 0.85
     assert mcm.generate_config_template('HK')['market_configs']['HK']['liquidity_risk_weight'] == 1.1
@@ -209,7 +209,7 @@ def test_liquidity_risk_weight_values():
 
 
 def test_limit_adjustment_and_min_required_returns_flags():
-    mcm = MarketConfigManager()
+    mcm = MarketConfig()
     cn = mcm.generate_config_template('CN')['market_configs']['CN']
     hk = mcm.generate_config_template('HK')['market_configs']['HK']
     us = mcm.generate_config_template('US')['market_configs']['US']
@@ -222,7 +222,7 @@ def test_limit_adjustment_and_min_required_returns_flags():
 
 
 def test_risk_premium_base_values():
-    mcm = MarketConfigManager()
+    mcm = MarketConfig()
     expected = {'CN': 0.015, 'US': 0.010, 'HK': 0.020, 'JP': 0.008, 'EU': 0.012, 'SG': 0.014}
     for mt, val in expected.items():
         cfg = mcm.generate_config_template(mt)
@@ -230,14 +230,14 @@ def test_risk_premium_base_values():
 
 
 def test_us_trading_hours_keys():
-    mcm = MarketConfigManager()
+    mcm = MarketConfig()
     us_hours = mcm.generate_config_template('US')['market_configs']['US']['trading_hours']
     assert 'pre_market' in us_hours and 'after_hours' in us_hours
     assert us_hours['after_hours'] == '16:00-20:00'
 
 
 def test_performance_monitoring_defaults():
-    mcm = MarketConfigManager()
+    mcm = MarketConfig()
     cfg = mcm.generate_config_template('US')
     pm = cfg['performance_monitoring']
     assert pm['enable_calculation_timing'] is True
@@ -246,26 +246,26 @@ def test_performance_monitoring_defaults():
 
 
 def test_log_level_default_info():
-    mcm = MarketConfigManager()
+    mcm = MarketConfig()
     cfg = mcm.generate_config_template('CN')
     assert cfg['log_level'] == 'INFO'
 
 
 def test_dynamic_risk_free_rate_is_none():
-    mcm = MarketConfigManager()
+    mcm = MarketConfig()
     cfg = mcm.generate_config_template('JP')
     assert cfg['dynamic_risk_free_rate'] is None
 
 
 def test_market_registry_contains_all():
-    mcm = MarketConfigManager()
+    mcm = MarketConfig()
     for mt in ['CN', 'US', 'HK', 'JP', 'EU', 'SG']:
         info = mcm.get_market_info(mt)
         assert 'currency' in info and 'default_trading_days' in info
 
 
 def test_template_has_single_market_configs_key():
-    mcm = MarketConfigManager()
+    mcm = MarketConfig()
     cfg = mcm.generate_config_template('HK')
     mc = cfg['market_configs']
     # 模板仅包含当前市场配置键
@@ -276,7 +276,7 @@ def test_template_has_single_market_configs_key():
 
 
 def test_volatility_spike_thresholds_more_markets():
-    mcm = MarketConfigManager()
+    mcm = MarketConfig()
     hk = mcm.generate_config_template('HK')['market_configs']['HK']
     jp = mcm.generate_config_template('JP')['market_configs']['JP']
     sg = mcm.generate_config_template('SG')['market_configs']['SG']
@@ -286,7 +286,7 @@ def test_volatility_spike_thresholds_more_markets():
 
 
 def test_limit_hit_ratio_thresholds_more_markets():
-    mcm = MarketConfigManager()
+    mcm = MarketConfig()
     hk = mcm.generate_config_template('HK')['market_configs']['HK']
     jp = mcm.generate_config_template('JP')['market_configs']['JP']
     sg = mcm.generate_config_template('SG')['market_configs']['SG']
@@ -296,7 +296,7 @@ def test_limit_hit_ratio_thresholds_more_markets():
 
 
 def test_risk_free_rate_defaults():
-    mcm = MarketConfigManager()
+    mcm = MarketConfig()
     expected = {'CN': 0.03, 'US': 0.045, 'HK': 0.035, 'JP': 0.005, 'EU': 0.025, 'SG': 0.030}
     for mt, rate in expected.items():
         cfg = mcm.generate_config_template(mt)
@@ -304,7 +304,7 @@ def test_risk_free_rate_defaults():
 
 
 def test_unknown_market_fallback_to_cn():
-    mcm = MarketConfigManager()
+    mcm = MarketConfig()
     cfg = mcm.generate_config_template('ZZ')
     assert cfg['market_type'] == 'CN'
     cn = cfg['market_configs']['CN']

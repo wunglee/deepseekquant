@@ -27,7 +27,7 @@ import yaml
 import pandas as pd
 
 from core_bak_refactored.core.data.providers.protocols import PriceData, HistoricalDataProvider
-from core_bak_refactored.core.share import ConfigManager
+from core_bak_refactored.core.share.config_manager import ConfigManager
 from core_bak_refactored.core.share.market import MarketUtils
 from core_bak_refactored.core.share.market.data_types import OHLCVRecord
 from core_bak_refactored.core.share.market.market_enums import TradingPhase, MarketCode
@@ -352,7 +352,7 @@ class BaseDataProvider(ABC, HistoricalDataProvider):
         try:
             # 获取数据源配置
             config_manager = ConfigManager()
-            data_config = config_manager.get_data_config()
+            data_config = config_manager.get_provider_config()
             providers = data_config.providers
             
             provider_config = next((p for p in providers if p.get('id') == provider_id or p.get('name') == provider_id), None)

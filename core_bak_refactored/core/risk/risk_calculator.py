@@ -19,7 +19,7 @@ import warnings
 
 from .risk_metrics_service import RiskMetricsService, RiskMetricsEngine
 from .risk_models import RiskMetric
-from ..share.market.market_config import MarketConfigManager
+from ..share.market.market_config import MarketConfig
 from ..share.exchange_rates import CurrencyConverter, ExchangeRateAdapter
 from ..share.market.market_enums import MarketCode
 
@@ -63,7 +63,7 @@ class RiskCalculator:
     
     def __init__(self, config: Dict, metrics_engine: Optional[RiskMetricsEngine] = None):
         # 国际化：市场配置管理器
-        self.config_manager = MarketConfigManager()
+        self.config_manager = MarketConfig()
         
         # 验证配置完整性
         config_errors = self.config_manager.validate_market_config(config)

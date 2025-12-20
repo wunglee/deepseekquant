@@ -46,11 +46,11 @@ class ThreeLayerCacheManager:
         self,
         db_service=None,
         redis_client=None,
-        cache_mode: str = 'memory',
-        window_size: int = 1,  # 修改：缓存窗口大小（period的整数倍，默认1）
-        memory_max_windows: int = 1000,
-        memory_ttl: int = 300,
-        redis_ttl: int = 3600
+        cache_mode: str = None,  # None 表示从配置读取
+        window_size: int = None,
+        memory_max_windows: int = None,
+        memory_ttl: int = None,
+        redis_ttl: int = None
     ):
         """
         初始化三层缓存管理器
@@ -58,14 +58,28 @@ class ThreeLayerCacheManager:
         Args:
             db_service: 数据库服务实例
             redis_client: Redis 客户端（可选）
-            cache_mode: 缓存模式 ('memory' 或 'redis')，二选一
-            window_size: 缓存窗口大小（period的整数倍，默认7）
-                        例如：period=daily, window_size=7 → 7天一个窗口
-                              period=weekly, window_size=4 → 4周一个窗口
-            memory_max_windows: 内存最大窗口数
-            memory_ttl: 内存缓存TTL（秒）
-            redis_ttl: Redis缓存TTL（秒）
+            cache_mode: 缓存模式 ('memory' 或 'redis')，None 时从配置读取
+            window_size: 缓存窗口大小，None 时从配置读取
+            memory_max_windows: 内存最大窗口数，None 时从配置读取
+            memory_ttl: 内存缓存TTL（秒），None 时从配置读取
+            redis_ttl: Redis缓存TTL（秒），None 时从配置读取
+        
+        Note:
+            ✨ 所有参数默认为None，优先从 core_bak_refactored/config/{env}/cache.yml 读取
+            仅当显式传入非eNone值时，才使用传入的参数（用于测试场景）
         """
+        # 从配置文件加载缓存配置
+        from core_bak_refactored.core.share.config_manager import ConfigManager
+        config_manager = ConfigManager()
+        cache_config = config_manager.get_cache_config()
+        
+        # 参数优先级：显式传入 > 配置文件
+        cache_mode = cache_mode if cache_mode is not None else cache_config.cache_mode
+        window_size = window_size if window_size is not None else cache_config.window_size
+        memory_max_windows = memory_max_windows if memory_max_windows is not None else cache_config.memory_max_windows
+        memory_ttl = memory_ttl if memory_ttl is not None else cache_config.memory_ttl
+        redis_ttl = redis_ttl if redis_ttl is not None else cache_config.redis_ttl
+        
         # 窗口管理器
         self._window_mgr = WindowManager()
         
@@ -80,10 +94,10 @@ class ThreeLayerCacheManager:
         # 根据模式初始化对应的缓存层
         if cache_mode == 'memory':
             self._fast_cache = MemoryCache(max_windows=memory_max_windows, ttl=memory_ttl)
-            logger.info(f"✅ 使用内存缓存: max_windows={memory_max_windows}, ttl={memory_ttl}s")
+            logger.info(f"✅ 使用内存缓存: max_windows={memory_max_windows}, ttl={memory_ttl}s [从配置加载]")
         elif cache_mode == 'redis':
             self._fast_cache = RedisCache(redis_client=redis_client, ttl=redis_ttl)
-            logger.info(f"✅ 使用Redis缓存: ttl={redis_ttl}s")
+            logger.info(f"✅ 使用Redis缓存: ttl={redis_ttl}s [从配置加载]")
         else:
             raise ValueError(f"无效的 cache_mode: {cache_mode}，必须是 'memory' 或 'redis'")
         
@@ -93,7 +107,7 @@ class ThreeLayerCacheManager:
         # 交易日历服务（用于判断连续性）
         self._calendar_service = get_trading_calendar_service()
         
-        logger.info(f"✅ ThreeLayerCacheManager 初始化完成: cache_mode={cache_mode}, window_size={window_size}")
+        logger.info(f"✅ ThreeLayerCacheManager 初始化完成: cache_mode={cache_mode}, window_size={window_size} [从配置加载]")
     
     def get_data(
         self,

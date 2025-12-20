@@ -123,13 +123,14 @@ class DataProviderFactory:
         providers_config = self._config.get('providers', [])
         for provider_config in providers_config:
             if provider_config.get('id') == name:
-                # 提取初始化参数（排除元数据字段）
+                # 提取初始化参数（排除元数据字段和业务配置字段）
                 excluded_fields = {
                     'id', 'name', 'type', 'description', 'status',
                     'adapter_module', 'adapter_class', 'markets',
                     'requires_auth', 'auth_type', 'rate_limit',
                     'features', 'installation', 'registration', 'last_test',
-                    'supports_period'  # 🔧 数据源特性，不传给构造函数
+                    'supports_period',  # 🔧 数据源特性，不传给构造函数
+                    'use_proxy'  # 🔧 代理配置已在各 Provider 内部通过 ConfigManager 读取
                 }
                 
                 kwargs = {k: v for k, v in provider_config.items() if k not in excluded_fields}

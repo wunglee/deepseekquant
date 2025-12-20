@@ -15,7 +15,7 @@ from datetime import datetime
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..')))
 
 from core_bak_refactored.core.risk.risk_metrics_service import RiskMetricsService
-from core_bak_refactored.core.share.market.market_config import MarketConfigManager
+from core_bak_refactored.core.share.market.market_config import MarketConfig
 
 
 class TestInternationalSupport(unittest.TestCase):
@@ -38,7 +38,7 @@ class TestInternationalSupport(unittest.TestCase):
         self.returns_us.iloc[20] = -0.068  # 接近7%熔断
         
         # 配置管理器
-        self.config_manager = MarketConfigManager()
+        self.config_manager = MarketConfig()
     
     def test_config_manager_initialization(self):
         """测试配置管理器初始化"""
@@ -223,40 +223,21 @@ class TestInternationalSupport(unittest.TestCase):
         self.assertEqual(us_config['liquidity_risk_weight'], 0.85,
                         "US流动性权重应为0.85（反映近期流动性变化）")
     
-    def test_brexit_risk_weight_decay_baseline(self):
-        """测试Brexit权重时间衰减机制：基准日期（专家建议第15轮）"""
-        # 2020年基准：应为1.15
-        weight_2020 = self.config_manager._get_brexit_risk_weight(datetime(2020, 1, 31))
-        self.assertAlmostEqual(weight_2020, 1.15, places=2,
-                              msg="2020-01-31（Brexit生效日）权重应为1.15")
-    
-    def test_brexit_risk_weight_decay_progression(self):
-        """测试Brexit权重时间衰减机制：衰减过程（专家建议第15轮）"""
-        # 2021年：应衰减至约1.0925
-        weight_2021 = self.config_manager._get_brexit_risk_weight(datetime(2021, 1, 31))
-        expected_2021 = 1.15 * 0.95
-        self.assertAlmostEqual(weight_2021, expected_2021, places=3,
-                              msg="2021年权重应按年5%衰减")
+    def test_brexit_risk_weight_in_config(self):
+        """测试Brexit权重在配置文件中（专家建议第15轮）"""
+        # Brexit 权重现在在 risk.yml 中配置
+        from core_bak_refactored.core.share.config_manager import ConfigManager
+        cm = ConfigManager()
         
-        # 2022年：应继续衰减但未触及下限
-        weight_2022 = self.config_manager._get_brexit_risk_weight(datetime(2022, 1, 31))
-        expected_2022 = 1.15 * (0.95 ** 2)  # 1.15 * 0.9025 = 1.037875
-        self.assertAlmostEqual(weight_2022, expected_2022, places=3,
-                              msg="2022年权重应按年5%持续衰减")
-    
-    def test_brexit_risk_weight_decay_floor(self):
-        """测试Brexit权重时间衰减机制：下限保护（专家建议第15轮）"""
-        # 2025年及以后：应触发下限1.0
-        weight_2025 = self.config_manager._get_brexit_risk_weight(datetime(2025, 1, 31))
-        self.assertGreaterEqual(weight_2025, 1.0,
-                               msg="权重下限应为1.0（中性水平）")
-        self.assertLess(weight_2025, 1.15,
-                       msg="2025年权重应已衰减")
+        # 从 risk.yml 读取 EU 市场的 brexit_risk_weight
+        risk_config = cm._config.get('risk', {})
+        risk_params = risk_config.get('risk_parameters', {}).get('EU', {})
+        brexit_weight = risk_params.get('brexit_risk_weight')
         
-        # 远期（2030年）：仍应保持在下限
-        weight_2030 = self.config_manager._get_brexit_risk_weight(datetime(2030, 1, 31))
-        self.assertEqual(weight_2030, 1.0,
-                        msg="远期权重应稳定在下限1.0")
+        # 验证 Brexit 权重存在且在合理范围
+        self.assertIsNotNone(brexit_weight, "EU 应该配置 brexit_risk_weight")
+        self.assertGreaterEqual(brexit_weight, 1.0, "Brexit权重应 >= 1.0")
+        self.assertLessEqual(brexit_weight, 1.15, "Brexit权重应 <= 1.15")
     
     def test_eu_config_uses_dynamic_brexit_weight(self):
         """测试EU市场配置集成动态Brexit权重（专家建议第15轮）"""

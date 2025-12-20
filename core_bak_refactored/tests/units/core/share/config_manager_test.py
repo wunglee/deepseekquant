@@ -9,7 +9,7 @@ import os
 import yaml
 from pathlib import Path
 from core_bak_refactored.core.share.config_manager import (
-    ConfigManager, MonitoringConfig, AlertingConfig, DataConfig, SystemConfig
+    ConfigManager, MonitoringConfig, AlertingConfig, ProvidersConfig, SystemConfig, MarketConfig
 )
 from core_bak_refactored.core.share.market.market_enums import MarketCode
 
@@ -53,13 +53,19 @@ class TestConfigManager(unittest.TestCase):
         """测试获取数据配置"""
         # 默认环境是dev，使用dev/data.yml中的配置
         manager = ConfigManager()
-        config = manager.get_data_config()
-        self.assertIsInstance(config, DataConfig)
+        config = manager.get_provider_config()
+        self.assertIsInstance(config, ProvidersConfig)
+
+    def test_get_market_config(self):
+        """测试获取数据配置"""
+        # 默认环境是dev，使用dev/data.yml中的配置
+        manager = ConfigManager()
+        config = manager.get_market_config()
+        self.assertIsInstance(config, MarketConfig)
         # dev环境使用 market_sources 映射，不再有 primary_source
         self.assertIsNotNone(config.market_sources)
         # 验证 CN 市场使用 akshare
         self.assertEqual(config.market_sources.get('CN'), 'akshare')
-    
     def test_get_system_config(self):
         """测试获取系统配置"""
         manager = ConfigManager()

@@ -3,7 +3,7 @@
 """
 
 import unittest
-from core_bak_refactored.core.share.performance_stats import (
+from core_bak_refactored.infrastructure.performance_stats import (
     PerformanceStatsManager, PerformanceMetrics
 )
 

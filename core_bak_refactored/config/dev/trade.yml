@@ -1,0 +1,234 @@
+# 交易配置
+
+# 交易成本参数（分市场）
+cost:
+  CN:
+    # 价格冲击参数（Almgren et al. 2005）
+    price_impact_alpha: 0.55  # 散户主导，冲击系数高（范围0.5-0.7）
+    price_impact_beta: 0.52   # 非线性较弱（范围0.5-0.55）
+    default_spread: 0.0025    # A股典型spread（0.25%）
+    
+    # 参与率限制（考虑T+1限制）
+    participation_limits:
+      NORMAL: 0.08    # 从10%降至8%（T+1限制）
+      VOLATILE: 0.05  # 市场波动加剧
+      EXTREME: 0.02   # 极端行情
+    
+    # 市场状态阈值（基于滚动分位数校准）
+    state_thresholds:
+      normal_vol_max: 1.15      # 从1.2调低（A股波动容忍度低）
+      normal_volume_min: 0.75   # 从0.8调低（成交量波动大）
+      volatile_vol_max: 1.4     # 从1.5调低
+      volatile_volume_min: 0.55  # 从0.6调低
+    
+    # 市值分层参数
+    market_cap_tiers:
+      large_cap:
+        impact_discount: 0.8
+        liquidity_buffer: 1.2
+      mid_cap:
+        impact_discount: 1.0
+        liquidity_buffer: 1.0
+      small_cap:
+        impact_discount: 1.3
+        liquidity_buffer: 0.7
+    
+    # 日内时段调整
+    intraday_adjustments:
+      open_30min: 1.5    # 开盘30分钟冲击扩大50%
+      close_30min: 1.3   # 收盘30分钟冲击扩大30%
+      lunch_break: 0.8   # 午间休市冲击减少20%
+    
+    # 流动性成本折扣配置
+    liquidity_cost_discount:
+      cn_t1_single_day: 0.95        # A股T+1限制，1天折扣
+      cn_penalty_factor: 0.85       # A股多日额外惩罚系数
+      dynamic_bound_increment: 0.05 # 天数增长系数
+      dynamic_bound_max_increment: 0.3  # 最大增量
+      dynamic_bound_cap: 0.8        # 动态下限上限
+      base_lower_bounds:           # 各市场基础下限
+        CN: 0.6
+        US: 0.4
+        HK: 0.55
+        JP: 0.5
+        SG: 0.65
+        EU: 0.45
+      market_adjustments:          # 市场类型调整系数
+        US: 0.95
+        HK: 0.88
+        JP: 0.92
+        SG: 0.85
+        EU: 0.94
+      liquidity_adjustments:       # 流动性调整系数
+        top_20_pct: 0.96
+        mid_60_pct: 0.90
+        bottom_20_pct: 0.82
+      simple_thresholds:           # 简单分类阈值（回退用）
+        high_liquidity: 10000000
+        mid_liquidity: 1000000
+      quantile_min_samples: 100    # 动态分位数最小样本数
+  
+  US:
+    # 价格冲击参数（Kissell 2013）
+    price_impact_alpha: 0.25  # 机构主导，流动性好，冲击低（范围0.2-0.3）
+    price_impact_beta: 0.65   # 算法交易优化（范围0.6-0.7）
+    default_spread: 0.0015    # 美股典型spread（0.15%）
+    
+    participation_limits:
+      NORMAL: 0.15    # 美股深度好，允许更高参与率
+      VOLATILE: 0.08  # 波动加剧
+      EXTREME: 0.03   # 极端行情
+    
+    state_thresholds:
+      normal_vol_max: 1.3      # 美股波动容忍度较高
+      normal_volume_min: 0.7
+      volatile_vol_max: 1.8
+      volatile_volume_min: 0.5
+    
+    market_cap_tiers:
+      large_cap:
+        impact_discount: 0.7
+        liquidity_buffer: 1.3
+      mid_cap:
+        impact_discount: 1.0
+        liquidity_buffer: 1.0
+      small_cap:
+        impact_discount: 1.4
+        liquidity_buffer: 0.6
+    
+    intraday_adjustments:
+      open_30min: 1.4    # 开盘30分钟冲击扩大40%
+      close_30min: 1.2   # 收盘30分钟冲击扩大20%
+      after_hours: 0.9   # 盘后交易冲击较低
+  
+  HK:
+    # 价格冲击参数（Chan & Lakonishok 1995）
+    price_impact_alpha: 0.42  # 国际资金影响，从0.45调至0.42
+    price_impact_beta: 0.58   # 国际资金流动影响（范围0.55-0.6）
+    default_spread: 0.0020    # 港股典型spread（0.20%）
+    
+    participation_limits:
+      NORMAL: 0.12    # 混合市场
+      VOLATILE: 0.06  # 波动加剧
+      EXTREME: 0.025  # 极端行情
+    
+    state_thresholds:
+      normal_vol_max: 1.25     # 港股介于中美之间
+      normal_volume_min: 0.75
+      volatile_vol_max: 1.6
+      volatile_volume_min: 0.55
+    
+    market_cap_tiers:
+      large_cap:
+        impact_discount: 0.75
+        liquidity_buffer: 1.25
+      mid_cap:
+        impact_discount: 1.0
+        liquidity_buffer: 1.0
+      small_cap:
+        impact_discount: 1.35
+        liquidity_buffer: 0.65
+    
+    intraday_adjustments:
+      open_30min: 1.45   # 开盘30分钟冲击扩大45%
+      close_30min: 1.25  # 收盘30分钟冲击扩大25%
+      lunch_break: 0.85  # 午间休市冲击较低
+  
+  JP:
+    # 价格冲击参数（Iihara et al. 2001）
+    price_impact_alpha: 0.35  # 机构主导，流动性集中（范围0.3-0.4）
+    price_impact_beta: 0.62   # 交叉持股影响（范围0.6-0.65）
+    default_spread: 0.0018    # 日股典型spread（0.18%）
+    
+    participation_limits:
+      NORMAL: 0.13    # 机构主导
+      VOLATILE: 0.07  # 波动加剧
+      EXTREME: 0.03   # 极端行情
+    
+    state_thresholds:
+      normal_vol_max: 1.25
+      normal_volume_min: 0.75
+      volatile_vol_max: 1.6
+      volatile_volume_min: 0.55
+    
+    market_cap_tiers:
+      large_cap:
+        impact_discount: 0.75
+        liquidity_buffer: 1.2
+      mid_cap:
+        impact_discount: 1.0
+        liquidity_buffer: 1.0
+      small_cap:
+        impact_discount: 1.3
+        liquidity_buffer: 0.7
+    
+    intraday_adjustments:
+      open_30min: 1.4    # 开盘30分钟冲击扩大40%
+      close_30min: 1.25  # 收盘30分钟冲击扩大25%
+      lunch_break: 0.85  # 午间休市冲击较低
+  
+  EU:
+    # 价格冲击参数（Huang & Stoll 1997）
+    price_impact_alpha: 0.30  # 市场分散但深度好（范围0.25-0.35）
+    price_impact_beta: 0.63   # MiFID II改善透明度（范围0.6-0.65）
+    default_spread: 0.0016    # 欧洲典型spread（0.16%）
+    
+    participation_limits:
+      NORMAL: 0.14    # 市场深度好
+      VOLATILE: 0.07  # 波动加剧
+      EXTREME: 0.03   # 极端行情
+    
+    state_thresholds:
+      normal_vol_max: 1.25
+      normal_volume_min: 0.75
+      volatile_vol_max: 1.65
+      volatile_volume_min: 0.55
+    
+    market_cap_tiers:
+      large_cap:
+        impact_discount: 0.7
+        liquidity_buffer: 1.25
+      mid_cap:
+        impact_discount: 1.0
+        liquidity_buffer: 1.0
+      small_cap:
+        impact_discount: 1.35
+        liquidity_buffer: 0.65
+    
+    intraday_adjustments:
+      open_30min: 1.35   # 开盘30分钟冲击扩大35%
+      close_30min: 1.2   # 收盘30分钟冲击扩大20%
+      midday: 0.9        # 中午时段冲击较低
+  
+  SG:
+    # 价格冲击参数（Biais et al. 1995）
+    price_impact_alpha: 0.50  # 市场规模小，国际资金敏感（范围0.45-0.55）
+    price_impact_beta: 0.54   # 外部冲击影响（范围0.5-0.55）
+    default_spread: 0.0028    # 新加坡典型spread（0.28%）
+    
+    participation_limits:
+      NORMAL: 0.10    # 小市场限制较严
+      VOLATILE: 0.05  # 波动加剧
+      EXTREME: 0.02   # 极端行情
+    
+    state_thresholds:
+      normal_vol_max: 1.3
+      normal_volume_min: 0.7
+      volatile_vol_max: 1.7
+      volatile_volume_min: 0.5
+    
+    market_cap_tiers:
+      large_cap:
+        impact_discount: 0.75
+        liquidity_buffer: 1.15
+      mid_cap:
+        impact_discount: 1.0
+        liquidity_buffer: 1.0
+      small_cap:
+        impact_discount: 1.4
+        liquidity_buffer: 0.6
+    
+    intraday_adjustments:
+      open_30min: 1.5    # 开盘30分钟冲击扩大50%
+      close_30min: 1.3   # 收盘30分钟冲击扩大30%
+      lunch_break: 0.8   # 午间休市冲击减少20%

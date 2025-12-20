@@ -7,6 +7,7 @@ from .error_handling import (
     ErrorContext,
     validate_and_execute
 )
+from .performance_stats import PerformanceStatsManager, PerformanceMetrics
 
 from .type_validators import (
     LengthValidator,
@@ -15,10 +16,10 @@ from .type_validators import (
     DataQualityValidator
 )
 
-from .config_utils import (
+from core_bak_refactored.core.share.config_manager import (
     ConfigExtractor,
     ConfigValidator,
-    ThresholdManager
+    ThresholdManager, ConfigManager, MonitoringConfig, AlertingConfig
 )
 
 from .numeric_utils import (
@@ -86,7 +87,10 @@ __all__ = [
     'ConfigExtractor',
     'ConfigValidator',
     'ThresholdManager',
-    
+    'ConfigManager',
+    'MonitoringConfig',
+    'AlertingConfig',
+
     # 数值工具
     'SafeNumericConverter',
     'NumericCleaner',
@@ -96,7 +100,8 @@ __all__ = [
     # 统计与时序计算
     'StatisticalCalculator',
     'TimeSeriesCalculator',
-    
+    'PerformanceStatsManager',
+    'PerformanceMetrics',
     # 数据质量计算工具
     'StatisticalQualityMetrics',
     

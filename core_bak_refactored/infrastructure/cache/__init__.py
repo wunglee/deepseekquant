@@ -52,7 +52,7 @@ def _load_cache_config() -> Dict[str, Any]:
     }
     
     try:
-        from core_bak_refactored.core.share import ConfigManager
+        from core_bak_refactored.core.share.config_manager import ConfigManager
         config_manager = ConfigManager()
         
         # 从 database.yml 读取配置

@@ -21,7 +21,8 @@ from datetime import datetime
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../../../../..'))
 
 from core_bak_refactored.core.data.providers.tushare_provider import TushareDataProvider
-from core_bak_refactored.core.data.providers.protocols import PriceData, OHLCVRecord
+from core_bak_refactored.core.data.providers.protocols import PriceData
+from core_bak_refactored.core.share.market.data_types import OHLCVRecord
 
 
 class TushareProviderInitializationTest(unittest.TestCase):
@@ -273,7 +274,7 @@ class TushareProviderTestMethodTest(unittest.TestCase):
                     'adapter_class': 'TushareDataProvider'
                 }
             ]
-            mock_config_instance.get_data_config.return_value = mock_data_config
+            mock_config_instance.get_provider_config.return_value = mock_data_config
             
             # 测试 test_provider（不会真正调用 API，因为没有真实凭证）
             result = TushareDataProvider.test_provider('tushare', credential='test_token')

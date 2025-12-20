@@ -5,6 +5,9 @@ import numpy as np
 import pandas as pd
 from core_bak_refactored.infrastructure.statistical_calculators import StatisticalCalculator
 
+# 导出配置类
+from core_bak_refactored.core.risk.config import RiskConfig
+
 def calculate_hhi(weights: List[float]) -> float:
     """
     计算Herfindahl–Hirschman Index (HHI) 集中度指数

@@ -44,10 +44,10 @@ class TestDataProviderIntegration:
     def test_create_provider_from_config(self):
         """测试：从配置选择数据提供者（配置驱动）"""
         config_manager = ConfigManager()
-        data_config = config_manager.get_data_config()
         
-        # 从配置获取CN市场的provider ID
-        provider_id = data_config.market_sources.get('CN', 'akshare')
+        # 从 MarketConfig 获取 market_sources
+        market_config = config_manager.get_market_config()
+        provider_id = market_config.market_sources.get('CN', 'akshare')
         
         # 使用工厂创建
         factory = get_global_factory()
@@ -108,10 +108,10 @@ class TestDataProviderIntegration:
     def test_config_driven_provider_get_data(self):
         """测试：配置驱动的 provider 获取数据"""
         config_manager = ConfigManager()
-        data_config = config_manager.get_data_config()
         
-        # 从配置获取 CN 市场的 provider ID
-        provider_id = data_config.market_sources.get('CN', 'akshare')
+        # 从 MarketConfig 获取 market_sources
+        market_config = config_manager.get_market_config()
+        provider_id = market_config.market_sources.get('CN', 'akshare')
         
         factory = get_global_factory()
         provider = factory.get(provider_id)
