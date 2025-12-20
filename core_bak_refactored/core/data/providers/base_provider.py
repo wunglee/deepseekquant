@@ -214,6 +214,81 @@ class BaseDataProvider(ABC, HistoricalDataProvider):
         """
         pass
     
+    def _convert_period(self, price_data: 'PriceData', period: str) -> 'PriceData':
+        """周期转换（日线→周线/月线）
+        
+        🎯 通用工具方法：供子类复用
+        💚 强类型: 输入/输出都是 PriceData
+        📝 注: 内部使用 pandas.resample()，但仅作为实现细节，对外仍是强类型
+        
+        使用场景：
+        - 子类 API 不支持直接查询周线/月线时（如 AKShare、Finnhub）
+        - 子类获取日线数据后，在 _fetch_from_external_api 中调用此方法转换
+        
+        Args:
+            price_data: 日线数据（PriceData对象）
+            period: 目标周期 ('weekly' 或 'monthly')
+        
+        Returns:
+            转换后的 PriceData 对象
+        """
+        from core_bak_refactored.core.share.market.data_types import OHLCVRecord
+        import pandas as pd
+        
+        # 如果已经是目标周期，直接返回
+        if period == 'daily':
+            return price_data
+        
+        # 临时转换为 DataFrame 进行周期重采样（这是 pandas 的优势）
+        df = price_data.to_dataframe()
+        df['date'] = pd.to_datetime(df['date'])
+        df_copy = df.set_index('date')
+        
+        if period == 'weekly':
+            df_copy = df_copy.resample('W').agg({
+                'open': 'first',
+                'high': 'max',
+                'low': 'min',
+                'close': 'last',
+                'volume': 'sum'
+            })
+        elif period == 'monthly':
+            # 🔧 使用 'ME' 而不是 'M' 避免 FutureWarning
+            df_copy = df_copy.resample('ME').agg({
+                'open': 'first',
+                'high': 'max',
+                'low': 'min',
+                'close': 'last',
+                'volume': 'sum'
+            })
+        else:
+            # 不支持的周期，直接返回原数据
+            logger.warning(f"不支持的周期类型: {period}，返回原始数据")
+            return price_data
+        
+        df_copy = df_copy.reset_index()
+        
+        # 转换回 PriceData 强类型
+        records = [
+            OHLCVRecord(
+                date=pd.Timestamp(row['date']),
+                open=float(row['open']),
+                high=float(row['high']),
+                low=float(row['low']),
+                close=float(row['close']),
+                volume=float(row['volume'])
+            )
+            for _, row in df_copy.iterrows()
+        ]
+        
+        return PriceData(
+            records=records,
+            symbol=price_data.symbol,
+            start_date=records[0].date if records else price_data.start_date,
+            end_date=records[-1].date if records else price_data.end_date,
+            count=len(records)
+        )
+    
     def get_test_symbol(self) -> str:
         """
         获取测试符号（子类可重写）

@@ -231,7 +231,7 @@ class TushareDataProvider(BaseDataProvider):
         # 💚 由基类自动处理缓存
         return super().get_stock_prices(stock_id, start_date, end_date,current_time)
     
-    def _fetch_from_external_api(self, symbol: str, start_date: str, end_date: str) -> PriceData:
+    def _fetch_from_external_api(self, symbol: str, start_date: str, end_date: str, period: str = 'daily') -> PriceData:
         """
         从 Tushare API 获取数据（实现基类抽象方法）
         
@@ -244,6 +244,7 @@ class TushareDataProvider(BaseDataProvider):
             symbol: 股票/指数代码
             start_date: 开始日期 (YYYY-MM-DD)
             end_date: 结束日期 (YYYY-MM-DD)
+            period: 周期 ('daily', 'weekly', 'monthly')
         
         Returns:
             PriceData: 价格数据对象
@@ -261,7 +262,7 @@ class TushareDataProvider(BaseDataProvider):
         
         if is_index:
             # 调用原有的 get_index_prices 逻辑
-            return self.get_index_prices(symbol, start_date, end_date)
+            price_data = self.get_index_prices(symbol, start_date, end_date)
         else:
             # 调用原有的 get_stock_prices 逻辑
             # 为了避免循环调用，直接实现逻辑
@@ -282,14 +283,20 @@ class TushareDataProvider(BaseDataProvider):
                     raise ValueError(f"No data returned for {symbol}")
                 
                 # 标准化数据格式
-                standardized_data = self._standardize_format(df, symbol)
+                price_data = self._standardize_format(df, symbol)
                 
-                logger.info(f"Successfully fetched {len(standardized_data.records)} records for {symbol}")
-                return standardized_data
+                logger.info(f"Successfully fetched {len(price_data.records)} records for {symbol}")
                 
             except Exception as e:
                 logger.error(f"Failed to fetch data for {symbol}: {e}")
                 raise ValueError(f"Failed to fetch data for {symbol}: {str(e)}")
+        
+        # 🔧 Tushare 不支持直接查询周线/月线，需要从日线转换（调用基类的通用方法）
+        if period != 'daily':
+            logger.info(f"Tushare 不支持直接查询 {period}，从日线转换（{price_data.count} 条日线数据）")
+            price_data = self._convert_period(price_data, period)
+        
+        return price_data
     
     def get_quote(self, symbol: str) -> Dict[str, Any]:
         """

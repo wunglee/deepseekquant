@@ -13,7 +13,8 @@ from datetime import datetime, timedelta
 from unittest.mock import Mock, MagicMock, patch
 
 from core_bak_refactored.core.data.providers.base_provider import BaseDataProvider
-from core_bak_refactored.core.data.providers.protocols import PriceData, OHLCVRecord
+from core_bak_refactored.core.data.providers.protocols import PriceData
+from core_bak_refactored.core.share.market.data_types import OHLCVRecord
 
 
 class MockDataProvider(BaseDataProvider):
@@ -23,7 +24,7 @@ class MockDataProvider(BaseDataProvider):
         super().__init__()
         self.api_call_count = 0
     
-    def _fetch_from_external_api(self, symbol: str, start_date: str, end_date: str) -> PriceData:
+    def _fetch_from_external_api(self, symbol: str, start_date: str, end_date: str, period: str = 'daily') -> PriceData:
         """模拟API调用"""
         self.api_call_count += 1
         

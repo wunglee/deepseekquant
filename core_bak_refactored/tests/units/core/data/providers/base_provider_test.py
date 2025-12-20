@@ -19,7 +19,7 @@ class MockProvider(BaseDataProvider):
     def get_test_symbol(self) -> str:
         return "000300.SH"
     
-    def _fetch_from_external_api(self, symbol: str, start_date: str, end_date: str):
+    def _fetch_from_external_api(self, symbol: str, start_date: str, end_date: str, period: str = 'daily'):
         # 简单的模拟实现
         pass
 
