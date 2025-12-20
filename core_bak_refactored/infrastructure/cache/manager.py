@@ -307,7 +307,7 @@ class ThreeLayerCacheManager:
     
     def _is_consecutive_windows(self, key1: str, key2: str, period: str) -> bool:
         """
-        判断两个窗口是否连续（考虑交易日连续性）
+        判断两个窗口是否连续（仅判断周末，不判断节假日）
         
         Args:
             key1: 第一个窗口键
@@ -318,10 +318,14 @@ class ThreeLayerCacheManager:
             True 表示连续，False 表示不连续
             
         注意：
-            - 对于日线/周线：考虑周末连续性（周五→下周一）
-            - 对于月线：直接判断日历连续性（月末→月初）
+            - 仅判断周末连续性（3天间隔 = 周五→下周一）
+            - 不判断节假日（因为不同市场的节假日不同，无法通过weekday()判断）
+            - 节假日导致的非连续窗口会被当作缺失窗口，重新查询数据
+            - 比如：
+              - days_gap=4: 可能是周四→下周一（周五节假日），但无法确定
+              - days_gap>4: 更长的假期（如春节、7天，国庆、7天）
         """
-        from datetime import datetime, timedelta
+        from datetime import datetime
         
         # 获取两个窗口的日期范围
         _, end1 = self._window_mgr.window_key_to_date_range(key1, period)
@@ -337,19 +341,16 @@ class ThreeLayerCacheManager:
         # 判断连续性：
         # 1. 相邻日（1天间隔）
         # 2. 跨周末（3天间隔）- 周五→下周一
-        # 3. 跨长假期（4天以内）- 考虑节假日情况
         if days_gap == 1:
-            # 普通相邻日
+            # 普通相邻日（例如：周一→周二）
             return True
         elif days_gap == 3:
             # 检查是否为周五→下周一
             if end1_dt.weekday() == 4:  # 4=周五
                 return True
-        elif days_gap == 4:
-            # 检查是否为周四→下周一（周五是节假日）
-            if end1_dt.weekday() == 3:  # 3=周四
-                return True
         
+        # 其他情况（包括节假日）视为不连续
+        # 这些情况会被当作缺失窗口，重新查询数据
         return False
     
     def _distribute_data_to_windows(self, symbol: str, period: str, data: pd.DataFrame, 
