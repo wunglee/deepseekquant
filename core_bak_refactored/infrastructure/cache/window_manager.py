@@ -132,14 +132,14 @@ class WindowManager:
         else:
             raise ValueError(f"不支持的 period: {period}，必须是 'daily', 'weekly' 或 'monthly'")
     
-    def generate_window_keys(self, start_date: str, end_date: str, period: str, window_size: int,
+    def generate_window_keys(self, start: pd.Timestamp, end: pd.Timestamp, period: str, window_size: int,
                             market_code: Optional[Union[str, MarketCode]] = None) -> List[str]:
         """
         生成指定范围内的所有窗口键
         
         Args:
-            start_date: 开始日期（YYYY-MM-DD）
-            end_date: 结束日期（YYYY-MM-DD）
+            start: 开始日期（YYYY-MM-DD）
+            end: 结束日期（YYYY-MM-DD）
             period: 数据粒度 (daily/weekly/monthly)
             window_size: 窗口大小（period的整数倍）
         
@@ -153,8 +153,6 @@ class WindowManager:
             >>> generate_window_keys('2025-01-01', '2025-03-31', 'monthly', 3)
             ['2025-01_03']
         """
-        start = pd.to_datetime(start_date)
-        end = pd.to_datetime(end_date)
         
         if start > end:
             return []

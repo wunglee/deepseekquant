@@ -67,6 +67,7 @@ from core_bak_refactored.app.quality_monitoring.api.system_status import SystemS
 from core_bak_refactored.core.share import MarketCode
 from core_bak_refactored.core.share.config_manager import ConfigManager
 from core_bak_refactored.core.signal.indicator_service import TechnicalIndicators
+
 if TYPE_CHECKING:
     from core_bak_refactored.app.quality_monitoring.monitoring_service import QualityMonitoringService
 
@@ -85,21 +86,21 @@ class DataQualityAPIService:
     def __init__(self, quality_monitor: QualityMonitoringService, scheduler=None):
         self.quality_monitor = quality_monitor
         self.scheduler = scheduler  # 调度器实例（可选）
-        
+
         # 获取当前文件所在目录
         current_dir = os.path.dirname(os.path.abspath(__file__))
         template_dir = os.path.join(current_dir, 'templates')
         static_dir = os.path.join(current_dir, 'static')
-        
+
         self.app = Flask(
             __name__,
             template_folder=template_dir,  # 指定模板目录
             static_folder=static_dir  # 指定静态文件目录
         )
-        
+
         # 启用CORS
         CORS(self.app)
-        
+
         # 初始化Socket.IO（支持实时推送）
         self.socketio = SocketIO(
             self.app,
@@ -109,7 +110,7 @@ class DataQualityAPIService:
             engineio_logger=False
         )
         logger.info("Socket.IO服务已初始化")
-        
+
         # 初始化组件
         self.controllers = DataQualityControllers(quality_monitor)
         self.health_checker = HealthChecker(quality_monitor)
@@ -118,14 +119,14 @@ class DataQualityAPIService:
         self.config_manager = ConfigManager()  # 核心层配置管理器不需要 quality_monitor
         self.data_exporter = DataExporter(quality_monitor)
         self.system_status_manager = SystemStatusManager(quality_monitor)
-        
+
         # 初始化全局 factory（用于运行时动态获取 provider）
         from core_bak_refactored.core.data.providers.factory import get_global_factory
         from core_bak_refactored.core.data.providers.provider_selector import ProviderSelector
-        
+
         self.provider_factory = get_global_factory()
         self.provider_selector = ProviderSelector(self.config_manager)  # 领域层服务
-        
+
         self._setup_routes()
         self._setup_socketio_handlers()
 
@@ -141,27 +142,28 @@ class DataQualityAPIService:
         """
 
         from core_bak_refactored.core.share.market import MarketUtils
-        
+
         # 1. 使用领域层服务选择数据提供者
         data_provider = self.provider_selector.select_provider_for_symbol(
             symbol=index_id,
             provider_factory=self.provider_factory
         )
-        
+
         # 2. 推断市场（用于创建指标服务）
         market_code = MarketUtils.infer_market_from_symbol(index_id)
         market = market_code.value
-        
+
         # 3. 创建指标服务（根据市场）
         indicator_service = TechnicalIndicators(market=market, timeframe=timeframe)
-        
+
         # 4. 创建图表数据组装器
         return ChartDataAssembler(
             data_provider=data_provider,
             indicator_service=indicator_service
         )
-    
-    def _create_provider_instance(self, provider: Dict[str, Any], credentials: Dict[str, Any] = None, proxy_config: Dict[str, Any] = None):
+
+    def _create_provider_instance(self, provider: Dict[str, Any], credentials: Dict[str, Any] = None,
+                                  proxy_config: Dict[str, Any] = None):
         """创建数据提供者实例（使用 factory.py 的功能）
         
         Args:
@@ -181,32 +183,32 @@ class DataQualityAPIService:
             if not provider_id:
                 logger.error(f"数据提供者配置不完整: {provider}")
                 return None
-            
+
             # 使用 DataProviderFactory 的 _get_provider_class 逻辑
             # 但需要支持自定义凭证和代理，所以直接使用动态导入
             adapter_module = provider.get('adapter_module')
             adapter_class = provider.get('adapter_class')
-            
+
             if not adapter_module or not adapter_class:
                 logger.error(f"Provider '{provider_id}' 配置不完整：缺少 adapter_module 或 adapter_class")
                 return None
-            
+
             # 动态导入模块（与 factory.py 一致）
             import importlib
             module = importlib.import_module(adapter_module)
             provider_class = getattr(module, adapter_class)
-            
+
             # 创建实例（支持自定义参数）
             kwargs = {}
             if credentials:
                 kwargs['credentials'] = credentials
             if proxy_config:
                 kwargs['proxy_config'] = proxy_config
-            
+
             instance = provider_class(**kwargs)
             logger.debug(f"创建数据提供者实例成功: {provider_id}")
             return instance
-            
+
         except Exception as e:
             logger.error(f"创建数据提供者实例失败: {e}", exc_info=True)
             return None
@@ -286,7 +288,7 @@ class DataQualityAPIService:
                 result = self.controllers.get_alerts_with_pagination(
                     hours, level, severity, data_source, page, per_page
                 )
-                
+
                 return jsonify({
                     'status': 'success',
                     **result,
@@ -455,13 +457,15 @@ class DataQualityAPIService:
                         'message': '缺少必需参数: index_id',
                         'error_code': 'MISSING_PARAMETER'
                     }), 400
-                
+
                 period = request.args.get('period', 'daily')
                 count = request.args.get('count', 120, type=int)
-                before = request.args.get('before')  # 可选
+                before_str = request.args.get('before')  # 可选
+                # 🔧 关键修复：将字符串转换为 pd.Timestamp 类型
+                before = pd.to_datetime(before_str) if before_str else None
                 indicators = request.args.get('indicators', 'all')
                 use_mock = request.args.get('use_mock', 'false').lower() in ['true', '1', 'yes']
-                
+
                 # 参数验证
                 if period not in ['daily', 'weekly', 'monthly']:
                     return jsonify({
@@ -469,23 +473,23 @@ class DataQualityAPIService:
                         'message': f'无效的周期参数: {period}，支持: daily/weekly/monthly',
                         'error_code': 'INVALID_PERIOD'
                     }), 400
-                
+
                 if count <= 0 or count > 1000:
                     return jsonify({
                         'status': 'error',
                         'message': f'数据条数必须在 1-1000 之间，当前: {count}',
                         'error_code': 'INVALID_COUNT'
                     }), 400
-                
+
                 # 🔧 根捪use_mock参数选择数据源
                 if use_mock:
                     logger.info(f"🎭 使用模拟数据源: {index_id}")
                     # 使用MockDataProvider
                     from core_bak_refactored.core.data.providers.mock_provider import MockDataProvider
                     from core_bak_refactored.core.share.market.market_enums import TradingPhase
-                                    
+
                     mock_provider = MockDataProvider()
-                                    
+
                     # 🎭 关键：从前端获取trading_phase参数（用于needs_realtime_kline判断）
                     trading_phase_str = request.args.get('trading_phase', 'TRADING')  # 默认盘中
                     try:
@@ -495,7 +499,7 @@ class DataQualityAPIService:
                     except KeyError:
                         logger.warning(f"🎭 无效的trading_phase: {trading_phase_str}，使用默认TRADING")
                         mock_provider.set_mock_trading_phase(TradingPhase.TRADING)
-                                    
+
                     # 3. 创建指标服务（根据市场）
                     indicator_service = TechnicalIndicators(market=MarketCode.CN, timeframe=period)
                     # 创建使用Mock Provider的chart_assembler
@@ -507,7 +511,7 @@ class DataQualityAPIService:
                     logger.info(f"🎯 使用真实数据源: {index_id}")
                     # 使用真实Provider（原有逻辑）
                     chart_assembler = self._create_chart_assembler(index_id, timeframe=period)
-                
+
                 # 调用组装器
                 chart_data = chart_assembler.assemble_chart_data(
                     index_id=index_id,
@@ -515,9 +519,9 @@ class DataQualityAPIService:
                     count=count,
                     before=before,
                     indicators=indicators,
-                    current_time=datetime.now()
+                    current_time=pd.Timestamp.now()
                 )
-                
+
                 return jsonify({
                     'status': 'success',
                     'data': chart_data,
@@ -531,7 +535,7 @@ class DataQualityAPIService:
                     },
                     'timestamp': datetime.now().isoformat()
                 })
-            
+
             except ValueError as e:
                 logger.error(f"图表数据获取参数错误: {e}")
                 return jsonify({
@@ -539,7 +543,7 @@ class DataQualityAPIService:
                     'message': str(e),
                     'error_code': 'INVALID_PARAMETER'
                 }), 400
-            
+
             except RuntimeError as e:
                 logger.error(f"图表数据组装失败: {e}")
                 return jsonify({
@@ -547,7 +551,7 @@ class DataQualityAPIService:
                     'message': str(e),
                     'error_code': 'CHART_DATA_ASSEMBLY_FAILED'
                 }), 500
-            
+
             except Exception as e:
                 logger.error(f"获取图表数据失败: {e}", exc_info=True)
                 return jsonify({
@@ -598,16 +602,16 @@ class DataQualityAPIService:
                         'message': '缺少必需参数: symbol',
                         'error_code': 'MISSING_PARAMETER'
                     }), 400
-                
+
                 # 解析 tick_range（可选）
                 import json
                 tick_range_str = request.args.get('tick_range')
                 tick_range = None
-                
+
                 if tick_range_str:
                     try:
                         tick_range_dict = json.loads(tick_range_str)
-                        
+
                         # 验证字段
                         required_fields = ['start_time', 'end_time', 'period_seconds']
                         for field in required_fields:
@@ -617,7 +621,7 @@ class DataQualityAPIService:
                                     'message': f'tick_range缺少字段: {field}',
                                     'error_code': 'INVALID_TICK_RANGE'
                                 }), 400
-                        
+
                         # 转换为 TickRange 对象
                         from core_bak_refactored.core.data.providers.protocols import TickRange
                         import pandas as pd
@@ -632,22 +636,22 @@ class DataQualityAPIService:
                             'message': f'解析tick_range失败: {str(e)}',
                             'error_code': 'INVALID_TICK_RANGE_FORMAT'
                         }), 400
-                
+
                 # 📊 真实模式：调用 ChartDataAssembler（会调用 akshare_provider）
                 logger.info(f"📊 真实模式: symbol={symbol}, tick_range={'已提供' if tick_range else '未提供'}")
-                
+
                 chart_assembler = self._create_chart_assembler(symbol, timeframe='daily')
                 intraday_data = chart_assembler.assemble_intraday_data(
                     symbol=symbol,
                     tick_range=tick_range
                 )
-                
+
                 return jsonify({
                     'status': 'success',
                     'data': intraday_data,
                     'timestamp': datetime.now().isoformat()
                 })
-            
+
             except ValueError as e:
                 # 数据验证错误（如盘后数据不完整），返回400
                 logger.warning(f"数据验证失败: {e}")
@@ -656,7 +660,7 @@ class DataQualityAPIService:
                     'message': str(e),
                     'error_code': 'DATA_VALIDATION_FAILED'
                 }), 400
-            
+
             except Exception as e:
                 logger.error(f"获取分时数据失败: {e}", exc_info=True)
                 return jsonify({
@@ -678,7 +682,7 @@ class DataQualityAPIService:
             🔧 注意：服务器根据 trading_phase 决定返回 should_poll，前端只依赖 should_poll 控制行为
             """
             from core_bak_refactored.core.share.market.market_enums import TradingPhase
-            
+
             try:
                 symbol = request.args.get('symbol')
                 if not symbol:
@@ -687,7 +691,7 @@ class DataQualityAPIService:
                         'message': '缺少必需参数: symbol',
                         'error_code': 'MISSING_PARAMETER'
                     }), 400
-                
+
                 trading_phase_str = request.args.get('trading_phase')
                 if not trading_phase_str:
                     return jsonify({
@@ -695,7 +699,7 @@ class DataQualityAPIService:
                         'message': '缺少必需参数: trading_phase',
                         'error_code': 'MISSING_PARAMETER'
                     }), 400
-                
+
                 # 验证 trading_phase
                 valid_modes = ['trading', 'before_open', 'after_close']
                 if trading_phase_str not in valid_modes:
@@ -704,10 +708,10 @@ class DataQualityAPIService:
                         'message': f'trading_phase必须是{valid_modes}之一',
                         'error_code': 'INVALID_TRADING_PHASE'
                     }), 400
-                
+
                 # 转换为枚举
                 trading_phase = TradingPhase.parse(trading_phase_str)
-                
+
                 # 解析 last_price
                 last_price_str = request.args.get('last_price')
                 last_price = None
@@ -720,16 +724,16 @@ class DataQualityAPIService:
                             'message': f'last_price必须是数字: {last_price_str}',
                             'error_code': 'INVALID_LAST_PRICE'
                         }), 400
-                
+
                 # 解析 tick_range
                 import json
                 tick_range_str = request.args.get('tick_range')
                 tick_range = None
-                
+
                 if tick_range_str:
                     try:
                         tick_range_dict = json.loads(tick_range_str)
-                        
+
                         # 验证字段
                         required_fields = ['start_time', 'end_time', 'period_seconds']
                         for field in required_fields:
@@ -739,7 +743,7 @@ class DataQualityAPIService:
                                     'message': f'tick_range缺少字段: {field}',
                                     'error_code': 'INVALID_TICK_RANGE'
                                 }), 400
-                        
+
                         # 转换为 TickRange 对象
                         from core_bak_refactored.core.data.providers.protocols import TickRange
                         import pandas as pd
@@ -754,22 +758,23 @@ class DataQualityAPIService:
                             'message': f'解析tick_range失败: {str(e)}',
                             'error_code': 'INVALID_TICK_RANGE_FORMAT'
                         }), 400
-                
-                logger.info(f"🎮 模拟模式: symbol={symbol}, trading_phase={trading_phase_str}(前端按钮控制), tick_range={'已提供' if tick_range else '未提供'}")
-                
+
+                logger.info(
+                    f"🎮 模拟模式: symbol={symbol}, trading_phase={trading_phase_str}(前端按钮控制), tick_range={'已提供' if tick_range else '未提供'}")
+
                 # 直接调用 MockDataProvider
                 from core_bak_refactored.core.data.providers.mock_provider import MockDataProvider
-                
+
                 generator = MockDataProvider()
-                
+
                 # 判断是否为指数
                 is_index = symbol in ['000001.SH', '000300.SH', '399001.SZ', '399006.SZ']
-                
+
                 # 使用系统当前日期
                 trade_date = datetime.now().strftime('%Y-%m-%d')
-                
+
                 # tick_range 由前端直接传入，不需要转换
-                
+
                 mock_data = generator.generate(
                     symbol=symbol,
                     trade_date=trade_date,
@@ -778,7 +783,7 @@ class DataQualityAPIService:
                     last_price=last_price,
                     is_index=is_index
                 )
-                
+
                 # 转换为前端需要的格式
                 intraday_data = {
                     'symbol': mock_data.symbol,
@@ -797,19 +802,20 @@ class DataQualityAPIService:
                         'message': mock_data.order_book_message
                     },
                     'trade_records': {
-                        'items': [{'time': t.time, 'price': t.price, 'volume': t.volume, 'type': t.direction} for t in mock_data.trade_records],
+                        'items': [{'time': t.time, 'price': t.price, 'volume': t.volume, 'type': t.direction} for t in
+                                  mock_data.trade_records],
                         'message': mock_data.trade_records_message
                     },
                     'is_index': mock_data.is_index,
                     'should_poll': mock_data.should_poll  # 🔧 服务器根据 trading_phase 决定，前端只依赖此字段控制行为
                 }
-                
+
                 return jsonify({
                     'status': 'success',
                     'data': intraday_data,
                     'timestamp': datetime.now().isoformat()
                 })
-            
+
             except Exception as e:
                 logger.error(f"获取模拟分时数据失败: {e}", exc_info=True)
                 return jsonify({
@@ -961,7 +967,7 @@ class DataQualityAPIService:
         # ============================================================
         # Web 仪表板路由
         # ============================================================
-        
+
         @self.app.route('/')
         @self.app.route('/dashboard')
         def dashboard():
@@ -1067,14 +1073,14 @@ class DataQualityAPIService:
                     'message': f'页面不可用: {str(e)}',
                     'error_code': 'REALTIME_UNAVAILABLE'
                 }), 500
-        
+
         @self.app.route('/api/dashboard/quality-data')
         def get_dashboard_quality_data():
             """获取仪表板质量数据"""
             try:
                 history = self.quality_monitor.get_quality_history(hours=24)
                 current = history[-1] if history else None
-                
+
                 return jsonify({
                     'status': 'success',
                     'current_quality': current,
@@ -1088,14 +1094,14 @@ class DataQualityAPIService:
                     'message': str(e),
                     'error_code': 'DASHBOARD_DATA_FETCH_FAILED'
                 }), 500
-        
+
         @self.app.route('/api/dashboard/alerts')
         def get_dashboard_alerts():
             """获取仪表板告警数据"""
             try:
                 hours = request.args.get('hours', 24, type=int)
                 alerts = self.quality_monitor.get_alert_history(hours=hours)
-                
+
                 return jsonify({
                     'status': 'success',
                     'alerts': alerts,
@@ -1109,7 +1115,7 @@ class DataQualityAPIService:
                     'message': str(e),
                     'error_code': 'DASHBOARD_ALERTS_FETCH_FAILED'
                 }), 500
-        
+
         @self.app.route('/api/dashboard/performance')
         def get_dashboard_performance():
             """获取仪表板性能数据（严格模式）"""
@@ -1127,7 +1133,7 @@ class DataQualityAPIService:
                     'message': str(e),
                     'error_code': 'DASHBOARD_PERFORMANCE_FETCH_FAILED'
                 }), 500
-        
+
         @self.app.route('/api/v1/trigger-check', methods=['POST'])
         def trigger_quality_check():
             """手动触发数据质量检查"""
@@ -1157,18 +1163,18 @@ class DataQualityAPIService:
         # ============================================================
         # 新API：市场数据源配置（彻底改写，不向后兼容）
         # ============================================================
-        
+
         @self.app.route('/api/v1/markets/config', methods=['GET'])
         def get_markets_config():
             """获取所有市场配置信息（从配置文件读取）"""
             try:
                 # 从配置文件读取真实配置
                 data_provider_config = self.config_manager.get_provider_config()
-                
+
                 # 从 market.yml 的 market_registry 读取市场列表（包含UI展示信息）
                 market_config = self.config_manager.get_market_config()
                 market_registry = market_config.market_registry or {}
-                
+
                 # 从 market_registry 生成 UI 展示数据
                 markets = [
                     {
@@ -1181,7 +1187,7 @@ class DataQualityAPIService:
 
                 # 从 data_provider_config.yml 读取 providers 配置
                 providers_raw = data_provider_config.providers or []
-                
+
                 # 转换为前端需要的格式（过滤掉未实现的适配器）
                 providers = []
                 for p in providers_raw:
@@ -1190,13 +1196,13 @@ class DataQualityAPIService:
                     adapter_class = p.get('adapter_class')
                     if not adapter_module or not adapter_class or adapter_module == 'null' or adapter_class == 'null':
                         continue  # 跳过未实现的适配器
-                    
+
                     # 获取配置文件中的状态（已移除聚合数据源）
                     # TODO: 实现新的测试状态获取机制
                     provider_id = p.get('id')
                     test_status = p.get('status', 'untested')  # 使用配置文件中的状态
                     is_available = test_status == 'passed'
-                    
+
                     provider_data = {
                         'id': p.get('id'),
                         'name': p.get('name'),
@@ -1207,7 +1213,7 @@ class DataQualityAPIService:
                         'needsConfig': p.get('requires_auth', False),
                         'params': []
                     }
-                    
+
                     # 如果需要配置，添加参数定义
                     if p.get('requires_auth'):
                         auth_type = p.get('auth_type', 'api_key')
@@ -1231,20 +1237,20 @@ class DataQualityAPIService:
                                     'placeholder': f"在 {p.get('registration', '')} 注册获取"
                                 }
                             ]
-                    
+
                     providers.append(provider_data)
                 data_market_config = self.config_manager.get_market_config()
                 # 市场数据源配置
                 market_sources = data_market_config.market_sources or {}
-                
+
                 # 从真实凭证文件读取凭证状态
                 import os
                 import yaml
-                        # 使用 ConfigManager 获取配置路径（封装环境逻辑）
+                # 使用 ConfigManager 获取配置路径（封装环境逻辑）
                 from core_bak_refactored.core.share.config_manager import ConfigManager
                 config_manager_temp = ConfigManager()
                 credentials_yml_path = config_manager_temp.get_config_path('credentials')
-                
+
                 # 读取凭证文件
                 credentials_data = {}
                 if os.path.exists(credentials_yml_path):
@@ -1253,7 +1259,7 @@ class DataQualityAPIService:
                             credentials_data = yaml.safe_load(f) or {}
                     except Exception as e:
                         logger.warning(f"读取凭证文件失败: {e}")
-                
+
                 # 生成凭证状态
                 credentials = {}
                 for p in providers_raw:
@@ -1266,7 +1272,7 @@ class DataQualityAPIService:
                         credentials[provider_id] = {
                             'configured': provider_id in credentials_data
                         }
-                
+
                 return jsonify({
                     'status': 'success',
                     'data': {
@@ -1284,7 +1290,7 @@ class DataQualityAPIService:
                     'message': str(e),
                     'error_code': 'MARKETS_CONFIG_FETCH_FAILED'
                 }), 500
-        
+
         @self.app.route('/api/v1/markets/config', methods=['PUT'])
         def update_markets_config():
             """更新市场数据源配置（真实保存）"""
@@ -1296,13 +1302,13 @@ class DataQualityAPIService:
                         'message': '缺少 market_sources 字段',
                         'error_code': 'INVALID_REQUEST_DATA'
                     }), 400
-                
+
                 market_sources = data['market_sources']
-                
+
                 # 使用 ConfigManager 的验证和保存方法
                 try:
                     self.config_manager.get_market_config().save_market_sources(market_sources)
-                    
+
                     return jsonify({
                         'status': 'success',
                         'message': '市场配置已保存',
@@ -1326,7 +1332,7 @@ class DataQualityAPIService:
                     'message': str(e),
                     'error_code': 'MARKETS_CONFIG_UPDATE_FAILED'
                 }), 500
-        
+
         @self.app.route('/api/v1/providers/<provider_id>/credentials', methods=['POST'])
         def save_provider_credentials(provider_id):
             """保存数据源凭证（调用领域层 Provider 的保存方法）"""
@@ -1338,20 +1344,19 @@ class DataQualityAPIService:
                         'message': '无效的请求数据',
                         'error_code': 'INVALID_REQUEST_DATA'
                     }), 400
-                
+
                 # 使用环境变量或默认 dev
                 import os
 
-                
                 # 使用 BaseDataProvider 的通用方法保存凭证
                 from core_bak_refactored.core.data.providers.base_provider import BaseDataProvider
-                
+
                 success = BaseDataProvider.save_credentials(provider_id, data)
-                
+
                 if success:
                     # 重新加载配置
                     self.config_manager._load_config()
-                    
+
                     return jsonify({
                         'status': 'success',
                         'message': f'{provider_id} 凭证已保存，请重新测试连接',
@@ -1368,7 +1373,7 @@ class DataQualityAPIService:
                         'message': '保存凭证失败',
                         'error_code': 'CREDENTIALS_SAVE_FAILED'
                     }), 500
-                    
+
             except Exception as e:
                 logger.error(f"保存凭证失败: {e}")
                 return jsonify({
@@ -1376,19 +1381,19 @@ class DataQualityAPIService:
                     'message': str(e),
                     'error_code': 'CREDENTIALS_SAVE_FAILED'
                 }), 500
-        
+
         @self.app.route('/api/v1/providers/<provider_id>/credentials', methods=['DELETE'])
         def delete_provider_credentials(provider_id):
             """删除数据源凭证（调用领域层 Provider 的删除方法）"""
             try:
                 # 使用环境变量或默认 dev
                 import os
-                
+
                 # 使用 BaseDataProvider 的通用方法删除凭证
                 from core_bak_refactored.core.data.providers.base_provider import BaseDataProvider
-                
+
                 success = BaseDataProvider.delete_credentials(provider_id)
-                
+
                 if success:
                     return jsonify({
                         'status': 'success',
@@ -1401,7 +1406,7 @@ class DataQualityAPIService:
                         'message': '删除凭证失败',
                         'error_code': 'CREDENTIALS_DELETE_FAILED'
                     }), 500
-                    
+
             except Exception as e:
                 logger.error(f"删除凭证失败: {e}")
                 return jsonify({
@@ -1409,34 +1414,34 @@ class DataQualityAPIService:
                     'message': str(e),
                     'error_code': 'CREDENTIALS_DELETE_FAILED'
                 }), 500
-        
+
         @self.app.route('/api/v1/providers/<provider_id>/test', methods=['POST'])
         def test_provider_connection(provider_id):
             """测试数据源连接（调用领域层 Provider 的测试方法）"""
             try:
                 # 获取请求中的测试参数（如API Key）
                 test_params = request.get_json() or {}
-                
+
                 # 使用 factory 获取 provider 类并调用 test_provider 方法
                 from core_bak_refactored.core.data.providers.factory import get_global_factory
-                
+
                 factory = get_global_factory()
-                
+
                 try:
                     # 创建 provider 实例
                     provider = factory.get(provider_id)
-                    
+
                     # 转换参数：credentials → credential
                     # test_provider 方法签名：test_provider(provider_id, credential: str)
                     # proxy 从配置文件读取，不作为参数传递
                     credentials_dict = test_params.get('credentials', {})
-                    
+
                     # 提取 credential 字符串（可能是 api_key 或 token）
                     credential = None
                     if credentials_dict:
                         # 优先使用 api_key，其次使用 token
                         credential = credentials_dict.get('api_key') or credentials_dict.get('token')
-                    
+
                     # 调用 provider 类的 test_provider 方法
                     if credential:
                         result = provider.__class__.test_provider(provider_id, credential=credential)
@@ -1451,13 +1456,13 @@ class DataQualityAPIService:
                         'message': str(e),
                         'timestamp': datetime.now().isoformat()
                     }
-                
+
                 # 根据结果返回 HTTP 状态码
                 if result['status'] == 'error':
                     return jsonify(result), 500
                 else:
                     return jsonify(result)
-                    
+
             except Exception as e:
                 logger.error(f"测试连接失败: {e}")
                 return jsonify({
@@ -1466,11 +1471,11 @@ class DataQualityAPIService:
                     'test_result': 'failed',
                     'error_code': 'TEST_CONNECTION_FAILED'
                 }), 500
-        
+
         # ============================================================
         # 旧API：数据提供者能力暴露（保留兼容）
         # ============================================================
-        
+
         @self.app.route('/api/v1/providers', methods=['GET'])
         def get_providers():
             """获取所有数据源配置（只返回已实现的数据源）"""
@@ -1478,14 +1483,14 @@ class DataQualityAPIService:
                 config = self.config_manager.get('data', {})
                 all_providers = config.get('providers', [])
                 primary_source = config.get('primary_source', 'mock')
-                
+
                 # 过滤掉未实现的适配器（adapter_module 和 adapter_class 为 null 的）
                 implemented_providers = [
                     p for p in all_providers
-                    if p.get('adapter_module') and p.get('adapter_class') 
-                    and p.get('adapter_module') != 'null' and p.get('adapter_class') != 'null'
+                    if p.get('adapter_module') and p.get('adapter_class')
+                       and p.get('adapter_module') != 'null' and p.get('adapter_class') != 'null'
                 ]
-                
+
                 return jsonify({
                     'status': 'success',
                     'providers': implemented_providers,
@@ -1501,23 +1506,24 @@ class DataQualityAPIService:
                     'message': str(e),
                     'error_code': 'PROVIDERS_FETCH_FAILED'
                 }), 500
-        
+
         @self.app.route('/api/v1/providers/<provider_id>', methods=['GET'])
         def get_provider(provider_id):
             """获取指定数据源配置"""
             try:
                 config = self.config_manager.get('data', {})
                 providers = config.get('providers', [])
-                
-                provider = next((p for p in providers if p.get('id') == provider_id or p.get('name') == provider_id), None)
-                
+
+                provider = next((p for p in providers if p.get('id') == provider_id or p.get('name') == provider_id),
+                                None)
+
                 if not provider:
                     return jsonify({
                         'status': 'error',
                         'message': f'数据源不存在: {provider_id}',
                         'error_code': 'PROVIDER_NOT_FOUND'
                     }), 404
-                
+
                 return jsonify({
                     'status': 'success',
                     'provider': provider,
@@ -1530,7 +1536,7 @@ class DataQualityAPIService:
                     'message': str(e),
                     'error_code': 'PROVIDER_FETCH_FAILED'
                 }), 500
-        
+
         @self.app.route('/api/v1/providers', methods=['POST'])
         def create_provider():
             """创建新数据源"""
@@ -1542,7 +1548,7 @@ class DataQualityAPIService:
                         'message': '无效的数据源配置',
                         'error_code': 'INVALID_PROVIDER_DATA'
                     }), 400
-                
+
                 # 验证必填字段
                 required_fields = ['name', 'type']
                 for field in required_fields:
@@ -1552,10 +1558,10 @@ class DataQualityAPIService:
                             'message': f'缺少必填字段: {field}',
                             'error_code': 'MISSING_REQUIRED_FIELD'
                         }), 400
-                
+
                 config = self.config_manager.get('data', {})
                 providers = config.get('providers', [])
-                
+
                 # 检查是否已存在
                 if any(p.get('name') == new_provider['name'] for p in providers):
                     return jsonify({
@@ -1563,18 +1569,18 @@ class DataQualityAPIService:
                         'message': f'数据源已存在: {new_provider["name"]}',
                         'error_code': 'PROVIDER_ALREADY_EXISTS'
                     }), 409
-                
+
                 # 添加默认字段
                 new_provider.setdefault('enabled', True)
                 new_provider.setdefault('priority', len(providers) + 1)
                 new_provider.setdefault('created_at', datetime.now().isoformat())
-                
+
                 providers.append(new_provider)
                 config['providers'] = providers
-                
+
                 self.config_manager.update({'data': config})
                 logger.info(f"创建数据源成功: {new_provider['name']}")
-                
+
                 return jsonify({
                     'status': 'success',
                     'message': '数据源创建成功',
@@ -1588,7 +1594,7 @@ class DataQualityAPIService:
                     'message': str(e),
                     'error_code': 'PROVIDER_CREATE_FAILED'
                 }), 500
-        
+
         @self.app.route('/api/v1/providers/<provider_id>', methods=['PUT'])
         def update_provider(provider_id):
             """更新数据源配置"""
@@ -1600,27 +1606,29 @@ class DataQualityAPIService:
                         'message': '无效的更新数据',
                         'error_code': 'INVALID_UPDATE_DATA'
                     }), 400
-                
+
                 config = self.config_manager.get('data', {})
                 providers = config.get('providers', [])
-                
-                provider_index = next((i for i, p in enumerate(providers) if p.get('id') == provider_id or p.get('name') == provider_id), None)
-                
+
+                provider_index = next(
+                    (i for i, p in enumerate(providers) if p.get('id') == provider_id or p.get('name') == provider_id),
+                    None)
+
                 if provider_index is None:
                     return jsonify({
                         'status': 'error',
                         'message': f'数据源不存在: {provider_id}',
                         'error_code': 'PROVIDER_NOT_FOUND'
                     }), 404
-                
+
                 # 更新字段
                 providers[provider_index].update(updated_data)
                 providers[provider_index]['updated_at'] = datetime.now().isoformat()
-                
+
                 config['providers'] = providers
                 self.config_manager.update({'data': config})
                 logger.info(f"更新数据源成功: {provider_id}")
-                
+
                 return jsonify({
                     'status': 'success',
                     'message': '数据源更新成功',
@@ -1634,29 +1642,31 @@ class DataQualityAPIService:
                     'message': str(e),
                     'error_code': 'PROVIDER_UPDATE_FAILED'
                 }), 500
-        
+
         @self.app.route('/api/v1/providers/<provider_id>', methods=['DELETE'])
         def delete_provider(provider_id):
             """删除数据源"""
             try:
                 config = self.config_manager.get('data', {})
                 providers = config.get('providers', [])
-                
-                provider_index = next((i for i, p in enumerate(providers) if p.get('id') == provider_id or p.get('name') == provider_id), None)
-                
+
+                provider_index = next(
+                    (i for i, p in enumerate(providers) if p.get('id') == provider_id or p.get('name') == provider_id),
+                    None)
+
                 if provider_index is None:
                     return jsonify({
                         'status': 'error',
                         'message': f'数据源不存在: {provider_id}',
                         'error_code': 'PROVIDER_NOT_FOUND'
                     }), 404
-                
+
                 deleted_provider = providers.pop(provider_index)
                 config['providers'] = providers
-                
+
                 self.config_manager.update({'data': config})
                 logger.info(f"删除数据源成功: {provider_id}")
-                
+
                 return jsonify({
                     'status': 'success',
                     'message': '数据源删除成功',
@@ -1670,25 +1680,26 @@ class DataQualityAPIService:
                     'message': str(e),
                     'error_code': 'PROVIDER_DELETE_FAILED'
                 }), 500
-        
+
         @self.app.route('/api/v1/providers/<provider_id>/test', methods=['POST'])
         def test_provider(provider_id):
             """测试数据源连接（使用临时凭证）"""
             try:
                 import time
-                
+
                 config = self.config_manager.get('data', {})
                 providers = config.get('providers', [])
-                
-                provider = next((p for p in providers if p.get('id') == provider_id or p.get('name') == provider_id), None)
-                
+
+                provider = next((p for p in providers if p.get('id') == provider_id or p.get('name') == provider_id),
+                                None)
+
                 if not provider:
                     return jsonify({
                         'status': 'error',
                         'message': f'数据源不存在: {provider_id}',
                         'error_code': 'PROVIDER_NOT_FOUND'
                     }), 404
-                
+
                 # 获取前端传入的临时凭证和代理设置（如果有）
                 request_data = request.get_json() or {}
                 temp_credentials = request_data.get('credentials', {})
@@ -1696,7 +1707,7 @@ class DataQualityAPIService:
                 test_symbol = request_data.get('test_symbol', 'AAPL')
                 start_date = request_data.get('start_date', '2023-01-01')
                 end_date = request_data.get('end_date', '2023-12-31')
-                
+
                 # 如果没有传入代理配置，则从系统配置中获取
                 if not proxy_config:
                     try:
@@ -1704,20 +1715,20 @@ class DataQualityAPIService:
                         proxy_config = system_config.proxies or {}
                     except Exception:
                         proxy_config = {}
-                
+
                 # 创建临时实例进行测试
                 test_instance = self._create_provider_instance(provider, temp_credentials, proxy_config)
-                
+
                 if not test_instance:
                     return jsonify({
                         'status': 'error',
                         'message': f'无法创建数据源实例: {provider_id}',
                         'error_code': 'INSTANCE_CREATION_FAILED'
                     }), 500
-                
+
                 requires_auth = test_instance.requires_auth()
                 credentials = test_instance.credentials
-                
+
                 # 执行测试
                 start_time = time.time()
                 test_data = test_instance.test_connection(
@@ -1735,13 +1746,13 @@ class DataQualityAPIService:
                 else:
                     is_empty = test_data.empty if test_data is not None else True
                     data_count = len(test_data) if test_data is not None else 0
-                
+
                 if test_data is None or is_empty:
                     # 测试失败：连接成功但返回空数据
                     is_available = False
                     message = f'{provider_id} 连接成功，但返回空数据'
                     logger.warning(f"{provider_id} 测试警告: {message}")
-                    
+
                     result_data = {
                         'status': 'error',
                         'test_result': 'failed',
@@ -1758,7 +1769,7 @@ class DataQualityAPIService:
                     is_available = True
                     message = f'{provider_id} 连接测试通过'
                     logger.info(f"{provider_id} 测试成功: {data_count} 条数据, {latency_ms}ms")
-                    
+
                     result_data = {
                         'status': 'success',
                         'test_result': 'passed',
@@ -1772,19 +1783,19 @@ class DataQualityAPIService:
                         },
                         'timestamp': datetime.now().isoformat()
                     }
-                    
+
                     # 测试成功后，保存凭证到文件
                     if requires_auth and credentials:
                         from core_bak_refactored.core.data.providers.base_provider import BaseDataProvider
                         import os
                         BaseDataProvider.save_credentials(provider_id, credentials)
                         logger.info(f"{provider_id} 凭证已保存")
-                    
+
                     # 注意：不再保存测试状态到配置文件
                     # 状态由前端在内存中维护，下次启动时重新测试
-                
+
                 return jsonify(result_data)
-                
+
             except Exception as e:
                 logger.error(f"测试 {provider_id} 连接失败: {str(e)}", exc_info=True)
                 return jsonify({
@@ -1802,37 +1813,37 @@ class DataQualityAPIService:
             try:
                 config = self.config_manager.get('data', {})
                 providers = config.get('providers', [])
-                
+
                 # 查找目标数据源
                 target_provider = None
                 for p in providers:
                     if p.get('id') == provider_id or p.get('name') == provider_id:
                         target_provider = p
                         break
-                
+
                 if not target_provider:
                     return jsonify({
                         'status': 'error',
                         'message': f'数据源不存在: {provider_id}',
                         'error_code': 'PROVIDER_NOT_FOUND'
                     }), 404
-                
+
                 # 停用所有数据源
                 for p in providers:
                     p['status'] = 'inactive'
                     p['updated_at'] = datetime.now().isoformat()
-                
+
                 # 激活目标数据源
                 target_provider['status'] = 'active'
                 target_provider['updated_at'] = datetime.now().isoformat()
-                
+
                 # 更新配置文件中的 primary_source
                 config['primary_source'] = provider_id
                 config['providers'] = providers
                 self.config_manager.update({'data': config})
-                
+
                 logger.info(f"已激活数据源: {provider_id}，其他数据源已自动停用")
-                
+
                 return jsonify({
                     'status': 'success',
                     'message': f'已切换到 {target_provider.get("name", provider_id)}',
@@ -1846,7 +1857,7 @@ class DataQualityAPIService:
                     'message': str(e),
                     'error_code': 'PROVIDER_ACTIVATE_FAILED'
                 }), 500
-        
+
         # ============================================================
         # 凭证管理端点（Credentials Management）
         # ============================================================
@@ -1857,7 +1868,7 @@ class DataQualityAPIService:
             try:
                 config = self.config_manager.get('credentials', {})
                 credentials_list = []
-                
+
                 for key, cred in config.items():
                     # 脱敏处理
                     sanitized_cred = {
@@ -1871,7 +1882,7 @@ class DataQualityAPIService:
                         'updated_at': cred.get('updated_at', '')
                     }
                     credentials_list.append(sanitized_cred)
-                
+
                 return jsonify({
                     'status': 'success',
                     'credentials': credentials_list,
@@ -1885,21 +1896,21 @@ class DataQualityAPIService:
                     'message': str(e),
                     'error_code': 'CREDENTIALS_FETCH_FAILED'
                 }), 500
-        
+
         @self.app.route('/api/v1/credentials/<credential_id>', methods=['GET'])
         def get_credential(credential_id):
             """获取指定凭证（脱敏）"""
             try:
                 config = self.config_manager.get('credentials', {})
                 cred = config.get(credential_id)
-                
+
                 if not cred:
                     return jsonify({
                         'status': 'error',
                         'message': f'凭证不存在: {credential_id}',
                         'error_code': 'CREDENTIAL_NOT_FOUND'
                     }), 404
-                
+
                 # 脱敏处理
                 sanitized_cred = {
                     'id': credential_id,
@@ -1911,7 +1922,7 @@ class DataQualityAPIService:
                     'created_at': cred.get('created_at', ''),
                     'updated_at': cred.get('updated_at', '')
                 }
-                
+
                 return jsonify({
                     'status': 'success',
                     'credential': sanitized_cred,
@@ -1924,7 +1935,7 @@ class DataQualityAPIService:
                     'message': str(e),
                     'error_code': 'CREDENTIAL_FETCH_FAILED'
                 }), 500
-        
+
         @self.app.route('/api/v1/credentials', methods=['POST'])
         def create_credential():
             """创建新凭证"""
@@ -1936,7 +1947,7 @@ class DataQualityAPIService:
                         'message': '无效的凭证数据',
                         'error_code': 'INVALID_CREDENTIAL_DATA'
                     }), 400
-                
+
                 # 验证必填字段
                 required_fields = ['id', 'type']
                 for field in required_fields:
@@ -1946,9 +1957,9 @@ class DataQualityAPIService:
                             'message': f'缺少必填字段: {field}',
                             'error_code': 'MISSING_REQUIRED_FIELD'
                         }), 400
-                
+
                 config = self.config_manager.get('credentials', {})
-                
+
                 # 检查是否已存在
                 if new_cred['id'] in config:
                     return jsonify({
@@ -1956,15 +1967,15 @@ class DataQualityAPIService:
                         'message': f'凭证已存在: {new_cred["id"]}',
                         'error_code': 'CREDENTIAL_ALREADY_EXISTS'
                     }), 409
-                
+
                 # 添加默认字段
                 new_cred.setdefault('enabled', True)
                 new_cred.setdefault('created_at', datetime.now().isoformat())
-                
+
                 config[new_cred['id']] = new_cred
                 self.config_manager.update({'credentials': config})
                 logger.info(f"创建凭证成功: {new_cred['id']}")
-                
+
                 # 返回脱敏数据
                 sanitized = {
                     'id': new_cred['id'],
@@ -1972,7 +1983,7 @@ class DataQualityAPIService:
                     'provider': new_cred.get('provider', ''),
                     'enabled': new_cred.get('enabled', True)
                 }
-                
+
                 return jsonify({
                     'status': 'success',
                     'message': '凭证创建成功',
@@ -1986,7 +1997,7 @@ class DataQualityAPIService:
                     'message': str(e),
                     'error_code': 'CREDENTIAL_CREATE_FAILED'
                 }), 500
-        
+
         @self.app.route('/api/v1/credentials/<credential_id>', methods=['PUT'])
         def update_credential(credential_id):
             """更新凭证"""
@@ -1998,23 +2009,23 @@ class DataQualityAPIService:
                         'message': '无效的更新数据',
                         'error_code': 'INVALID_UPDATE_DATA'
                     }), 400
-                
+
                 config = self.config_manager.get('credentials', {})
-                
+
                 if credential_id not in config:
                     return jsonify({
                         'status': 'error',
                         'message': f'凭证不存在: {credential_id}',
                         'error_code': 'CREDENTIAL_NOT_FOUND'
                     }), 404
-                
+
                 # 更新字段
                 config[credential_id].update(updated_data)
                 config[credential_id]['updated_at'] = datetime.now().isoformat()
-                
+
                 self.config_manager.update({'credentials': config})
                 logger.info(f"更新凭证成功: {credential_id}")
-                
+
                 return jsonify({
                     'status': 'success',
                     'message': '凭证更新成功',
@@ -2027,24 +2038,24 @@ class DataQualityAPIService:
                     'message': str(e),
                     'error_code': 'CREDENTIAL_UPDATE_FAILED'
                 }), 500
-        
+
         @self.app.route('/api/v1/credentials/<credential_id>', methods=['DELETE'])
         def delete_credential(credential_id):
             """删除凭证"""
             try:
                 config = self.config_manager.get('credentials', {})
-                
+
                 if credential_id not in config:
                     return jsonify({
                         'status': 'error',
                         'message': f'凭证不存在: {credential_id}',
                         'error_code': 'CREDENTIAL_NOT_FOUND'
                     }), 404
-                
+
                 del config[credential_id]
                 self.config_manager.update({'credentials': config})
                 logger.info(f"删除凭证成功: {credential_id}")
-                
+
                 return jsonify({
                     'status': 'success',
                     'message': '凭证删除成功',
@@ -2057,7 +2068,7 @@ class DataQualityAPIService:
                     'message': str(e),
                     'error_code': 'CREDENTIAL_DELETE_FAILED'
                 }), 500
-        
+
         @self.app.route('/api/v1/data/index-prices')
         def get_index_prices_api():
             """获取指数价格数据（直接来自当前数据提供者）"""
@@ -2069,10 +2080,12 @@ class DataQualityAPIService:
                     return jsonify({'status': 'error', 'message': '缺少必要参数', 'error_code': 'MISSING_PARAMS'}), 400
                 provider = getattr(self.quality_monitor, 'data_provider_config', None)
                 if not provider or not hasattr(provider, 'get_index_prices'):
-                    return jsonify({'status': 'error', 'message': '数据提供者不可用', 'error_code': 'DATA_PROVIDER_UNAVAILABLE'}), 503
-                df = provider.get_index_prices(index_id, start_date, end_date,datetime.now())
+                    return jsonify({'status': 'error', 'message': '数据提供者不可用',
+                                    'error_code': 'DATA_PROVIDER_UNAVAILABLE'}), 503
+                df = provider.get_index_prices(index_id, start_date, end_date, datetime.now())
                 data = df.to_dict(orient='records') if hasattr(df, 'to_dict') else []
-                return jsonify({'status': 'success', 'data': data, 'count': len(data), 'timestamp': datetime.now().isoformat()})
+                return jsonify(
+                    {'status': 'success', 'data': data, 'count': len(data), 'timestamp': datetime.now().isoformat()})
             except Exception as e:
                 logger.error(f"获取指数价格失败: {e}")
                 return jsonify({'status': 'error', 'message': str(e), 'error_code': 'INDEX_PRICES_FETCH_FAILED'}), 500
@@ -2088,10 +2101,13 @@ class DataQualityAPIService:
                     return jsonify({'status': 'error', 'message': '缺少必要参数', 'error_code': 'MISSING_PARAMS'}), 400
                 provider = getattr(self.quality_monitor, 'data_provider_config', None)
                 if not provider or not hasattr(provider, 'get_index_returns'):
-                    return jsonify({'status': 'error', 'message': '数据提供者不可用', 'error_code': 'DATA_PROVIDER_UNAVAILABLE'}), 503
+                    return jsonify({'status': 'error', 'message': '数据提供者不可用',
+                                    'error_code': 'DATA_PROVIDER_UNAVAILABLE'}), 503
                 series = provider.get_index_returns(index_id, start_date, end_date)
-                data = [{'date': str(idx), 'return': float(val)} for idx, val in (series.items() if hasattr(series, 'items') else [])]
-                return jsonify({'status': 'success', 'data': data, 'count': len(data), 'timestamp': datetime.now().isoformat()})
+                data = [{'date': str(idx), 'return': float(val)} for idx, val in
+                        (series.items() if hasattr(series, 'items') else [])]
+                return jsonify(
+                    {'status': 'success', 'data': data, 'count': len(data), 'timestamp': datetime.now().isoformat()})
             except Exception as e:
                 logger.error(f"获取指数收益率失败: {e}")
                 return jsonify({'status': 'error', 'message': str(e), 'error_code': 'INDEX_RETURNS_FETCH_FAILED'}), 500
@@ -2107,7 +2123,7 @@ class DataQualityAPIService:
                 baseline_days = request.args.get('baseline_days', type=int)
                 if not all([index_id, event_date]):
                     return jsonify({'status': 'error', 'message': '缺少必要参数', 'error_code': 'MISSING_PARAMS'}), 400
-                
+
                 # 检查 quality_monitor 是否存在
                 if not hasattr(self, 'quality_monitor') or self.quality_monitor is None:
                     logger.error("quality_monitor 未初始化")
@@ -2116,7 +2132,7 @@ class DataQualityAPIService:
                         'message': '监控服务未初始化，请检查应用启动状态',
                         'error_code': 'MONITOR_NOT_INITIALIZED'
                     }), 503
-                
+
                 # 检查 data_provider_config 是否存在
                 provider = getattr(self.quality_monitor, 'data_provider_config', None)
                 if not provider:
@@ -2127,7 +2143,7 @@ class DataQualityAPIService:
                         'error_code': 'DATA_PROVIDER_NOT_FOUND',
                         'hint': '确保 primary_source 已配置且有效（如 tushare, yahoo, akshare）'
                     }), 503
-                
+
                 # 检查方法是否存在
                 if not hasattr(provider, 'get_event_window_data'):
                     logger.error(f"provider 类型: {type(provider).__name__}, 方法: {dir(provider)}")
@@ -2136,18 +2152,23 @@ class DataQualityAPIService:
                         'message': f'数据提供者（{type(provider).__name__}）不支持 get_event_window_data 方法',
                         'error_code': 'METHOD_NOT_SUPPORTED'
                     }), 503
-                
-                logger.info(f"调用 get_event_window_data: index_id={index_id}, event_date={event_date}, event_type={event_type}")
+
+                logger.info(
+                    f"调用 get_event_window_data: index_id={index_id}, event_date={event_date}, event_type={event_type}")
                 result = provider.get_event_window_data(index_id, event_date, event_type, window_days, baseline_days)
                 # 仅返回统计信息与样本，避免过大payload
                 event_records = result.get('event_window')
                 baseline_records = result.get('baseline')
-                event_data = event_records.head(200).to_dict(orient='records') if hasattr(event_records, 'to_dict') else []
-                baseline_data = baseline_records.head(200).to_dict(orient='records') if hasattr(baseline_records, 'to_dict') else []
+                event_data = event_records.head(200).to_dict(orient='records') if hasattr(event_records,
+                                                                                          'to_dict') else []
+                baseline_data = baseline_records.head(200).to_dict(orient='records') if hasattr(baseline_records,
+                                                                                                'to_dict') else []
                 return jsonify({
                     'status': 'success',
-                    'event_window': {'count': len(event_records) if hasattr(event_records, '__len__') else 0, 'samples': event_data},
-                    'baseline': {'count': len(baseline_records) if hasattr(baseline_records, '__len__') else 0, 'samples': baseline_data},
+                    'event_window': {'count': len(event_records) if hasattr(event_records, '__len__') else 0,
+                                     'samples': event_data},
+                    'baseline': {'count': len(baseline_records) if hasattr(baseline_records, '__len__') else 0,
+                                 'samples': baseline_data},
                     'config': result.get('config', {}),
                     'timestamp': datetime.now().isoformat()
                 })
@@ -2161,12 +2182,15 @@ class DataQualityAPIService:
             try:
                 provider = getattr(self.quality_monitor, 'data_provider_config', None)
                 if not provider or not hasattr(provider, 'get_cross_validation_log'):
-                    return jsonify({'status': 'error', 'message': '数据提供者不可用', 'error_code': 'DATA_PROVIDER_UNAVAILABLE'}), 503
+                    return jsonify({'status': 'error', 'message': '数据提供者不可用',
+                                    'error_code': 'DATA_PROVIDER_UNAVAILABLE'}), 503
                 log = provider.get_cross_validation_log()
-                return jsonify({'status': 'success', 'log': log, 'count': len(log), 'timestamp': datetime.now().isoformat()})
+                return jsonify(
+                    {'status': 'success', 'log': log, 'count': len(log), 'timestamp': datetime.now().isoformat()})
             except Exception as e:
                 logger.error(f"获取交叉验证日志失败: {e}")
-                return jsonify({'status': 'error', 'message': str(e), 'error_code': 'CROSS_VALIDATION_LOG_FETCH_FAILED'}), 500
+                return jsonify(
+                    {'status': 'error', 'message': str(e), 'error_code': 'CROSS_VALIDATION_LOG_FETCH_FAILED'}), 500
 
         # 新增：K线数据（周期切换 + 最近30周期 + 事件标注 + 无限滚动支持）
         @self.app.route('/api/v1/data/kline')
@@ -2175,7 +2199,10 @@ class DataQualityAPIService:
                 index_id = request.args.get('index_id', type=str)
                 period = request.args.get('period', default='daily', type=str)
                 count = request.args.get('count', default=30, type=int)
-                before = request.args.get('before', type=str)  # 新增：获取此日期之前的数据
+                before_str = request.args.get('before', type=str)  # 新增：获取此日期之前的数据
+                before=None
+                if before_str:
+                    before=pd.Timestamp(before_str)
                 mock_flag = request.args.get('mock', default='0', type=str)
                 if not index_id:
                     return jsonify({'status': 'error', 'message': '缺少index_id', 'error_code': 'MISSING_PARAMS'}), 400
@@ -2183,20 +2210,22 @@ class DataQualityAPIService:
                 if mock_flag.lower() in ('1', 'true', 'yes'):
                     try:
                         # 使用 MockHistoricalDataProvider 生成逼真的K线数据
-                        from core_bak_refactored.tests.fixtures.core.data.mock_historical_data_provider import MockHistoricalDataProvider
+                        from core_bak_refactored.tests.fixtures.core.data.mock_historical_data_provider import \
+                            MockHistoricalDataProvider
                         mock_provider = MockHistoricalDataProvider()
-                        
+
                         # 计算日期范围
                         multiplier = {'daily': 1, 'weekly': 7, 'monthly': 30}.get(period, 1)
                         days_needed = count * multiplier * 2
                         end_date = datetime.now()
                         start_date = end_date - timedelta(days=days_needed)
-                        
+
                         # 获取原始日线数据
-                        df = mock_provider.get_index_prices(index_id, start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'),datetime.now())
+                        df = mock_provider.get_index_prices(index_id, start_date.strftime('%Y-%m-%d'),
+                                                            end_date.strftime('%Y-%m-%d'), datetime.now())
                         if hasattr(df, 'empty') and df.empty:
                             return jsonify({'status': 'error', 'message': '无数据', 'error_code': 'NO_DATA'}), 404
-                        
+
                         # 补齐OHLC（基于close生成逼真的OHLC）
                         df = df.copy()
                         if 'open' not in df.columns:
@@ -2210,30 +2239,37 @@ class DataQualityAPIService:
                             # 确保 high >= close >= low 和 high >= open >= low
                             df['high'] = df[['high', 'close', 'open']].max(axis=1)
                             df['low'] = df[['low', 'close', 'open']].min(axis=1)
-                        
+
                         # 周期转换
                         df2 = df.copy()
                         df2['date'] = pd.to_datetime(df2['date'])
                         df2 = df2.set_index('date')
                         if period == 'weekly':
-                            df2 = df2.resample('W').agg({'open':'first','high':'max','low':'min','close':'last','volume':'sum'})
+                            df2 = df2.resample('W').agg(
+                                {'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'})
                         elif period == 'monthly':
-                            df2 = df2.resample('M').agg({'open':'first','high':'max','low':'min','close':'last','volume':'sum'})
+                            df2 = df2.resample('M').agg(
+                                {'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'})
                         df2 = df2.reset_index()
                         df2 = df2.tail(count)
-                        
+
                         # 事件检测（最小规则）
                         df2['pct_change'] = df2['close'].pct_change() * 100
                         events = []
                         for i in range(len(df2)):
-                            chg = float(df2.loc[df2.index[i], 'pct_change']) if not pd.isna(df2.loc[df2.index[i], 'pct_change']) else 0.0
+                            chg = float(df2.loc[df2.index[i], 'pct_change']) if not pd.isna(
+                                df2.loc[df2.index[i], 'pct_change']) else 0.0
                             dt = df2.loc[df2.index[i], 'date']
                             cl = float(df2.loc[df2.index[i], 'close'])
                             if chg <= -5.0:
-                                events.append({'date': dt.strftime('%Y-%m-%d'), 'type': 'market_crash', 'title': f'暴跌 {abs(chg):.2f}%', 'decline_pct': chg, 'price': cl, 'impact': 'negative', 'severity': 'high' if chg > -7 else 'critical'})
+                                events.append({'date': dt.strftime('%Y-%m-%d'), 'type': 'market_crash',
+                                               'title': f'暴跌 {abs(chg):.2f}%', 'decline_pct': chg, 'price': cl,
+                                               'impact': 'negative', 'severity': 'high' if chg > -7 else 'critical'})
                             elif chg >= 5.0:
-                                events.append({'date': dt.strftime('%Y-%m-%d'), 'type': 'rally', 'title': f'暴涨 {chg:.2f}%', 'rise_pct': chg, 'price': cl, 'impact': 'positive', 'severity': 'high'})
-                        
+                                events.append(
+                                    {'date': dt.strftime('%Y-%m-%d'), 'type': 'rally', 'title': f'暴涨 {chg:.2f}%',
+                                     'rise_pct': chg, 'price': cl, 'impact': 'positive', 'severity': 'high'})
+
                         # 转换为dict并处理NaN值（替换为null以确保JSON有效）
                         data = df2.to_dict(orient='records')
                         # 将所有NaN替换为None（JSON序列化时会变成null）
@@ -2243,7 +2279,9 @@ class DataQualityAPIService:
                                     record[key] = None
                                 elif key == 'date' and hasattr(value, 'strftime'):
                                     record[key] = value.strftime('%Y-%m-%d')
-                        return jsonify({'status': 'success', 'data': data, 'period': period, 'count': len(data), 'events': events, 'timestamp': datetime.now().isoformat()})
+                        return jsonify(
+                            {'status': 'success', 'data': data, 'period': period, 'count': len(data), 'events': events,
+                             'timestamp': datetime.now().isoformat()})
                     except Exception as e:
                         logger.error(f"模拟K线数据生成失败: {e}")
                         return jsonify({'status': 'error', 'message': str(e), 'error_code': 'MOCK_KLINE_FAILED'}), 500
@@ -2251,27 +2289,30 @@ class DataQualityAPIService:
                 provider = getattr(self.quality_monitor, 'data_provider_config', None)
                 if not provider or not hasattr(provider, 'get_index_prices'):
                     # 生产环境：数据提供者不可用时返回错误，不降级为Mock
-                    return jsonify({'status': 'error', 'message': '数据提供者不可用', 'error_code': 'DATA_PROVIDER_UNAVAILABLE'}), 503
-                
+                    return jsonify({'status': 'error', 'message': '数据提供者不可用',
+                                    'error_code': 'DATA_PROVIDER_UNAVAILABLE'}), 503
+
                 try:
                     multiplier = {'daily': 1, 'weekly': 7, 'monthly': 30}.get(period, 1)
                     days_needed = count * multiplier * 2
-                    
+
                     if before:
                         end_date = datetime.strptime(before, '%Y-%m-%d')
                     else:
                         end_date = datetime.now()
-                    
+
                     start_date = end_date - timedelta(days=days_needed)
-                    df = provider.get_index_prices(index_id, start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'),datetime.now())
+                    df = provider.get_index_prices(index_id, start_date.strftime('%Y-%m-%d'),
+                                                   end_date.strftime('%Y-%m-%d'), datetime.now())
                     if hasattr(df, 'empty') and df.empty:
                         # 生产环境：真实数据为空时返回错误，不降级为Mock
                         return jsonify({'status': 'error', 'message': '无数据', 'error_code': 'NO_DATA'}), 404
                 except Exception as e:
                     logger.error(f"获取真实数据失败: {e}")
                     # 生产环境：获取数据失败时返回错误，不降级为Mock
-                    return jsonify({'status': 'error', 'message': f'数据获取失败: {str(e)}', 'error_code': 'DATA_FETCH_FAILED'}), 500
-                    
+                    return jsonify({'status': 'error', 'message': f'数据获取失败: {str(e)}',
+                                    'error_code': 'DATA_FETCH_FAILED'}), 500
+
                 # 处理真实数据：补齐OHLC、周期转换、事件检测
                 # 补齐OHLC
                 if 'open' not in df.columns or 'high' not in df.columns or 'low' not in df.columns:
@@ -2279,36 +2320,43 @@ class DataQualityAPIService:
                     df['open'] = df['close'].shift(1).fillna(df['close'])
                     df['high'] = df['close'] * 1.005
                     df['low'] = df['close'] * 0.995
-                
+
                 # 周期转换
                 df2 = df.copy()
                 df2['date'] = pd.to_datetime(df2['date'])
                 df2 = df2.set_index('date')
                 if period == 'weekly':
-                    df2 = df2.resample('W').agg({'open':'first','high':'max','low':'min','close':'last','volume':'sum'})
+                    df2 = df2.resample('W').agg(
+                        {'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'})
                 elif period == 'monthly':
-                    df2 = df2.resample('M').agg({'open':'first','high':'max','low':'min','close':'last','volume':'sum'})
+                    df2 = df2.resample('M').agg(
+                        {'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'})
                 else:
                     # 保持日线
                     pass
                 df2 = df2.reset_index()
                 df2 = df2.tail(count)
-                
+
                 # 事件检测（最小规则）
                 try:
                     df2['pct_change'] = df2['close'].pct_change() * 100
                     events = []
                     for i in range(len(df2)):
-                        chg = float(df2.loc[df2.index[i], 'pct_change']) if not pd.isna(df2.loc[df2.index[i], 'pct_change']) else 0.0
+                        chg = float(df2.loc[df2.index[i], 'pct_change']) if not pd.isna(
+                            df2.loc[df2.index[i], 'pct_change']) else 0.0
                         dt = df2.loc[df2.index[i], 'date']
                         cl = float(df2.loc[df2.index[i], 'close'])
                         if chg <= -5.0:
-                            events.append({'date': dt.strftime('%Y-%m-%d'), 'type': 'market_crash', 'title': f'暴跌 {abs(chg):.2f}%', 'decline_pct': chg, 'price': cl, 'impact': 'negative', 'severity': 'high' if chg > -7 else 'critical'})
+                            events.append({'date': dt.strftime('%Y-%m-%d'), 'type': 'market_crash',
+                                           'title': f'暴跌 {abs(chg):.2f}%', 'decline_pct': chg, 'price': cl,
+                                           'impact': 'negative', 'severity': 'high' if chg > -7 else 'critical'})
                         elif chg >= 5.0:
-                            events.append({'date': dt.strftime('%Y-%m-%d'), 'type': 'rally', 'title': f'暴涨 {chg:.2f}%', 'rise_pct': chg, 'price': cl, 'impact': 'positive', 'severity': 'high'})
+                            events.append(
+                                {'date': dt.strftime('%Y-%m-%d'), 'type': 'rally', 'title': f'暴涨 {chg:.2f}%',
+                                 'rise_pct': chg, 'price': cl, 'impact': 'positive', 'severity': 'high'})
                 except Exception:
                     events = []
-                
+
                 # 转换为dict并处理NaN值（替换为null以确保JSON有效）
                 data = df2.to_dict(orient='records')
                 # 将所有NaN替换为None（JSON序列化时会变成null）
@@ -2318,7 +2366,9 @@ class DataQualityAPIService:
                             record[key] = None
                         elif key == 'date' and hasattr(value, 'strftime'):
                             record[key] = value.strftime('%Y-%m-%d')
-                return jsonify({'status': 'success', 'data': data, 'period': period, 'count': len(data), 'events': events, 'timestamp': datetime.now().isoformat()})
+                return jsonify(
+                    {'status': 'success', 'data': data, 'period': period, 'count': len(data), 'events': events,
+                     'timestamp': datetime.now().isoformat()})
             except Exception as e:
                 logger.error(f"获取K线数据失败: {e}")
                 return jsonify({'status': 'error', 'message': str(e), 'error_code': 'KLINE_FETCH_FAILED'}), 500
@@ -2356,27 +2406,27 @@ class DataQualityAPIService:
                 index_id = request.args.get('index_id', type=str)
                 if not index_id:
                     return jsonify({'status': 'error', 'message': '缺少index_id', 'error_code': 'MISSING_PARAMS'}), 400
-                
+
                 # 🔧 获取前端传入的trading_phase参数（用于模拟控制）
                 from core_bak_refactored.core.share.market.market_enums import TradingPhase
                 from core_bak_refactored.core.share.market.market_utils import MarketUtils
-                
+
                 trading_phase_str = request.args.get('trading_phase', 'TRADING')  # 默认盘中
                 try:
                     trading_phase = TradingPhase.parse(trading_phase_str)  # 转为枚举
                 except KeyError:
                     return jsonify({
-                        'status': 'error', 
+                        'status': 'error',
                         'message': f'无效的trading_phase: {trading_phase_str}，允许值: BEFORE_OPEN, TRADING, AFTER_CLOSE',
                         'error_code': 'INVALID_TRADING_PHASE'
                     }), 400
-                
+
                 trade_date = request.args.get('trade_date', datetime.now().strftime('%Y-%m-%d'))
                 is_index_str = request.args.get('is_index', 'false').lower()
                 is_index = is_index_str in ['true', '1', 'yes']
-                
+
                 from core_bak_refactored.core.data.providers.mock_provider import MockDataProvider
-                
+
                 # 🔧 调用领域层，显式传入参数
                 provider = MockDataProvider()
                 result = provider.get_realtime_kline(
@@ -2385,19 +2435,19 @@ class DataQualityAPIService:
                     trading_phase=trading_phase,
                     is_index=is_index
                 )
-                
+
                 return jsonify({
                     'status': 'success',
                     'data': result,
                     'timestamp': datetime.now().isoformat()
                 })
-                
+
             except Exception as e:
                 logger.error(f"处理模拟实时K线请求失败: {e}")
                 import traceback
                 traceback.print_exc()
                 return jsonify({'status': 'error', 'message': str(e), 'error_code': 'MOCK_REALTIME_KLINE_FAILED'}), 500
-        
+
         # 真实模式端点
         @self.app.route('/api/v1/data/kline/realtime')
         def get_realtime_kline():
@@ -2426,28 +2476,31 @@ class DataQualityAPIService:
                 index_id = request.args.get('index_id', type=str)
                 if not index_id:
                     return jsonify({'status': 'error', 'message': '缺少index_id', 'error_code': 'MISSING_PARAMS'}), 400
-                
+
                 provider = getattr(self.quality_monitor, 'data_provider_config', None)
                 if not provider:
-                    return jsonify({'status': 'error', 'message': '数据提供者不可用', 'error_code': 'DATA_PROVIDER_UNAVAILABLE'}), 503
-                
+                    return jsonify({'status': 'error', 'message': '数据提供者不可用',
+                                    'error_code': 'DATA_PROVIDER_UNAVAILABLE'}), 503
+
                 try:
                     # 🔧 直接调用领域层，所有逻辑由领域层处理
                     result = provider.get_realtime_kline(symbol=index_id)
-                    
+
                     return jsonify({
                         'status': 'success',
                         'data': result,
                         'timestamp': datetime.now().isoformat()
                     })
-                    
+
                 except Exception as e:
                     logger.error(f"获取实时K线失败: {e}")
-                    return jsonify({'status': 'error', 'message': str(e), 'error_code': 'REALTIME_KLINE_FETCH_FAILED'}), 500
-                    
+                    return jsonify(
+                        {'status': 'error', 'message': str(e), 'error_code': 'REALTIME_KLINE_FETCH_FAILED'}), 500
+
             except Exception as e:
                 logger.error(f"处理实时K线请求失败: {e}")
-                return jsonify({'status': 'error', 'message': str(e), 'error_code': 'REALTIME_KLINE_REQUEST_FAILED'}), 500
+                return jsonify(
+                    {'status': 'error', 'message': str(e), 'error_code': 'REALTIME_KLINE_REQUEST_FAILED'}), 500
 
         # ============================================================
         # 错误处理中间件
@@ -2577,10 +2630,10 @@ class DataQualityAPIService:
                 'message': '内部服务器错误',
                 'error_code': 'INTERNAL_ERROR'
             }), 500
-    
+
     def _setup_socketio_handlers(self):
         """设置Socket.IO事件处理器 - 实时推送支持"""
-        
+
         @self.socketio.on('connect')
         def handle_connect():
             """客户端连接事件"""
@@ -2590,12 +2643,12 @@ class DataQualityAPIService:
                 'message': '已连接到数据质量监控服务',
                 'timestamp': datetime.now().isoformat()
             })
-        
+
         @self.socketio.on('disconnect')
         def handle_disconnect():
             """客户端断开连接事件"""
             logger.info("Socket.IO客户端已断开")
-        
+
         @self.socketio.on('request_quality_data')
         def handle_quality_request():
             """客户端请求质量数据"""
@@ -2612,7 +2665,7 @@ class DataQualityAPIService:
                     'status': 'error',
                     'message': str(e)
                 })
-    
+
     def broadcast_quality_update(self, quality_data: Dict[str, Any]):
         """广播质量数据更新到所有连接的客户端
         

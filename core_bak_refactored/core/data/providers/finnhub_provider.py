@@ -183,9 +183,10 @@ class FinnhubDataProvider(BaseDataProvider, HistoricalDataProvider):
     def get_index_prices(
         self,
         index_id: str,
-        start_date:str,
-        end_date: str,
-        current_time: datetime
+        start_date:pd.Timestamp,
+        end_date: pd.Timestamp,
+        current_time: pd.Timestamp,
+        period: str = 'daily'
     ) -> PriceData:
         """
         获取指数历史价格数据
@@ -194,7 +195,8 @@ class FinnhubDataProvider(BaseDataProvider, HistoricalDataProvider):
             index_id: 指数代码
             start_date: 开始日期 'YYYY-MM-DD' 或 datetime 对象
             end_date: 结束日期 'YYYY-MM-DD' 或 datetime 对象
-        
+            current_time:当前时间
+            period:周期
         Returns:
             PriceData: 包含标准OHLCV数据的结构化对象
         """
@@ -204,12 +206,12 @@ class FinnhubDataProvider(BaseDataProvider, HistoricalDataProvider):
         try:
             # 转换日期格式
             if isinstance(start_date, str):
-                start_dt = datetime.strptime(start_date, '%Y-%m-%d')
+                start_dt = pd.to_datetime(start_date)
             else:
                 start_dt = start_date
             
             if isinstance(end_date, str):
-                end_dt = datetime.strptime(end_date, '%Y-%m-%d')
+                end_dt = pd.to_datetime(end_date)
             else:
                 end_dt = end_date
             
@@ -285,8 +287,8 @@ class FinnhubDataProvider(BaseDataProvider, HistoricalDataProvider):
     def get_index_returns(
         self,
         index_id: str,
-        start_date: Union[str, datetime],
-        end_date: Union[str, datetime]
+        start_date:pd.Timestamp,
+        end_date: pd.Timestamp
     ) -> pd.Series:
         """
         获取指数收益率序列
@@ -299,7 +301,7 @@ class FinnhubDataProvider(BaseDataProvider, HistoricalDataProvider):
         Returns:
             Series with date index and return values
         """
-        price_data = self.get_index_prices(index_id, start_date, end_date)
+        price_data = self.get_index_prices(index_id, start_date, end_date,pd.Timestamp.now())
         df = price_data.to_dataframe().set_index('date')
         returns = df['close'].pct_change().dropna()
         return returns
@@ -307,9 +309,10 @@ class FinnhubDataProvider(BaseDataProvider, HistoricalDataProvider):
     def get_stock_prices(
         self,
         stock_id: str,
-        start_date: str,
-        end_date:str,
-        current_time: datetime
+        start_date:pd.Timestamp,
+        end_date: pd.Timestamp,
+        current_time: pd.Timestamp,
+        period: str = 'daily'
     ) -> PriceData:
         """
         获取个股价格数据
@@ -317,17 +320,18 @@ class FinnhubDataProvider(BaseDataProvider, HistoricalDataProvider):
         💚 注意: 此方法由基类处理缓存，不需覆写
         
         Args:
-            symbol: 股票代码
+            stock_id: 股票代码
             start_date: 开始日期
             end_date: 结束日期
-        
+            current_time:当前时间
+            period:周期
         Returns:
             PriceData: 包含标准OHLCV数据的结构化对象
         """
         # 💚 由基类自动处理缓存
-        return super().get_stock_prices(stock_id, start_date, end_date,current_time)
+        return super().get_stock_prices(stock_id, start_date, end_date,current_time,period)
     
-    def _fetch_from_external_api(self, symbol: str, start_date: str, end_date: str, period: str = 'daily') -> PriceData:
+    def _fetch_from_external_api(self, symbol: str, start_date: pd.Timestamp, end_date: pd.Timestamp, period: str = 'daily') -> PriceData:
         """
         从 Finnhub API 获取数据（实现基类抽象方法）
         
@@ -346,7 +350,7 @@ class FinnhubDataProvider(BaseDataProvider, HistoricalDataProvider):
             PriceData: 价格数据对象
         """
         # 获取日线数据（Finnhub API 只返回日线）
-        price_data = self.get_index_prices(symbol, start_date, end_date)
+        price_data = self.get_index_prices(symbol, start_date, end_date,pd.Timestamp.now())
         
         # 🔧 Finnhub 不支持直接查询周线/月线，需要从日线转换（调用基类的通用方法）
         if period != 'daily':

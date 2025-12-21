@@ -27,6 +27,8 @@
 import logging
 from typing import Dict, Any
 
+import pandas as pd
+
 logger = logging.getLogger('DeepSeekQuant.Cache')
 
 # 导出核心类
@@ -85,27 +87,27 @@ def _load_cache_config() -> Dict[str, Any]:
 def create_cache_manager() -> ThreeLayerCacheManager:
     """
     工厂方法：创建三层缓存管理器
-    
+
     自动从 database.yml 加载配置，创建并返回 ThreeLayerCacheManager 实例。
-    
+
     Returns:
         ThreeLayerCacheManager: 三层缓存管理器实例
-    
+
     Example:
-        >>> from infrastructure.cache import create_cache_manager
+import pandas as pd        >>> from core_bak_refactored.infrastructure.cache import create_cache_manager
         >>> cache_manager = create_cache_manager()
         >>> # 使用缓存管理器
         >>> data = cache_manager.get_data(
         ...     symbol='000300.SH',
-        ...     start_date='2025-01-01',
-        ...     end_date='2025-01-31',
+        ...     start_date=pd.Timestamp('2025-01-01'),
+        ...     end_date=pd.Timestamp('2025-01-31'),
         ...     period='weekly',
         ...     api_fetch_func=my_api_func
         ... )
     """
     # 加载配置
     config = _load_cache_config()
-    
+
     # 创建管理器
     cache_manager = ThreeLayerCacheManager(
         db_service=None,  # ThreeLayerCacheManager 内部处理
@@ -116,7 +118,7 @@ def create_cache_manager() -> ThreeLayerCacheManager:
         memory_ttl=config['memory_ttl'],
         redis_ttl=config['redis_ttl']
     )
-    
+
     logger.debug(f"✅ 缓存管理器已创建: cache_mode={config['cache_mode']}")
     return cache_manager
 

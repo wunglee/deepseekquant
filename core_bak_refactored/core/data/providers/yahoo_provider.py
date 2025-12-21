@@ -57,54 +57,57 @@ class YahooFinanceDataProvider(BaseDataProvider):
             proxy 从配置文件读取，不通过参数传递
         """
         # 创建自定义 Session（官方推荐，避免 429 限流）
+        super().__init__()
         self._session = self._create_session()
         
         # 请求限速器（避免 429）
         self._last_request_time = 0
         self._min_request_interval = 0.5  # 每个请求之间至少间隔 0.5 秒
-        
-        # 从配置文件中获取代理配置
-        config_manager = ConfigManager()
-        
-        # 检查是否为 Yahoo Finance 启用代理（从 data_provider.yml 读取）
-        use_proxy = config_manager.get('data.data_providers.yahoo_finance.use_proxy', default=False)
-        
-        if use_proxy:
-            # 使用统一的 get_proxies_from_config() 方法（从 system.yml 读取）
-            proxy_config = config_manager.get_proxies_from_config()
-            if proxy_config:
-                # 使用HTTP代理（如果有配置的话）
-                self.proxy = proxy_config.get('http') or proxy_config.get('socks5')
-                logger.info(f"Yahoo Finance: 将尝试使用代理 {self.proxy}")
-            else:
-                self.proxy = None
-                logger.warning(
-                    "Yahoo Finance: use_proxy=true 但未配置代理地址\n"
-                    "请在 config/dev/system.yml 中配置 proxies.http"
-                )
-        else:
-            self.proxy = None
-            logger.info(
-                "Yahoo Finance: 不使用代理（直连）\n"
-                "使用自定义 Session 和请求限速来避免 429 限流"
-            )
-        
+        self.init_yfinance()
+
+    def init_yfinance(self):
         # 延迟导入yfinance（避免环境依赖问题）
         try:
             import yfinance as yf
             self.yf = yf
-            
-            # 应用 HTTP/2 补丁，传入代理配置
-            # 补丁内部会测试代理是否可用
-            patch_yfinance(proxy_url=self.proxy)
-            
-            # 如果提供了代理，也配置 yfinance 原生代理（双保险）
+            try:
+                # 从 ConfigManager 读取 providers 配置
+                provider_config = self.config_manager.get_provider_config()
+                # 查找 akshare provider 的 use_proxy 配置
+                use_proxy = False
+                for provider in provider_config.providers:
+                    if provider.get('id') == "akshare":
+                        use_proxy = provider.get('use_proxy', False)
+                        break
+                import os
+                proxy_vars = ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy']
+                if not use_proxy:
+                    logger.info("🚫 akshare配置为不使用代理，清除环境变量中的代理设置")
+                    # 清除环境变量中的代理
+                    for var in proxy_vars:
+                        if var in os.environ:
+                            logger.info(f"  清除环境变量: {var} = {os.environ[var]}")
+                            del os.environ[var]
+                    # 设置 requests 会话不使用代理
+                    import requests
+                    requests.Session().trust_env = False
+
+                    logger.info("✅ 代理已禁用")
+                else:
+                    for var in proxy_vars:
+                        if var in os.environ:
+                            self.proxy = os.environ[var]
+                            break
+                    logger.info("🌐yahoo配置为使用代理")
+            except Exception as e:
+                logger.warning(f"配置代理时出错: {e}，将使用默认设置")
             if self.proxy:
-                yf.set_config(proxy=self.proxy)
+                patch_yfinance(proxy_url=self.proxy)
+                # 如果提供了代理，也配置 yfinance 原生代理（双保险）
+                self.yf.set_config(proxy=self.proxy)
                 logger.info(f"YahooFinanceDataProvider initialized with proxy: {self.proxy}")
             else:
                 logger.info("YahooFinanceDataProvider initialized with custom session (anti-429)")
-                
         except ImportError:
             logger.error("yfinance not installed. Please run: pip install yfinance")
             self.yf = None
@@ -113,7 +116,7 @@ class YahooFinanceDataProvider(BaseDataProvider):
             logger.error(f"Failed to initialize yfinance: {e}")
             self.yf = None
             self.available = False
-    
+
     def _create_session(self) -> requests.Session:
         """
         创建自定义 Session（官方推荐，避免 429 限流）
@@ -162,7 +165,7 @@ class YahooFinanceDataProvider(BaseDataProvider):
         """获取测试符号"""
         return "^GSPC"  # 标普500指数
     
-    def _fetch_with_retry(self, trade_record: str, start_date: Union[str, datetime], end_date: Union[str, datetime], period: str = 'daily', max_retries: int = 3) -> pd.DataFrame:
+    def _fetch_with_retry(self, trade_record: str, start_date: pd.Timestamp, end_date: pd.Timestamp, period: str = 'daily', max_retries: int = 3) -> pd.DataFrame:
         """
         带重试机制的数据获取方法
         
@@ -240,8 +243,8 @@ class YahooFinanceDataProvider(BaseDataProvider):
     def _inter_get_index_prices(
         self,
         index_id: str,
-        start_date:str,
-        end_date: str,
+        start_date:pd.Timestamp,
+        end_date: pd.Timestamp,
         period: str = 'daily'
     ) -> PriceData:
         """
@@ -285,8 +288,8 @@ class YahooFinanceDataProvider(BaseDataProvider):
     def _inter_get_stock_prices(
         self,
         stock_id: str,
-        start_date: str,
-        end_date:str,
+        start_date: pd.Timestamp,
+        end_date:pd.Timestamp,
         period: str = 'daily'
     ) -> PriceData:
         """
@@ -326,7 +329,7 @@ class YahooFinanceDataProvider(BaseDataProvider):
             logger.error(f"Failed to fetch data for {stock_id}: {e}")
             raise ValueError(f"Failed to fetch data for {stock_id}: {str(e)}")
     
-    def _fetch_from_external_api(self, symbol: str, start_date: str, end_date: str, period: str = 'daily') -> PriceData:
+    def _fetch_from_external_api(self, symbol: str, start_date: pd.Timestamp, end_date: pd.Timestamp, period: str = 'daily') -> PriceData:
         """
         从 Yahoo Finance API 获取数据（实现基类抽象方法）
         

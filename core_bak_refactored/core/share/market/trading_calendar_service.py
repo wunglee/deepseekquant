@@ -102,13 +102,13 @@ class TradingCalendarService:
         
         return self._calendars.get(market_code_str)
     
-    def is_trading_day(self, market_code: Union[str, MarketCode], date: datetime) -> bool:
+    def is_trading_day(self, market_code: Union[str, MarketCode], date: Union[datetime, pd.Timestamp]) -> bool:
         """
         判断指定日期是否为交易日
         
         Args:
             market_code: 市场代码枚举或字符串 (MarketCode.CN 或 'CN')
-            date: 日期
+            date: 日期 (支持 datetime 或 pd.Timestamp)
         
         Returns:
             bool: True表示是交易日，False表示非交易日
@@ -117,11 +117,17 @@ class TradingCalendarService:
             >>> service = TradingCalendarService()
             >>> service.is_trading_day(MarketCode.CN, datetime(2024, 10, 1))  # 国庆节
             False
-            >>> service.is_trading_day('CN', datetime(2024, 10, 8))  # 工作日
+            >>> service.is_trading_day('CN', pd.Timestamp('2024-10-08'))  # 工作日
             True
         """
         # 支持 MarketCode 枚举和字符串
         market_code_str = str(market_code) if isinstance(market_code, MarketCode) else market_code
+        
+        # 统一转换为 pd.Timestamp 类型
+        if isinstance(date, str):
+            date = pd.to_datetime(date)
+        elif isinstance(date, datetime):
+            date = pd.Timestamp(date)
         
         # 缓存键
         cache_key = f"{market_code_str}_{date.strftime('%Y-%m-%d')}"
@@ -152,7 +158,7 @@ class TradingCalendarService:
             )
             
             # 检查日期是否在交易日列表中
-            date_str = pd.Timestamp(date).normalize()
+            date_str = date.normalize()
             result = date_str in schedule.index
             
             self._cache[cache_key] = result
@@ -163,28 +169,41 @@ class TradingCalendarService:
             self._cache[cache_key] = result
             return result
     
-    def get_trading_days_between(self, market_code: Union[str, MarketCode], start_date: datetime, 
-                                 end_date: datetime) -> List[datetime]:
+    def get_trading_days_between(self, market_code: Union[str, MarketCode], 
+                                 start_date: Union[datetime, pd.Timestamp], 
+                                 end_date: Union[datetime, pd.Timestamp]) -> List[pd.Timestamp]:
         """
         获取两个日期之间的所有交易日
         
         Args:
             market_code: 市场代码枚举或字符串
-            start_date: 起始日期（包含）
-            end_date: 结束日期（包含）
+            start_date: 起始日期（包含）(支持 datetime 或 pd.Timestamp)
+            end_date: 结束日期（包含）(支持 datetime 或 pd.Timestamp)
         
         Returns:
-            交易日列表
+            交易日列表 (pd.Timestamp 类型)
         
         Examples:
             >>> service = TradingCalendarService()
             >>> days = service.get_trading_days_between(MarketCode.CN, 
-            ...     datetime(2024, 9, 30), datetime(2024, 10, 8))
+            ...     pd.Timestamp('2024-09-30'), pd.Timestamp('2024-10-08'))
             >>> len(days)  # 跳过国庆假期
             2  # 9月30日 和 10月8日
         """
         # 支持 MarketCode 枚举和字符串
         market_code_str = str(market_code) if isinstance(market_code, MarketCode) else market_code
+        
+        # 统一转换为 pd.Timestamp 类型
+        if isinstance(start_date, str):
+            start_date = pd.to_datetime(start_date)
+        elif isinstance(start_date, datetime):
+            start_date = pd.Timestamp(start_date)
+            
+        if isinstance(end_date, str):
+            end_date = pd.to_datetime(end_date)
+        elif isinstance(end_date, datetime):
+            end_date = pd.Timestamp(end_date)
+        
         # 降级模式：仅排除周末
         if not self._available:
             trading_days = []
@@ -192,7 +211,7 @@ class TradingCalendarService:
             while current <= end_date:
                 if current.weekday() < 5:
                     trading_days.append(current)
-                current += timedelta(days=1)
+                current += pd.Timedelta(days=1)
             return trading_days
         
         # 使用交易日历
@@ -204,7 +223,7 @@ class TradingCalendarService:
             while current <= end_date:
                 if current.weekday() < 5:
                     trading_days.append(current)
-                current += timedelta(days=1)
+                current += pd.Timedelta(days=1)
             return trading_days
         
         try:
@@ -213,8 +232,8 @@ class TradingCalendarService:
                 end_date=end_date.strftime('%Y-%m-%d')
             )
             
-            # 转换为 datetime 列表
-            trading_days = [dt.to_pydatetime() for dt in schedule.index]
+            # 转换为 pd.Timestamp 列表
+            trading_days = [dt for dt in schedule.index]
             return trading_days
         except Exception as e:
             logger.warning(f"获取交易日列表失败 ({market_code_str}): {e}，回退到周末判断")
@@ -223,18 +242,19 @@ class TradingCalendarService:
             while current <= end_date:
                 if current.weekday() < 5:
                     trading_days.append(current)
-                current += timedelta(days=1)
+                current += pd.Timedelta(days=1)
             return trading_days
     
-    def is_consecutive_trading_days(self, market_code: Union[str, MarketCode], date1: datetime, 
-                                    date2: datetime) -> bool:
+    def is_consecutive_trading_days(self, market_code: Union[str, MarketCode], 
+                                   date1: Union[datetime, pd.Timestamp], 
+                                   date2: Union[datetime, pd.Timestamp]) -> bool:
         """
         判断两个日期是否为连续交易日（中间没有其他交易日）
         
         Args:
             market_code: 市场代码枚举或字符串
-            date1: 第一个日期（应早于date2）
-            date2: 第二个日期
+            date1: 第一个日期（应早于date2）(支持 datetime 或 pd.Timestamp)
+            date2: 第二个日期 (支持 datetime 或 pd.Timestamp)
         
         Returns:
             bool: True表示连续，False表示不连续
@@ -243,13 +263,24 @@ class TradingCalendarService:
             >>> service = TradingCalendarService()
             >>> # 周五 -> 下周一（连续）
             >>> service.is_consecutive_trading_days(MarketCode.CN,
-            ...     datetime(2024, 1, 5), datetime(2024, 1, 8))
+            ...     pd.Timestamp('2024-01-05'), pd.Timestamp('2024-01-08'))
             True
             >>> # 国庆前 -> 国庆后（不连续，中间有假期）
             >>> service.is_consecutive_trading_days(MarketCode.CN,
-            ...     datetime(2024, 9, 30), datetime(2024, 10, 8))
+            ...     pd.Timestamp('2024-09-30'), pd.Timestamp('2024-10-08'))
             True  # 实际上是连续的（因为中间都是假期）
         """
+        # 统一转换为 pd.Timestamp 类型
+        if isinstance(date1, str):
+            date1 = pd.to_datetime(date1)
+        elif isinstance(date1, datetime):
+            date1 = pd.Timestamp(date1)
+            
+        if isinstance(date2, str):
+            date2 = pd.to_datetime(date2)
+        elif isinstance(date2, datetime):
+            date2 = pd.Timestamp(date2)
+        
         if date1 >= date2:
             return False
         
@@ -262,37 +293,51 @@ class TradingCalendarService:
         
         return False
     
-    def get_next_trading_day(self, market_code: Union[str, MarketCode], date: datetime) -> Optional[datetime]:
+    def get_next_trading_day(self, market_code: Union[str, MarketCode], 
+                            date: Union[datetime, pd.Timestamp]) -> Optional[pd.Timestamp]:
         """
         获取下一个交易日
         
         Args:
             market_code: 市场代码枚举或字符串
-            date: 当前日期
+            date: 当前日期 (支持 datetime 或 pd.Timestamp)
         
         Returns:
-            下一个交易日，如果未来30天内没有则返回None
+            下一个交易日 (pd.Timestamp)，如果未来30天内没有则返回None
         """
+        # 统一转换为 pd.Timestamp 类型
+        if isinstance(date, str):
+            date = pd.to_datetime(date)
+        elif isinstance(date, datetime):
+            date = pd.Timestamp(date)
+        
         # 搜索未来30天
-        end_date = date + timedelta(days=30)
-        trading_days = self.get_trading_days_between(market_code, date + timedelta(days=1), end_date)
+        end_date = date + pd.Timedelta(days=30)
+        trading_days = self.get_trading_days_between(market_code, date + pd.Timedelta(days=1), end_date)
         
         return trading_days[0] if trading_days else None
     
-    def get_previous_trading_day(self, market_code: Union[str, MarketCode], date: datetime) -> Optional[datetime]:
+    def get_previous_trading_day(self, market_code: Union[str, MarketCode], 
+                               date: Union[datetime, pd.Timestamp]) -> Optional[pd.Timestamp]:
         """
         获取上一个交易日
         
         Args:
             market_code: 市场代码枚举或字符串
-            date: 当前日期
+            date: 当前日期 (支持 datetime 或 pd.Timestamp)
         
         Returns:
-            上一个交易日，如果过去30天内没有则返回None
+            上一个交易日 (pd.Timestamp)，如果过去30天内没有则返回None
         """
+        # 统一转换为 pd.Timestamp 类型
+        if isinstance(date, str):
+            date = pd.to_datetime(date)
+        elif isinstance(date, datetime):
+            date = pd.Timestamp(date)
+        
         # 搜索过去30天
-        start_date = date - timedelta(days=30)
-        trading_days = self.get_trading_days_between(market_code, start_date, date - timedelta(days=1))
+        start_date = date - pd.Timedelta(days=30)
+        trading_days = self.get_trading_days_between(market_code, start_date, date - pd.Timedelta(days=1))
         
         return trading_days[-1] if trading_days else None
     

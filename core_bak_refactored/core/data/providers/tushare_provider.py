@@ -161,9 +161,10 @@ class TushareDataProvider(BaseDataProvider):
     def get_index_prices(
         self,
         index_id: str,
-        start_date:str,
-        end_date: str,
-        current_time: datetime
+        start_date:pd.Timestamp,
+        end_date: pd.Timestamp,
+        current_time: pd.Timestamp,
+        period: str = 'daily'
     ) -> PriceData:
         """
         获取指数历史价格数据
@@ -183,8 +184,8 @@ class TushareDataProvider(BaseDataProvider):
             raise RuntimeError("Tushare API not available")
             
         # 转换日期格式
-        start_date_str = start_date.strftime('%Y%m%d') if isinstance(start_date, datetime) else start_date.replace('-', '')
-        end_date_str = end_date.strftime('%Y%m%d') if isinstance(end_date, datetime) else end_date.replace('-', '')
+        start_date_str = start_date.strftime('%Y%m%d') if isinstance(start_date, (datetime, pd.Timestamp)) else start_date.replace('-', '')
+        end_date_str = end_date.strftime('%Y%m%d') if isinstance(end_date, (datetime, pd.Timestamp)) else end_date.replace('-', '')
         
         logger.info(f"Fetching index data for {index_id} from {start_date_str} to {end_date_str}")
         
@@ -208,9 +209,10 @@ class TushareDataProvider(BaseDataProvider):
     def get_stock_prices(
         self,
         stock_id: str,
-        start_date: str,
-        end_date:str,
-        current_time: datetime
+        start_date:pd.Timestamp,
+        end_date: pd.Timestamp,
+        current_time: pd.Timestamp,
+        period: str = 'daily'
     ) -> PriceData:
         """
         获取个股历史价格数据
@@ -231,7 +233,7 @@ class TushareDataProvider(BaseDataProvider):
         # 💚 由基类自动处理缓存
         return super().get_stock_prices(stock_id, start_date, end_date,current_time)
     
-    def _fetch_from_external_api(self, symbol: str, start_date: str, end_date: str, period: str = 'daily') -> PriceData:
+    def _fetch_from_external_api(self, symbol: str, start_date: pd.Timestamp, end_date: pd.Timestamp, period: str = 'daily') -> PriceData:
         """
         从 Tushare API 获取数据（实现基类抽象方法）
         
@@ -262,7 +264,7 @@ class TushareDataProvider(BaseDataProvider):
         
         if is_index:
             # 调用原有的 get_index_prices 逻辑
-            price_data = self.get_index_prices(symbol, start_date, end_date)
+            price_data = self.get_index_prices(symbol, start_date, end_date,pd.Timestamp.now())
         else:
             # 调用原有的 get_stock_prices 逻辑
             # 为了避免循环调用，直接实现逻辑
@@ -270,8 +272,8 @@ class TushareDataProvider(BaseDataProvider):
                 raise RuntimeError("Tushare API not available")
                 
             # 转换日期格式
-            start_date_str = start_date.strftime('%Y%m%d') if isinstance(start_date, datetime) else start_date.replace('-', '')
-            end_date_str = end_date.strftime('%Y%m%d') if isinstance(end_date, datetime) else end_date.replace('-', '')
+            start_date_str = start_date.strftime('%Y%m%d') if isinstance(start_date, (datetime, pd.Timestamp)) else start_date.replace('-', '')
+            end_date_str = end_date.strftime('%Y%m%d') if isinstance(end_date, (datetime, pd.Timestamp)) else end_date.replace('-', '')
             
             logger.info(f"Fetching stock data for {symbol} from {start_date_str} to {end_date_str}")
             

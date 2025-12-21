@@ -408,7 +408,7 @@ class MarketUtils:
         return False
     
     @staticmethod
-    def get_last_trade_date(market: MarketCode, trade_date: str, current_time: dt = None) -> str:
+    def get_last_trade_date(market: MarketCode, trade_date: pd.Timestamp, current_time: dt = None) -> pd.Timestamp:
         """
         获取最后一个交易日（可能是今天，也可能是前一交易日）
 
@@ -434,8 +434,7 @@ class MarketUtils:
         """
         from core_bak_refactored.core.share.config_manager import ConfigManager
 
-        # 解析 trade_date
-        request_date = dt.strptime(trade_date, '%Y-%m-%d')
+        request_date = trade_date
         
         # 使用传入的时间或当前系统时间
         now = current_time if current_time is not None else dt.now()
@@ -447,7 +446,7 @@ class MarketUtils:
             # 周末 -> 返回上周五
             days_to_subtract = request_weekday - 4  # 周六减2天，周日减3天
             last_trade_date = request_date - timedelta(days=days_to_subtract)
-            return last_trade_date.strftime('%Y-%m-%d')
+            return last_trade_date
 
         # 工作日：判断当前时间是否已经开盘
         # 从配置读取市场开盘时间
@@ -469,7 +468,7 @@ class MarketUtils:
                 last_trade_date = request_date - timedelta(days=3)
             else:  # 其他工作日盘前 -> 返回昨天
                 last_trade_date = request_date - timedelta(days=1)
-            return last_trade_date.strftime('%Y-%m-%d')
+            return last_trade_date
     
     @staticmethod
     def determine_trading_phase(market: MarketCode, now: dt) -> TradingPhase:

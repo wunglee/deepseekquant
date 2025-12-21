@@ -112,8 +112,8 @@ class ThreeLayerCacheManager:
     def get_data(
         self,
         symbol: str,
-        start_date: str,
-        end_date: str,
+        start_date: pd.Timestamp,
+        end_date: pd.Timestamp,
         period: str = 'daily',
         market_code: Optional[MarketCode] = None,
         db_fetch_func: Callable[..., pd.DataFrame] = None,
@@ -232,7 +232,7 @@ class ThreeLayerCacheManager:
                 if db_df is not None and not db_df.empty:
                     logger.info(f"✅ 数据库批量命中: {range_start} ~ {range_end} ({len(db_df)} 条)")
                     # 分配数据到各个穗口
-                    self._distribute_data_to_windows(symbol, period, db_df, range_windows, cached_windows, current_window_key, start_date, market_code)
+                    self._distribute_data_to_windows(symbol, period, db_df, range_windows, cached_windows, start_date, market_code)
                     continue
                 
                 # 3.2 数据库也未命中，调用外部 API
@@ -246,11 +246,12 @@ class ThreeLayerCacheManager:
                     if api_df is not None and not api_df.empty:
                         logger.info(f"✅ API批量返回: {range_start} ~ {range_end} ({len(api_df)} 条)")
                         # 分配数据到各个穗口
-                        self._distribute_data_to_windows(symbol, period, api_df, range_windows, cached_windows, current_window_key, start_date, market_code)
+                        self._distribute_data_to_windows(symbol, period, api_df, range_windows, cached_windows, start_date, market_code)
                     else:
                         logger.warning(f"⚠️ API无数据: {range_start} ~ {range_end}")
                 except Exception as e:
                     logger.error(f"❌ API批量查询失败: {range_start} ~ {range_end}, error={e}")
+                    raise
         
         # ========== 第4步：合并所有窗口数据并返回 ==========
         if not cached_windows:
@@ -359,9 +360,9 @@ class ThreeLayerCacheManager:
             _, end1 = self._window_mgr.window_key_to_date_range(key1, period)
             start2, _ = self._window_mgr.window_key_to_date_range(key2, period)
             
-            # 转换为datetime对象
-            end1_dt = datetime.strptime(end1, '%Y-%m-%d')
-            start2_dt = datetime.strptime(start2, '%Y-%m-%d')
+            # 转换为pd.Timestamp对象
+            end1_dt = pd.to_datetime(end1)
+            start2_dt = pd.to_datetime(start2)
             
             # 使用交易日历服务判断连续性
             return self._calendar_service.is_consecutive_trading_days(market_code, end1_dt, start2_dt)
@@ -433,9 +434,134 @@ class ThreeLayerCacheManager:
             logger.warning(f"⚠️ 不支持的周期: {period}")
             return False
     
+    def _is_first_window(self, window_start: pd.Timestamp,query_start: pd.Timestamp,actual_earliest_start: pd.Timestamp,period: str, market_code: MarketCode) -> bool:
+        """
+        判断窗口是否为起始窗口（封装所有判断逻辑）
+        
+        不同周期的判断逻辑：
+        1. 日周期(daily)：
+           - 需要精确到交易日判断
+           - 确保查询开始时间所在交易日没有数据
+           
+        2. 周周期(weekly)：
+           - 只需精确到周的比较
+           - 确保查询开始时间所在的整个"交易周"没有数据
+           - 如果整周都是假期（春节、五一、十一等），需向后推到交易周
+           
+        3. 月周期(monthly)：
+           - 只需精确到月的比较
+           - 确保查询开始时间所在整个月没有数据
+        
+        Args:
+            window_start:窗口起始时间
+            period: 数据粒度 (daily/weekly/monthly)
+            query_start: 查询起始时间
+            actual_earliest_start: 数据源实际返回的最早时间
+            market_code: 市场代码
+            
+        Returns:
+            bool: True表示是起始窗口
+        """
+        # 🔧 根据周期类型进行不同的判断
+        if period == 'daily':
+            # 日周期：精确到交易日判断
+            is_first = self._is_first_window_daily(window_start,query_start, actual_earliest_start, market_code)
+        elif period == 'weekly':
+            # 周周期：精确到周判断
+            is_first = self._is_first_window_weekly(window_start,
+                query_start, actual_earliest_start, market_code)
+        elif period == 'monthly':
+            # 月周期：精确到月判断
+            is_first = self._is_first_window_monthly(window_start,query_start, actual_earliest_start)
+        else:
+            # 未知周期，使用保守判断
+            is_first = True
+            logger.warning(f"未知周期类型: {period}，使用保守判断")
+        return is_first
+    
+    def _is_first_window_daily(self, window_start: pd.Timestamp,query_start: pd.Timestamp, actual_earliest_start: pd.Timestamp,market_code: MarketCode) -> bool:
+        """
+        日周期的起始窗口判断
+        
+        逻辑：确保查询开始时间所在交易日没有数据
+        """
+        # 调整 query_start 到下一个交易日（如果不是交易日）
+        # 确保 query_start 是 pd.Timestamp 类型
+        if isinstance(query_start, str):
+            query_start = pd.to_datetime(query_start)
+        query_start_dt = query_start  # 已经是 pd.Timestamp 类型，无需转换
+        if not self._calendar_service.is_trading_day(market_code, query_start_dt):
+            next_trading_day = self._calendar_service.get_next_trading_day(market_code, query_start_dt)
+            if next_trading_day:
+                query_start = next_trading_day
+                logger.debug(f"📅 调整查询起始日期: {query_start_dt.date()} (非交易日) → {next_trading_day.date()} (交易日)")
+
+        return query_start < window_start <= actual_earliest_start
+    
+    def _is_first_window_weekly(self, window_start: pd.Timestamp,query_start: pd.Timestamp, actual_earliest_start: pd.Timestamp,market_code: MarketCode) -> bool:
+        """
+        周周期的起始窗口判断
+        
+        逻辑：确保查询开始时间所在的整个"交易周"没有数据
+        - 获取 query_start 所在周的周一和周日
+        - 如果整周都不是交易周（春节、五一、十一等长假），向后推到下一个交易周
+        - 比较交易周的起始时间和 actual_earliest_start
+        """
+        
+        # 获取 query_start 所在周的周一
+        query_week_start = query_start - pd.Timedelta(days=query_start.weekday())
+        query_week_end = query_week_start + pd.Timedelta(days=6)
+        
+        # 检查这一周是否有交易日
+        has_trading_day = False
+        current_date = query_week_start
+        while current_date <= query_week_end:
+            # 已经是 pd.Timestamp 类型，无需转换
+            if self._calendar_service.is_trading_day(market_code, current_date):
+                has_trading_day = True
+                break
+            current_date += pd.Timedelta(days=1)
+        
+        # 如果整周都不是交易周，向后推到下一个交易周
+        if not has_trading_day:
+            # 已经是 pd.Timestamp 类型，无需转换
+            next_trading_day = self._calendar_service.get_next_trading_day(
+                market_code, query_week_end
+            )
+            if next_trading_day:
+                # 获取下一个交易日所在周的周一
+                next_trading_ts = next_trading_day
+                query_week_start = next_trading_ts - pd.Timedelta(days=next_trading_ts.weekday())
+                logger.debug(f"📅 整周非交易周，调整到下一个交易周: {query_week_start.date()}")
+        
+        # 只比较周，不比较具体日期
+        query_week = query_week_start.isocalendar()[1]  # ISO 周数
+        window_week = window_start.isocalendar()[1]
+        actual_earliest_week = actual_earliest_start.isocalendar()[1]
+        query_year = query_week_start.year
+        window_year = window_start.year
+        actual_earliest_year = actual_earliest_start.year
+
+        # 比较年份和周数
+        is_first_window_weekly = (query_year < window_year<= actual_earliest_year) or (query_year == window_year == actual_earliest_year and query_week < window_week <= actual_earliest_week)
+        if is_first_window_weekly:
+            logger.debug(f"📅遇到起始窗口：query: {query_year}-{query_week},window: {window_year}-{window_week},actual_earliest: {actual_earliest_year}-{actual_earliest_week}")
+        return is_first_window_weekly
+    def _is_first_window_monthly(self, window_start: pd.Timestamp,query_start: pd.Timestamp, actual_earliest_start: pd.Timestamp) -> bool:
+        """
+        月周期的起始窗口判断
+        
+        逻辑：确保查询开始时间所在整个月没有数据
+        """
+        # 只比较年月，不比较具体日期
+        query_year_month = (query_start.year, query_start.month)
+        window_start_month = (window_start.year, window_start.month)
+        actual_earliest_year_month = (actual_earliest_start.year, actual_earliest_start.month)
+        
+        return query_year_month < window_start_month <= actual_earliest_year_month
+
     def _distribute_data_to_windows(self, symbol: str, period: str, data: pd.DataFrame, 
-                                   window_keys: list, cached_windows: dict, 
-                                   current_window_key: str, query_start_date: str, market_code: MarketCode) -> None:
+                                   window_keys: list, cached_windows: dict, query_start_date: pd.Timestamp, market_code: MarketCode) -> None:
         """
         将大范围数据分配到各个窗口，并写入缓存
         
@@ -445,7 +571,6 @@ class ThreeLayerCacheManager:
             data: 大范围查询返回的数据
             window_keys: 需要分配的窗口键列表
             cached_windows: 已缓存窗口字典 (输出参数)
-            current_window_key: 当前窗口键
             query_start_date: 查询起始日期（用于判断起始窗口）
             market_code: 市场代码枚举，用于交易日历判断
         """
@@ -458,64 +583,58 @@ class ThreeLayerCacheManager:
             return
         
         data['date'] = pd.to_datetime(data['date'])
-        actual_start = data['date'].min()
-        actual_end = data['date'].max()
-        query_start = pd.to_datetime(query_start_date)
+        actual_earliest_start = data['date'].min()
         
-        # 🔧 关键修复：将 query_start 调整到下一个交易日（如果不是交易日）
-        query_start_dt = query_start.to_pydatetime()
-        if not self._calendar_service.is_trading_day(market_code, query_start_dt):
-            next_trading_day = self._calendar_service.get_next_trading_day(market_code, query_start_dt)
-            if next_trading_day:
-                query_start = pd.Timestamp(next_trading_day)
-                logger.debug(f"📅 调整查询起始日期: {query_start_dt.date()} (非交易日) → {next_trading_day.date()} (交易日)")
-        
-        # 分配数据到各个穗口
+        # 分配数据到各个窗口
+        sorted(window_keys, reverse=True)
+        found_first_window = False
         for window_key in window_keys:
+            if found_first_window:
+                break
             window_start, window_end = self._window_mgr.window_key_to_date_range(window_key, period)
             window_start_dt = pd.to_datetime(window_start)
             window_end_dt = pd.to_datetime(window_end)
-            
+
             # 筛选该窗口的数据
             window_data = data[(data['date'] >= window_start_dt) & (data['date'] <= window_end_dt)].copy()
 
             if not window_data.empty:
-                # 判断是否为起始窗口
-                is_current_window = (window_key == current_window_key)
-                is_first_window = False
-                
-                if not is_current_window and query_start < actual_start:
-                    # 查询起始 < 数据源返回的最早日期，检查是否包含最早数据
-                    if actual_start >= window_start_dt and actual_start <= window_end_dt:
-                        is_first_window = True
-                        logger.info(f"🅰️ 检测到起始窗口: {window_key} (查询从 {query_start.date()}，但数据源最早从 {actual_start.date()} 开始)")
-                
-                # 写入缓存（两种缓存现在都支持is_first_window参数）
+                is_first_window = self._is_first_window(
+                    window_start=window_start_dt,
+                    query_start=query_start_date,
+                    actual_earliest_start=actual_earliest_start,
+                    period=period,
+                    market_code=market_code
+                )
+                # 写入缓存（两种缓存现在都支持is_first_window参数）\
                 self._fast_cache.set(symbol, period, window_key, window_data, is_first_window=is_first_window)
                 cached_windows[window_key] = window_data
-                logger.debug(f"  ✅ 窗口 {window_key}: {len(window_data)} 条")
-
+                logger.debug(f"  ✅ 窗口 {window_key}-{window_end}: {len(window_data)} 条")
+                if is_first_window:
+                    found_first_window = True
+                    logger.info(
+                        f"🅰️ 检测到起始窗口: {window_key} (查询条件从 {query_start_date}，但数据源最早从 {actual_earliest_start.date()} 开始)")
 
     
-    def _backfill_first_window_flag(self, symbol: str, period: str, actual_start: pd.Timestamp, current_window_keys: list,market_code: MarketCode=MarketCode.CN) -> None:
+    def _backfill_first_window_flag(self, symbol: str, period: str, actual_earliest_start: pd.Timestamp, current_window_keys: list,market_code: MarketCode=MarketCode.CN) -> None:
         """
         回溯更新起始窗口标记
         
         场景：
         - 首次查询正好从上市日开始（如 2025-01-08 ~ 2025-01-12）
-        - query_start == actual_start，未被标记为起始窗口
+        - query_start == actual_earliest_start，未被标记为起始窗口
         - 第二次查询包含更早日期（如 2025-01-06 ~ 2025-01-12）
-        - 检测到 query_start < actual_start，确认为起始窗口
-        - 需要回溯更新之前缓存中包含 actual_start 的窗口
+        - 检测到 query_start < actual_earliest_start，确认为起始窗口
+        - 需要回溯更新之前缓存中包含 actual_earliest_start 的窗口
         
         Args:
             symbol: 股票/指数代码
             period: 数据粒度/K线类型
-            actual_start: 数据源返回的实际最早日期（上市日）
+            actual_earliest_start: 数据源返回的实际最早日期（上市日）
             current_window_keys: 当前查询涉及的窗口键列表（避免重复更新）
         """
-        # 生成包含 actual_start 的窗口键
-        first_data_window_key = self._window_mgr.make_window_key(actual_start, period, self._window_size, market_code)
+        # 生成包含 actual_earliest_start 的窗口键
+        first_data_window_key = self._window_mgr.make_window_key(actual_earliest_start, period, self._window_size, market_code)
         
         # 如果当前查询已经处理过这个窗口，无需回溯
         if first_data_window_key in current_window_keys:

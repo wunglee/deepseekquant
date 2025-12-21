@@ -16,12 +16,10 @@ Provider 基类 - 数据提供者封装
     )
 """
 import logging
-import os
 import time
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Dict, Any, Optional, Union
-from datetime import datetime, timedelta
 
 import yaml
 import pandas as pd
@@ -29,7 +27,6 @@ import pandas as pd
 from core_bak_refactored.core.data.providers.protocols import PriceData, HistoricalDataProvider
 from core_bak_refactored.core.share.config_manager import ConfigManager
 from core_bak_refactored.core.share.market import MarketUtils
-from core_bak_refactored.core.share.market.data_types import OHLCVRecord
 from core_bak_refactored.core.share.market.market_enums import TradingPhase, MarketCode
 
 logger = logging.getLogger('DeepSeekQuant.DataProviders')
@@ -53,8 +50,13 @@ class BaseDataProvider(ABC, HistoricalDataProvider):
         # 使用工厂方法创建缓存管理器（自动加载配置）
         from core_bak_refactored.infrastructure.cache import create_cache_manager
         self._cache_manager = create_cache_manager()
-    
-    def _get_with_cache(self, index_id: str, start_date: str, end_date: str, current_time: datetime, period: str = 'daily'):
+        self.config_manager = ConfigManager()
+    def _get_with_cache(self,
+                        index_id: str,
+                        start_date: pd.Timestamp,
+                        end_date: pd.Timestamp,
+                        current_time: pd.Timestamp,
+                        period: str = 'daily'):
         """
         带缓存的数据获取（核心方法）
         
@@ -89,8 +91,8 @@ class BaseDataProvider(ABC, HistoricalDataProvider):
             price_data = PriceData(
                 records=[],
                 symbol=index_id,
-                start_date=pd.to_datetime(start_date),
-                end_date=pd.to_datetime(end_date),
+                start_date=start_date,
+                end_date=end_date,
                 count=0
             )
             logger.warning(f"⚠️ 所有缓存都无数据: {index_id} {start_date}~{end_date}")
@@ -102,7 +104,7 @@ class BaseDataProvider(ABC, HistoricalDataProvider):
         
         return price_data
     
-    def _fetch_from_api(self, index_id: str, start_date: str, end_date: str, period: str) -> Optional[pd.DataFrame]:
+    def _fetch_from_api(self, index_id: str, start_date:pd.Timestamp, end_date:pd.Timestamp, period: str) -> Optional[pd.DataFrame]:
         """
         从 API 获取数据（为缓存管理器提供回调）
         
@@ -134,7 +136,7 @@ class BaseDataProvider(ABC, HistoricalDataProvider):
         
         return None
     
-    def set_needs_realtime_kline(self, price_data: PriceData, current_time: datetime):
+    def set_needs_realtime_kline(self, price_data: PriceData, current_time: pd.Timestamp):
         """设置 needs_realtime_kline 标记
         
         根据当前交易时段判断是否需要获取实时K线：
@@ -159,7 +161,7 @@ class BaseDataProvider(ABC, HistoricalDataProvider):
     # 数据获取接口（对外提供，自动使用缓存）
     # ========================================================================
     
-    def get_index_prices(self, index_id: str, start_date: str, end_date: str, current_time: datetime, period: str = 'daily'):
+    def get_index_prices(self, index_id: str, start_date: pd.Timestamp, end_date: pd.Timestamp, current_time: pd.Timestamp, period: str = 'daily'):
         """
         获取指数价格数据（对外接口，自动使用缓存）
         
@@ -175,7 +177,7 @@ class BaseDataProvider(ABC, HistoricalDataProvider):
         """
         return self._get_with_cache(index_id, start_date, end_date, current_time, period)
     
-    def get_stock_prices(self, stock_id: str, start_date: str, end_date: str, current_time: datetime, period: str = 'daily'):
+    def get_stock_prices(self, stock_id: str, start_date: pd.Timestamp, end_date: pd.Timestamp, current_time: pd.Timestamp, period: str = 'daily'):
         """
         获取股票价格数据（对外接口，自动使用缓存）
         
@@ -196,7 +198,7 @@ class BaseDataProvider(ABC, HistoricalDataProvider):
     # ========================================================================
     
     @abstractmethod
-    def _fetch_from_external_api(self, symbol: str, start_date: str, end_date: str, period: str = 'daily'):
+    def _fetch_from_external_api(self, symbol: str, start_date: pd.Timestamp, end_date: pd.Timestamp, period: str = 'daily'):
         """
         从外部API获取数据（抽象方法，子类必须实现）
         
@@ -401,8 +403,8 @@ class BaseDataProvider(ABC, HistoricalDataProvider):
                     test_symbol = '^GSPC'
                 
                 from datetime import datetime, timedelta
-                end_date = datetime.now().strftime('%Y-%m-%d')
-                start_date = (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')
+                end_date = pd.Timestamp.now()
+                start_date = pd.Timestamp.now() - pd.Timedelta(days=30)
                 
                 start_time = time.time()
                 
@@ -587,7 +589,8 @@ class BaseDataProvider(ABC, HistoricalDataProvider):
         except Exception as e:
             logger.error(f"删除凭证失败: {e}")
             return False
-    
+
+
     @classmethod
     def save_test_status(
         cls,
@@ -619,7 +622,7 @@ class BaseDataProvider(ABC, HistoricalDataProvider):
             from core_bak_refactored.core.share.config_manager import ConfigManager
             import yaml
             import os
-            
+
             config_manager = ConfigManager()
             
             # 获取 data_provider.yml 的路径

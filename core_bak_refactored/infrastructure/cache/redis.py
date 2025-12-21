@@ -194,3 +194,16 @@ class RedisCache:
         if self._memory_store is not None:
             self._memory_store.clear()
             logger.info("✅ Redis缓存已清空（内存模拟）")
+    
+    def get_stats(self) -> Dict:
+        """获取统计信息（内存模拟模式）"""
+        if self._memory_store is not None:
+            return {
+                'total_windows': len(self._memory_store),
+                'mode': 'memory_simulation'
+            }
+        else:
+            return {
+                'mode': 'redis_connected',
+                'note': 'Redis statistics not implemented'
+            }

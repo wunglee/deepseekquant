@@ -3,6 +3,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 import math
 
+import pandas as pd
+
 from infrastructure.interfaces import InfrastructureProvider
 
 @dataclass
@@ -27,8 +29,8 @@ class BacktestMetrics:
 @dataclass
 class BacktestConfig:
     """回测配置"""
-    start_date: str
-    end_date: str
+    start_date: pd.Timestamp
+    end_date: pd.Timestamp
     initial_capital: float = 100000.0
     commission: float = 0.001  # 手续费率
     slippage: float = 0.0005  # 滑点

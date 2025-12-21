@@ -4,14 +4,14 @@ AKShare数据提供者测试套件
 """
 
 import unittest
+from datetime import datetime
+from unittest.mock import Mock, patch
+
 import pandas as pd
-import numpy as np
-from datetime import datetime, timedelta
-from unittest.mock import Mock, patch, MagicMock
 
 # 导入被测试的类
 from core_bak_refactored.core.data.providers.akshare_provider import AKShareDataProvider
-from core_bak_refactored.core.data.providers.protocols import PriceData, IntradayData
+from core_bak_refactored.core.data.providers.protocols import IntradayData
 
 
 class TestAKShareDataProvider(unittest.TestCase):
@@ -46,8 +46,7 @@ class TestAKShareIntradayData(unittest.TestCase):
     def test_get_intraday_data_from_api_success(self, mock_fetch_real, mock_phase):
         """测试从真实API成功获取分时数据"""
         from core_bak_refactored.core.share.market.market_enums import TradingPhase
-        from datetime import datetime
-        
+
         # 模拟盘中时段（不使用缓存）
         mock_phase.return_value = TradingPhase.TRADING
         
@@ -65,7 +64,7 @@ class TestAKShareIntradayData(unittest.TestCase):
         mock_fetch_real.return_value = mock_df
         
         # 调用方法（使用工作日，传入current_time参数）
-        test_time = datetime(2023, 1, 3, 10, 30)  # 盘中时间
+        test_time = pd.Timestamp(2023, 1, 3, 10, 30)  # 盘中时间
         result = self.provider.get_intraday_data('000300.SH', current_time=test_time)
         
         # 验证结果
@@ -84,12 +83,11 @@ class TestAKShareIntradayData(unittest.TestCase):
     def test_get_intraday_data_memory_cache_hit(self, mock_fetch_real, mock_get_last_date, mock_phase):
         """测试内存缓存命中（盘后读取盘中缓存）"""
         from core_bak_refactored.core.share.market.market_enums import TradingPhase
-        from datetime import datetime
         
         # 模拟当前时间为指定日期
         test_date = '2023-01-01'
-        trading_time = datetime(2023, 1, 1, 10, 30)  # 盘中时间
-        after_close_time = datetime(2023, 1, 1, 16, 0)  # 盘后时间
+        trading_time = pd.Timestamp(2023, 1, 1, 10, 30)  # 盘中时间
+        after_close_time = pd.Timestamp(2023, 1, 1, 16, 0)  # 盘后时间
         
         # 模拟盘中时段：第一次调用会缓存
         mock_phase.return_value = TradingPhase.TRADING
@@ -138,7 +136,7 @@ class TestAKShareIntradayData(unittest.TestCase):
         from unittest.mock import MagicMock
         
         # 模拟当前时间为指定日期
-        test_time = datetime(2023, 1, 1, 16, 0)  # 盘后时间
+        test_time = pd.Timestamp(2023, 1, 1, 16, 0)  # 盘后时间
         mock_now = MagicMock()
         mock_now.strftime.return_value = '2023-01-01'
         mock_datetime.now.return_value = mock_now
@@ -183,7 +181,7 @@ class TestAKShareIntradayData(unittest.TestCase):
         from unittest.mock import MagicMock
         
         # 模拟当前时间为指定日期
-        test_time = datetime(2023, 1, 3, 10, 30)  # 盘中时间
+        test_time = pd.Timestamp(2023, 1, 3, 10, 30)  # 盘中时间
         mock_now = MagicMock()
         mock_now.strftime.return_value = '2023-01-03'
         mock_datetime.now.return_value = mock_now
@@ -212,8 +210,6 @@ class TestAKShareIntradayHelperMethods(unittest.TestCase):
     @patch('akshare.stock_zh_a_hist_min_em')
     def test_fetch_real_intraday_from_akshare_success(self, mock_ak_api):
         """测试真实API调用成功"""
-        from datetime import datetime
-        from core_bak_refactored.core.share.market.market_enums import TradingPhase
         # 模拟AKShare API返回
         # 创建足够的数据以通过完整性检查（240条数据）
         time_list = []
@@ -274,7 +270,6 @@ class TestAKShareIntradayHelperMethods(unittest.TestCase):
     @patch('akshare.stock_zh_a_hist_min_em')
     def test_fetch_real_intraday_from_akshare_empty_data(self, mock_ak_api):
         """测试API返回空数据"""
-        from core_bak_refactored.core.share.market.market_enums import TradingPhase
         mock_ak_api.return_value = pd.DataFrame()
         self.provider.ak.stock_zh_a_hist_min_em = mock_ak_api
         
@@ -330,8 +325,7 @@ class TestAKShareIntradayHelperMethods(unittest.TestCase):
     def test_generate_mock_intraday_data(self):
         """测试生成模拟分时数据（使用MockDataProvider）"""
         from core_bak_refactored.core.data.providers.mock_provider import MockDataProvider
-        from core_bak_refactored.core.share.market.market_enums import TradingPhase
-        
+
         generator = MockDataProvider()
         result = generator.generate(
             symbol='000300.SH',
@@ -457,9 +451,8 @@ class TradingPhaseBugTest(unittest.TestCase):
         - 旧代码错误地返回 trading_phase='before_open'
         - 修复后应该返回 trading_phase='after_close'
         """
-        from core_bak_refactored.core.share.market.market_enums import TradingPhase
         # 冻结时间到周日凌晨
-        sunday_morning = datetime(2025, 12, 14, 5, 30, 0)  # 周日 05:30
+        sunday_morning = pd.Timestamp(2025, 12, 14, 5, 30, 0)  # 周日 05:30
         
         mock_datetime.now.return_value = sunday_morning
         mock_datetime.strptime = datetime.strptime
@@ -490,15 +483,13 @@ class TradingPhaseBugTest(unittest.TestCase):
                 
                 # 验证返回的 should_poll（缓存数据应该保留 should_poll 字段）
                 self.assertIsInstance(result.should_poll, bool)
-    
-    @patch('core_bak_refactored.core.data.providers.akshare_provider.datetime')
+
     def test_saturday_returns_after_close(self, mock_datetime):
         """
         测试：周六应该返回 after_close
         """
-        from core_bak_refactored.core.share.market.market_enums import TradingPhase
         # 冻结时间到周六下午
-        saturday_afternoon = datetime(2025, 12, 13, 14, 0, 0)  # 周六 14:00
+        saturday_afternoon = pd.Timestamp(2025, 12, 13, 14, 0, 0)  # 周六 14:00
         
         mock_datetime.now.return_value = saturday_afternoon
         mock_datetime.strptime = datetime.strptime
@@ -571,14 +562,13 @@ class TradingPhaseBugTest(unittest.TestCase):
         """
         测试：_generate_empty_data() 返回的DataFrame包含正确的初始化信息
         """
-        from core_bak_refactored.core.share.market.market_enums import TradingPhase
         import pandas as pd
         symbol = '000001.SH'
-        trade_date = '2025-12-14'
+        trade_date = pd.Timestamp('2025-12-14')
         
         # 测试 AFTER_CLOSE
         result = self.provider._generate_empty_data(
-            symbol, trade_date, TradingPhase.AFTER_CLOSE
+            symbol
         )
         self.assertIsInstance(result, pd.DataFrame)
         self.assertTrue(result.empty)
@@ -588,14 +578,14 @@ class TradingPhaseBugTest(unittest.TestCase):
         
         # 测试 BEFORE_OPEN
         result = self.provider._generate_empty_data(
-            symbol, trade_date, TradingPhase.BEFORE_OPEN
+            symbol
         )
         self.assertIsInstance(result, pd.DataFrame)
         self.assertEqual(result.attrs['_init_info']['name'], '上证指数')
         
         # 测试 TRADING
         result = self.provider._generate_empty_data(
-            symbol, trade_date, TradingPhase.TRADING
+            symbol
         )
         self.assertIsInstance(result, pd.DataFrame)
         self.assertEqual(result.attrs['_init_info']['name'], '上证指数')
@@ -616,10 +606,9 @@ class TestCacheStrategy(unittest.TestCase):
     def test_trading_phase_no_cache_on_read(self, mock_fetch, mock_fetch_order_book, mock_phase):
         """盘中时段：不从缓存读取，每次都实时获取"""
         from core_bak_refactored.core.share.market.market_enums import TradingPhase
-        from datetime import datetime
         
         # 模拟时间：2023-01-03 10:30（盘中）
-        test_time = datetime(2023, 1, 3, 10, 30)
+        test_time = pd.Timestamp(2023, 1, 3, 10, 30)
         mock_phase.return_value = TradingPhase.TRADING
         
         # mock盘口数据
@@ -652,10 +641,9 @@ class TestCacheStrategy(unittest.TestCase):
     def test_trading_phase_writes_cache(self, mock_fetch, mock_fetch_order_book, mock_phase):
         """盘中时段：不缓存数据（总是获取最新值）"""
         from core_bak_refactored.core.share.market.market_enums import TradingPhase
-        from datetime import datetime
         
         # 模拟时间：2023-01-03 10:30（盘中）
-        test_time = datetime(2023, 1, 3, 10, 30)
+        test_time = pd.Timestamp(2023, 1, 3, 10, 30)
         test_date = '2023-01-03'
         
         mock_phase.return_value = TradingPhase.TRADING
@@ -692,11 +680,10 @@ class TestCacheStrategy(unittest.TestCase):
     def test_after_close_uses_trading_cache(self, mock_fetch, mock_fetch_order_book, mock_get_last_date, mock_phase):
         """盘后时段：尝试从缓存读取，如果没有则调用API获取盘后数据"""
         from core_bak_refactored.core.share.market.market_enums import TradingPhase
-        from datetime import datetime
         
-        test_date = '2023-01-03'
+        test_date = pd.Timestamp('2023-01-03')
         # 模拟盘后时间：2023-01-03 16:00
-        after_close_time = datetime(2023, 1, 3, 16, 0)
+        after_close_time = pd.Timestamp(2023, 1, 3, 16, 0)
         
         # 模拟盘后时段
         mock_phase.return_value = TradingPhase.AFTER_CLOSE
@@ -714,7 +701,7 @@ class TestCacheStrategy(unittest.TestCase):
             order_book_bids=[],
             order_book_asks=[],
             trade_records=[],
-            trade_date=test_date
+            trade_date=test_date.strftime('%Y-%m-%d'),
         )
         cache_key = f"intraday_000001.SZ_{test_date}_TRADING"
         self.provider._set_to_memory_cache_obj(cache_key, cached_data)
@@ -732,10 +719,9 @@ class TestCacheStrategy(unittest.TestCase):
     def test_before_open_no_cache(self, mock_fetch, mock_fetch_order_book, mock_phase):
         """盘前时段：不缓存数据，生成空DataFrame"""
         from core_bak_refactored.core.share.market.market_enums import TradingPhase
-        from datetime import datetime
         
         # 模拟时间：2023-01-03 09:15（集合竞价时段）
-        test_time = datetime(2023, 1, 3, 9, 15)
+        test_time = pd.Timestamp(2023, 1, 3, 9, 15)
         mock_phase.return_value = TradingPhase.BEFORE_OPEN
         
         # mock盘口数据
@@ -758,10 +744,9 @@ class TestCacheStrategy(unittest.TestCase):
     def test_cache_key_format(self, mock_fetch, mock_fetch_order_book, mock_get_last_date, mock_phase):
         """验证缓存key格式：intraday_{symbol}_{date}_TRADING（盘后缓存）"""
         from core_bak_refactored.core.share.market.market_enums import TradingPhase
-        from datetime import datetime
         
         # 模拟时间：2023-01-03 16:00（盘后）
-        test_time = datetime(2023, 1, 3, 16, 0)
+        test_time = pd.Timestamp(2023, 1, 3, 16, 0)
         test_date = '2023-01-03'
         
         mock_phase.return_value = TradingPhase.AFTER_CLOSE
@@ -809,11 +794,10 @@ class TestNonTradingPeriodBehavior(unittest.TestCase):
     def test_after_close_should_use_cache(self, mock_get_last_date, mock_phase):
         """测试：盘后时段应使用缓存数据"""
         from core_bak_refactored.core.share.market.market_enums import TradingPhase
-        from datetime import datetime
         
-        test_date = '2025-12-19'
+        test_date = pd.Timestamp('2025-12-19')
         # 模拟盘后时间：2025-12-19 16:00
-        after_close_time = datetime(2025, 12, 19, 16, 0)
+        after_close_time = pd.Timestamp(2025, 12, 19, 16, 0)
         
         # 模拟盘后时段
         mock_phase.return_value = TradingPhase.AFTER_CLOSE
@@ -831,7 +815,7 @@ class TestNonTradingPeriodBehavior(unittest.TestCase):
             order_book_bids=[],
             order_book_asks=[],
             trade_records=[],
-            trade_date=test_date
+            trade_date=test_date.strftime('%Y-%m-%d'),
         )
         cache_key = f"intraday_600030.SH_{test_date}_TRADING"
         self.provider._set_to_memory_cache_obj(cache_key, cached_data)
@@ -845,10 +829,9 @@ class TestNonTradingPeriodBehavior(unittest.TestCase):
     def test_before_open_clears_chart(self, mock_fetch_order_book, mock_phase):
         """测试：集合竞价时段清空分时图"""
         from core_bak_refactored.core.share.market.market_enums import TradingPhase
-        from datetime import datetime
         
         # 模拟集合竞价时间：2025-12-19 09:15
-        before_open_time = datetime(2025, 12, 19, 9, 15)
+        before_open_time = pd.Timestamp(2025, 12, 19, 9, 15)
         
         # 模拟集合竞价时段
         mock_phase.return_value = TradingPhase.BEFORE_OPEN

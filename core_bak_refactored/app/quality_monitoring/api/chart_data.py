@@ -19,10 +19,8 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
 from typing import Dict, Any, List, Optional
 import pandas as pd
-import numpy as np
 from core_bak_refactored.core.data.providers.protocols import PriceData, TickRange
 
 logger = logging.getLogger('DeepSeekQuant.App.API.ChartData')
@@ -59,16 +57,16 @@ class ChartDataAssembler:
                            index_id: str,
                            period: str = 'daily',
                            count: int = 120,
-                           before: Optional[str] = None,
+                           before: Optional[pd.Timestamp] = None,
                            indicators: Optional[str] = 'all',
-                           current_time:datetime=datetime.now()) -> Dict[str, Any]:
+                           current_time:pd.Timestamp=pd.Timestamp.now()) -> Dict[str, Any]:
         """组装完整的图表数据（全程使用强类型 PriceData）
         
         Args:
             index_id: 股票/指数代码
             period: 周期（daily/weekly/monthly）
             count: 数据条数
-            before: 获取此日期之前的数据（YYYY-MM-DD）
+            before: 获取此日期之前的数据（pd.Timestamp 类型）
             indicators: 需要的指标（逗号分隔或 'all'）
         
         Returns:
@@ -166,8 +164,8 @@ class ChartDataAssembler:
                          index_id: str,
                          period: str,
                          count: int,
-                         before: Optional[str],
-                         current_time: datetime) -> PriceData:
+                         before: Optional[pd.Timestamp],
+                         current_time: pd.Timestamp) -> PriceData:
         """获取K线数据（DataProvider 已内置三层缓存）
         
         💚 DataProvider 自动处理:
@@ -179,35 +177,32 @@ class ChartDataAssembler:
             index_id: 股票/指数代码
             period: 周期
             count: 数据条数
-            before: 截止日期
+            before: 截止日期（pd.Timestamp 类型）
         
         Returns:
             PriceData: 强类型价格数据对象
         """
-        from datetime import datetime, timedelta
-        
         # 🔧 无限滚动处理：根据周期调整 end_date
         if before:
-            before_date = datetime.strptime(before, '%Y-%m-%d')
-            # 💡 关键修复：不同周期使用不同的偏移量
+            # before 已经是 pd.Timestamp 类型
             if period == 'monthly':
                 # 月线：往前推1个月（避免重复返回同一个月的数据）
                 # 例如：before=2021-01-31 → end_date=2020-12-31
-                if before_date.month == 1:
-                    end_date = datetime(before_date.year - 1, 12, 31)
+                if before.month == 1:
+                    end_date = pd.Timestamp(before.year - 1, 12, 31)
                 else:
                     # 上个月的最后一天
-                    end_date = datetime(before_date.year, before_date.month, 1) - timedelta(days=1)
+                    end_date = pd.Timestamp(before.year, before.month, 1) - pd.Timedelta(days=1)
             elif period == 'weekly':
                 # 周线：往前推7天
-                end_date = before_date - timedelta(days=7)
+                end_date = before - pd.Timedelta(days=7)
             else:
                 # 日线：往前推1天
-                end_date = before_date - timedelta(days=1)
-            logger.info(f"🔄 无限滚动：before={before}, period={period}, end_date={end_date.strftime('%Y-%m-%d')}")
+                end_date = before - pd.Timedelta(days=1)
+            logger.info(f"🔄 无限滚动：before={before.strftime('%Y-%m-%d')}, period={period}, end_date={end_date.strftime('%Y-%m-%d')}")
         else:
             # 初次加载：end_date = 今天
-            end_date = datetime.now()
+            end_date = pd.Timestamp.now()
         
         # 🔧 根据周期调整查询范围，确保获取足够的数据点
         # 💡 关键：akshare等数据源可能限制历史数据范围，需要足够的冗余
@@ -222,20 +217,21 @@ class ChartDataAssembler:
         elif period == 'weekly':
             # 周线：60条周线 = 420天，加冗余 → 800天
             days_needed = count * 14  # 增加到14天/条（原10天）
-            start_date = end_date - timedelta(days=days_needed)
+            start_date = end_date - pd.Timedelta(days=days_needed)
         else:
             # 日线：60条日线 = 60天，加冗余（周末/节假日）→ 120天
             days_needed = count * 2
-            start_date = end_date - timedelta(days=days_needed)
+            start_date = end_date - pd.Timedelta(days=days_needed)
         start_date_str = start_date.strftime('%Y-%m-%d')
         end_date_str = end_date.strftime('%Y-%m-%d')
         
         # 💚 直接调用 DataProvider，三层缓存已封装在内
         # 🔧 对于不支持直接查询的数据源（如 AKShare），会返回日线数据
+        # 🔧 关键修复：传入 pd.Timestamp 类型，而不是字符串
         price_data = self._data_provider.get_index_prices(
             index_id,
-            start_date_str,
-            end_date_str,
+            pd.to_datetime(start_date_str),
+            pd.to_datetime(end_date_str),
             current_time,
             period  # 传递周期参数给数据源
         )

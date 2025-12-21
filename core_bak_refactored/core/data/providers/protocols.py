@@ -87,7 +87,7 @@ class IntradayData:
         order_book_bids: List[OrderBookLevel] - 买盘档位（从高到低）
         order_book_asks: List[OrderBookLevel] - 卖盘档位（从低到高）
         trade_records: List[TradeDetailRecord] - 成交明细列表（逐笔成交）
-        trade_date: str - 交易日期（YYYY-MM-DD）
+        trade_date: pd.Timestamp - 交易日期（YYYY-MM-DD）
         order_book_message: str - 盘口数据提示信息（如果为空）
         trade_records_message: str - 成交明细提示信息（如果为空）
         is_index: bool - 是否为指数（True=指数不可交易，False=个股可交易）
@@ -103,12 +103,12 @@ class IntradayData:
     order_book_bids: List[OrderBookLevel]
     order_book_asks: List[OrderBookLevel]
     trade_records: List[TradeDetailRecord]
-    trade_date: str
+    trade_date: pd.Timestamp
     order_book_message: str = ''  # 默认为空
     trade_records_message: str = ''  # 默认为空
     is_index: bool = False  # 默认为个股（可交易）
     should_poll: bool = False  # 默认不轮询
-    
+
     @classmethod
     def from_any(cls, data: Union['IntradayData', dict, Any]) -> Optional['IntradayData']:
         """
@@ -149,10 +149,10 @@ class IntradayData:
             logger = logging.getLogger(__name__)
             logger.warning(f"不支持的数据类型转换为 IntradayData: {type(data)}")
             return None
-    
+
     @classmethod
-    def from_akshare_df(cls, df: pd.DataFrame, symbol: str, trade_date: str, 
-                       interpolate_func=None) -> 'IntradayData':
+    def from_akshare_df(cls, df: pd.DataFrame, symbol: str, trade_date: pd.Timestamp,
+                        interpolate_func=None) -> 'IntradayData':
         """
         从 AKShare 返回的 DataFrame 构建 IntradayData 对象
         
@@ -174,7 +174,7 @@ class IntradayData:
         from core_bak_refactored.core.share.market.market_utils import MarketUtils
         import logging
         logger = logging.getLogger(__name__)
-        
+
         # 获取股票名称
         name_map = {
             '000001.SH': '上证指数',
@@ -212,7 +212,7 @@ class IntradayData:
                     time_str += ':00'
                 elif len(time_str) > 8:  # 可能包含毫秒，截断到秒
                     time_str = time_str[:8]
-                
+
                 price = float(row.get('收盘', row.get('最新价', 0)))
                 volume = int(row.get('成交量', 0))
 
@@ -226,7 +226,7 @@ class IntradayData:
                     volume=volume,
                     avg_price=round(avg_price, 2)
                 ))
-            
+
             # 插值：将1分钟数据插值为5秒数据（如果提供了插值函数）
             if interpolate_func and ticks:
                 ticks = interpolate_func(ticks)
@@ -250,13 +250,14 @@ class IntradayData:
             ticks=ticks,
             order_book_bids=[],  # 由调用方设置
             order_book_asks=[],  # 由调用方设置
-            trade_records=[],    # 由调用方设置
+            trade_records=[],  # 由调用方设置
             trade_date=trade_date,
-            order_book_message='',        # 由调用方设置
-            trade_records_message='',     # 由调用方设置
+            order_book_message='',  # 由调用方设置
+            trade_records_message='',  # 由调用方设置
             is_index=is_index,
-            should_poll = False
+            should_poll=False
         )
+
 
 @dataclass
 class TickRange:
@@ -279,7 +280,7 @@ class TickRange:
     start_time: pd.Timestamp
     end_time: pd.Timestamp
     period_seconds: int = 5  # 默认5秒粒度
-    
+
     def get_tick_count(self) -> int:
         """
         计算时间范围内的tick数量
@@ -289,16 +290,16 @@ class TickRange:
         """
         total_seconds = int((self.end_time - self.start_time).total_seconds())
         return (total_seconds // self.period_seconds) + 1
-    
+
     @classmethod
-    def from_trading_phase(cls, trading_phase: 'TradingPhase', trade_date: str, 
+    def from_trading_phase(cls, trading_phase: 'TradingPhase', trade_date: pd.Timestamp,
                           current_time: Optional[pd.Timestamp] = None) -> 'TickRange':
         """
         根据交易时段创建 TickRange
         
         Args:
             trading_phase: 交易时段枚举
-            trade_date: 交易日期（YYYY-MM-DD）
+            trade_date: 交易日期
             current_time: 当前时间，如果为None则使用系统时间
         
         Returns:
@@ -306,26 +307,32 @@ class TickRange:
         """
         if current_time is None:
             current_time = pd.Timestamp.now()
-        
+
+        # 确保 trade_date 是 pd.Timestamp 类型
+        if isinstance(trade_date, str):
+            trade_date = pd.to_datetime(trade_date)
+
+        # 提取日期部分并格式化为字符串用于构造时间
+        trade_date_str = trade_date.strftime('%Y-%m-%d')
+
         if trading_phase.value == 'after_close':
             # 盘后：返回全天数据 09:30-15:00
-            start_time = pd.Timestamp(f"{trade_date} 09:30:00")
-            end_time = pd.Timestamp(f"{trade_date} 15:00:00")
+            start_time = pd.Timestamp(f"{trade_date_str} 09:30:00")
+            end_time = pd.Timestamp(f"{trade_date_str} 15:00:00")
         elif trading_phase.value == 'before_open':
             # 盘前：返回空范围
-            start_time = pd.Timestamp(f"{trade_date} 09:30:00")
+            start_time = pd.Timestamp(f"{trade_date_str} 09:30:00")
             end_time = start_time
         else:  # trading
             # 盘中：返回开盘至当前时间
-            start_time = pd.Timestamp(f"{trade_date} 09:30:00")
+            start_time = pd.Timestamp(f"{trade_date_str} 09:30:00")
             # 确保不超过当前时间和收盘时间
             end_time = min(
                 current_time,
-                pd.Timestamp(f"{trade_date} 15:00:00")
+                pd.Timestamp(f"{trade_date_str} 15:00:00")
             )
-        
-        return cls(start_time=start_time, end_time=end_time, period_seconds=5)
 
+        return cls(start_time=start_time, end_time=end_time, period_seconds=5)
 
 
 class HistoricalDataProvider(Protocol):
@@ -354,7 +361,11 @@ class HistoricalDataProvider(Protocol):
     - 不得包含缺失值（NaN）
     """
 
-    def get_index_prices(self, index_id: str, start_date: str, end_date: str,current_time: datetime) -> PriceData:
+    def get_index_prices(self, index_id: str,
+                         start_date: pd.Timestamp,
+                         end_date: pd.Timestamp,
+                         current_time: pd.Timestamp,
+                         period: str = 'daily') -> PriceData:
         """
         获取指数价格数据
         
@@ -362,7 +373,8 @@ class HistoricalDataProvider(Protocol):
             index_id: 指数代码（如'000300.SH'沪深300）
             start_date: 开始日期 'YYYY-MM-DD'
             end_date: 结束日期 'YYYY-MM-DD'
-        
+            current_time:当前时间
+            period:周期
         Returns:
             PriceData: 包含标准OHLCV数据的结构化对象，具有明确的属性字段：
                 - records: List[OHLCVRecord] - OHLCV数据记录列表
@@ -383,7 +395,9 @@ class HistoricalDataProvider(Protocol):
         """
         ...
 
-    def get_index_returns(self, index_id: str, start_date: str, end_date: str) -> pd.Series:
+    def get_index_returns(self, index_id: str,
+                          start_date: pd.Timestamp,
+                          end_date: pd.Timestamp) -> pd.Series:
         """
         获取指数收益率序列
         
@@ -397,7 +411,8 @@ class HistoricalDataProvider(Protocol):
         """
         ...
 
-    def get_stock_prices(self, symbol: str, start_date: str, end_date: str, current_time: datetime) -> PriceData:
+    def get_stock_prices(self, symbol: str, start_date: pd.Timestamp, end_date: pd.Timestamp,
+                         current_time: pd.Timestamp,period: str = 'daily') -> PriceData:
         """
         获取个股历史价格数据
 
@@ -418,7 +433,7 @@ class HistoricalDataProvider(Protocol):
         """
         ...
 
-    def get_volatility_index(self, index_id: str, start_date: str, end_date: str) -> pd.Series:
+    def get_volatility_index(self, index_id: str, start_date: pd.Timestamp, end_date: pd.Timestamp) -> pd.Series:
         """
         获取波动率指数（如VIX）
         
@@ -431,7 +446,7 @@ class HistoricalDataProvider(Protocol):
             Series with date index and volatility values
         """
         ...
-        
+
     def validate_data_quality(self, data: pd.DataFrame) -> Dict[str, Any]:
         """
         数据质量验证报告
@@ -443,8 +458,9 @@ class HistoricalDataProvider(Protocol):
             质量报告字典，包含completeness_score、consistency_score等
         """
         ...
-    
-    def get_intraday_data(self, symbol: str, tick_range: TickRange= None, current_time: datetime = None) -> IntradayData:
+
+    def get_intraday_data(self, symbol: str, tick_range: TickRange = None,
+                          current_time: pd.Timestamp = None) -> IntradayData:
         """
         获取分时图数据（1分钟级别）
         
