@@ -19,7 +19,7 @@ class TestDataProviders(unittest.TestCase):
         """测试代理配置加载"""
         try:
             # 测试导入配置管理器
-            from core_bak_refactored.core.share.config_manager import ConfigManager
+            from core_bak_refactored.infrastructure.config_manager import ConfigManager
             
             # 测试获取系统配置
             config_manager = ConfigManager()

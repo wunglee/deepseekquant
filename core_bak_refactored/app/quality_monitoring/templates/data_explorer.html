@@ -422,9 +422,10 @@ function loadMoreHistoryData(callback) {
     const earliestData = allKlineData[0]
     const beforeDate = earliestData.date  // 'YYYY-MM-DD' 格式
     
-    // 🔧 构建API URL（添加use_mock参数）
-    const useMockParam = useMockMode ? '&use_mock=true' : ''
-    const url = `/api/v1/chart/data?index_id=${encodeURIComponent(currentIndex.id)}&period=${currentPeriod}&count=60&before=${beforeDate}&indicators=all${useMockParam}`
+    // 🔧 构建API URL（Mock模式使用独立端点）
+    const baseUrl = useMockMode ? '/api/v1/chart/data/mock' : '/api/v1/chart/data'
+    const tradingPhaseParam = useMockMode ? `&trading_phase=${mockTradingPhase}` : ''
+    const url = `${baseUrl}?index_id=${encodeURIComponent(currentIndex.id)}&period=${currentPeriod}&count=60&before=${beforeDate}&indicators=all${tradingPhaseParam}`
     console.log('📡 加载更多URL:', url)
     
     // 调用API
@@ -2361,11 +2362,11 @@ function loadKline(indexId) {
     // 💚 性能优化: A股默认60条,其他市场120条
     const count = currentMarket === 'cn_stock' ? 60 : 120
     
-    // 🔧 添加use_mock参数，统一切换数据源
-    const useMockParam = useMockMode ? '&use_mock=true' : ''
+    // 🔧 Mock模式使用独立端点，真实模式使用真实端点
+    const baseUrl = useMockMode ? '/api/v1/chart/data/mock' : '/api/v1/chart/data'
     // 🎭 Mock模式需要传递trading_phase参数（用于needs_realtime_kline判断）
     const tradingPhaseParam = useMockMode ? `&trading_phase=${mockTradingPhase}` : ''
-    const url = `/api/v1/chart/data?index_id=${encodeURIComponent(indexId)}&period=${currentPeriod}&count=${count}&indicators=all${useMockParam}${tradingPhaseParam}`
+    const url = `${baseUrl}?index_id=${encodeURIComponent(indexId)}&period=${currentPeriod}&count=${count}&indicators=all${tradingPhaseParam}`
     console.log('Fetching:', url)
     fetch(url)
         .then(r => {
