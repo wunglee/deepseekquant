@@ -17,7 +17,6 @@
 """
 
 import logging
-from datetime import datetime, timedelta
 from typing import Optional, List, Union
 import pandas as pd
 
@@ -44,31 +43,31 @@ def _get_mcal():
 
 class TradingCalendarService:
     """交易日历服务"""
-    
+
     # 市场代码映射到 pandas_market_calendars 的交易所代码
     MARKET_CALENDAR_MAP = {
-        'CN': 'SSE',      # 上海证券交易所 (Shanghai Stock Exchange)
-        'US': 'NYSE',     # 纽约证券交易所 (New York Stock Exchange)
-        'HK': 'HKEX',     # 香港交易所 (Hong Kong Stock Exchange)
-        'JP': 'JPX',      # 日本交易所集团 (Japan Exchange Group)
-        'EU': 'LSE',      # 伦敦证券交易所 (London Stock Exchange) 代表欧洲
-        'SG': 'SGX',      # 新加坡交易所 (Singapore Exchange)
+        MarketCode.CN: 'SSE',  # 上海证券交易所 (Shanghai Stock Exchange)
+        MarketCode.US: 'NYSE',  # 纽约证券交易所 (New York Stock Exchange)
+        MarketCode.HK: 'HKEX',  # 香港交易所 (Hong Kong Stock Exchange)
+        MarketCode.JP: 'JPX',  # 日本交易所集团 (Japan Exchange Group)
+        MarketCode.EU: 'LSE',  # 伦敦证券交易所 (London Stock Exchange) 代表欧洲
+        MarketCode.SG: 'SGX',  # 新加坡交易所 (Singapore Exchange)
     }
-    
+
     def __init__(self):
         """初始化交易日历服务"""
         self._calendars = {}
         self._cache = {}  # 缓存交易日判断结果
         mcal = _get_mcal()
-        
+
         if mcal and mcal is not False:
             logger.info("✅ 交易日历服务初始化: 使用 pandas_market_calendars")
             self._available = True
         else:
             logger.warning("⚠️ 交易日历服务降级: pandas_market_calendars 不可用，仅支持周末判断")
             self._available = False
-    
-    def _get_calendar(self, market_code: Union[str, MarketCode]):
+
+    def _get_calendar(self, market_code: MarketCode):
         """
                 获取指定市场的交易日历
         
@@ -80,29 +79,30 @@ class TradingCalendarService:
         """
         if not self._available:
             return None
-        
+
         # 支持 MarketCode 枚举和字符串
-        market_code_str = str(market_code) if isinstance(market_code, MarketCode) else market_code
-        
-        if market_code_str not in self._calendars:
+        if not isinstance(market_code, MarketCode):
+            raise TypeError("market_code must be MarketCode")
+
+        if market_code not in self._calendars:
             mcal = _get_mcal()
-            exchange_code = self.MARKET_CALENDAR_MAP.get(market_code_str)
-            
+            exchange_code = self.MARKET_CALENDAR_MAP.get(market_code)
+
             if not exchange_code:
-                logger.warning(f"未知市场代码: {market_code_str}，回退到NYSE")
+                logger.warning(f"未知市场代码: {market_code}，回退到NYSE")
                 exchange_code = 'NYSE'
-            
+
             try:
                 calendar = mcal.get_calendar(exchange_code)
-                self._calendars[market_code_str] = calendar
-                logger.debug(f"加载交易日历: {market_code_str} -> {exchange_code}")
+                self._calendars[market_code] = calendar
+                logger.debug(f"加载交易日历: {market_code} -> {exchange_code}")
             except Exception as e:
-                logger.error(f"加载交易日历失败 ({market_code_str}): {e}")
+                logger.error(f"加载交易日历失败 ({market_code}): {e}")
                 return None
-        
-        return self._calendars.get(market_code_str)
-    
-    def is_trading_day(self, market_code: Union[str, MarketCode], date: Union[datetime, pd.Timestamp]) -> bool:
+
+        return self._calendars.get(market_code)
+
+    def is_trading_day(self, market_code: MarketCode, date: pd.Timestamp) -> bool:
         """
         判断指定日期是否为交易日
         
@@ -115,39 +115,35 @@ class TradingCalendarService:
         
         Examples:
             >>> service = TradingCalendarService()
-            >>> service.is_trading_day(MarketCode.CN, datetime(2024, 10, 1))  # 国庆节
+            >>> service.is_trading_day(MarketCode.CN, pd.Timestamp(2024, 10, 1))  # 国庆节
             False
-            >>> service.is_trading_day('CN', pd.Timestamp('2024-10-08'))  # 工作日
+            >>> service.is_trading_day(MarketCode.CN, pd.Timestamp('2024-10-08'))  # 工作日
             True
         """
-        # 支持 MarketCode 枚举和字符串
-        market_code_str = str(market_code) if isinstance(market_code, MarketCode) else market_code
-        
-        # 统一转换为 pd.Timestamp 类型
-        if isinstance(date, str):
-            date = pd.to_datetime(date)
-        elif isinstance(date, datetime):
-            date = pd.Timestamp(date)
-        
+        if not isinstance(market_code, MarketCode):
+            raise TypeError("market_code must be MarketCode")
+        if not isinstance(date, pd.Timestamp):
+            raise TypeError("date must be pd.Timestamp")
+
         # 缓存键
-        cache_key = f"{market_code_str}_{date.strftime('%Y-%m-%d')}"
+        cache_key = f"{market_code}_{date.strftime('%Y-%m-%d')}"
         if cache_key in self._cache:
             return self._cache[cache_key]
-        
+
         # 降级模式：仅判断周末
         if not self._available:
             result = date.weekday() < 5  # 周一到周五
             self._cache[cache_key] = result
             return result
-        
+
         # 使用交易日历
-        calendar = self._get_calendar(market_code_str)
+        calendar = self._get_calendar(market_code)
         if calendar is None:
             # 回退到周末判断
             result = date.weekday() < 5
             self._cache[cache_key] = result
             return result
-        
+
         try:
             # 获取该日期所在月份的交易日
             year = date.year
@@ -156,22 +152,22 @@ class TradingCalendarService:
                 start_date=f'{year}-{month:02d}-01',
                 end_date=f'{year}-{month:02d}-{pd.Timestamp(year, month, 1).days_in_month}'
             )
-            
+
             # 检查日期是否在交易日列表中
             date_str = date.normalize()
             result = date_str in schedule.index
-            
+
             self._cache[cache_key] = result
             return result
         except Exception as e:
-            logger.warning(f"交易日判断失败 ({market_code_str}, {date}): {e}，回退到周末判断")
+            logger.warning(f"交易日判断失败 ({market_code}, {date}): {e}，回退到周末判断")
             result = date.weekday() < 5
             self._cache[cache_key] = result
             return result
-    
-    def get_trading_days_between(self, market_code: Union[str, MarketCode], 
-                                 start_date: Union[datetime, pd.Timestamp], 
-                                 end_date: Union[datetime, pd.Timestamp]) -> List[pd.Timestamp]:
+
+    def get_trading_days_between(self, market_code: MarketCode,
+                                 start_date: pd.Timestamp,
+                                 end_date: pd.Timestamp) -> List[pd.Timestamp]:
         """
         获取两个日期之间的所有交易日
         
@@ -190,20 +186,13 @@ class TradingCalendarService:
             >>> len(days)  # 跳过国庆假期
             2  # 9月30日 和 10月8日
         """
-        # 支持 MarketCode 枚举和字符串
-        market_code_str = str(market_code) if isinstance(market_code, MarketCode) else market_code
-        
-        # 统一转换为 pd.Timestamp 类型
-        if isinstance(start_date, str):
-            start_date = pd.to_datetime(start_date)
-        elif isinstance(start_date, datetime):
-            start_date = pd.Timestamp(start_date)
-            
-        if isinstance(end_date, str):
-            end_date = pd.to_datetime(end_date)
-        elif isinstance(end_date, datetime):
-            end_date = pd.Timestamp(end_date)
-        
+        if not isinstance(market_code, MarketCode):
+            raise TypeError("market_code must be MarketCode")
+        if not isinstance(end_date, pd.Timestamp):
+            raise TypeError("end_date must be pd.Timestamp")
+        if not isinstance(start_date, pd.Timestamp):
+            raise TypeError("start_date must be pd.Timestamp")
+
         # 降级模式：仅排除周末
         if not self._available:
             trading_days = []
@@ -213,9 +202,9 @@ class TradingCalendarService:
                     trading_days.append(current)
                 current += pd.Timedelta(days=1)
             return trading_days
-        
+
         # 使用交易日历
-        calendar = self._get_calendar(market_code_str)
+        calendar = self._get_calendar(market_code)
         if calendar is None:
             # 回退到周末判断
             trading_days = []
@@ -225,18 +214,18 @@ class TradingCalendarService:
                     trading_days.append(current)
                 current += pd.Timedelta(days=1)
             return trading_days
-        
+
         try:
             schedule = calendar.schedule(
                 start_date=start_date.strftime('%Y-%m-%d'),
                 end_date=end_date.strftime('%Y-%m-%d')
             )
-            
+
             # 转换为 pd.Timestamp 列表
             trading_days = [dt for dt in schedule.index]
             return trading_days
         except Exception as e:
-            logger.warning(f"获取交易日列表失败 ({market_code_str}): {e}，回退到周末判断")
+            logger.warning(f"获取交易日列表失败 ({market_code}): {e}，回退到周末判断")
             trading_days = []
             current = start_date
             while current <= end_date:
@@ -244,10 +233,10 @@ class TradingCalendarService:
                     trading_days.append(current)
                 current += pd.Timedelta(days=1)
             return trading_days
-    
-    def is_consecutive_trading_days(self, market_code: Union[str, MarketCode], 
-                                   date1: Union[datetime, pd.Timestamp], 
-                                   date2: Union[datetime, pd.Timestamp]) -> bool:
+
+    def is_consecutive_trading_days(self, market_code: MarketCode,
+                                    date1: pd.Timestamp,
+                                    date2: pd.Timestamp) -> bool:
         """
         判断两个日期是否为连续交易日（中间没有其他交易日）
         
@@ -270,31 +259,27 @@ class TradingCalendarService:
             ...     pd.Timestamp('2024-09-30'), pd.Timestamp('2024-10-08'))
             True  # 实际上是连续的（因为中间都是假期）
         """
-        # 统一转换为 pd.Timestamp 类型
-        if isinstance(date1, str):
-            date1 = pd.to_datetime(date1)
-        elif isinstance(date1, datetime):
-            date1 = pd.Timestamp(date1)
-            
-        if isinstance(date2, str):
-            date2 = pd.to_datetime(date2)
-        elif isinstance(date2, datetime):
-            date2 = pd.Timestamp(date2)
-        
+        if not isinstance(market_code, MarketCode):
+            raise TypeError("market_code must be MarketCode")
+        if not isinstance(date1, pd.Timestamp):
+            raise TypeError("date1 must be pd.Timestamp")
+        if not isinstance(date2, pd.Timestamp):
+            raise TypeError("date2 must be pd.Timestamp")
+
         if date1 >= date2:
             return False
-        
+
         # 获取两个日期之间的所有交易日
         trading_days = self.get_trading_days_between(market_code, date1, date2)
-        
+
         # 连续交易日：只有date1和date2两个交易日
         if len(trading_days) == 2 and trading_days[0].date() == date1.date() and trading_days[1].date() == date2.date():
             return True
-        
+
         return False
-    
-    def get_next_trading_day(self, market_code: Union[str, MarketCode], 
-                            date: Union[datetime, pd.Timestamp]) -> Optional[pd.Timestamp]:
+
+    def get_next_trading_day(self, market_code: MarketCode,
+                             date: pd.Timestamp) -> Optional[pd.Timestamp]:
         """
         获取下一个交易日
         
@@ -306,19 +291,19 @@ class TradingCalendarService:
             下一个交易日 (pd.Timestamp)，如果未来30天内没有则返回None
         """
         # 统一转换为 pd.Timestamp 类型
-        if isinstance(date, str):
-            date = pd.to_datetime(date)
-        elif isinstance(date, datetime):
-            date = pd.Timestamp(date)
-        
+        if not isinstance(market_code, MarketCode):
+            raise TypeError("market_code must be MarketCode")
+        if not isinstance(date, pd.Timestamp):
+            raise TypeError("date must be pd.Timestamp")
+
         # 搜索未来30天
         end_date = date + pd.Timedelta(days=30)
         trading_days = self.get_trading_days_between(market_code, date + pd.Timedelta(days=1), end_date)
-        
+
         return trading_days[0] if trading_days else None
-    
-    def get_previous_trading_day(self, market_code: Union[str, MarketCode], 
-                               date: Union[datetime, pd.Timestamp]) -> Optional[pd.Timestamp]:
+
+    def get_previous_trading_day(self, market_code: MarketCode,
+                                 date: pd.Timestamp) -> Optional[pd.Timestamp]:
         """
         获取上一个交易日
         
@@ -330,17 +315,17 @@ class TradingCalendarService:
             上一个交易日 (pd.Timestamp)，如果过去30天内没有则返回None
         """
         # 统一转换为 pd.Timestamp 类型
-        if isinstance(date, str):
-            date = pd.to_datetime(date)
-        elif isinstance(date, datetime):
-            date = pd.Timestamp(date)
-        
+        if not isinstance(market_code, MarketCode):
+            raise TypeError("market_code must be MarketCode")
+        if not isinstance(date, pd.Timestamp):
+            raise TypeError("date must be pd.Timestamp")
+
         # 搜索过去30天
         start_date = date - pd.Timedelta(days=30)
         trading_days = self.get_trading_days_between(market_code, start_date, date - pd.Timedelta(days=1))
-        
+
         return trading_days[-1] if trading_days else None
-    
+
     def clear_cache(self):
         """清空缓存"""
         self._cache.clear()

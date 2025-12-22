@@ -471,7 +471,7 @@ class MarketUtils:
             return last_trade_date
     
     @staticmethod
-    def determine_trading_phase(market: MarketCode, now: dt) -> TradingPhase:
+    def determine_trading_phase(market: MarketCode, now: pd.Timestamp) -> TradingPhase:
         """
         根据市场和当前时间判断交易状态
         

@@ -46,8 +46,8 @@ class ManagerPeriodTest(unittest.TestCase):
         result = self.cache.get_data(
             symbol='000001.SZ',
             period='daily',
-            start_date=pd.Timestamp('2025-03-10'),
-            end_date=pd.Timestamp('2025-03-14'),
+            from_date=pd.Timestamp('2025-03-10'),
+            to_date=pd.Timestamp('2025-03-14'),
             api_fetch_func=api_fetch_with_period,
             market_code=MarketCode.CN
         )
@@ -67,8 +67,8 @@ class ManagerPeriodTest(unittest.TestCase):
         result = self.cache.get_data(
             symbol='000001.SZ',
             period='weekly',
-            start_date=pd.Timestamp('2025-03-10'),
-            end_date=pd.Timestamp('2025-03-30'),
+            from_date=pd.Timestamp('2025-03-10'),
+            to_date=pd.Timestamp('2025-03-30'),
             api_fetch_func=api_fetch_func,
             market_code=MarketCode.CN
         )
@@ -85,8 +85,8 @@ class ManagerPeriodTest(unittest.TestCase):
         result = self.cache.get_data(
             symbol='000001.SZ',
             period='monthly',
-            start_date=pd.Timestamp('2025-01-01'),
-            end_date=pd.Timestamp('2025-03-31'),
+            from_date=pd.Timestamp('2025-01-01'),
+            to_date=pd.Timestamp('2025-03-31'),
             api_fetch_func=api_fetch_func,
             market_code=MarketCode.CN
         )
@@ -112,8 +112,8 @@ class ManagerPeriodTest(unittest.TestCase):
         result = self.cache.get_data(
             symbol='000001.SZ',
             period='daily',
-            start_date=pd.Timestamp('2025-03-10'),
-            end_date=pd.Timestamp('2025-03-14'),
+            from_date=pd.Timestamp('2025-03-10'),
+            to_date=pd.Timestamp('2025-03-14'),
             db_fetch_func=db_fetch_with_period,
             api_fetch_func=api_fetch_func,
             market_code=MarketCode.CN
@@ -141,8 +141,8 @@ class ManagerPeriodTest(unittest.TestCase):
         result = self.cache.get_data(
             symbol='000001.SZ',
             period='weekly',
-            start_date=pd.Timestamp('2025-03-10'),
-            end_date=pd.Timestamp('2025-03-30'),
+            from_date=pd.Timestamp('2025-03-10'),
+            to_date=pd.Timestamp('2025-03-30'),
             db_fetch_func=db_fetch_with_period,
             api_fetch_func=api_fetch_with_period,
             market_code=MarketCode.CN

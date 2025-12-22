@@ -10,8 +10,10 @@ window_strategy:
   # 缓存窗口大小（period的整数倍，默认1）
   # 例如：period=daily, window_size=7 → 7天一个窗口
   #       period=weekly, window_size=4 → 4周一个窗口
-  window_size: 1
-  
+  window_size:
+    daily: 7
+    weekly: 4
+    monthly: 12
   # 启用窗口化缓存（按月/周粒度缓存）
   enabled: true
   

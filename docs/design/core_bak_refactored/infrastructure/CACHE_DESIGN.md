@@ -318,7 +318,7 @@ CREATE TABLE cache_window (
        api_df = api_fetch_func(range_start, range_end)
        
        # 分配数据到各个窗口
-       self._distribute_data_to_windows(
+       self.distribute_data_to_windows(
            symbol, period, api_df, range_windows, 
            cached_windows, current_window_key, start_date
        )
@@ -425,17 +425,17 @@ from core_bak_refactored.infrastructure.cache.manager import CacheManager
 
 # 初始化缓存管理器
 cache_mgr = CacheManager(
-    fast_cache=memory_cache,  # 内存缓存
-    slow_cache=db_cache,      # 数据库缓存
-    window_size=1             # 窗口大小：1表示单日/周/月
+   fast_cache=memory_cache,  # 内存缓存
+   slow_cache=db_cache,  # 数据库缓存
+   window_size=1  # 窗口大小：1表示单日/周/月
 )
 
 # 查询K线数据
 df = cache_mgr.get_data(
-    symbol='000300.SH',
-    period='monthly',
-    start_date='2024-04-01',
-    end_date='2025-12-19'
+   symbol='000300.SH',
+   period='monthly',
+   from_date='2024-04-01',
+   to_date='2025-12-19'
 )
 ```
 

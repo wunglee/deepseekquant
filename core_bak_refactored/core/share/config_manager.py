@@ -537,7 +537,7 @@ class CacheConfig:
         所有字段从 core_bak_refactored/config/{env}/cache.yml 读取
     """
     cache_mode: str  # 'memory' 或 'redis'
-    window_size: int  # 窗口大小
+    window_size: dict[str,int]  # 窗口大小
     memory_max_windows: int  # 内存最大窗口数
     memory_ttl: int  # 内存TTL（秒）
     redis_ttl: int  # Redis TTL（秒）
@@ -704,7 +704,7 @@ class ConfigManager:
         # 提取配置值
         result = {
             'cache_mode': cache_dict.get('cache_mode', 'memory'),
-            'window_size': cache_dict.get('window_strategy', {}).get('window_size', 1),
+            'window_size': cache_dict.get('window_strategy', {}).get('window_size', {"daily":7,"weekly":4,"monthly":12}),
             'memory_max_windows': cache_dict.get('memory', {}).get('max_windows', 1000),
             'memory_ttl': cache_dict.get('memory', {}).get('ttl', 300),
             'redis_ttl': cache_dict.get('redis', {}).get('ttl', 3600),

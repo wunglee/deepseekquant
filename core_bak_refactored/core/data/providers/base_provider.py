@@ -19,7 +19,7 @@ import logging
 import time
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Dict, Any, Optional, Union
+from typing import Dict, Any, Optional
 
 import yaml
 import pandas as pd
@@ -27,7 +27,7 @@ import pandas as pd
 from core_bak_refactored.core.data.providers.protocols import PriceData, HistoricalDataProvider
 from core_bak_refactored.core.share.config_manager import ConfigManager
 from core_bak_refactored.core.share.market import MarketUtils
-from core_bak_refactored.core.share.market.market_enums import TradingPhase, MarketCode
+from core_bak_refactored.core.share.market.market_enums import TradingPhase
 
 logger = logging.getLogger('DeepSeekQuant.DataProviders')
 
@@ -75,8 +75,8 @@ class BaseDataProvider(ABC, HistoricalDataProvider):
         # 使用缓存管理器获取数据（period 是数据的本质属性，必须传给缓存层）
         result_df = self._cache_manager.get_data(
             symbol=index_id,
-            start_date=start_date,
-            end_date=end_date,
+            from_date=start_date,
+            to_date=end_date,
             period=period,  # 数据粒度/K线类型，必须作为缓存键的一部分
             db_fetch_func=None,  # ThreeLayerCacheManager 内部处理数据库缓存
             api_fetch_func=lambda s, e, period: self._fetch_from_api(index_id, s, e, period)

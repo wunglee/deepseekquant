@@ -33,7 +33,7 @@ logger = logging.getLogger('DeepSeekQuant.Cache')
 
 # 导出核心类
 from .manager import ThreeLayerCacheManager
-from .window_manager import WindowManager
+from .window_cache import WindowsCache
 
 
 def _load_cache_config() -> Dict[str, Any]:
@@ -99,8 +99,8 @@ import pandas as pd        >>> from core_bak_refactored.infrastructure.cache imp
         >>> # 使用缓存管理器
         >>> data = cache_manager.get_data(
         ...     symbol='000300.SH',
-        ...     start_date=pd.Timestamp('2025-01-01'),
-        ...     end_date=pd.Timestamp('2025-01-31'),
+        ...     from_date=pd.Timestamp('2025-01-01'),
+        ...     to_date=pd.Timestamp('2025-01-31'),
         ...     period='weekly',
         ...     api_fetch_func=my_api_func
         ... )
@@ -112,11 +112,6 @@ import pandas as pd        >>> from core_bak_refactored.infrastructure.cache imp
     cache_manager = ThreeLayerCacheManager(
         db_service=None,  # ThreeLayerCacheManager 内部处理
         redis_client=None,  # ThreeLayerCacheManager 内部处理
-        cache_mode=config['cache_mode'],
-        window_size=config['window_size'],  # 添加 window_size 参数
-        memory_max_windows=config['memory_max_windows'],
-        memory_ttl=config['memory_ttl'],
-        redis_ttl=config['redis_ttl']
     )
 
     logger.debug(f"✅ 缓存管理器已创建: cache_mode={config['cache_mode']}")
@@ -125,6 +120,6 @@ import pandas as pd        >>> from core_bak_refactored.infrastructure.cache imp
 
 __all__ = [
     'ThreeLayerCacheManager',
-    'WindowManager',
+    'WindowsCache',
     'create_cache_manager',
 ]

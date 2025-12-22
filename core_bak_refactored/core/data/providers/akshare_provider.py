@@ -26,20 +26,20 @@ pip install akshare
 import json
 import logging
 import os
-from datetime import datetime, time
-from typing import Union, Any
+from datetime import datetime
+from typing import Any
 
+import akshare as ak
 import pandas as pd
 
 from core_bak_refactored.core.data.providers.base_provider import BaseDataProvider
-from core_bak_refactored.core.data.providers.protocols import (HistoricalDataProvider, PriceData,
+from core_bak_refactored.core.data.providers.protocols import (PriceData,
                                                                IntradayData, IntradayTickRecord,
-                                                               OrderBookLevel, TradeDetailRecord, TickRange)
-from core_bak_refactored.core.share.market import MarketUtils
-from core_bak_refactored.core.share.market.market_enums import TradingPhase
+                                                               OrderBookLevel, TradeDetailRecord)
 from core_bak_refactored.core.data.providers.protocols import TickRange
 from core_bak_refactored.core.share.config_manager import ConfigManager
-import akshare as ak
+from core_bak_refactored.core.share.market import MarketUtils
+from core_bak_refactored.core.share.market.market_enums import TradingPhase
 
 logger = logging.getLogger(__name__)
 
@@ -184,8 +184,8 @@ class AKShareDataProvider(BaseDataProvider):
     def get_index_returns(
             self,
             index_id: str,
-            start_date: str,
-            end_date: str
+            start_date: pd.Timestamp,
+            end_date: pd.Timestamp
     ) -> pd.Series:
         """
         获取指数收益率序列（实现HistoricalDataProvider接口）
@@ -198,12 +198,12 @@ class AKShareDataProvider(BaseDataProvider):
         Returns:
             Series with date index and return values
         """
-        price_data = self.get_index_prices(index_id, start_date, end_date, datetime.now())
+        price_data = self.get_index_prices(index_id, start_date, end_date, pd.Timestamp.now())
         prices = price_data.to_dataframe().set_index('date')
         returns = prices['close'].pct_change().dropna()
         return returns
 
-    def _fetch_from_external_api(self, symbol: str, start_date: str, end_date: str, period: str = 'daily') -> PriceData:
+    def _fetch_from_external_api(self, symbol: str, start_date: pd.Timestamp, end_date: pd.Timestamp, period: str = 'daily') -> PriceData:
         """
         获取历史价格数据（适用于个股和指数）
 
@@ -338,7 +338,7 @@ class AKShareDataProvider(BaseDataProvider):
         # 其他：直接返回（港股、其他市场）
         return symbol
 
-    def _fetch_by_market(self, symbol_id: str, start_date: str = None, end_date: str = None) -> pd.DataFrame:
+    def _fetch_by_market(self, symbol_id: str, start_date: pd.Timestamp = None, end_date: pd.Timestamp = None) -> pd.DataFrame:
         """
         根据原始代码格式判断市场，调用对应的AKShare API
 
@@ -371,17 +371,14 @@ class AKShareDataProvider(BaseDataProvider):
                 # 🔧 A股指数：优先使用支持日期范围的 index_zh_a_hist API
                 # 移除市场前缀（index_zh_a_hist只需要纯数字代码）
                 pure_code = ak_symbol.replace('sh', '').replace('sz', '')
-                
-                # 转换日期格式（YYYY-MM-DD → YYYYMMDD）
-                start_dt = start_date.replace('-', '') if start_date else '19900101'
-                end_dt = end_date.replace('-', '') if end_date else datetime.now().strftime('%Y%m%d')
-                
-                logger.debug(f"调用A股指数API: index_zh_a_hist({pure_code}, period='daily', start_date={start_dt}, end_date={end_dt})")
+                start_date_str=start_date.strftime('%Y%m%d')
+                end_date_str=end_date.strftime('%Y%m%d')
+                logger.debug(f"调用A股指数API: index_zh_a_hist({pure_code}, period='daily', start_date={start_date_str}, end_date={end_date_str})")
                 df = self.ak.index_zh_a_hist(
                     symbol=pure_code,
                     period='daily',
-                    start_date=start_dt,
-                    end_date=end_dt
+                    start_date=start_date_str,
+                    end_date=end_date_str,
                 )
                 
                 # 重命名列（index_zh_a_hist使用中文列名）
@@ -414,14 +411,14 @@ class AKShareDataProvider(BaseDataProvider):
             else:
                 # 默认使用A股指数API
                 pure_code = ak_symbol.replace('sh', '').replace('sz', '')
-                start_dt = start_date.replace('-', '') if start_date else '19900101'
-                end_dt = end_date.replace('-', '') if end_date else datetime.now().strftime('%Y%m%d')
+                start_date_str=start_date.strftime('%Y%m%d')
+                end_date_str=end_date.strftime('%Y%m%d')
                 logger.debug(f"默认调用A股指数API: index_zh_a_hist({pure_code})")
                 df = self.ak.index_zh_a_hist(
                     symbol=pure_code,
                     period='daily',
-                    start_date=start_dt,
-                    end_date=end_dt
+                    start_date=start_date_str,
+                    end_date=end_date_str
                 )
                 column_mapping = {
                     '日期': 'date', '开盘': 'open', '收盘': 'close',
@@ -470,8 +467,8 @@ class AKShareDataProvider(BaseDataProvider):
         logger.info(f"识别市场: {symbol} -> {market_code.value}")
 
         # 使用传入的时间或当前系统时间
-        now = current_time if current_time is not None else datetime.now()
-        trade_date = now.strftime('%Y-%m-%d')
+        now = pd.Timestamp.now()
+        trade_date = now
         intraday_data = None
         trading_phase = MarketUtils.determine_trading_phase(market_code, now)
         trading_hours = self.config_manager.get_trading_hours(market_code.value)
@@ -610,7 +607,7 @@ class AKShareDataProvider(BaseDataProvider):
         
         return None
 
-    def _build_intraday_data(self, df, symbol: str, trade_date: str,
+    def _build_intraday_data(self, df, symbol: str, trade_date: pd.Timestamp,
                              fetch_trade_records: bool = True, should_poll: bool = True,
                              enable_cache: bool = False) -> IntradayData:
         """
@@ -652,7 +649,7 @@ class AKShareDataProvider(BaseDataProvider):
 
         return intraday_data
 
-    def _fetch_real_intraday_from_akshare(self, symbol: str, trade_date: str, tick_range: TickRange = None):
+    def _fetch_real_intraday_from_akshare(self, symbol: str, trade_date: pd.Timestamp, tick_range: TickRange = None):
         """
         从AKShare获取真实分时数据（返回原始DataFrame）
 
@@ -926,7 +923,6 @@ class AKShareDataProvider(BaseDataProvider):
         - DataFrame虽然为空，但会携带必要的初始化信息供转换使用
         """
         import pandas as pd
-        from core_bak_refactored.core.share.market.market_enums import TradingPhase
         from core_bak_refactored.core.share.market.market_utils import MarketUtils
 
         # 创建空的DataFrame，列名与AKShare API返回格式一致
@@ -962,12 +958,15 @@ class AKShareDataProvider(BaseDataProvider):
             return ticks
 
         from datetime import datetime, timedelta
+        
+        # 尝试导入scipy的三次样条插值
         try:
             from scipy.interpolate import CubicSpline
             use_cubic_spline = True
         except ImportError:
-            logger.warning("未安装scipy，降级为线性插倿")
+            logger.warning("未安装scipy，降级为线性插值")
             use_cubic_spline = False
+            CubicSpline = None  # 定义为None以避免未定义错误
 
         interpolated_ticks = []
 
@@ -1101,8 +1100,9 @@ class AKShareDataProvider(BaseDataProvider):
                 'should_poll': bool  # 服务器根据 trading_phase 决定，前端只依赖此字段控制行为
             }
         """
-        # 初始化返回数据
-        kline_data = {
+        # 初始化返回数据（使用类型注解避免类型推断错误）
+        from typing import Any, Dict
+        kline_data: Dict[str, Any] = {
             'date': None,
             'open': None,
             'high': None,
@@ -1114,10 +1114,10 @@ class AKShareDataProvider(BaseDataProvider):
         }
 
         # 判断交易时段
-        now = current_time if current_time is not None else datetime.now()
+        now = pd.Timestamp.now()
         market_code = MarketUtils.infer_market_from_symbol(symbol)
         trading_phase = MarketUtils.determine_trading_phase(market_code, now)
-        trade_date = now.strftime('%Y-%m-%d')
+        trade_date = now
         cache_key = f"realtime_kline_{symbol}_{trade_date}"
 
         if trading_phase == TradingPhase.TRADING:

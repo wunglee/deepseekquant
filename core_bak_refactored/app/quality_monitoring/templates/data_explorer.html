@@ -277,10 +277,12 @@ echarts.connect([klineChart, indicatorChart, dataZoomChart])
 var isLoadingMore = false  // 加载状态标志
 var hasMoreData = true      // 是否还有更多数据
 var lastLoadPosition = -1   // 上次触发加载的位置（避免重复触发）
-var lastStartValue = 100    // 记录上次的 start 值，用于检测用户是否在拖动
+var lastStartValue = -1     // 🔥 修复：初始值设为-1（无效值），第一次获取到真实值后才开始比较
 var userIsMoving = false    // 用户是否正在拖动
 var movingResetTimer = null // 拖动重置定时器
 var isAdjustingBySystem = false // 标记系统是否正在自动调整（避免误判为用户拖动）
+var infiniteScrollEnabled = false // 🔧 修复：标记是否启用无限滚动（防止首次加载时误触发）
+var initialLoadComplete = false  // 🔧 标记初始加载是否完成
 
 // 暴露给 adjustDataZoomAfterPrepend 使用的标志
 window.__dataZoomAdjusting = function(isAdjusting) {
@@ -289,8 +291,20 @@ window.__dataZoomAdjusting = function(isAdjusting) {
 
 // 监听 K 线图、技术指标图、数据窗口控制条的 dataZoom 事件（触发无限滚动）
 function startInfiniteScrollDetection() {
+    console.log('🚀 启动无限滚动检测，当前状态:', {
+        infiniteScrollEnabled,
+        initialLoadComplete,
+        hasMoreData,
+        isLoadingMore
+    })
+    
     window.setInterval(function() {
         try {
+            // 🔥 关键修复：初始加载未完成时，不进行任何检测
+            if (!initialLoadComplete) {
+                return
+            }
+            
             // 🔧 优先从 K 线图获取 dataZoom 状态（主图表）
             let currentStart = 0
             let hasValidZoom = false
@@ -324,8 +338,28 @@ function startInfiniteScrollDetection() {
             
             // 🔧 检测用户是否在向左拖动（start 值减小）
             // ⚠️ 排除系统自动调整导致的变化
-            if (Math.abs(currentStart - lastStartValue) > 0.5 && !isAdjustingBySystem) {
+            // 🔥 关键修复：首次获取到有效值时，不判断为拖动，只记录初始值
+            if (lastStartValue === -1) {
+                // 首次获取到有效的 start 值，记录下来
+                lastStartValue = currentStart
+                console.log('📌 首次记录 dataZoom 位置:', currentStart.toFixed(2) + '%')
+            } else if (Math.abs(currentStart - lastStartValue) > 0.5 && !isAdjustingBySystem) {
+                console.log('📍 检测到 dataZoom 变化:', {
+                    lastStartValue: lastStartValue.toFixed(2),
+                    currentStart: currentStart.toFixed(2),
+                    delta: (currentStart - lastStartValue).toFixed(2),
+                    isAdjustingBySystem,
+                    infiniteScrollEnabled,
+                    initialLoadComplete
+                })
+                
                 userIsMoving = true
+                
+                // 🔥 修复：首次检测到用户拖动时，启用无限滚动
+                if (!infiniteScrollEnabled && initialLoadComplete) {
+                    infiniteScrollEnabled = true
+                    console.log('✅ 检测到用户拖动，启用无限滚动')
+                }
                 
                 // 清除之前的定时器
                 if (movingResetTimer) {
@@ -344,7 +378,8 @@ function startInfiniteScrollDetection() {
             // 🎯 渐进式预加载机制（仅在用户正在拖动时才允许触发加载）
             // 🔧 优化：提前预加载阈值，避免数据延迟和窗口跳跃
             // 🔧 关键修复：在 start < 20 时不需要 userIsMoving 限制（避免拖不动）
-            if (hasMoreData && !isLoadingMore) {
+            // 🔥 修复：只有在 infiniteScrollEnabled=true 时才允许触发
+            if (infiniteScrollEnabled && hasMoreData && !isLoadingMore) {
                 var shouldLoad = false
                 var triggerReason = ''
                 var needsUserMoving = true  // 默认需要用户拖动
@@ -365,7 +400,14 @@ function startInfiniteScrollDetection() {
                 }
                 
                 if (shouldLoad) {
-                    console.log('🚀 触发加载更多：' + triggerReason + '，当前 start =', currentStart.toFixed(2) + '%')
+                    console.log('🚀 触发加载更多：' + triggerReason + '，当前状态:', {
+                        currentStart: currentStart.toFixed(2) + '%',
+                        infiniteScrollEnabled,
+                        hasMoreData,
+                        isLoadingMore,
+                        userIsMoving,
+                        lastLoadPosition
+                    })
                     isLoadingMore = true
                     loadMoreHistoryData(function(success) {
                         isLoadingMore = false
@@ -2140,22 +2182,23 @@ function renderKline(data, events) {
                     color0:'#10b981',
                     borderColor:'#ef4444',
                     borderColor0:'#10b981'
-                },
-                markPoint: {
-                    data: (displayEvents||[]).map(e => {
-                        let evtDate = e.date
-                        if (typeof evtDate === 'string' && evtDate.includes('GMT')) {
-                            evtDate = new Date(evtDate).toISOString().split('T')[0]
-                        }
-                        return {
-                            name: e.title,
-                            xAxis: evtDate,
-                            yAxis: e.price || 0,
-                            symbolSize: e.severity==='critical'?60:40,
-                            itemStyle: { color: e.impact === 'negative' ? '#ef4444' : '#10b981' }
-                        }
-                    })
                 }
+                // 🔧 暂时隐藏事件标记，让图表更清晰
+                // markPoint: {
+                //     data: (displayEvents||[]).map(e => {
+                //         let evtDate = e.date
+                //         if (typeof evtDate === 'string' && evtDate.includes('GMT')) {
+                //             evtDate = new Date(evtDate).toISOString().split('T')[0]
+                //         }
+                //         return {
+                //             name: e.title,
+                //             xAxis: evtDate,
+                //             yAxis: e.price || 0,
+                //             symbolSize: e.severity==='critical'?60:40,
+                //             itemStyle: { color: e.impact === 'negative' ? '#ef4444' : '#10b981' }
+                //         }
+                //     })
+                // }
             },
             { 
                 name:'MA5', 
@@ -2400,10 +2443,19 @@ function loadKline(indexId) {
             // 🔧 关键修复：加载新股票时重置无限滚动状态
             hasMoreData = true
             lastLoadPosition = -1
-            console.log('🔄 已重置无限滚动状态，允许加载更多历史数据')
+            infiniteScrollEnabled = false  // 🔥 修复：重置为禁用状态
+            initialLoadComplete = true     // 🔥 修复：标记初始加载完成
+            console.log('🔄 已重置无限滚动状态，初始加载完成，等待用户拖动后启用')
             
             console.log('🎯 后端指标数据:', allIndicatorsData)
             console.log('🎯 needs_realtime_kline:', chartData.needs_realtime_kline)
+            console.log('📊 初始加载完成，状态更新:', {
+                infiniteScrollEnabled: false,
+                initialLoadComplete: true,
+                hasMoreData: true,
+                lastLoadPosition: -1,
+                dataLength: allKlineData.length
+            })
             
             renderKline(allKlineData, allEvents)
             

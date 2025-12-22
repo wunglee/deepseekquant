@@ -14,7 +14,12 @@
 import argparse
 import signal
 import sys
+import traceback
+import faulthandler
 from core_bak_refactored.app.quality_monitoring.app_example import DataQualityApplication
+
+# 启用 faulthandler，在段错误时打印调用栈
+faulthandler.enable()
 
 
 def main():
@@ -54,8 +59,16 @@ def main():
         app.stop()
         sys.exit(0)
     
+    def sigsegv_handler(sig, frame):
+        print('\n🚨🚨🚨 检测到段错误 (SIGSEGV)!!!')
+        print('调用栈信息：')
+        traceback.print_stack(frame)
+        print('\n这通常是 C 扩展库（pandas/numpy）的问题')
+        sys.exit(139)
+    
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGSEGV, sigsegv_handler)  # 捕获段错误
     
     # 启动应用
     try:
