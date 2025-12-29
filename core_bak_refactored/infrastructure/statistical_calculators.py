@@ -20,11 +20,10 @@
 - 业务封装已迁移至：core/risk/__init__.py
 """
 
-import numpy as np
-
-from typing import Dict, List, Optional, Tuple
-import scipy.stats as stats
 import logging
+from typing import Optional
+
+import numpy as np
 
 logger = logging.getLogger('DeepSeekQuant.Infrastructure.RiskMetrics')
 

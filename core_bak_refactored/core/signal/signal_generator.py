@@ -4,10 +4,12 @@
 职责: 基于技术指标和策略生成交易信号
 """
 
-from typing import Dict, List
+from typing import Dict, List, Optional
 import logging
-from datetime import datetime
+
 from collections import defaultdict
+
+import pandas as pd
 
 from .signal_models import TradingSignal, SignalType, SignalStrength, SignalSource, SignalMetadata
 # from infrastructure.technical_indicators import TechnicalIndicators  # TODO: 待实现
@@ -138,7 +140,7 @@ class SignalGenerator:
         
         return composite_signals
     
-    def _create_composite_signal(self, symbol: str, signal_type: SignalType, timeframe: str, signals: List[TradingSignal], market_data: Dict) -> TradingSignal:
+    def _create_composite_signal(self, symbol: str, signal_type: SignalType, timeframe: str, signals: List[TradingSignal], market_data: Dict) -> Optional[TradingSignal]:
         """创建复合信号"""
         try:
             # 计算加权平均
@@ -153,11 +155,11 @@ class SignalGenerator:
             base_signal = max(signals, key=lambda s: s.metadata.confidence)
             
             return TradingSignal(
-                id=f"composite_{symbol}_{int(datetime.now().timestamp())}",
+                id=f"composite_{symbol}_{int(pd.Timestamp.now().timestamp())}",
                 symbol=symbol,
                 signal_type=signal_type,
                 price=weighted_price,
-                timestamp=datetime.now().isoformat(),
+                timestamp=pd.Timestamp.now().isoformat(),
                 metadata=SignalMetadata(
                     source=SignalSource.COMPOSITE,
                     confidence=weighted_confidence,
@@ -172,7 +174,7 @@ class SignalGenerator:
             logger.error(f"复合信号创建失败 {symbol}: {e}")
             return None
     
-    def _create_strong_signal(self, signal_type: SignalType, signals: List[TradingSignal]) -> TradingSignal:
+    def _create_strong_signal(self, signal_type: SignalType, signals: List[TradingSignal]) -> Optional[TradingSignal]:
         """创建强势信号"""
         if not signals:
             return None
@@ -181,11 +183,11 @@ class SignalGenerator:
         best_signal = max(signals, key=lambda s: s.metadata.confidence)
         
         return TradingSignal(
-            id=f"strong_{best_signal.symbol}_{int(datetime.now().timestamp())}",
+            id=f"strong_{best_signal.symbol}_{int(pd.Timestamp.now().timestamp())}",
             symbol=best_signal.symbol,
             signal_type=signal_type,
             price=best_signal.price,
-            timestamp=datetime.now().isoformat(),
+            timestamp=pd.Timestamp.now().isoformat(),
             metadata=SignalMetadata(
                 source=SignalSource.COMPOSITE,
                 confidence=min(best_signal.metadata.confidence * 1.2, 0.95),
@@ -197,7 +199,7 @@ class SignalGenerator:
             expected_return=best_signal.expected_return * 1.5
         )
     
-    def _create_hold_signal(self, signals: List[TradingSignal]) -> TradingSignal:
+    def _create_hold_signal(self, signals: List[TradingSignal]) ->Optional[TradingSignal]:
         """创建持有信号"""
         if not signals:
             return None
@@ -205,11 +207,11 @@ class SignalGenerator:
         base_signal = signals[0]
         
         return TradingSignal(
-            id=f"hold_{base_signal.symbol}_{int(datetime.now().timestamp())}",
+            id=f"hold_{base_signal.symbol}_{int(pd.Timestamp.now().timestamp())}",
             symbol=base_signal.symbol,
             signal_type=SignalType.HOLD,
             price=base_signal.price,
-            timestamp=datetime.now().isoformat(),
+            timestamp=pd.Timestamp.now().isoformat(),
             metadata=SignalMetadata(
                 source=SignalSource.COMPOSITE,
                 confidence=0.5,

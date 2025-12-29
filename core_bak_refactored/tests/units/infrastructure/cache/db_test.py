@@ -9,8 +9,10 @@
 """
 
 import unittest
-from unittest.mock import Mock, MagicMock
+from unittest.mock import Mock
+
 import pandas as pd
+
 from core_bak_refactored.infrastructure.cache.db import DBCache
 
 

@@ -7,8 +7,10 @@
 import numpy as np
 from typing import Dict, List
 import logging
-from datetime import datetime
+
 from collections import defaultdict
+
+import pandas as pd
 
 from .signal_models import TradingSignal, SignalStrength, SignalType, SignalSource, SignalMetadata
 
@@ -72,11 +74,11 @@ class SignalAggregator:
         base_signal = max(signals, key=lambda s: s.metadata.confidence)
         
         return TradingSignal(
-            id=f"aggregated_{base_signal.symbol}_{int(datetime.now().timestamp())}",
+            id=f"aggregated_{base_signal.symbol}_{int(pd.Timestamp.now().timestamp())}",
             symbol=base_signal.symbol,
             signal_type=signal_type,
             price=weighted_price,
-            timestamp=datetime.now().isoformat(),
+            timestamp=pd.Timestamp.now().isoformat(),
             metadata=SignalMetadata(
                 source=SignalSource.COMPOSITE,
                 confidence=weighted_confidence,

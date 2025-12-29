@@ -6,13 +6,9 @@ P0任务测试：验证RiskProcessor在process流程中正确记录审计跟踪�
 """
 
 import pytest
-import hashlib
-import json
-from datetime import datetime
-from typing import Dict, Any
+import pandas as pd
 
 from core_bak_refactored.core.risk.risk_processor import RiskProcessor
-from core_bak_refactored.core.risk.risk_models import RiskLevel
 
 
 @pytest.fixture
@@ -101,9 +97,9 @@ class TestAuditTrail:
             assert 'timestamp' in entry, "应包含timestamp字段"
             assert 'status' in entry, "应包含status字段"
             
-            # 验证timestamp格式
+            # 验证timestamp格式：🔧 使用 pd.to_datetime
             try:
-                datetime.fromisoformat(entry['timestamp'])
+                pd.to_datetime(entry['timestamp'])
             except ValueError:
                 pytest.fail(f"timestamp格式无效: {entry['timestamp']}")
             
@@ -272,8 +268,8 @@ class TestAuditTrail:
         
         audit_trail = result['audit_trail']
         
-        # 提取所有时间戳
-        timestamps = [datetime.fromisoformat(e['timestamp']) for e in audit_trail]
+        # 提取所有时间戳：🔧 使用 pd.to_datetime
+        timestamps = [pd.to_datetime(e['timestamp']) for e in audit_trail]
         
         # 验证时间戳递增
         for i in range(len(timestamps) - 1):

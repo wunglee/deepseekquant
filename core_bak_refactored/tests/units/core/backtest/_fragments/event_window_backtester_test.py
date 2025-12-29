@@ -8,16 +8,12 @@ EventWindowBacktester 统一测试文件
 """
 
 import unittest
-import pandas as pd
-import numpy as np
-from datetime import datetime
 
 from core_bak_refactored.core.backtest._fragments.event_window_backtester import EventWindowBacktester, BacktestReporter
-from core_bak_refactored.tests.fixtures.core.data.mock_historical_data_provider import MockHistoricalDataProvider
 from core_bak_refactored.core.data.providers.yahoo_provider import YahooFinanceDataProvider
 from core_bak_refactored.core.portfolio._fragments.synthetic_portfolio_builder import SyntheticPortfolioBuilder
 from core_bak_refactored.core.risk.stress_testing import StressTester
-from core_bak_refactored.core.data.providers.factory import get_global_factory, reset_global_factory
+from core_bak_refactored.tests.fixtures.core.data.mock_historical_data_provider import MockHistoricalDataProvider
 
 
 class EventWindowBacktesterEnhancedInterfaceTest(unittest.TestCase):

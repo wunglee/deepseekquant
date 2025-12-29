@@ -17,7 +17,7 @@
     # 基本使用
     factory = DataProviderFactory()
     provider = factory.create('yahoo')
-    data = provider.get_index_prices('000300.SH', '2020-01-01', '2020-12-31', datetime.now())
+    data = provider.get_index_prices('000300.SH', '2020-01-01', '2020-12-31', pd.Timestamp.now())
     
     # 注入自定义provider
     factory.register('custom', MyCustomProvider)

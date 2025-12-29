@@ -12,9 +12,8 @@
 
 import logging
 import os
-from datetime import datetime, timedelta
-from typing import Optional, Dict, Any, List
 from pathlib import Path
+from typing import Optional, Dict, Any
 
 import pandas as pd
 
@@ -169,17 +168,17 @@ class DatabaseService:
     def get_cached_data(
         self,
         index_id: str,
-        start_date: str,
-        end_date: str,
-        source: str
+        start_date: pd.Timestamp,
+        end_date: pd.Timestamp,
+        source: str = None
     ) -> Optional[pd.DataFrame]:
         """
         从缓存获取数据
         
         Args:
             index_id: 指数代码
-            start_date: 开始日期 (YYYY-MM-DD)
-            end_date: 结束日期 (YYYY-MM-DD)
+            start_date: 开始日期 (pd.Timestamp)
+            end_date: 结束日期 (pd.Timestamp)
             source: 数据源
         
         Returns:
@@ -189,14 +188,14 @@ class DatabaseService:
             return None
         
         try:
-            start_time = datetime.now()
+            start_time = pd.Timestamp.now()
             
             # 查询数据
             df = self.repository.query_prices(index_id, start_date, end_date)
             
             # 性能监控
             if self.monitoring_enabled:
-                elapsed = (datetime.now() - start_time).total_seconds() * 1000
+                elapsed = (pd.Timestamp.now() - start_time).total_seconds() * 1000
                 if elapsed > self.slow_query_threshold:
                     logger.warning(
                         f"慢查询: {index_id} {start_date}~{end_date} "
@@ -238,14 +237,14 @@ class DatabaseService:
             return False
         
         try:
-            start_time = datetime.now()
+            start_time = pd.Timestamp.now()
             
             # 插入数据
             row_count = self.repository.insert_prices(index_id, data, source)
             
             # 性能监控
             if self.monitoring_enabled:
-                elapsed = (datetime.now() - start_time).total_seconds() * 1000
+                elapsed = (pd.Timestamp.now() - start_time).total_seconds() * 1000
                 logger.info(
                     f"数据已缓存: {index_id} 插入 {row_count} 条 "
                     f"耗时 {elapsed:.0f}ms"
@@ -319,7 +318,7 @@ class DatabaseService:
                 }
             
             # 需要增量更新
-            start_date = (latest_dt + timedelta(days=1)).strftime('%Y-%m-%d')
+            start_date = (latest_dt + pd.Timedelta(days=1)).strftime('%Y-%m-%d')
             
             return {
                 'need_fetch': True,

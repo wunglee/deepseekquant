@@ -7,9 +7,10 @@
 3. 识别异常和缺失数据
 4. 提供数据清洗建议
 """
-from typing import Dict, List, Any, Optional
-from datetime import datetime
 import logging
+from typing import Dict, List, Any, Optional
+
+import pandas as pd
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +35,7 @@ def validate_market_data(data: Any) -> Dict[str, Any]:
         - warnings: 警告列表
     
     Example:
-        >>> result = validate_market_data(market_data)
+        >>> result = validate_market_data(data)
         >>> if not result['valid']:
         ...     print("数据无效:", result['errors'])
     """
@@ -138,8 +139,8 @@ def validate_market_data(data: Any) -> Dict[str, Any]:
         if timestamp is not None:
             try:
                 if isinstance(timestamp, str):
-                    datetime.fromisoformat(timestamp)
-                elif not isinstance(timestamp, datetime):
+                    pd.to_datetime(timestamp)
+                elif not isinstance(timestamp, pd.Timestamp):
                     warnings.append(f"时间戳类型异常: {type(timestamp)}")
             except (ValueError, TypeError):
                 errors.append(f"时间戳格式无效: {timestamp}")
@@ -184,7 +185,7 @@ def validate_data_list(data_list: List[Any]) -> Dict[str, Any]:
         汇总验证结果
     
     Example:
-        >>> result = validate_data_list(market_data_list)
+        >>> result = validate_data_list(data_list)
         >>> print(f"有效率: {result['valid_ratio']:.1%}")
     """
     if not data_list:

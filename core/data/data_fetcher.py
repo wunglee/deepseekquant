@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
-from datetime import datetime
+
 
 from infrastructure.interfaces import InfrastructureProvider
 
@@ -48,7 +48,7 @@ class DataFetcher:
                 return {"status": "success", "data": md, "from_cache": True}
 
         # 模拟抓取
-        md = MarketData(symbol=symbol, price=100.0, timestamp=datetime.now().isoformat())
+        md = MarketData(symbol=symbol, price=100.0, timestamp=pd.Timestamp.now().isoformat())
         result = self.validator.validate(md)
         if not result["is_valid"]:
             msg = "; ".join(result['issues'])
@@ -81,7 +81,7 @@ class DataFetcher:
         base_price = 100.0
         series: List[Dict[str, Any]] = []
         for i in range(lookback):
-            ts = datetime.now().isoformat()
+            ts = pd.Timestamp.now().isoformat()
             change = random.uniform(-1.0, 1.5)
             open_p = base_price
             close_p = max(0.01, base_price + change)

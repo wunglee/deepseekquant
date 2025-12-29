@@ -31,14 +31,14 @@ class DBCache:
         else:
             logger.info("✅ DBCache 初始化完成")
     
-    def get(self, symbol: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
+    def get(self, symbol: str, start_date: pd.Timestamp, end_date: pd.Timestamp) -> Optional[pd.DataFrame]:
         """
         从数据库获取数据
         
         Args:
             symbol: 股票/指数代码
-            start_date: 开始日期（YYYY-MM-DD）
-            end_date: 结束日期（YYYY-MM-DD）
+            start_date: 开始日期（pd.Timestamp）
+            end_date: 结束日期（pd.Timestamp）
         
         Returns:
             DataFrame 或 None

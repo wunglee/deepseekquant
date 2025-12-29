@@ -15,8 +15,7 @@ DataConnectionManager 单元测试
 7. 统计信息
 """
 import pytest
-from unittest.mock import Mock, AsyncMock
-from datetime import datetime
+
 from core_bak_refactored.infrastructure.connection import DataConnectionManager
 
 

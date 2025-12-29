@@ -9,9 +9,10 @@ FinnhubDataProvider 单元测试
 5. test_provider 方法测试
 """
 
+import pandas as pd
 import unittest
 from unittest.mock import patch, Mock
-from datetime import datetime
+
 
 from core_bak_refactored.core.data.providers.finnhub_provider import FinnhubDataProvider
 
@@ -77,7 +78,7 @@ class FinnhubProviderTest(unittest.TestCase):
             provider.client = None  # 确保 client 为 None
             
             with self.assertRaises(ValueError) as context:
-                provider.get_index_prices('SPX', '2023-01-01', '2023-01-10', datetime.now())
+                provider.get_index_prices('SPX', '2023-01-01', '2023-01-10', pd.Timestamp.now())
             
             self.assertIn('Finnhub API密钥未配置', str(context.exception))
     
@@ -89,7 +90,7 @@ class FinnhubProviderTest(unittest.TestCase):
             provider.client = None  # 强制设置为 None
             
             with self.assertRaises(ValueError) as context:
-                provider.get_index_prices('SPX', '2023-01-01', '2023-01-10', datetime.now())
+                provider.get_index_prices('SPX', '2023-01-01', '2023-01-10', pd.Timestamp.now())
             
             self.assertIn('Finnhub API密钥未配置', str(context.exception))
     

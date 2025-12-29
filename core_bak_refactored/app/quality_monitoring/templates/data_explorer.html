@@ -580,22 +580,23 @@ function updateChartData(data, events) {
             series: [
                 {
                     name: 'K线',
-                    data: ohlc,
-                    markPoint: {
-                        data: displayEvents.map(e => {
-                            let evtDate = e.date
-                            if (typeof evtDate === 'string' && evtDate.includes('GMT')) {
-                                evtDate = new Date(evtDate).toISOString().split('T')[0]
-                            }
-                            return {
-                                name: e.title,
-                                xAxis: evtDate,
-                                yAxis: e.price || 0,
-                                symbolSize: e.severity === 'critical' ? 60 : 40,
-                                itemStyle: { color: e.impact === 'negative' ? '#ef4444' : '#10b981' }
-                            }
-                        })
-                    }
+                    data: ohlc
+                    // 🔧 暂时禁用事件标注气球
+                    // markPoint: {
+                    //     data: displayEvents.map(e => {
+                    //         let evtDate = e.date
+                    //         if (typeof evtDate === 'string' && evtDate.includes('GMT')) {
+                    //             evtDate = new Date(evtDate).toISOString().split('T')[0]
+                    //         }
+                    //         return {
+                    //             name: e.title,
+                    //             xAxis: evtDate,
+                    //             yAxis: e.price || 0,
+                    //             symbolSize: e.severity === 'critical' ? 60 : 40,
+                    //             itemStyle: { color: e.impact === 'negative' ? '#ef4444' : '#10b981' }
+                    //         }
+                    //     })
+                    // }
                 },
                 { name: 'MA5', data: calcMA(processedData, 5) },
                 { name: 'MA10', data: calcMA(processedData, 10) },
@@ -2255,9 +2256,9 @@ function fetchRealtimeKline() {
         url = `/api/v1/data/kline/realtime/mock?index_id=${encodeURIComponent(indexId)}&trading_phase=${mockTradingPhase}`
         console.log('🎭 Mock模式 - 获取实时K线, trading_phase:', mockTradingPhase)
     } else {
-        // 真实模式：后端自动判断时段
-        url = `/api/v1/data/kline/realtime?index_id=${encodeURIComponent(indexId)}`
-        console.log('🎯 真实模式 - 获取实时K线')
+        // 真实模式：后端自动判断时段，🆕 新增：传递period参数
+        url = `/api/v1/data/kline/realtime?index_id=${encodeURIComponent(indexId)}&period=${currentPeriod}`
+        console.log(`🎯 真实模式 - 获取实时K线 (period=${currentPeriod})`)
     }
     
     fetch(url)
@@ -2293,6 +2294,7 @@ function fetchRealtimeKline() {
 
 /**
  * 更新实时K线到图表
+ * 🆕 简化逻辑：前端不做业务判断，后端已处理好合并逻辑
  */
 function updateRealtimeKlineOnChart(realtimeData) {
     if (!allKlineData || !allKlineData.length) return
@@ -2304,6 +2306,7 @@ function updateRealtimeKlineOnChart(realtimeData) {
     }
     
     console.log('📊 更新实时K线:', {
+        period: currentPeriod,
         date: realtimeData.date,
         open: realtimeData.open,
         high: realtimeData.high,
@@ -2312,30 +2315,33 @@ function updateRealtimeKlineOnChart(realtimeData) {
         volume: realtimeData.volume
     })
     
-    // 检查是否已存在当天数据
-    const todayDate = realtimeData.date
+    const realtimeDate = realtimeData.date
+    
+    // 🆕 简化逻辑：无论哪个周期，都查找是否已存在该日期的K柱
     const existingIndex = allKlineData.findIndex(d => {
         let dateStr = d.date
         if (typeof dateStr === 'string' && dateStr.includes('GMT')) {
             dateStr = new Date(dateStr).toISOString().split('T')[0]
         }
-        return dateStr === todayDate
+        return dateStr === realtimeDate
     })
     
     if (existingIndex >= 0) {
-        // 更新已存在的当天K线（直接使用后端返回的数据）
+        // 更新已存在的K线（后端已完成合并逻辑）
+        console.log(`🔄 ${currentPeriod}线 - 更新K柱: ${realtimeDate}`)
         allKlineData[existingIndex] = {
-            date: todayDate,
+            date: realtimeDate,
             open: realtimeData.open,
-            high: realtimeData.high,   // 后端已维护历史最高价
-            low: realtimeData.low,     // 后端已维护历史最低价
+            high: realtimeData.high,
+            low: realtimeData.low,
             close: realtimeData.close,
             volume: realtimeData.volume
         }
     } else {
-        // 添加新的当天K线
+        // 添加新K线（日线的新天、周线的新周、月线的新月）
+        console.log(`🔄 ${currentPeriod}线 - 添加新K柱: ${realtimeDate}`)
         allKlineData.push({
-            date: todayDate,
+            date: realtimeDate,
             open: realtimeData.open,
             high: realtimeData.high,
             low: realtimeData.low,
@@ -2462,10 +2468,11 @@ function loadKline(indexId) {
             // 🔧 根据后端返回的 needs_realtime_kline 标记决定是否启动实时K线
             // - 盘前/盘中/午盘：needs_realtime_kline = true，需要获取当天动态K柱
             // - 盘后：needs_realtime_kline = false，当天K柱已在历史数据中
-            if (currentPeriod === 'daily' && chartData.needs_realtime_kline) {
-                console.log('✅ 需要实时K线，启动轮询')
+            // 🆕 新增：支持周线和月线的实时K线
+            if (chartData.needs_realtime_kline) {
+                console.log('✅ 需要实时K线，启动轮询 (period=' + currentPeriod + ')')
                 setTimeout(() => startRealtimeKline(), 500)  // 延迟启动，避免与图表渲染冲突
-            } else if (currentPeriod === 'daily') {
+            } else {
                 console.log('⏸️ 盘后时段，无需实时K线')
             }
         })

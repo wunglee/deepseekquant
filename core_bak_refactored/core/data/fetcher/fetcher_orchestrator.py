@@ -1,3 +1,4 @@
+import pandas as pd
 from typing import Any, Callable, Dict, List, Optional
 
 from core_bak_refactored.core.share import MarketData
@@ -5,7 +6,7 @@ from core_bak_refactored.core.share.market.market_status_service import MarketSt
 from core_bak_refactored.core.data.providers.fundamental_data_service import FundamentalDataService
 import asyncio
 import time
-from datetime import datetime
+
 import logging
 import aiohttp
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
@@ -98,7 +99,7 @@ class DataFetcherOrchestrator:
             self.performance_metrics['avg_response_time'] = (
                 self.performance_metrics['avg_response_time'] * 0.9 + duration * 0.1
             )
-            self.performance_metrics['last_update'] = datetime.now().isoformat()
+            self.performance_metrics['last_update'] = pd.Timestamp.now().isoformat()
             
             self.logger.info(f"历史数据获取完成: {len(results)} 成功, {len(failed_symbols)} 失败, 耗时: {duration:.2f}s")
             
@@ -229,5 +230,5 @@ class DataFetcherOrchestrator:
             'source_reliability': 'high',
             'error_rate': 0.02,
             'coverage_ratio': 0.98,
-            'timestamp': datetime.now().isoformat()
+            'timestamp': pd.Timestamp.now().isoformat()
         }

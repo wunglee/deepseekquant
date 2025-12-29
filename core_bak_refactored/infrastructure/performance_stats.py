@@ -12,10 +12,11 @@
 - 底层追踪：委托给 PerformanceMonitor（请求级别）
 """
 
-from typing import Dict, Any, List, Optional
-from dataclasses import dataclass, asdict
-from datetime import datetime
 import logging
+from dataclasses import dataclass, asdict
+from typing import Dict, Any, Optional
+
+import pandas as pd
 
 logger = logging.getLogger('DeepSeekQuant.Core.Share.PerformanceStats')
 
@@ -77,7 +78,7 @@ class PerformanceStatsManager:
             enable_request_tracking: 是否启用底层请求追踪（默认False以保持向后兼容）
         """
         self._stats = PerformanceMetrics()
-        self._stats.start_time = datetime.now().isoformat()
+        self._stats.start_time = pd.Timestamp.now().isoformat()
         self._enable_request_tracking = enable_request_tracking
         self._request_tracker: Optional['PerformanceMonitor'] = None
         
@@ -125,8 +126,9 @@ class PerformanceStatsManager:
     def calculate_uptime(self) -> float:
         """计算运行时间（秒）"""
         if self._stats.start_time:
-            start_time = datetime.fromisoformat(self._stats.start_time)
-            uptime = datetime.now() - start_time
+            # 🔧 使用 pd.to_datetime
+            start_time = pd.to_datetime(self._stats.start_time)
+            uptime = pd.Timestamp.now() - start_time
             return uptime.total_seconds()
         return 0.0
     
@@ -166,7 +168,7 @@ class PerformanceStatsManager:
     def reset_stats(self):
         """重置统计"""
         self._stats = PerformanceMetrics()
-        self._stats.start_time = datetime.now().isoformat()
+        self._stats.start_time = pd.Timestamp.now().isoformat()
     
     def record_request(self, symbol: str, success: bool, response_time: float, source: str = None):
         """

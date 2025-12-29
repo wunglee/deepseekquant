@@ -1,6 +1,6 @@
-from core_bak_refactored.core.data.analytics.volatility import calculate_daily_volatility
-from datetime import datetime
 from unittest.mock import Mock
+
+from core_bak_refactored.core.data.analytics.volatility import calculate_daily_volatility
 
 
 def test_calculate_daily_volatility_returns_zero_for_insufficient_data():

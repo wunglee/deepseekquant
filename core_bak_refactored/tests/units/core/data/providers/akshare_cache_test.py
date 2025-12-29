@@ -16,9 +16,10 @@ AKShare Provider 缓存系统集成测试
 """
 
 import unittest
-from unittest.mock import Mock, patch, MagicMock
+
+from unittest.mock import patch
+
 import pandas as pd
-from datetime import datetime, timedelta
 
 from core_bak_refactored.core.data.providers.akshare_provider import AKShareDataProvider
 from core_bak_refactored.core.data.providers.protocols import PriceData
@@ -43,9 +44,8 @@ class AKShareCacheIntegrationTest(unittest.TestCase):
         # 验证数据库缓存被禁用（AKShare特殊处理）
         self.assertFalse(self.provider._enable_db_cache)
         
-        # 验证快速缓存启用（Memory 或 Redis，取决于配置）
-        # 注意：测试环境默认使用 memory 模式
-        self.assertTrue(hasattr(self.provider._cache_manager, '_fast_cache'))
+        # 验证窗口缓存启用（新架构使用 _window_cache）
+        self.assertTrue(hasattr(self.provider._cache_manager, '_window_cache'))
     
     def test_cache_config_from_database_yml(self):
         """测试从database.yml加载缓存配置"""
@@ -68,16 +68,17 @@ class AKShareCacheIntegrationTest(unittest.TestCase):
     @patch.object(AKShareDataProvider, '_fetch_from_external_api')
     def test_cache_hit_for_historical_data(self, mock_fetch):
         """测试历史数据缓存命中"""
-        # 准备测试数据
+        # 准备测试数据（使用更早的历史数据，避免当前周干扰）
         test_symbol = '000300.SH'
-        start_date = '2025-01-01'
-        end_date = '2025-01-31'
+        start_date = pd.Timestamp('2024-01-01')
+        end_date = pd.Timestamp('2024-01-31')
+        fixed_current_time = pd.Timestamp('2025-12-22')  # 使用固定的当前时间
         
         # Mock API返回数据
         mock_data = PriceData(
             records=[
-                OHLCVRecord(date=pd.Timestamp('2025-01-01'), open=3490.0, high=3510.0, low=3485.0, close=3500.0, volume=100000),
-                OHLCVRecord(date=pd.Timestamp('2025-01-02'), open=3500.0, high=3520.0, low=3495.0, close=3510.0, volume=110000),
+                OHLCVRecord(date=pd.Timestamp('2024-01-01'), open=3490.0, high=3510.0, low=3485.0, close=3500.0, volume=100000),
+                OHLCVRecord(date=pd.Timestamp('2024-01-02'), open=3500.0, high=3520.0, low=3495.0, close=3510.0, volume=110000),
             ],
             symbol=test_symbol,
             start_date=pd.Timestamp(start_date),
@@ -89,7 +90,7 @@ class AKShareCacheIntegrationTest(unittest.TestCase):
         # 第一次调用（缓存未命中，调用API）
         result1 = self.provider.get_index_prices(
             test_symbol, start_date, end_date, 
-            current_time=datetime.now(), period='weekly'  # 使用 weekly 粒度
+            current_time=fixed_current_time, period='weekly'  # 使用 weekly 粒度
         )
         
         # 💚 验证第一次调用了API（窗口化缓存按周拆分，1月有4-5周）
@@ -101,7 +102,7 @@ class AKShareCacheIntegrationTest(unittest.TestCase):
         # 第二次调用（应该命中快速缓存，不调用API）
         result2 = self.provider.get_index_prices(
             test_symbol, start_date, end_date,
-            current_time=datetime.now(), period='weekly'
+            current_time=fixed_current_time, period='weekly'  # 使用相同的 current_time
         )
         
         # 💚 验证：第二次命中缓存，不应该有额外的API调用
@@ -131,8 +132,8 @@ class AKShareCacheIntegrationTest(unittest.TestCase):
         
         # 第一次查询：2025-01-01 到 2025-01-31（1月）
         result1 = self.provider.get_index_prices(
-            test_symbol, '2025-01-01', '2025-01-31',
-            current_time=datetime.now(), period='monthly'
+            test_symbol, pd.Timestamp('2025-01-01'), pd.Timestamp('2025-01-31'),
+            current_time=pd.Timestamp.now(), period='monthly'
         )
         self.assertGreater(result1.count, 0)
         initial_call_count = mock_fetch.call_count
@@ -140,8 +141,8 @@ class AKShareCacheIntegrationTest(unittest.TestCase):
         # 第二次查询：2025-01-01 到 2025-02-28（1月+2月）
         # 1月应该命中缓存，只查询2月
         result2 = self.provider.get_index_prices(
-            test_symbol, '2025-01-01', '2025-02-28',
-            current_time=datetime.now(), period='monthly'
+            test_symbol, pd.Timestamp('2025-01-01'), pd.Timestamp('2025-02-28'),
+            current_time=pd.Timestamp.now(), period='monthly'
         )
         self.assertGreater(result2.count, 0)
         
@@ -167,12 +168,12 @@ class AKShareCacheIntegrationTest(unittest.TestCase):
         
         # 调用两次
         result1 = self.provider.get_index_prices(
-            test_symbol, '2025-01-01', '2025-01-31',
-            current_time=datetime.now(), period='weekly'  # 使用 weekly 粒度
+            test_symbol, pd.Timestamp('2025-01-01'), pd.Timestamp('2025-01-31'),
+            current_time=pd.Timestamp.now(), period='weekly'  # 使用 weekly 粒度
         )
         result2 = self.provider.get_index_prices(
-            test_symbol, '2025-01-01', '2025-01-31',
-            current_time=datetime.now(), period='weekly'
+            test_symbol, pd.Timestamp('2025-01-01'), pd.Timestamp('2025-01-31'),
+            current_time=pd.Timestamp.now(), period='weekly'
         )
         
         # 验证空数据
@@ -200,8 +201,8 @@ class AKShareCacheIntegrationTest(unittest.TestCase):
         
         # 跨年查询：2024-12-01 到 2025-01-31
         result = self.provider.get_index_prices(
-            test_symbol, '2024-12-01', '2025-01-31',
-            current_time=datetime.now(), period='monthly'
+            test_symbol, pd.Timestamp('2024-12-01'), pd.Timestamp('2025-01-31'),
+            current_time=pd.Timestamp.now(), period='monthly'
         )
         
         # 验证数据跨年
@@ -227,8 +228,8 @@ class AKShareCacheIntegrationTest(unittest.TestCase):
         
         # 查询单周数据（2025年第3周）
         result = self.provider.get_index_prices(
-            test_symbol, '2025-01-13', '2025-01-19',
-            current_time=datetime.now(), period='weekly'
+            test_symbol, pd.Timestamp('2025-01-13'), pd.Timestamp('2025-01-19'),
+            current_time=pd.Timestamp.now(), period='weekly'
         )
         
         # 验证
@@ -246,8 +247,8 @@ class AKShareCacheIntegrationTest(unittest.TestCase):
         
         # 💚 基类会捕获异常并返回空数据，不会抛出异常
         result = self.provider.get_index_prices(
-            test_symbol, '2025-01-01', '2025-01-31',
-            current_time=datetime.now(), period='weekly'  # 使用 weekly 粒度
+            test_symbol, pd.Timestamp('2025-01-01'), pd.Timestamp('2025-01-31'),
+            current_time=pd.Timestamp.now(), period='weekly'  # 使用 weekly 粒度
         )
         
         # 验证返回空数据
@@ -260,8 +261,8 @@ class AKShareCacheIntegrationTest(unittest.TestCase):
         
         # 开始日期晚于结束日期
         result = self.provider.get_index_prices(
-            test_symbol, '2025-02-01', '2025-01-01',
-            current_time=datetime.now(), period='weekly'  # 使用 weekly 粒度
+            test_symbol, pd.Timestamp('2025-02-01'), pd.Timestamp('2025-01-01'),
+            current_time=pd.Timestamp.now(), period='weekly'  # 使用 weekly 粒度
         )
         
         # 应该返回空数据（窗口生成器会返回空列表）
@@ -292,8 +293,8 @@ class AKShareCacheIntegrationTest(unittest.TestCase):
         
         # 查询周度数据
         result = self.provider.get_index_prices(
-            test_symbol, '2025-01-01', '2025-01-31',
-            current_time=datetime.now(), period='weekly'
+            test_symbol, pd.Timestamp('2025-01-01'), pd.Timestamp('2025-01-31'),
+            current_time=pd.Timestamp.now(), period='weekly'
         )
         
         # 验证
@@ -319,8 +320,8 @@ class AKShareCacheIntegrationTest(unittest.TestCase):
         
         # 查询月度数据
         result = self.provider.get_index_prices(
-            test_symbol, '2025-01-01', '2025-02-28',
-            current_time=datetime.now(), period='monthly'
+            test_symbol, pd.Timestamp('2025-01-01'), pd.Timestamp('2025-02-28'),
+            current_time=pd.Timestamp.now(), period='monthly'
         )
         
         # 💚 验证：窗口化缓存会按月拆分，可能会合并多个窗口的数据
@@ -358,12 +359,12 @@ class AKShareCacheIntegrationTest(unittest.TestCase):
         
         # 查询不同股票
         result1 = self.provider.get_index_prices(
-            symbol1, '2025-01-01', '2025-01-31',
-            current_time=datetime.now(), period='weekly'  # 使用 weekly 粒度
+            symbol1, pd.Timestamp('2025-01-01'), pd.Timestamp('2025-01-31'),
+            current_time=pd.Timestamp.now(), period='weekly'  # 使用 weekly 粒度
         )
         result2 = self.provider.get_index_prices(
-            symbol2, '2025-01-01', '2025-01-31',
-            current_time=datetime.now(), period='weekly'
+            symbol2, pd.Timestamp('2025-01-01'), pd.Timestamp('2025-01-31'),
+            current_time=pd.Timestamp.now(), period='weekly'
         )
         
         # 验证数据隔离
@@ -395,7 +396,7 @@ class AKShareCacheIntegrationTest(unittest.TestCase):
         test_symbol = 'IPO_STOCK'
         
         # Mock 当前时间为 2020-01-20（不是当前周）
-        mock_datetime.now.return_value = datetime(2020, 1, 20)
+        mock_datetime.now.return_value = pd.Timestamp(2020, 1, 20)
         
         # Mock API返回数据（只有从 2020-01-08 开始的数据）
         def mock_fetch_side_effect(index_id, start, end, period):
@@ -424,8 +425,8 @@ class AKShareCacheIntegrationTest(unittest.TestCase):
         
         # 第一次查询：2020-01-06 ~ 2020-01-10
         result1 = self.provider.get_index_prices(
-            test_symbol, '2020-01-06', '2020-01-10',
-            current_time=datetime(2020, 1, 20), period='weekly'
+            test_symbol, pd.Timestamp('2020-01-06'), pd.Timestamp('2020-01-10'),
+            current_time=pd.Timestamp(2020, 1, 20), period='weekly'
         )
         
         # 验证：应该有数据（从 2020-01-08 开始）
@@ -435,8 +436,8 @@ class AKShareCacheIntegrationTest(unittest.TestCase):
         
         # 第二次查询：2019-12-30 ~ 2020-01-10（包含更早的日期）
         result2 = self.provider.get_index_prices(
-            test_symbol, '2019-12-30', '2020-01-10',
-            current_time=datetime(2020, 1, 20), period='weekly'
+            test_symbol, pd.Timestamp('2019-12-30'), pd.Timestamp('2020-01-10'),
+            current_time=pd.Timestamp(2020, 1, 20), period='weekly'
         )
         
         # 验证：
@@ -464,7 +465,7 @@ class AKShareCacheIntegrationTest(unittest.TestCase):
         test_symbol = 'CURRENT_WEEK_TEST'
         
         # Mock 当前时间为 2025-01-16（周四）
-        mock_datetime.now.return_value = datetime(2025, 1, 16)
+        mock_datetime.now.return_value = pd.Timestamp(2025, 1, 16)
         
         # Mock API返回数据
         def mock_fetch_side_effect(index_id, start, end, period):
@@ -483,8 +484,8 @@ class AKShareCacheIntegrationTest(unittest.TestCase):
         
         # 第一次查询本周数据
         result1 = self.provider.get_index_prices(
-            test_symbol, '2025-01-13', '2025-01-19',
-            current_time=datetime(2025, 1, 16), period='weekly'
+            test_symbol, pd.Timestamp('2025-01-13'), pd.Timestamp('2025-01-19'),
+            current_time=pd.Timestamp(2025, 1, 16), period='weekly'
         )
         
         self.assertGreater(result1.count, 0, "应该有数据")
@@ -493,8 +494,8 @@ class AKShareCacheIntegrationTest(unittest.TestCase):
         
         # 第二次查询相同范围
         result2 = self.provider.get_index_prices(
-            test_symbol, '2025-01-13', '2025-01-19',
-            current_time=datetime(2025, 1, 16), period='weekly'
+            test_symbol, pd.Timestamp('2025-01-13'), pd.Timestamp('2025-01-19'),
+            current_time=pd.Timestamp(2025, 1, 16), period='weekly'
         )
         
         # 验证：应该有额外的API调用（当前周不使用缓存）
@@ -521,7 +522,7 @@ class AKShareCacheIntegrationTest(unittest.TestCase):
         test_symbol = 'IPO_THIS_WEEK'
         
         # === 第一阶段：今天是 2025-01-16（周四）===
-        mock_datetime.now.return_value = datetime(2025, 1, 16)
+        mock_datetime.now.return_value = pd.Timestamp(2025, 1, 16)
         
         # Mock API返回数据（上市日 2025-01-15）
         def mock_fetch_side_effect(symbol, start, end, period):
@@ -549,8 +550,8 @@ class AKShareCacheIntegrationTest(unittest.TestCase):
         
         # 第一次查询（周四）
         result1 = self.provider.get_index_prices(
-            test_symbol, '2025-01-13', '2025-01-19',
-            current_time=datetime(2025, 1, 16), period='weekly'
+            test_symbol, pd.Timestamp('2025-01-13'), pd.Timestamp('2025-01-19'),
+            current_time=pd.Timestamp(2025, 1, 16), period='weekly'
         )
         
         self.assertGreater(result1.count, 0, "应该有数据")
@@ -558,8 +559,8 @@ class AKShareCacheIntegrationTest(unittest.TestCase):
         
         # 第二次查询（仍然是周四）
         result2 = self.provider.get_index_prices(
-            test_symbol, '2025-01-13', '2025-01-19',
-            current_time=datetime(2025, 1, 16), period='weekly'
+            test_symbol, pd.Timestamp('2025-01-13'), pd.Timestamp('2025-01-19'),
+            current_time=pd.Timestamp(2025, 1, 16), period='weekly'
         )
         
         # 验证：当前周应该刷新（即使是起始周）
@@ -567,14 +568,14 @@ class AKShareCacheIntegrationTest(unittest.TestCase):
                           "起始+当前周重叠时，应该按当前周处理（刷新）")
         
         # === 第二阶段：下周（2025-01-23，周四）===
-        mock_datetime.now.return_value = datetime(2025, 1, 23)
+        mock_datetime.now.return_value = pd.Timestamp(2025, 1, 23)
         
         second_call_count = mock_fetch.call_count
         
         # 再次查询上周数据
         result3 = self.provider.get_index_prices(
-            test_symbol, '2025-01-13', '2025-01-19',
-            current_time=datetime(2025, 1, 23), period='weekly'
+            test_symbol, pd.Timestamp('2025-01-13'), pd.Timestamp('2025-01-19'),
+            current_time=pd.Timestamp(2025, 1, 23), period='weekly'
         )
         
         # 验证：上周已经不是当前周，应该使用缓存

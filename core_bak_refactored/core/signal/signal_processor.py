@@ -6,7 +6,7 @@
 
 import pandas as pd
 from typing import Dict, List, Optional, Any
-from datetime import datetime
+
 import logging
 
 from .signal_models import TradingSignal
@@ -59,7 +59,7 @@ class SignalProcessor:
                 'success': True,
                 'signals': final_signals,
                 'count': len(final_signals),
-                'timestamp': datetime.now().isoformat()
+                'timestamp': pd.Timestamp.now().isoformat()
             }
             
         except Exception as e:

@@ -2,11 +2,13 @@
 熔断器组件 - 负责处理熔断逻辑
 """
 
-import time
-from datetime import datetime
-from dataclasses import dataclass, field
-from typing import Optional
 import threading
+import time
+from dataclasses import dataclass
+from typing import Optional
+
+import pandas as pd
+
 
 @dataclass
 class CircuitBreakerConfig:
@@ -20,8 +22,8 @@ class CircuitBreakerState:
     """熔断器状态"""
     state: str = "CLOSED"  # CLOSED, OPEN, HALF_OPEN
     failure_count: int = 0
-    last_failure_time: Optional[str] = None
-    next_retry_time: Optional[str] = None
+    last_failure_time: Optional[pd.Timestamp] = None
+    next_retry_time: Optional[pd.Timestamp] = None
     consecutive_successes: int = 0
 
 class CircuitBreaker:
@@ -33,7 +35,7 @@ class CircuitBreaker:
         self.state = CircuitBreakerState()
         self.lock = threading.RLock()
 
-    # 在 circuit_breaker.py 中修复熔断器逻辑
+    # 🔧 熔断器逻辑：统一使用 pd.Timestamp
     def allow_request(self) -> bool:
         """检查是否允许请求"""
         with self.lock:
@@ -41,8 +43,8 @@ class CircuitBreaker:
                 # 检查是否应该尝试恢复
                 if self.state.next_retry_time:
                     try:
-                        next_retry_time = datetime.fromisoformat(self.state.next_retry_time)
-                        if datetime.now() >= next_retry_time:
+                        # 直接比较 pd.Timestamp 对象
+                        if pd.Timestamp.now() >= self.state.next_retry_time:
                             self.state.state = "HALF_OPEN"
                             self.state.consecutive_successes = 0
                             return True
@@ -79,13 +81,15 @@ class CircuitBreaker:
         """记录失败"""
         with self.lock:
             self.state.failure_count += 1
-            self.state.last_failure_time = datetime.now().isoformat()
+            # 🔧 直接存储 pd.Timestamp 对象，不转换为字符串
+            self.state.last_failure_time = pd.Timestamp.now()
 
             if self.state.state == "CLOSED":
                 if self.state.failure_count >= self.config.failure_threshold:
                     self.state.state = "OPEN"
                     next_retry = time.time() + self.config.recovery_timeout
-                    self.state.next_retry_time = datetime.fromtimestamp(next_retry).isoformat()
+                    # 🔧 使用 pd.Timestamp.fromtimestamp
+                    self.state.next_retry_time = pd.Timestamp.fromtimestamp(next_retry)
 
             elif self.state.state == "HALF_OPEN":
                 self.state.consecutive_successes = 0
@@ -96,8 +100,9 @@ class CircuitBreaker:
             return {
                 'state': self.state.state,
                 'failure_count': self.state.failure_count,
-                'last_failure_time': self.state.last_failure_time,
-                'next_retry_time': self.state.next_retry_time,
+                # 🔧 转换为 ISO 格式字符串用于输出
+                'last_failure_time': self.state.last_failure_time.isoformat() if self.state.last_failure_time else None,
+                'next_retry_time': self.state.next_retry_time.isoformat() if self.state.next_retry_time else None,
                 'consecutive_successes': self.state.consecutive_successes
             }
 

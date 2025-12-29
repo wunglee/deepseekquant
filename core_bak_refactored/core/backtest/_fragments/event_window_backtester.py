@@ -20,8 +20,10 @@
 
 import numpy as np
 from dataclasses import dataclass, field
-from typing import Dict, List, Any, Protocol, Optional
+from typing import Dict, List, Any, Protocol
 import logging
+
+import pandas as pd
 
 logger = logging.getLogger('DeepSeekQuant.BacktestFragments')
 
@@ -67,20 +69,20 @@ class BacktestResult:
 class HistoricalDataProvider(Protocol):
     """历史数据提供者协议（依赖core/data模块）"""
     
-    def get_index_prices(self, index_id: str, start_date: str, end_date: str):
+    def get_index_prices(self, index_id: str, start_date: pd.Timestamp, end_date: pd.Timestamp) -> pd.DataFrame:
         """获取指数价格数据"""
         ...
-    
-    def get_index_returns(self, index_id: str, start_date: str, end_date: str):
+
+    def get_index_returns(self, index_id: str, start_date: pd.Timestamp, end_date: pd.Timestamp)-> pd.DataFrame:
         """获取指数收益率序列"""
         ...
-    
+
     # 新增接口方法（Phase 4规划）
-    def get_stock_prices(self, symbol: str, start_date: str, end_date: str):
+    def get_stock_prices(self, symbol: str, start_date: pd.Timestamp, end_date: pd.Timestamp)-> pd.DataFrame:
         """获取个股价格数据"""
         ...
-        
-    def get_volatility_index(self, index_id: str, start_date: str, end_date: str):
+
+    def get_volatility_index(self, index_id: str, start_date: pd.Timestamp, end_date: pd.Timestamp)-> Dict[str, Any]:
         """获取波动率指数（如VIX）"""
         ...
         
@@ -91,7 +93,7 @@ class HistoricalDataProvider(Protocol):
 # 事件窗口回测引擎（回测模块业务逻辑）
 # =============================================================================
 
-from datetime import datetime
+
 
 class EventWindowBacktester:
     """
@@ -247,7 +249,7 @@ class EventWindowBacktester:
         start_date, end_date = event.period
         
         # 获取基准指数数据
-        prices = self.data_provider.get_index_prices(benchmark_index, start_date, end_date, datetime.now())
+        prices = self.data_provider.get_index_prices(benchmark_index, start_date, end_date)
         
         if len(prices) < 2:
             logger.warning(f"数据不足: {benchmark_index}, {start_date}-{end_date}")

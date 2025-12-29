@@ -7,11 +7,11 @@
 3. 重采样和降采样
 4. 滚动窗口聚合
 """
-from typing import List, Dict, Any, Optional
-from datetime import datetime, timedelta
-import pandas as pd
-import numpy as np
 import logging
+from typing import List, Dict, Any
+
+import numpy as np
+import pandas as pd
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +73,7 @@ class DataAggregator:
         result = []
         for timestamp, row in resampled.iterrows():
             item = {
-                'timestamp': timestamp.to_pydatetime(),
+                'timestamp': timestamp,
                 'open': float(row['open']),
                 'high': float(row['high']),
                 'low': float(row['low']),
@@ -288,8 +288,6 @@ class DataAggregator:
         if 'timestamp' not in df.columns:
             logger.error("数据缺少timestamp字段")
             return {}
-        
-        df['timestamp'] = pd.to_datetime(df['timestamp'])
         
         # 根据周期分组
         if period == 'day':

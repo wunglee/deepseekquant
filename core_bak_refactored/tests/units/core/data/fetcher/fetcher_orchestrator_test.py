@@ -7,9 +7,10 @@
 3. _fetch_symbol_data 异常处理：外层try-except + 内层fallback
 4. _try_fallback_sources 日志跟踪：每步骤详细记录
 """
+
+from unittest.mock import patch
+
 import pytest
-from datetime import datetime
-from unittest.mock import AsyncMock, patch
 
 from core_bak_refactored.core.data.fetcher.fetcher_orchestrator import DataFetcherOrchestrator
 from core_bak_refactored.core.share import MarketData

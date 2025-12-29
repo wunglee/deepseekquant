@@ -3,7 +3,7 @@
 """
 
 import time
-from datetime import datetime
+
 from dataclasses import dataclass, field
 from typing import Dict, Any, List, Optional
 import threading
@@ -48,7 +48,7 @@ class PerformanceTracker:
     def _add_to_history(self, operation_type: str, success: bool, processing_time: float, metadata: Dict[str, Any]):
         """添加到历史记录（增强版）"""
         record = {
-            'timestamp': datetime.now().isoformat(),
+            'timestamp': pd.Timestamp.now().isoformat(),
             'operation_type': operation_type,
             'success': success,
             'processing_time': processing_time,

@@ -14,8 +14,9 @@ Note:
     位置符合规范：core_bak_refactored/tests/integration/core/data/providers/
 """
 
+import pandas as pd
 import time
-from datetime import datetime, timedelta
+
 from core_bak_refactored.core.data.providers.yahoo_provider import YahooFinanceDataProvider
 from core_bak_refactored.core.share.config_manager import ConfigManager
 
@@ -60,8 +61,8 @@ for i, symbol in enumerate(test_symbols[:10], 1):
         request_start = time.time()
         data = provider.get_index_prices(
             symbol, 
-            datetime.now() - timedelta(days=3), 
-            datetime.now()
+            pd.Timestamp.now() - pd.Timedelta(days=3), 
+            pd.Timestamp.now()
         )
         request_time = time.time() - request_start
         

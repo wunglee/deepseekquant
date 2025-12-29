@@ -1,7 +1,8 @@
-import pytest
-from unittest.mock import Mock, AsyncMock, patch
-from datetime import datetime
 import asyncio
+from unittest.mock import Mock
+
+import pytest
+
 from core_bak_refactored.core.data.fetcher.batch_fetcher import BatchDataFetcher
 
 

@@ -6,7 +6,8 @@
 
 from typing import Dict, List
 import logging
-from datetime import datetime
+
+import pandas as pd
 
 from .signal_models import TradingSignal, SignalStrength
 
@@ -72,8 +73,9 @@ class SignalFilter:
         # 4. 时间过滤（过期信号）
         if signal.metadata.expiration:
             try:
-                expiration_time = datetime.fromisoformat(signal.metadata.expiration)
-                if expiration_time < datetime.now():
+                # 🔧 使用 pd.to_datetime
+                expiration_time = pd.to_datetime(signal.metadata.expiration)
+                if expiration_time < pd.Timestamp.now():
                     return False
             except Exception:
                 pass  # 忽略时间解析错误

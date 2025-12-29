@@ -453,7 +453,7 @@ def _us_compliance_logging(self, data_quality_issues: List[str], currency_warnin
         # 记录货币检查结果和数据质量问题
         compliance_event = {
             'event_type': 'currency_compliance_check',
-            'timestamp': datetime.now().isoformat(),
+            'timestamp': pd.Timestamp.now().isoformat(),
             'currency_warnings': currency_warnings,
             'data_quality_issues': data_quality_issues,
             'action_taken': 'logged'  # 当前仅为记录，不阻断

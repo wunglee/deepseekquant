@@ -9,14 +9,13 @@ TradingCalendarService 单元测试
 """
 
 import unittest
-from datetime import datetime
-from unittest.mock import patch
 
+
+from core_bak_refactored.core.share.market.market_enums import MarketCode
 from core_bak_refactored.core.share.market.trading_calendar_service import (
     TradingCalendarService,
     get_trading_calendar_service
 )
-from core_bak_refactored.core.share.market.market_enums import MarketCode
 
 
 class TradingCalendarServiceTest(unittest.TestCase):

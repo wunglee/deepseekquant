@@ -8,9 +8,9 @@
 - 实现强类型约束，提高代码健壮性
 """
 
-import pandas as pd
 import numpy as np
-from typing import Tuple
+import pandas as pd
+
 from core_bak_refactored.core.data.providers.protocols import PriceData
 from core_bak_refactored.core.data.quality.quality_types import DataQualityReport
 

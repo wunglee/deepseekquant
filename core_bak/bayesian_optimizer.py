@@ -17,7 +17,7 @@ from sklearn.gaussian_process.kernels import Matern, RBF, ConstantKernel, WhiteK
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import cross_val_score
 import time
-from datetime import datetime
+
 
 logger = logging.getLogger('DeepSeekQuant.BayesianOptimizer')
 
@@ -113,7 +113,7 @@ class BayesianOptimizer:
             'acquisition_values': [],
             'model_quality': 0.0,
             'convergence_score': 0.0,
-            'timestamp': datetime.now().isoformat()
+            'timestamp': pd.Timestamp.now().isoformat()
         }
 
         # 高斯过程模型
@@ -561,7 +561,7 @@ class BayesianOptimizer:
                     self.state['acquisition_values']) else [],
                 model_quality=self.state['model_quality'],
                 convergence_score=self._calculate_convergence_score(i),
-                timestamp=datetime.now().isoformat()
+                timestamp=pd.Timestamp.now().isoformat()
             ))
 
         return history
@@ -695,7 +695,7 @@ class BayesianOptimizer:
                 'constraints': [{'func': str(c['func']), 'type': c['type']} for c in self.constraints],
                 'gp_model': self._serialize_gp_model(),
                 'scaler': self._serialize_scaler(),
-                'timestamp': datetime.now().isoformat()
+                'timestamp': pd.Timestamp.now().isoformat()
             }
 
             with open(filepath, 'w') as f:

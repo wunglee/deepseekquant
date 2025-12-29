@@ -10,21 +10,19 @@
 - 汇率适配器：`attach_exchange_rate_adapter` 与 `_unify_currency_for_portfolio` 集成
 """
 
-import numpy as np
-import pandas as pd
-from typing import Dict, List, Optional, Tuple, Any, TypedDict, Protocol
 import logging
 import time
 import warnings
+from typing import Dict, List, Optional, Any, TypedDict, Protocol
+
+import pandas as pd
 
 from .risk_metrics_service import RiskMetricsService, RiskMetricsEngine
-from .risk_models import RiskMetric
-from ..share.market.market_config import MarketConfig
-from ..share.exchange_rates import CurrencyConverter, ExchangeRateAdapter
-from ..share.market.market_enums import MarketCode
-
 # 导入数据预处理器
 from .risk_preprocessor import RiskDataPreprocessor
+from ..share.exchange_rates import CurrencyConverter, ExchangeRateAdapter
+from ..share.market.market_config import MarketConfig
+from ..share.market.market_enums import MarketCode
 
 logger = logging.getLogger('DeepSeekQuant.RiskCalculator')
 
@@ -540,7 +538,6 @@ class RiskCalculator:
         if self.market_type != 'US' or not currency_warnings:
             return
         import uuid
-        from datetime import datetime as dt
         compliance_events = []
         for warning in currency_warnings:
             if ('多币种' in warning) or ('≠' in warning):
@@ -548,7 +545,7 @@ class RiskCalculator:
                     'event_id': str(uuid.uuid4()),
                     'event_type': 'CURRENCY_INCONSISTENCY',
                     'message': warning,
-                    'timestamp': dt.utcnow().isoformat() + 'Z',  # ISO8601
+                    'timestamp': pd.Timestamp.utcnow().isoformat() + 'Z',  # ISO8601
                     'market': self.market_type,
                     'severity': 'MEDIUM' if '多币种' in warning else 'HIGH',
                     'automated_action': 'LOG_ONLY'  # 暂不阻断交易
@@ -581,7 +578,6 @@ class RiskCalculator:
                 logger.info(f"动态严格模式覆盖: {prev} -> {self.strict_currency_check}")
             self._handle_currency_warnings(currency_warnings)
             # 美股合规日志
-            self._us_compliance_logging(currency_warnings, data_quality)
             audit_events.append({'step': 'currency_checks', 'duration': time.time() - t_currency_start, 'status': 'success'})
             # 数据源质量评估（调整为A/B/C/D分级）
             data_quality: Dict[str, Any] = {}
@@ -589,6 +585,7 @@ class RiskCalculator:
             if market_data_prices:
                 t_dataq_start = time.time()
                 data_quality = self._assess_data_source_quality(market_data_prices)
+                self._us_compliance_logging(currency_warnings, data_quality)
                 dq_cfg = self.config.get('data_quality_assessment', {})
                 if isinstance(dq_cfg, dict) and bool(dq_cfg.get('enabled', False)):
                     dq_multi = self._assess_data_quality_multi({'prices': market_data_prices}, dq_cfg)

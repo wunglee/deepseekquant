@@ -16,7 +16,7 @@ project_root = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, project_root)
 
 import pandas as pd
-from datetime import datetime, timedelta
+
 from core_bak_refactored.infrastructure import get_database_service
 
 def test_database_service():
@@ -48,7 +48,7 @@ def test_database_service():
     test_index = "000300.SH"
     test_data = pd.DataFrame({
         'date': [
-            (datetime.now() - timedelta(days=i)).strftime('%Y-%m-%d')
+            (pd.Timestamp.now() - pd.Timedelta(days=i)).strftime('%Y-%m-%d')
             for i in range(10, 0, -1)
         ],
         'open': [3200 + i * 10 for i in range(10)],

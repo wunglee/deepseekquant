@@ -23,8 +23,9 @@
   * P2: TimeHorizon添加display_name和timedelta属性
 """
 
+import pandas as pd
 from dataclasses import dataclass, asdict, field
-from datetime import datetime, timedelta
+
 from enum import Enum
 from typing import Dict, List, Optional, Any
 import logging
@@ -195,13 +196,13 @@ class TimeHorizon(Enum):
         return names.get(self.value, self.value)
     
     @property
-    def timedelta(self) -> timedelta:
+    def to_timedelta(self) -> pd.Timedelta:
         """P2增强：转换为时间增量，便于计算"""
         return {
-            "1d": timedelta(days=1),
-            "1w": timedelta(weeks=1),
-            "1m": timedelta(days=30),  # 近似
-            "1y": timedelta(days=365)
+            "1d": pd.Timedelta(days=1),
+            "1w": pd.Timedelta(weeks=1),
+            "1m": pd.Timedelta(days=30),  # 近似
+            "1y": pd.Timedelta(days=365)
         }[self.value]
 
 
@@ -238,7 +239,7 @@ class LimitBreach:
     current_value: float
     threshold: float
     breach_amount: float
-    timestamp: datetime
+    timestamp: pd.Timestamp
     severity: RiskLevel = RiskLevel.MODERATE
     
     # P1补充+命名优化：违规持续时间(秒)
@@ -251,7 +252,7 @@ class LimitBreach:
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'LimitBreach':
-        """从字典创建LimitBreach对象(P0新增：序列化对称性)
+        """从dict创建LimitBreach对象(P0新增：序列化对称性)
         
         Args:
             data: 包含LimitBreach字段的字典
@@ -261,13 +262,13 @@ class LimitBreach:
         """
         parsed_data = data.copy()
         
-        # 解析timestamp
+        # 🔧 解析timestamp：统一使用 pd.to_datetime
         if 'timestamp' in parsed_data and isinstance(parsed_data['timestamp'], str):
             try:
-                parsed_data['timestamp'] = datetime.fromisoformat(parsed_data['timestamp'])
+                parsed_data['timestamp'] = pd.to_datetime(parsed_data['timestamp'])
             except ValueError:
                 logger.warning(f"Invalid timestamp: {parsed_data['timestamp']}, using now()")
-                parsed_data['timestamp'] = datetime.now()
+                parsed_data['timestamp'] = pd.Timestamp.now()
         
         # 解析risk_type
         if 'risk_type' in parsed_data:
@@ -346,7 +347,7 @@ class Recommendation:
     estimated_impact: float = 0.0  # 预期影响(正数表示风险降低)
     
     # P1补充：建议管理字段
-    created_at: datetime = field(default_factory=datetime.now)
+    created_at: pd.Timestamp = field(default_factory=pd.Timestamp.now)
     status: str = "pending"  # pending/approved/rejected/completed
     
     def __post_init__(self):
@@ -377,13 +378,13 @@ class Recommendation:
         """
         parsed_data = data.copy()
         
-        # 解析created_at
+        # 🔧 解析created_at：统一使用 pd.to_datetime
         if 'created_at' in parsed_data and isinstance(parsed_data['created_at'], str):
             try:
-                parsed_data['created_at'] = datetime.fromisoformat(parsed_data['created_at'])
+                parsed_data['created_at'] = pd.to_datetime(parsed_data['created_at'])
             except ValueError:
                 logger.warning(f"Invalid created_at: {parsed_data['created_at']}, using now()")
-                parsed_data['created_at'] = datetime.now()
+                parsed_data['created_at'] = pd.Timestamp.now()
         
         # 解析type
         if 'type' in parsed_data:
@@ -446,8 +447,8 @@ class RiskLimit:
     review_required: bool = False  # 是否需要人工审核
     
     # 专家补充：有效期控制
-    valid_from: Optional[datetime] = None
-    valid_to: Optional[datetime] = None
+    valid_from: Optional[pd.Timestamp] = None
+    valid_to: Optional[pd.Timestamp] = None
     is_active: bool = True
     
     # 专家补充：适用范围
@@ -548,12 +549,11 @@ class RiskLimit:
             except ValueError:
                 logger.warning(f"Invalid calculation_method: {parsed_data['calculation_method']}, using HISTORICAL")
                 parsed_data['calculation_method'] = CalculationMethod.HISTORICAL
-        
-        # 解析 datetime 字段
+
         for field_name in ['valid_from', 'valid_to']:
             if field_name in parsed_data and isinstance(parsed_data[field_name], str):
                 try:
-                    parsed_data[field_name] = datetime.fromisoformat(parsed_data[field_name])
+                    parsed_data[field_name] = pd.to_datetime(parsed_data[field_name])
                 except ValueError:
                     logger.warning(f"Invalid {field_name}: {parsed_data[field_name]}, setting to None")
                     parsed_data[field_name] = None
@@ -603,7 +603,7 @@ class RiskAssessment:
     - 比率指标: 无上限，但通常0-3为合理范围
     - 百分比值: 0-1表示比例，>1表示倍数
     """
-    timestamp: datetime  # 专家建议：改为datetime对象
+    timestamp: pd.Timestamp
     portfolio_id: str
     overall_risk_level: RiskLevel
     risk_score: float  # 0-100风险评分
@@ -640,13 +640,13 @@ class RiskAssessment:
     confidence_level: float = 0.95  # 评估置信度
     
     def __post_init__(self):
-        """P0增强：timestamp初始化时支持字符串转换"""
+        """🔧 P0增强：timestamp初始化时支持字符串转换"""
         if isinstance(self.timestamp, str):
             try:
-                self.timestamp = datetime.fromisoformat(self.timestamp)
+                self.timestamp = pd.to_datetime(self.timestamp)
             except ValueError:
                 logger.warning(f"Invalid timestamp format: {self.timestamp}, using now()")
-                self.timestamp = datetime.now()
+                self.timestamp = pd.Timestamp.now()
 
     def to_dict(self) -> Dict[str, Any]:
         result = asdict(self)
@@ -660,15 +660,15 @@ class RiskAssessment:
         """从字典创建 RiskAssessment，支持枚举容错解析"""
         parsed_data = data.copy()
         
-        # 解析 timestamp（专家建议）
+        # 🔧 解析 timestamp：统一使用 pd.to_datetime
         if 'timestamp' in parsed_data and isinstance(parsed_data['timestamp'], str):
             try:
-                parsed_data['timestamp'] = datetime.fromisoformat(parsed_data['timestamp'])
+                parsed_data['timestamp'] = pd.to_datetime(parsed_data['timestamp'])
             except ValueError:
                 logger.warning(f"Invalid timestamp: {parsed_data['timestamp']}, using now()")
-                parsed_data['timestamp'] = datetime.now()
+                parsed_data['timestamp'] = pd.Timestamp.now()
         elif 'timestamp' not in parsed_data:
-            parsed_data['timestamp'] = datetime.now()
+            parsed_data['timestamp'] = pd.Timestamp.now()
         
         # 解析 overall_risk_level
         if 'overall_risk_level' in parsed_data:
@@ -714,28 +714,28 @@ class RiskEvent:
     event_id: str
     event_type: RiskType
     severity: RiskLevel
-    timestamp: datetime  # 专家建议：改为datetime
+    timestamp: pd.Timestamp
     description: str
     triggered_by: str  # 触发因素
     impact_assessment: Dict[str, Any]  # 影响评估
     action_taken: RiskControlAction  # 采取的措施
     resolved: bool = False  # 是否已解决
-    resolution_time: Optional[datetime] = None  # 专家建议：改为datetime
+    resolution_time: Optional[pd.Timestamp] = None
     root_cause: Optional[str] = None  # 根本原因
     prevention_measures: List[str] = field(default_factory=list)  # 预防措施
     
     def __post_init__(self):
-        """P0增强：timestamp和resolution_time初始化时支持字符串转换"""
+        """🔧 P0增强：timestamp和resolution_time初始化时支持字符串转换"""
         if isinstance(self.timestamp, str):
             try:
-                self.timestamp = datetime.fromisoformat(self.timestamp)
+                self.timestamp = pd.to_datetime(self.timestamp)
             except ValueError:
                 logger.warning(f"Invalid timestamp format: {self.timestamp}, using now()")
-                self.timestamp = datetime.now()
+                self.timestamp = pd.Timestamp.now()
         
         if isinstance(self.resolution_time, str):
             try:
-                self.resolution_time = datetime.fromisoformat(self.resolution_time)
+                self.resolution_time = pd.to_datetime(self.resolution_time)
             except ValueError:
                 logger.warning(f"Invalid resolution_time format: {self.resolution_time}, setting to None")
                 self.resolution_time = None
@@ -752,17 +752,17 @@ class RiskEvent:
         """从字典创建 RiskEvent，支持枚举容错解析"""
         parsed_data = data.copy()
         
-        # 解析 timestamp
+        # 🔧 解析 timestamp：统一使用 pd.to_datetime
         if 'timestamp' in parsed_data and isinstance(parsed_data['timestamp'], str):
             try:
-                parsed_data['timestamp'] = datetime.fromisoformat(parsed_data['timestamp'])
+                parsed_data['timestamp'] = pd.to_datetime(parsed_data['timestamp'])
             except ValueError:
-                parsed_data['timestamp'] = datetime.now()
+                parsed_data['timestamp'] = pd.Timestamp.now()
         
-        # 解析 resolution_time
+        # 🔧 解析 resolution_time：统一使用 pd.to_datetime
         if 'resolution_time' in parsed_data and isinstance(parsed_data['resolution_time'], str):
             try:
-                parsed_data['resolution_time'] = datetime.fromisoformat(parsed_data['resolution_time'])
+                parsed_data['resolution_time'] = pd.to_datetime(parsed_data['resolution_time'])
             except ValueError:
                 parsed_data['resolution_time'] = None
         

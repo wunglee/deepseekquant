@@ -26,7 +26,6 @@ pip install akshare
 import json
 import logging
 import os
-from datetime import datetime
 from typing import Any
 
 import akshare as ak
@@ -192,8 +191,8 @@ class AKShareDataProvider(BaseDataProvider):
 
         Args:
             index_id: 指数代码
-            start_date: 开始日期 'YYYY-MM-DD' 或 datetime 对象
-            end_date: 结束日期 'YYYY-MM-DD' 或 datetime 对象
+            start_date: 开始日期 pd.Timestamp对象
+            end_date: 结束日期 pd.Timestamp对象
 
         Returns:
             Series with date index and return values
@@ -283,7 +282,10 @@ class AKShareDataProvider(BaseDataProvider):
             # 🔧 AKShare 不支持直接查询周线/月线，需要从日线转换
             if period != 'daily':
                 logger.info(f"AKShare 不支持直接查询 {period}，从日线转换（{price_data.count} 条日线数据）")
-                price_data = self._convert_period(price_data, period)
+                # 推断市场代码
+                from core_bak_refactored.core.share.market import MarketUtils
+                market_code = MarketUtils.infer_market_from_symbol(symbol)
+                price_data = self._convert_period(price_data, period, market_code)
             
             return price_data
 
@@ -437,7 +439,7 @@ class AKShareDataProvider(BaseDataProvider):
     # _standardize_format method has been moved to MarketUtils.standardize_format
 
     def get_intraday_data(self, symbol: str, tick_range: TickRange = None,
-                          current_time: datetime = None) -> IntradayData:
+                          current_time: pd.Timestamp = None) -> IntradayData:
         """
         获取分时图数据（1分钟级别） - 仅负责真实数据
 
@@ -467,7 +469,9 @@ class AKShareDataProvider(BaseDataProvider):
         logger.info(f"识别市场: {symbol} -> {market_code.value}")
 
         # 使用传入的时间或当前系统时间
-        now = pd.Timestamp.now()
+        if current_time is None:
+            current_time = pd.Timestamp.now()
+        now = current_time
         trade_date = now
         intraday_data = None
         trading_phase = MarketUtils.determine_trading_phase(market_code, now)
@@ -486,7 +490,7 @@ class AKShareDataProvider(BaseDataProvider):
             )
         elif trading_phase == TradingPhase.AFTER_CLOSE:
             last_trade_date = MarketUtils.get_last_trade_date(market_code, trade_date, now)
-            last_trade_date_cache_key = f"intraday_{symbol}_{last_trade_date}_TRADING"
+            last_trade_date_cache_key = f"intraday_{symbol}_{last_trade_date.strftime('%Y-%m-%d')}_TRADING"
             if self._enable_memory_cache:
                 date_cache = self._get_from_memory_cache(last_trade_date_cache_key)
                 intraday_data = IntradayData.from_any(date_cache)
@@ -957,8 +961,6 @@ class AKShareDataProvider(BaseDataProvider):
         if len(ticks) <= 1:
             return ticks
 
-        from datetime import datetime, timedelta
-        
         # 尝试导入scipy的三次样条插值
         try:
             from scipy.interpolate import CubicSpline
@@ -976,7 +978,7 @@ class AKShareDataProvider(BaseDataProvider):
         avg_prices = []
 
         for tick in ticks:
-            tick_time = datetime.strptime(tick.time, '%H:%M:%S')
+            tick_time = pd.to_datetime(tick.time)
             times.append(tick_time)
             prices.append(tick.price)
             avg_prices.append(tick.avg_price)
@@ -1017,7 +1019,7 @@ class AKShareDataProvider(BaseDataProvider):
                         # 生成中间的5秒间隔数据点
                         for j in range(1, num_intervals):
                             interpolated_seconds = current_seconds + j * 5
-                            interpolated_time = base_time + timedelta(seconds=interpolated_seconds)
+                            interpolated_time = base_time + pd.Timedelta(seconds=interpolated_seconds)
 
                             # 使用三次样条插值计算价格
                             interpolated_price = float(cs_price(interpolated_seconds))
@@ -1033,7 +1035,7 @@ class AKShareDataProvider(BaseDataProvider):
             # 降级为线性插值（scipy不可用或数据点太少）
             for i in range(len(ticks)):
                 current_tick = ticks[i]
-                current_time = datetime.strptime(current_tick.time, '%H:%M:%S')
+                current_time = pd.to_datetime(current_tick.time)
 
                 # 添加当前分钟的第0秒数据（原始数据点）
                 interpolated_ticks.append(current_tick)
@@ -1041,7 +1043,7 @@ class AKShareDataProvider(BaseDataProvider):
                 # 如果不是最后一个tick，则生成到下一个tick之间的插值点
                 if i < len(ticks) - 1:
                     next_tick = ticks[i + 1]
-                    next_time = datetime.strptime(next_tick.time, '%H:%M:%S')
+                    next_time = pd.to_datetime(next_tick.time)
 
                     time_diff_seconds = (next_time - current_time).total_seconds()
 
@@ -1055,7 +1057,7 @@ class AKShareDataProvider(BaseDataProvider):
 
                         # 生成中间的5秒间隔数据点
                         for j in range(1, num_intervals):
-                            interpolated_time = current_time + timedelta(seconds=j * 5)
+                            interpolated_time = current_time + pd.Timedelta(seconds=j * 5)
 
                             # 线性插值计算价格
                             ratio = (j * 5) / time_diff_seconds
@@ -1072,7 +1074,7 @@ class AKShareDataProvider(BaseDataProvider):
 
         return interpolated_ticks
 
-    def get_realtime_kline(self, symbol: str, current_time: datetime = None) -> dict:
+    def get_realtime_kline(self, symbol: str, current_time: pd.Timestamp = None) -> dict:
         """
         获取实时K线数据（领域层方法）
 
@@ -1114,11 +1116,13 @@ class AKShareDataProvider(BaseDataProvider):
         }
 
         # 判断交易时段
-        now = pd.Timestamp.now()
+        if current_time is None:
+            current_time = pd.Timestamp.now()
+        now = current_time
         market_code = MarketUtils.infer_market_from_symbol(symbol)
         trading_phase = MarketUtils.determine_trading_phase(market_code, now)
-        trade_date = now
-        cache_key = f"realtime_kline_{symbol}_{trade_date}"
+        trade_date = now.normalize()  # 获取日期部分
+        cache_key = f"realtime_kline_{symbol}_{trade_date.strftime('%Y-%m-%d')}"
 
         if trading_phase == TradingPhase.TRADING:
             # 盘中时段：获取实时K线数据
@@ -1134,7 +1138,7 @@ class AKShareDataProvider(BaseDataProvider):
                         volumes = [tick.volume for tick in intraday_data.ticks]
 
                         cached = {
-                            'date': trade_date,
+                            'date': trade_date.strftime('%Y-%m-%d'),
                             'open': prices[0],
                             'high': max(prices),
                             'low': min(prices),
@@ -1146,7 +1150,7 @@ class AKShareDataProvider(BaseDataProvider):
                         self._set_to_memory_cache_obj(cache_key, cached)
                     else:
                         # 分时数据为空时返回空K线
-                        kline_data['date'] = trade_date
+                        kline_data['date'] = trade_date.strftime('%Y-%m-%d')
                         kline_data['trading_phase'] = trading_phase.name
                         kline_data['should_poll'] = True
                         return kline_data
@@ -1172,7 +1176,7 @@ class AKShareDataProvider(BaseDataProvider):
                         latest_volume = int(df['成交量'].iloc[-1])
 
                         kline_data = {
-                            'date': trade_date,
+                            'date': trade_date.strftime('%Y-%m-%d'),
                             'open': cached['open'],  # 开盘价不变
                             'high': max(cached['high'], latest_high),
                             'low': min(cached['low'], latest_low),
@@ -1199,7 +1203,7 @@ class AKShareDataProvider(BaseDataProvider):
 
             except Exception as e:
                 logger.error(f"获取实时K线失败: {e}")
-                kline_data['date'] = trade_date
+                kline_data['date'] = trade_date.strftime('%Y-%m-%d')
                 kline_data['trading_phase'] = trading_phase.name
                 kline_data['should_poll'] = True
 
@@ -1214,7 +1218,7 @@ class AKShareDataProvider(BaseDataProvider):
                     auction_price = order_book_bids[0].price
 
                 kline_data = {
-                    'date': trade_date,
+                    'date': trade_date.strftime('%Y-%m-%d'),
                     'open': auction_price,
                     'high': auction_price,
                     'low': auction_price,
@@ -1225,7 +1229,7 @@ class AKShareDataProvider(BaseDataProvider):
                 }
             except Exception as e:
                 logger.error(f"获取集合竞价价格失败: {e}")
-                kline_data['date'] = trade_date
+                kline_data['date'] = trade_date.strftime('%Y-%m-%d')
                 kline_data['trading_phase'] = trading_phase.name
                 kline_data['should_poll'] = True
 

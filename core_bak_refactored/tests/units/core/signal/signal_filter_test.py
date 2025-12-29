@@ -2,8 +2,9 @@
 信号过滤器测试
 """
 
+import pandas as pd
 import unittest
-from datetime import datetime
+
 
 from core_bak_refactored.core.signal.signal_models import (
     TradingSignal, SignalType, SignalMetadata
@@ -38,7 +39,7 @@ class TestSignalFilter(unittest.TestCase):
                     symbol='000001.SZ',
                     signal_type=SignalType.BUY,
                     price=10.0,
-                    timestamp=datetime.now().isoformat(),
+                    timestamp=pd.Timestamp.now().isoformat(),
                     metadata=SignalMetadata(confidence=0.7)
                 ),
                 TradingSignal(
@@ -46,7 +47,7 @@ class TestSignalFilter(unittest.TestCase):
                     symbol='000001.SZ',
                     signal_type=SignalType.SELL,
                     price=10.5,
-                    timestamp=datetime.now().isoformat(),
+                    timestamp=pd.Timestamp.now().isoformat(),
                     metadata=SignalMetadata(confidence=0.6)
                 )
             ],
@@ -56,7 +57,7 @@ class TestSignalFilter(unittest.TestCase):
                     symbol='000002.SZ',
                     signal_type=SignalType.BUY,
                     price=20.0,
-                    timestamp=datetime.now().isoformat(),
+                    timestamp=pd.Timestamp.now().isoformat(),
                     metadata=SignalMetadata(confidence=0.8)
                 )
             ]

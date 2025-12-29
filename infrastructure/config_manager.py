@@ -7,7 +7,7 @@ import json
 import yaml
 import os
 import hashlib
-from datetime import datetime
+
 from typing import Dict, Any, Optional, List, Union, Callable
 from pathlib import Path
 import copy
@@ -81,8 +81,8 @@ class ConfigVersionError(Exception):
 class ConfigMetadata:
     """配置元数据"""
     version: str = "1.0.0"
-    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
-    updated_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    created_at: str = field(default_factory=lambda: pd.Timestamp.now().isoformat())
+    updated_at: str = field(default_factory=lambda: pd.Timestamp.now().isoformat())
     source: ConfigSource = ConfigSource.FILE
     format: ConfigFormat = ConfigFormat.JSON
     checksum: str = ""
@@ -387,7 +387,7 @@ class ConfigManager:
                 # 计算校验和
                 self.metadata.checksum = self._calculate_checksum()
                 self.metadata.source = ConfigSource.FILE
-                self.metadata.updated_at = datetime.now().isoformat()
+                self.metadata.updated_at = pd.Timestamp.now().isoformat()
 
                 logger.info(SUCCESS_CONFIG_LOAD)
                 log_performance("config_load", 0.0, True, {"config_path": self.config_path})
@@ -520,7 +520,7 @@ class ConfigManager:
                     raise ValueError(f"不支持的保存格式: {save_format}")
 
                 # 更新元数据
-                self.metadata.updated_at = datetime.now().isoformat()
+                self.metadata.updated_at = pd.Timestamp.now().isoformat()
                 self.metadata.checksum = self._calculate_checksum()
 
                 # 记录审计日志
@@ -719,7 +719,7 @@ class ConfigManager:
                        old_value: Any, new_value: Any, key: Optional[str] = None):
         """记录配置变更"""
         change_record = ConfigChange(
-            timestamp=datetime.now().isoformat(),
+            timestamp=pd.Timestamp.now().isoformat(),
             change_type=change_type,
             changed_by=changed_by,
             changes={key: {'old': old_value, 'new': new_value}} if key else {'full_config': True},
@@ -925,7 +925,7 @@ class ConfigManager:
 
                 snapshot = {
                     'id': snapshot_id,
-                    'timestamp': datetime.now().isoformat(),
+                    'timestamp': pd.Timestamp.now().isoformat(),
                     'description': description,
                     'config': copy.deepcopy(self.config),
                     'metadata': asdict(self.metadata),

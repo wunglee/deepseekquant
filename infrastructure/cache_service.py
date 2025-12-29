@@ -11,7 +11,7 @@
 """
 
 from typing import Any, Dict, Callable, Optional, List
-from datetime import datetime
+
 import hashlib
 import json
 import logging
@@ -254,7 +254,7 @@ class CacheService(BaseProcessor, ICacheService):
             'max_size': self._l1_cache.maxsize,
             'ttl_seconds': self._l1_cache.ttl,
             **self.metrics.to_dict(),
-            'timestamp': datetime.now().isoformat()
+            'timestamp': pd.Timestamp.now().isoformat()
         }
     
     def clear(self) -> None:

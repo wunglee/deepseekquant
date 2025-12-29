@@ -7,12 +7,12 @@ P1-3增强: 智能阈值、组合优化、优先级排序、市场差异化(集�
 ⚠️ P1-3增强功能均处于【待验证状态】，详见risk_limits_enhanced.py
 """
 
-import numpy as np
-from typing import Dict, List, Optional, Any
 import logging
+from typing import Dict, List, Optional, Any
 
-from .risk_models import RiskLimit, PositionLimit, RiskControlAction, RiskLevel, RiskType, RiskMetric
 from .risk_metrics_service import RiskMetricsService, RiskMetricsEngine
+from .risk_models import RiskLimit, PositionLimit, RiskControlAction, RiskType, RiskMetric
+from ..share import MarketCode
 
 # P1-3: 导入智能化增强模块
 try:
@@ -43,7 +43,7 @@ class RiskLimitsManager:
             self.portfolio_optimizer = PortfolioOptimizationAdvisor(config)
             self.breach_prioritizer = BreachPrioritizer()
             self.market_checker = MarketSpecificLimitsChecker(
-                market_type=config.get('market_type', 'CN')
+                market_type=config.get('market_type', MarketCode.CN)
             )
             logger.info("P1-3智能化增强功能已启用")
         else:

@@ -17,7 +17,7 @@ import numpy as np
 import pandas as pd
 from typing import Dict, Optional, Tuple, List
 from dataclasses import dataclass
-from datetime import datetime
+
 import logging
 
 from core_bak_refactored.infrastructure.statistical_calculators import StatisticalCalculator
@@ -133,7 +133,7 @@ class IncrementalCovarianceCalculator:
         Returns:
         (updated_cov, metadata): 更新后的协方差矩阵和元数据
         """
-        start_time = datetime.now()
+        start_time = pd.Timestamp.now()
         n = current_cov.shape[0]
         T = current_returns.shape[0]
         
@@ -161,7 +161,7 @@ class IncrementalCovarianceCalculator:
         self.current_cov = updated_cov
         
         # 计算元数据
-        computation_time = (datetime.now() - start_time).total_seconds() * 1000
+        computation_time = (pd.Timestamp.now() - start_time).total_seconds() * 1000
         
         metadata = {
             'computation_time_ms': computation_time,
@@ -169,7 +169,7 @@ class IncrementalCovarianceCalculator:
             'cumulative_error': self.cumulative_error,
             'consecutive_updates': self.consecutive_updates,
             'method': 'sliding_window' if old_return is not None else 'add_new',
-            'timestamp': datetime.now().isoformat()
+            'timestamp': pd.Timestamp.now().isoformat()
         }
         
         # 错误检查和警告
@@ -265,7 +265,7 @@ class IncrementalCovarianceCalculator:
         """重置增量计算状态（执行全量计算后调用）"""
         self.consecutive_updates = 0
         self.cumulative_error = 0.0
-        self.last_full_calculation_time = datetime.now()
+        self.last_full_calculation_time = pd.Timestamp.now()
         logger.info("增量计算状态已重置")
 
 
@@ -308,7 +308,7 @@ class IncrementalVaRCalculator:
         Returns:
         (new_var, metadata): 新VaR和计算元数据
         """
-        start_time = datetime.now()
+        start_time = pd.Timestamp.now()
         
         # 计算新组合的波动率
         portfolio_variance = new_weights.T @ cov_matrix @ new_weights
@@ -322,13 +322,13 @@ class IncrementalVaRCalculator:
         z_score = stats.norm.ppf(1 - self.confidence_level)
         new_var = -(mean_returns + z_score * portfolio_volatility)
         
-        computation_time = (datetime.now() - start_time).total_seconds() * 1000
+        computation_time = (pd.Timestamp.now() - start_time).total_seconds() * 1000
         
         metadata = {
             'method': 'parametric_incremental',
             'computation_time_ms': computation_time,
             'portfolio_volatility': portfolio_volatility,
-            'timestamp': datetime.now().isoformat()
+            'timestamp': pd.Timestamp.now().isoformat()
         }
         
         return new_var, metadata
@@ -350,7 +350,7 @@ class IncrementalVaRCalculator:
         Returns:
         (new_var, metadata): 新VaR和计算元数据
         """
-        start_time = datetime.now()
+        start_time = pd.Timestamp.now()
         
         # 滑动窗口：保留最近window_size个数据点
         if len(base_returns) >= window_size:
@@ -367,13 +367,13 @@ class IncrementalVaRCalculator:
             self.confidence_level * 100
         )
         
-        computation_time = (datetime.now() - start_time).total_seconds() * 1000
+        computation_time = (pd.Timestamp.now() - start_time).total_seconds() * 1000
         
         metadata = {
             'method': 'historical_simulation_incremental',
             'computation_time_ms': computation_time,
             'sample_size': len(updated_returns),
-            'timestamp': datetime.now().isoformat()
+            'timestamp': pd.Timestamp.now().isoformat()
         }
         
         return new_var, metadata

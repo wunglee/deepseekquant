@@ -4,14 +4,13 @@
 职责: 实时风险监控、告警
 """
 
-import numpy as np
-import pandas as pd
-from typing import Dict, List, Optional, Any, TYPE_CHECKING
-from datetime import datetime
 import logging
-import time
 import threading
+import time
 from collections import deque
+from typing import Dict, Optional, Any, TYPE_CHECKING
+
+import pandas as pd
 
 from .risk_models import RiskLevel, RiskType, RiskEvent, RiskAssessment
 
@@ -83,7 +82,7 @@ class RiskMonitor:
                 # 执行风险检查
                 risk_status = self._check_risk_status()
                 self.check_count += 1
-                self.last_check_time = datetime.now()
+                self.last_check_time = pd.Timestamp.now()
 
                 # 触发警报
                 if risk_status['alert_level'] > 0:
@@ -126,7 +125,7 @@ class RiskMonitor:
             
             result = {
                 'alert_level': alert_level,
-                'timestamp': datetime.now(),
+                'timestamp': pd.Timestamp.now(),
                 'risk_score': risk_assessment.risk_score,
                 'risk_level': risk_assessment.overall_risk_level.value,
                 'limit_breaches': risk_assessment.limit_breaches,
@@ -202,7 +201,7 @@ class RiskMonitor:
         if self.latest_assessment is None:
             return {
                 'alert_level': 0,
-                'timestamp': datetime.now(),
+                'timestamp': pd.Timestamp.now(),
                 'metrics': {}
             }
         
@@ -259,10 +258,10 @@ class RiskMonitor:
         }
         
         return RiskEvent(
-            event_id=f"risk_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{self.alert_count}",
+            event_id=f"risk_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}_{self.alert_count}",
             event_type=RiskType.MARKET_RISK,
             severity=severity_map.get(alert_level, RiskLevel.MODERATE),
-            timestamp=datetime.now().isoformat(),
+            timestamp=pd.Timestamp.now().isoformat(),
             description=f"风险评分{risk_assessment.risk_score:.2f}, {len(risk_assessment.limit_breaches)}项限额违规",
             triggered_by="risk_monitor",
             impact_assessment={'risk_score': risk_assessment.risk_score, 'breaches': len(risk_assessment.limit_breaches)},

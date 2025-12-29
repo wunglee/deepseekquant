@@ -12,7 +12,7 @@ Provider 基类 - 数据提供者封装
         index_id='000300.SH',
         start_date='2025-01-01',
         end_date='2025-01-31',
-        current_time=datetime.now()
+        current_time=pd.Timestamp.now()
     )
 """
 import logging
@@ -27,7 +27,9 @@ import pandas as pd
 from core_bak_refactored.core.data.providers.protocols import PriceData, HistoricalDataProvider
 from core_bak_refactored.core.share.config_manager import ConfigManager
 from core_bak_refactored.core.share.market import MarketUtils
-from core_bak_refactored.core.share.market.market_enums import TradingPhase
+from core_bak_refactored.core.share.market.data_types import OHLCVRecord
+from core_bak_refactored.core.share.market.market_enums import TradingPhase, MarketCode
+from core_bak_refactored.core.share.market.trading_calendar_service import TradingCalendarService
 
 logger = logging.getLogger('DeepSeekQuant.DataProviders')
 
@@ -79,7 +81,8 @@ class BaseDataProvider(ABC, HistoricalDataProvider):
             to_date=end_date,
             period=period,  # 数据粒度/K线类型，必须作为缓存键的一部分
             db_fetch_func=None,  # ThreeLayerCacheManager 内部处理数据库缓存
-            api_fetch_func=lambda s, e, period: self._fetch_from_api(index_id, s, e, period)
+            api_fetch_func=lambda s, e, period: self._fetch_from_api(index_id, s, e, period),
+            current_time=current_time  # 传递 current_time 参数
         )
         
         # 转换为 PriceData
@@ -157,6 +160,111 @@ class BaseDataProvider(ABC, HistoricalDataProvider):
             TradingPhase.NOON_BREAK
         ]
     
+    def merge_realtime_kline_to_period(self, 
+                                       price_data: PriceData, 
+                                       realtime_kline: dict, 
+                                       period: str,
+                                       current_time: pd.Timestamp) -> PriceData:
+        """将实时K线数据合并到周线/月线K线数据中
+        
+        逻辑：
+        1. 日线（daily）：不需要合并，实时K线作为独立的当天K柱
+        2. 周线（weekly）：
+           - 如果当天是新周的第一天：实时K线作为新的独立周K柱
+           - 如果当天不是新周的第一天：实时K线叠加到最后一个周K柱上
+        3. 月线（monthly）：
+           - 如果当天是新月的第一天：实时K线作为新的独立月K柱
+           - 如果当天不是新月的第一天：实时K线叠加到最后一个月K柱上
+        
+        Args:
+            price_data: 历史K线数据（PriceData对象）
+            realtime_kline: 实时K线数据字典 {'date', 'open', 'high', 'low', 'close', 'volume'}
+            period: 数据粒度 ('daily'/'weekly'/'monthly')
+            current_time: 当前时间
+        
+        Returns:
+            合并后的 PriceData 对象
+        """
+        from core_bak_refactored.core.share.market.data_types import OHLCVRecord
+        import copy
+        
+        # 日线不需要合并，直接返回原数据（实时K线由前端独立处理）
+        if period == 'daily':
+            return price_data
+        
+        # 如果没有历史数据或实时K线数据无效，直接返回原数据
+        if not price_data or price_data.count == 0 or not realtime_kline or not realtime_kline.get('date'):
+            return price_data
+        
+        # 解析实时K线的日期
+        realtime_date = pd.Timestamp(realtime_kline['date'])
+        
+        # 获取最后一个历史K柱的日期
+        last_record = price_data.records[-1]
+        last_date = last_record.date
+        
+        # 判断是否需要创建新K柱还是合并到最后一个K柱
+        should_create_new_bar = False
+        
+        if period == 'weekly':
+            # 周线：判断realtime_date和last_date是否在同一周
+            # 使用ISO周历（周一为一周的开始）
+            realtime_week = realtime_date.isocalendar()[1]  # (year, week, weekday)
+            realtime_year = realtime_date.isocalendar()[0]
+            last_week = last_date.isocalendar()[1]
+            last_year = last_date.isocalendar()[0]
+            
+            # 如果年份或周数不同，说明是新周，需要创建新K柱
+            should_create_new_bar = (realtime_year != last_year) or (realtime_week != last_week)
+            
+        elif period == 'monthly':
+            # 月线：判断realtime_date和last_date是否在同一月
+            should_create_new_bar = (realtime_date.year != last_date.year) or (realtime_date.month != last_date.month)
+        
+        # 深拷贝一份records，避免修改原数据
+        new_records = copy.deepcopy(price_data.records)
+        
+        if should_create_new_bar:
+            # 创建新的独立K柱
+            logger.info(f"🔄 {period}线 - 创建新K柱: {realtime_date.strftime('%Y-%m-%d')}")
+            new_record = OHLCVRecord(
+                date=realtime_date,
+                open=float(realtime_kline.get('open', 0)),
+                high=float(realtime_kline.get('high', 0)),
+                low=float(realtime_kline.get('low', 0)),
+                close=float(realtime_kline.get('close', 0)),
+                volume=float(realtime_kline.get('volume', 0))
+            )
+            new_records.append(new_record)
+        else:
+            # 合并到最后一个K柱
+            logger.info(f"🔄 {period}线 - 合并到最后K柱: {last_date.strftime('%Y-%m-%d')} <- {realtime_date.strftime('%Y-%m-%d')}")
+            last_record_copy = copy.copy(new_records[-1])
+            
+            # 合并逻辑：
+            # - open: 保持周期开始时的开盘价（不变）
+            # - high: 取max(历史high, 实时high)
+            # - low: 取min(历史low, 实时low)
+            # - close: 使用实时close（最新收盘价）
+            # - volume: 累加（但实时volume已包含当天所有成交量，所以直接使用）
+            new_records[-1] = OHLCVRecord(
+                date=last_record_copy.date,  # 保持周期开始日期
+                open=last_record_copy.open,  # 保持周期开盘价
+                high=max(last_record_copy.high, float(realtime_kline.get('high', 0))),
+                low=min(last_record_copy.low, float(realtime_kline.get('low', 0))),
+                close=float(realtime_kline.get('close', 0)),  # 使用最新收盘价
+                volume=last_record_copy.volume + float(realtime_kline.get('volume', 0))  # 累加成交量
+            )
+        
+        # 创建新的 PriceData 对象
+        return PriceData(
+            records=new_records,
+            symbol=price_data.symbol,
+            start_date=new_records[0].date if new_records else price_data.start_date,
+            end_date=new_records[-1].date if new_records else price_data.end_date,
+            count=len(new_records)
+        )
+    
     # ========================================================================
     # 数据获取接口（对外提供，自动使用缓存）
     # ========================================================================
@@ -216,7 +324,89 @@ class BaseDataProvider(ABC, HistoricalDataProvider):
         """
         pass
     
-    def _convert_period(self, price_data: 'PriceData', period: str) -> 'PriceData':
+    def _filter_non_trading_periods(self, df: pd.DataFrame, period: str, market_code: MarketCode) -> pd.DataFrame:
+        """过滤非交易周期
+        
+        智能过滤空周期：只过滤"非交易周/月"（整周/月都是节假日），
+        保留"有交易但无数据的周/月"（用于判断上市周）
+        
+        Args:
+            df: 重采样后的 DataFrame（已 reset_index）
+            period: 周期类型 ('weekly' 或 'monthly')
+            market_code: 市场代码
+        
+        Returns:
+            过滤后的 DataFrame
+        """
+        from core_bak_refactored.core.share.market.trading_calendar_service import TradingCalendarService
+        
+        calendar_service = TradingCalendarService()
+        original_count = len(df)
+        rows_to_keep = []
+        rows_filtered = []
+        
+        for idx, row in df.iterrows():
+            is_empty = pd.isna(row['open']) and pd.isna(row['high']) and pd.isna(row['low']) and pd.isna(row['close'])
+            
+            if is_empty:
+                # 空行：需要判断是否是非交易周期
+                date = pd.Timestamp(row['date'])
+                
+                if period == 'weekly':
+                    # 获取该周的周一和周日
+                    week_start = date - pd.Timedelta(days=date.weekday())
+                    week_end = week_start + pd.Timedelta(days=6)
+                    period_start, period_end = week_start, week_end
+                    period_name = '非交易周'
+                    
+                elif period == 'monthly':
+                    # 获取该月的第一天和最后一天
+                    month_start = date.replace(day=1)
+                    if date.month == 12:
+                        month_end = pd.Timestamp(date.year + 1, 1, 1) - pd.Timedelta(days=1)
+                    else:
+                        month_end = pd.Timestamp(date.year, date.month + 1, 1) - pd.Timedelta(days=1)
+                    period_start, period_end = month_start, month_end
+                    period_name = '非交易月'
+                else:
+                    # 不支持的周期，保留
+                    rows_to_keep.append(idx)
+                    continue
+                
+                # 检查这个周期是否有任何交易日
+                has_trading_day = False
+                current_date = period_start
+                while current_date <= period_end:
+                    if calendar_service.is_trading_day(market_code, current_date):
+                        has_trading_day = True
+                        break
+                    current_date += pd.Timedelta(days=1)
+                
+                if has_trading_day:
+                    # 有交易但无数据：保留（可能是上市前）
+                    rows_to_keep.append(idx)
+                else:
+                    # 整周/月无交易：过滤
+                    rows_filtered.append((idx, date, period_name))
+            else:
+                # 非空行：保留
+                rows_to_keep.append(idx)
+        
+        # 应用过滤
+        df_filtered = df.loc[rows_to_keep]
+        
+        # 记录过滤信息
+        if rows_filtered:
+            logger.info(f"🧹 {period}线转换：过滤了 {len(rows_filtered)} 个非交易周期")
+            for idx, date, reason in rows_filtered[:5]:  # 只显示前5个
+                logger.info(f"   - {date.strftime('%Y-%m-%d')}: {reason}")
+            if len(rows_filtered) > 5:
+                logger.info(f"   ... 还有 {len(rows_filtered) - 5} 个")
+            logger.info(f"   原始{period}线数据: {original_count} 条 → 过滤后: {len(df_filtered)} 条")
+        
+        return df_filtered
+    
+    def _convert_period(self, price_data: 'PriceData', period: str, market_code: MarketCode) -> 'PriceData':
         """周期转换（日线→周线/月线）
         
         🎯 通用工具方法：供子类复用
@@ -230,11 +420,11 @@ class BaseDataProvider(ABC, HistoricalDataProvider):
         Args:
             price_data: 日线数据（PriceData对象）
             period: 目标周期 ('weekly' 或 'monthly')
+            market_code: 市场代码（用于交易日历判断）
         
         Returns:
             转换后的 PriceData 对象
         """
-        from core_bak_refactored.core.share.market.data_types import OHLCVRecord
         import pandas as pd
         
         # 如果已经是目标周期，直接返回
@@ -247,13 +437,23 @@ class BaseDataProvider(ABC, HistoricalDataProvider):
         df_copy = df.set_index('date')
         
         if period == 'weekly':
-            df_copy = df_copy.resample('W').agg({
+            # 🔧 使用 'W-MON' 按自然周（周一开始）进行重采样
+            # 关键参数说明：
+            # - 'W-MON': 以周一为一周的开始
+            # - label='left': 使用周期开始的日期作为标签（周一的日期）
+            # - closed='left': 左闭右开，周一属于当周，周日的下一天（周一）开始新周
+            df_copy = df_copy.resample('W-MON', label='left', closed='left').agg({
                 'open': 'first',
                 'high': 'max',
                 'low': 'min',
                 'close': 'last',
                 'volume': 'sum'
             })
+            df_copy = df_copy.reset_index()
+            
+            # 🔧 智能过滤空周期：只过滤"非交易周"，保留"有交易但无数据的周"
+            df_copy = self._filter_non_trading_periods(df_copy, period, market_code)
+                
         elif period == 'monthly':
             # 🔧 使用 'ME' 而不是 'M' 避免 FutureWarning
             df_copy = df_copy.resample('ME').agg({
@@ -263,25 +463,34 @@ class BaseDataProvider(ABC, HistoricalDataProvider):
                 'close': 'last',
                 'volume': 'sum'
             })
+            df_copy = df_copy.reset_index()
+            
+            # 🔧 智能过滤空周期：只过滤"非交易月"，保留"有交易但无数据的月"
+            df_copy = self._filter_non_trading_periods(df_copy, period, market_code)
         else:
             # 不支持的周期，直接返回原数据
             logger.warning(f"不支持的周期类型: {period}，返回原始数据")
             return price_data
         
-        df_copy = df_copy.reset_index()
+        # 🔧 类型安全检查：验证转换结果
+        if 'date' in df_copy.columns:
+            df_copy['date'] = pd.to_datetime(df_copy['date'])
+            if not pd.api.types.is_datetime64_any_dtype(df_copy['date']):
+                raise TypeError(f"_convert_period: date 列转换后类型不正确: {df_copy['date'].dtype}")
         
         # 转换回 PriceData 强类型
-        records = [
-            OHLCVRecord(
-                date=pd.Timestamp(row['date']),
-                open=float(row['open']),
-                high=float(row['high']),
-                low=float(row['low']),
-                close=float(row['close']),
-                volume=float(row['volume'])
+        records = []
+        for _, row in df_copy.iterrows():
+            records.append(
+                OHLCVRecord(
+                    date=pd.Timestamp(row['date']),
+                    open=float(row['open']),
+                    high=float(row['high']),
+                    low=float(row['low']),
+                    close=float(row['close']),
+                    volume=float(row['volume'])
+                )
             )
-            for _, row in df_copy.iterrows()
-        ]
         
         return PriceData(
             records=records,
@@ -402,14 +611,15 @@ class BaseDataProvider(ABC, HistoricalDataProvider):
                 else:
                     test_symbol = '^GSPC'
                 
-                from datetime import datetime, timedelta
+                # 🔧 统一使用 pd.Timestamp 类型
                 end_date = pd.Timestamp.now()
                 start_date = pd.Timestamp.now() - pd.Timedelta(days=30)
+                current_time = pd.Timestamp.now()
                 
                 start_time = time.time()
                 
                 # 执行测试查询
-                test_data = test_instance.get_index_prices(test_symbol, start_date, end_date, datetime.now())
+                test_data = test_instance.get_index_prices(test_symbol, start_date, end_date, current_time)
                 
                 latency_ms = int((time.time() - start_time) * 1000)
                 
@@ -456,7 +666,7 @@ class BaseDataProvider(ABC, HistoricalDataProvider):
                             'date_range': f'{start_date} to {end_date}',
                             'latency_ms': latency_ms
                         },
-                        'timestamp': datetime.now().isoformat()
+                        'timestamp': pd.Timestamp.now().isoformat()
                     }
                     
                     # 测试成功后，保存凭证到文件
@@ -618,7 +828,7 @@ class BaseDataProvider(ABC, HistoricalDataProvider):
             - 直接写入文件,确保持久化
         """
         try:
-            from datetime import datetime
+
             from core_bak_refactored.core.share.config_manager import ConfigManager
             import yaml
             import os
@@ -643,7 +853,7 @@ class BaseDataProvider(ABC, HistoricalDataProvider):
             for provider in providers:
                 if provider.get('id') == provider_id:
                     provider['status'] = status
-                    provider['last_test'] = datetime.now().isoformat()
+                    provider['last_test'] = pd.Timestamp.now().isoformat()
                     provider_found = True
                     logger.info(f"更新 provider 状态: {provider_id} -> {status}")
                     break

@@ -3,7 +3,7 @@ DeepSeekQuant 资源管理器模块 - 独立文件
 """
 
 import threading
-from datetime import datetime
+
 from typing import Dict, Any
 from .interfaces import IResourceManager
 
@@ -21,7 +21,7 @@ class ResourceUsage:
     memory_mb: float = 0.0
     cpu_percent: float = 0.0
     thread_count: int = 0
-    timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
+    timestamp: str = field(default_factory=lambda: pd.Timestamp.now().isoformat())
 
 class ResourceMonitor:
     def __init__(self, config: ResourceMonitorConfig, processor_name: str):
@@ -71,7 +71,7 @@ class ResourceMonitor:
                 self.usage.memory_mb = 100.0
                 self.usage.cpu_percent = 25.0
                 self.usage.thread_count = threading.active_count()
-            self.usage.timestamp = datetime.now().isoformat()
+            self.usage.timestamp = pd.Timestamp.now().isoformat()
 
     def get_usage(self) -> Dict[str, Any]:
         with self.lock:
@@ -139,7 +139,7 @@ class ResourceManager(IResourceManager):
             self.allocated_resources[resource_id] = {
                 'type': resource_type,
                 'size': size,
-                'timestamp': datetime.now().isoformat()
+                'timestamp': pd.Timestamp.now().isoformat()
             }
             return True
 

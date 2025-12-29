@@ -3,7 +3,7 @@
 """
 
 import traceback
-from datetime import datetime
+
 from dataclasses import dataclass, field
 from typing import Dict, Any, List, Optional
 import threading
@@ -66,7 +66,7 @@ class ErrorHandler:
 
             # 记录错误详情 - 包含完整上下文
             error_record = ErrorRecord(
-                timestamp=datetime.now().isoformat(),
+                timestamp=pd.Timestamp.now().isoformat(),
                 error_type=type(error).__name__,
                 error_message=str(error),
                 context=context,
@@ -143,7 +143,7 @@ class ErrorHandler:
     def _is_recent_error(self, error_record: ErrorRecord, hours: int) -> bool:
         """检查是否为最近错误"""
         try:
-            from datetime import datetime, timedelta
+            
             error_time = datetime.fromisoformat(error_record.timestamp)
             cutoff_time = datetime.now() - timedelta(hours=hours)
             return error_time > cutoff_time

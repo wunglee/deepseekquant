@@ -1,6 +1,6 @@
 from typing import Any, Dict, Optional
 from dataclasses import dataclass, field
-from datetime import datetime
+
 from core.base_processor import BaseProcessor
 from common import OrderType, OrderStatus, TradeDirection
 from infrastructure.interfaces import InfrastructureProvider
@@ -16,7 +16,7 @@ class Order:
     price: Optional[float] = None
     filled_quantity: float = 0.0
     average_fill_price: float = 0.0
-    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    created_at: str = field(default_factory=lambda: pd.Timestamp.now().isoformat())
 
 class ExecProcessor(BaseProcessor):
     def _initialize_core(self) -> bool:
@@ -56,7 +56,7 @@ class ExecProcessor(BaseProcessor):
             'commission_rate': commission_rate,
             'slippage_rate': slippage_rate,
             'costs': costs,
-            'timestamp': datetime.now().isoformat()
+            'timestamp': pd.Timestamp.now().isoformat()
         }
         
         self.logger.info(f"订单执行完成: {order.order_id}, {order.symbol}, {order.quantity}, costs={costs}")

@@ -6,7 +6,6 @@
 - 维护模式状态检查
 """
 
-import pytest
 from core_bak_refactored.app.quality_monitoring.api.system_status import SystemStatusManager
 
 

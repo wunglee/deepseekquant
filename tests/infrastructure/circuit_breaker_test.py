@@ -6,7 +6,7 @@ DeepSeekQuant CircuitBreaker 测试模块 - 独立文件
 import unittest
 import os
 import sys
-from datetime import datetime, timedelta
+
 from unittest.mock import patch
 
 # 修复导入路径

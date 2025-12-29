@@ -12,7 +12,7 @@
 - 支持自定义检查规则和阈值
 - ML异常检测可选启用（避免强依赖sklearn）
 """
-
+from core_bak_refactored.core.data.quality.data_quality_enhancer import DataQualityEnhancer
 from core_bak_refactored.core.data.quality.data_quality_checker import (
     DataQualityChecker,
     CrossValidationResult

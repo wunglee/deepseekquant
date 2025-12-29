@@ -23,9 +23,9 @@
 ✅ 符合ARCHITECTURE.md的模块边界
 """
 
-import numpy as np
-import pandas as pd
 from typing import Dict, List, Tuple
+
+import pandas as pd
 
 # 从业务模块导入EventConfig（职责归位）
 from core_bak_refactored.core.backtest.event_analysis import EventConfig

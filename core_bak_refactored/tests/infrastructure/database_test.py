@@ -7,7 +7,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from core_bak_refactored.infrastructure.database import get_database, MarketDataRepository
 import pandas as pd
-from datetime import datetime, timedelta
+
 
 def test_basic_database():
     """测试数据库基础功能"""
@@ -32,7 +32,7 @@ def test_basic_database():
     # 3. 插入测试数据
     print("\n3. 插入测试数据...")
     test_data = pd.DataFrame({
-        'date': [(datetime.now() - timedelta(days=i)).strftime('%Y-%m-%d') for i in range(10, 0, -1)],
+        'date': [(pd.Timestamp.now() - pd.Timedelta(days=i)).strftime('%Y-%m-%d') for i in range(10, 0, -1)],
         'open': [3200 + i * 10 for i in range(10)],
         'high': [3220 + i * 10 for i in range(10)],
         'low': [3190 + i * 10 for i in range(10)],

@@ -9,7 +9,7 @@ import psutil
 import pytz
 import yfinance as yf
 import requests
-from datetime import datetime, timedelta
+
 from typing import Dict, List, Optional, Union, Any, Tuple, Callable
 import logging
 import aiohttp
@@ -184,7 +184,7 @@ class DataFetcher:
             'cache_misses': 0,
             'avg_response_time': 0,
             'data_points_processed': 0,
-            'last_update': datetime.now().isoformat()
+            'last_update': pd.Timestamp.now().isoformat()
         }
 
         logger.info(f"数据获取器初始化完成，主数据源: {self.primary_source}")
@@ -383,7 +383,7 @@ class DataFetcher:
             self.performance_metrics['avg_response_time'] = (
                     self.performance_metrics['avg_response_time'] * 0.9 + duration * 0.1
             )
-            self.performance_metrics['last_update'] = datetime.now().isoformat()
+            self.performance_metrics['last_update'] = pd.Timestamp.now().isoformat()
 
             logger.info(f"历史数据获取完成: {len(results)} 成功, {len(failed_symbols)} 失败, 耗时: {duration:.2f}s")
 
@@ -787,7 +787,7 @@ class DataFetcher:
             return {
                 'market_open': False,
                 'error': str(e),
-                'timestamp': datetime.now().isoformat()
+                'timestamp': pd.Timestamp.now().isoformat()
             }
 
     def _is_market_open(self, dt: datetime) -> bool:
@@ -859,7 +859,7 @@ class DataFetcher:
                 'unchanged': unchanged,
                 'advance_decline_ratio': advances / declines if declines > 0 else float('inf'),
                 'total_issues': advances + declines + unchanged,
-                'timestamp': datetime.now().isoformat()
+                'timestamp': pd.Timestamp.now().isoformat()
             }
 
         except Exception as e:
@@ -940,7 +940,7 @@ class DataFetcher:
             'liquidity_risk': 'low',
             'volume_concentration': 'moderate',
             'market_impact_cost': 'low',
-            'timestamp': datetime.now().isoformat()
+            'timestamp': pd.Timestamp.now().isoformat()
         }
 
     def _determine_volatility_regime(self) -> Dict[str, Any]:
@@ -952,7 +952,7 @@ class DataFetcher:
             'volatility_clustering': False,
             'regime_confidence': 0.85,
             'expected_duration': 'short_term',
-            'timestamp': datetime.now().isoformat()
+            'timestamp': pd.Timestamp.now().isoformat()
         }
 
     def _assess_market_sentiment(self) -> Dict[str, Any]:
@@ -965,7 +965,7 @@ class DataFetcher:
             'market_outlook': 'neutral_bullish',
             'sentiment_extremes': False,
             'contrarian_indicator': False,
-            'timestamp': datetime.now().isoformat()
+            'timestamp': pd.Timestamp.now().isoformat()
         }
 
     def get_data_quality_metrics(self) -> Dict[str, Any]:
@@ -980,7 +980,7 @@ class DataFetcher:
             'source_reliability': 'high',
             'error_rate': 0.02,
             'coverage_ratio': 0.98,
-            'timestamp': datetime.now().isoformat()
+            'timestamp': pd.Timestamp.now().isoformat()
         }
 
     async def get_fundamental_data(self, symbol: str) -> Dict[str, Any]:
@@ -1069,7 +1069,7 @@ class DataFetcher:
                 'operating_cash_flow': cash_flow.loc['Operating Cash Flow'].iloc[0] if not cash_flow.empty else None,
                 'free_cash_flow': cash_flow.loc['Free Cash Flow'].iloc[0] if not cash_flow.empty else None,
                 'data_source': 'yahoo',
-                'last_updated': datetime.now().isoformat()
+                'last_updated': pd.Timestamp.now().isoformat()
             }
 
         except Exception as e:
@@ -1134,7 +1134,7 @@ class DataFetcher:
                 'greeks': greeks,
                 'flow_analysis': flow_analysis,
                 'expirations': await self._get_option_expirations(symbol),
-                'last_updated': datetime.now().isoformat()
+                'last_updated': pd.Timestamp.now().isoformat()
             }
 
         except Exception as e:
@@ -1160,7 +1160,7 @@ class DataFetcher:
                 'puts': options.puts.to_dict('records'),
                 'expiration': expiration or expirations[0],
                 'underlying_price': trade_record.info.get('regularMarketPrice'),
-                'timestamp': datetime.now().isoformat()
+                'timestamp': pd.Timestamp.now().isoformat()
             }
 
         except Exception as e:
@@ -1251,7 +1251,7 @@ class DataFetcher:
             'latency_metrics': self._calculate_latency_metrics(),
             'error_rates': self._calculate_error_rates(),
             'coverage_metrics': self._calculate_coverage_metrics(),
-            'timestamp': datetime.now().isoformat()
+            'timestamp': pd.Timestamp.now().isoformat()
         }
 
     def _calculate_data_completeness(self) -> float:
@@ -1420,7 +1420,7 @@ class DataQualityMonitorBasic:
             'anomalies_detected': [],
             'validation_errors': [],
             'recommendations': [],
-            'timestamp': datetime.now().isoformat(),
+            'timestamp': pd.Timestamp.now().isoformat(),
             'data_source': data[0].metadata.get('data_source', 'unknown') if data else 'unknown',
             'symbol_count': len(set(d.symbol for d in data)) if data else 0,
             'time_period': self._get_data_time_period(data),
@@ -1475,7 +1475,7 @@ class DataQualityMonitorBasic:
             logger.error(f"数据质量监控失败: {e}")
             return {
                 'error': str(e),
-                'timestamp': datetime.now().isoformat(),
+                'timestamp': pd.Timestamp.now().isoformat(),
                 'overall_score': 0.0,
                 'quality_level': 'critical'
             }
@@ -2250,7 +2250,7 @@ class DataQualityMonitorBasic:
                     'symbol': symbol,
                     'jb_statistic': jb_stat,
                     'jb_pvalue': jb_pvalue,
-                    'timestamp': datetime.now().isoformat()
+                    'timestamp': pd.Timestamp.now().isoformat()
                 })
         except ImportError:
             pass  # 如果没有scipy，跳过这个检查
@@ -2272,7 +2272,7 @@ class DataQualityMonitorBasic:
                 'symbol': symbol,
                 'outlier_count': len(outliers),
                 'outlier_values': outliers.tolist(),
-                'timestamp': datetime.now().isoformat()
+                'timestamp': pd.Timestamp.now().isoformat()
             })
 
         return issues
@@ -3055,7 +3055,7 @@ class DataQualityMonitorBasic:
     def _record_quality_metrics(self, quality_report: Dict):
         """记录质量指标历史"""
         quality_metrics = {
-            'timestamp': datetime.now().isoformat(),
+            'timestamp': pd.Timestamp.now().isoformat(),
             'overall_score': quality_report['overall_score'],
             'dimension_scores': quality_report.get('dimension_scores', {}),
             'issue_count': len(quality_report.get('validation_errors', [])) +
@@ -3355,7 +3355,7 @@ class DataQualityMonitorBasic:
                         'quality_history': self.quality_history,
                         'alert_history': self.alert_history,
                         'statistics': self.get_quality_statistics(),
-                        'export_timestamp': datetime.now().isoformat()
+                        'export_timestamp': pd.Timestamp.now().isoformat()
                     }, f, indent=2)
 
             elif format == 'csv':
@@ -3477,7 +3477,7 @@ class DataValidator:
             'warnings': [],
             'passed_tests': 0,
             'total_tests': 0,
-            'validation_time': datetime.now().isoformat()
+            'validation_time': pd.Timestamp.now().isoformat()
         }
 
         try:
@@ -3628,7 +3628,7 @@ class DataValidator:
                 'type': 'completeness',
                 'severity': 'critical',
                 'message': '空数据集',
-                'timestamp': datetime.now().isoformat()
+                'timestamp': pd.Timestamp.now().isoformat()
             })
             results['valid'] = False
             return
@@ -3658,7 +3658,7 @@ class DataValidator:
                 'message': f'符号 {symbol} 缺失必需字段: {", ".join(fields)}',
                 'symbol': symbol,
                 'missing_fields': fields,
-                'timestamp': datetime.now().isoformat()
+                'timestamp': pd.Timestamp.now().isoformat()
             })
             results['valid'] = False
 
@@ -3684,7 +3684,7 @@ class DataValidator:
                 'message': f'数据点数量不足: {len(data)} (最少需要 {rules["min_data_points"]})',
                 'data_point_count': len(data),
                 'min_required': rules['min_data_points'],
-                'timestamp': datetime.now().isoformat()
+                'timestamp': pd.Timestamp.now().isoformat()
             })
             results['valid'] = False
 
@@ -3807,7 +3807,7 @@ class DataValidator:
                 'type': 'cross_validation',
                 'severity': 'medium',
                 'message': f'交叉验证异常: {str(e)}',
-                'timestamp': datetime.now().isoformat()
+                'timestamp': pd.Timestamp.now().isoformat()
             })
             results['test_cross_validation'] = False
 
@@ -3862,7 +3862,7 @@ class DataValidator:
                 'symbol': symbol,
                 'base_source': base_source,
                 'comparison_source': comp_source,
-                'timestamp': datetime.now().isoformat()
+                'timestamp': pd.Timestamp.now().isoformat()
             })
             return issues
 
@@ -3914,7 +3914,7 @@ class DataValidator:
     def _record_validation(self, validation_results: Dict):
         """记录验证结果到历史"""
         validation_record = {
-            'timestamp': datetime.now().isoformat(),
+            'timestamp': pd.Timestamp.now().isoformat(),
             'valid': validation_results['valid'],
             'error_count': len(validation_results['errors']),
             'warning_count': len(validation_results['warnings']),
@@ -4196,7 +4196,7 @@ class DataValidator:
                     json.dump({
                         'validation_history': self.validation_history,
                         'statistics': self.get_validation_statistics(),
-                        'export_timestamp': datetime.now().isoformat()
+                        'export_timestamp': pd.Timestamp.now().isoformat()
                     }, f, indent=2)
 
             elif format == 'csv':
@@ -4318,7 +4318,7 @@ class DataQualityMonitor:
             'validation_errors': 0,
             'alerts_triggered': 0,
             'avg_processing_time': 0.0,
-            'start_time': datetime.now().isoformat()
+            'start_time': pd.Timestamp.now().isoformat()
         }
 
     def _setup_anomaly_detection(self) -> Dict[str, Any]:
@@ -4417,7 +4417,7 @@ class DataQualityMonitor:
         if not latest_data:
             return {
                 'status': 'no_data',
-                'timestamp': datetime.now().isoformat(),
+                'timestamp': pd.Timestamp.now().isoformat(),
                 'data_points': 0,
                 'error': '无法获取市场数据'
             }
@@ -4430,7 +4430,7 @@ class DataQualityMonitor:
 
         return {
             'status': 'assessed',
-            'timestamp': datetime.now().isoformat(),
+            'timestamp': pd.Timestamp.now().isoformat(),
             'data_points': len(latest_data),
             'symbols': list(set(d.symbol for d in latest_data)),
             'validation_results': validation_results,
@@ -4692,7 +4692,7 @@ class DataQualityMonitor:
         """生成质量报告"""
         return {
             'report_id': f"quality_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
-            'generation_time': datetime.now().isoformat(),
+            'generation_time': pd.Timestamp.now().isoformat(),
             'quality_status': quality_status,
             'anomalies_detected': anomalies,
             'summary': self._generate_report_summary(quality_status, anomalies),
@@ -5008,7 +5008,7 @@ class DataQualityMonitor:
         # 创建警报记录
         alert_record = {
             'alert_id': f"alert_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{hashlib.md5(message.encode()).hexdigest()[:8]}",
-            'timestamp': datetime.now().isoformat(),
+            'timestamp': pd.Timestamp.now().isoformat(),
             'level': alert_level,
             'message': message,
             'quality_report_id': quality_report['report_id'],
@@ -5345,7 +5345,7 @@ class DataQualityMonitor:
             payload = {
                 "event_type": "data_quality_alert",
                 "alert_level": alert_level,
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": pd.Timestamp.now().isoformat(),
                 "report_id": alert_record['quality_report_id'],
                 "message": message,
                 "trigger_conditions": alert_record['trigger_conditions'],
@@ -5508,7 +5508,7 @@ class DataQualityMonitor:
             embed = {
                 "title": f"🚨 数据质量{alert_level.upper()}警报",
                 "color": color_map.get(alert_level, 0xFF0000),
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": pd.Timestamp.now().isoformat(),
                 "fields": [
                     {
                         "name": "报告ID",
@@ -5643,7 +5643,7 @@ class DataQualityMonitor:
     def _handle_monitoring_error(self, error: Exception):
         """处理监控错误"""
         error_record = {
-            'timestamp': datetime.now().isoformat(),
+            'timestamp': pd.Timestamp.now().isoformat(),
             'error_type': type(error).__name__,
             'error_message': str(error),
             'traceback': traceback.format_exc(),
@@ -5728,7 +5728,7 @@ class DataQualityMonitor:
                 'alert_analysis': self._analyze_alert_patterns(period_alerts),
                 'performance_analysis': self._analyze_performance(period_quality),
                 'recommendations': self._generate_comprehensive_recommendations(period_quality, period_alerts),
-                'export_timestamp': datetime.now().isoformat()
+                'export_timestamp': pd.Timestamp.now().isoformat()
             }
 
         except Exception as e:
@@ -5966,7 +5966,7 @@ class DataQualityMonitor:
                 'alert_history': self.alert_history,
                 'performance_stats': self.get_performance_statistics(),
                 'configuration': self.config,
-                'export_timestamp': datetime.now().isoformat(),
+                'export_timestamp': pd.Timestamp.now().isoformat(),
                 'system_info': {
                     'version': '1.0.0',
                     'exported_by': 'DeepSeekQuant DataQualityMonitor',
@@ -6273,7 +6273,7 @@ class DeepSeekQuantSystem:
             'data_points_processed': fetcher_stats.get('data_points_processed', 0),
             'alerts_triggered': monitor_stats.get('alerts_triggered', 0),
             'success_rate': monitor_stats.get('success_rate', 1.0),
-            'last_update': datetime.now().isoformat()
+            'last_update': pd.Timestamp.now().isoformat()
         })
 
     def stop(self):
@@ -6325,7 +6325,7 @@ class DeepSeekQuantSystem:
             system_state = {
                 'system_state': self.system_state.name,
                 'performance_metrics': self.performance_metrics,
-                'shutdown_time': datetime.now().isoformat(),
+                'shutdown_time': pd.Timestamp.now().isoformat(),
                 'uptime_seconds': (datetime.now() - self.start_time).total_seconds(),
                 'component_statuses': self._get_component_statuses(),
                 'config_hash': hashlib.md5(json.dumps(self.config).encode()).hexdigest()
@@ -6455,7 +6455,7 @@ class DeepSeekQuantSystem:
             'resource_usage': self._get_resource_usage(),
             'alerts': self._get_system_alerts(),
             'recommendations': self._generate_system_recommendations(),
-            'timestamp': datetime.now().isoformat()
+            'timestamp': pd.Timestamp.now().isoformat()
         }
 
     def _get_component_health(self) -> Dict[str, Any]:
@@ -6487,7 +6487,7 @@ class DeepSeekQuantSystem:
             return {
                 'status': 'unhealthy',
                 'error': str(e),
-                'last_check': datetime.now().isoformat()
+                'last_check': pd.Timestamp.now().isoformat()
             }
 
     def _get_resource_usage(self) -> Dict[str, Any]:
@@ -6510,7 +6510,7 @@ class DeepSeekQuantSystem:
                     'usage_percent': psutil.disk_usage('/').percent
                 },
                 'network': self._get_network_usage(),
-                'timestamp': datetime.now().isoformat()
+                'timestamp': pd.Timestamp.now().isoformat()
             }
         except Exception as e:
             return {'error': str(e)}
@@ -6540,7 +6540,7 @@ class DeepSeekQuantSystem:
                 'level': 'critical',
                 'message': '系统处于错误状态',
                 'component': 'system',
-                'timestamp': datetime.now().isoformat()
+                'timestamp': pd.Timestamp.now().isoformat()
             })
 
         # 检查资源使用警报
@@ -6550,7 +6550,7 @@ class DeepSeekQuantSystem:
                 'level': 'warning',
                 'message': f'内存使用率过高: {resource_usage["memory"]["percent"]:.1f}%',
                 'component': 'system',
-                'timestamp': datetime.now().isoformat()
+                'timestamp': pd.Timestamp.now().isoformat()
             })
 
         return alerts

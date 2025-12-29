@@ -1,5 +1,3 @@
-import pytest
-
 from core_bak_refactored.core.risk.risk_calculator import RiskCalculator
 
 

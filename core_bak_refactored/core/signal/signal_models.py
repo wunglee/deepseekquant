@@ -7,7 +7,9 @@
 from dataclasses import dataclass, asdict, field
 from enum import Enum
 from typing import Dict, List, Optional, Any
-from datetime import datetime
+
+import pandas as pd
+
 
 class SignalType(Enum):
     """信号类型枚举"""
@@ -59,7 +61,7 @@ class SignalStatus(Enum):
 @dataclass
 class SignalMetadata:
     """信号元数据"""
-    generated_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    generated_at: str = field(default_factory=lambda: pd.Timestamp.now().isoformat())
     source: SignalSource = SignalSource.TECHNICAL
     confidence: float = 0.0  # 0.0 - 1.0
     strength: SignalStrength = SignalStrength.MILD

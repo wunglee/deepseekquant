@@ -10,8 +10,9 @@ Yahoo Finance 代理配置测试脚本
     python core_bak_refactored/tests/manual/test_yahoo_proxy.py
 """
 
-import sys
 import logging
+
+import pandas as pd
 
 # 配置日志
 logging.basicConfig(
@@ -163,15 +164,15 @@ def test_yfinance_provider():
         print(f"   代理配置: {provider.proxy or '无（直连）'}")
         
         print("   正在获取 ^GSPC 数据 (最近 5 天)...")
-        from datetime import datetime, timedelta
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=10)
+        
+        end_date = pd.Timestamp.now()
+        start_date = end_date - pd.Timedelta(days=10)
         
         price_data = provider.get_index_prices(
             '^GSPC',
             start_date.strftime('%Y-%m-%d'),
             end_date.strftime('%Y-%m-%d'),
-            datetime.now()
+            pd.Timestamp.now()
         )
         
         print(f"✅ 成功获取数据")

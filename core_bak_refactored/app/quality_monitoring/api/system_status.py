@@ -13,8 +13,9 @@
 
 from __future__ import annotations
 
+import pandas as pd
 import logging
-from datetime import datetime
+
 from typing import Dict, Any
 
 logger = logging.getLogger('DeepSeekQuant.App.API.SystemStatus')
@@ -68,7 +69,7 @@ class SystemStatusManager:
             'maintenance_mode': self._maintenance_mode,
             'maintenance_remaining': self._get_maintenance_remaining() if self._maintenance_mode else None,
             'components': components_status,
-            'timestamp': datetime.now().isoformat()
+            'timestamp': pd.Timestamp.now().isoformat()
         }
 
     def enable_maintenance_mode(self, duration: int = 3600) -> bool:
@@ -82,7 +83,7 @@ class SystemStatusManager:
         """
         try:
             self._maintenance_mode = True
-            self._maintenance_start_time = datetime.now()
+            self._maintenance_start_time = pd.Timestamp.now()
             self._maintenance_duration = duration
             logger.info(f"维护模式已启用，持续时间: {duration}秒")
             return True
@@ -117,7 +118,7 @@ class SystemStatusManager:
             
         # 检查是否超时
         if self._maintenance_start_time:
-            elapsed = (datetime.now() - self._maintenance_start_time).total_seconds()
+            elapsed = (pd.Timestamp.now() - self._maintenance_start_time).total_seconds()
             if elapsed > self._maintenance_duration:
                 self.disable_maintenance_mode()
                 return False
@@ -142,6 +143,6 @@ class SystemStatusManager:
         if not self._maintenance_start_time:
             return 0
             
-        elapsed = (datetime.now() - self._maintenance_start_time).total_seconds()
+        elapsed = (pd.Timestamp.now() - self._maintenance_start_time).total_seconds()
         remaining = max(0, self._maintenance_duration - elapsed)
         return int(remaining)

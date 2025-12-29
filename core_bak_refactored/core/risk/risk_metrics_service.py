@@ -9,13 +9,15 @@
 - P0修复：CVaR参数法保守估计、分层置信度、动态无风险利率、符号约定统一
 """
 
+import functools
+import logging
+import time
+from typing import Dict, Optional, Any, TYPE_CHECKING, Protocol
+
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Optional, Union, Any, TYPE_CHECKING, Protocol
-import logging
 from scipy import stats
-import time
-import functools
+
 try:
     from prometheus_client import Counter, Histogram
     _PROM_ENABLED = True

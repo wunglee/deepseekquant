@@ -2,7 +2,7 @@
 DeepSeekQuant 处理器管理器模块 - 独立文件
 """
 
-from datetime import datetime
+
 import threading
 from typing import Dict, Any, Optional
 from .interfaces import IOrchestrator
@@ -57,7 +57,7 @@ class ProcessorOrchestrator(IOrchestrator):
     def get_health_report(self) -> Dict[str, Any]:
         """获取健康报告"""
         report = {
-            'timestamp': datetime.now().isoformat(),
+            'timestamp': pd.Timestamp.now().isoformat(),
             'processor_details': {},
             'total_processors': 0,
             'healthy_processors': 0

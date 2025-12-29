@@ -7,8 +7,9 @@
 3. 批量缓存管理
 4. 请求速率限制
 """
+import pandas as pd
 from typing import List, Dict, Any, Optional
-from datetime import datetime
+
 import asyncio
 import logging
 
@@ -122,7 +123,7 @@ class BatchDataFetcher:
                 
                 return [{
                     'symbol': symbol,
-                    'timestamp': datetime.now(),
+                    'timestamp': pd.Timestamp.now(),
                     'data_type': data_type
                 }]
             except Exception as e:
@@ -203,7 +204,7 @@ class BatchDataFetcher:
                 return {
                     'symbol': symbol,
                     'price': 150.0,
-                    'timestamp': datetime.now()
+                    'timestamp': pd.Timestamp.now()
                 }
             except Exception as e:
                 logger.error(f"获取 {symbol} 报价失败: {e}")

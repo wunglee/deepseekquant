@@ -11,8 +11,9 @@
 
 使用方：可被所有模块（data、backtest、risk、portfolio等）复用
 """
+import pandas as pd
 from typing import Dict, Any
-from datetime import datetime, timedelta
+
 import logging
 
 logger = logging.getLogger(__name__)
@@ -44,7 +45,7 @@ class PerformanceMonitor:
             'data_points_processed': 0,
             'avg_response_time': 0.0,
             'last_update': None,
-            'start_time': datetime.now(),
+            'start_time': pd.Timestamp.now(),
             'error_counts': {},
             'source_usage': {}
         }
@@ -78,7 +79,7 @@ class PerformanceMonitor:
         if source:
             self.metrics['source_usage'][source] = self.metrics['source_usage'].get(source, 0) + 1
         
-        self.metrics['last_update'] = datetime.now().isoformat()
+        self.metrics['last_update'] = pd.Timestamp.now().isoformat()
     
     def record_cache_hit(self):
         """记录缓存命中"""
@@ -130,14 +131,14 @@ class PerformanceMonitor:
             return 0.0
         return self.metrics['requests_failed'] / total
     
-    def get_uptime(self) -> timedelta:
+    def get_uptime(self) -> pd.Timedelta:
         """
         获取运行时长
         
         Returns:
             运行时长
         """
-        return datetime.now() - self.metrics['start_time']
+        return pd.Timestamp.now() - self.metrics['start_time']
     
     def get_throughput(self) -> float:
         """
@@ -221,7 +222,7 @@ def create_performance_report(metrics: Dict[str, Any]) -> str:
         "=" * 60,
         "性能报告",
         "=" * 60,
-        f"时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+        f"时间: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}",
         "",
         "请求统计:",
         f"  总请求数: {metrics.get('requests_total', 0)}",

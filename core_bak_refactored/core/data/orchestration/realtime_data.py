@@ -7,8 +7,9 @@
 3. 实时数据缓存和分发
 4. 支持订阅/取消订阅机制
 """
+import pandas as pd
 from typing import List, Dict, Any, Optional, Callable, Set
-from datetime import datetime
+
 import asyncio
 import logging
 
@@ -273,7 +274,7 @@ class RealtimeDataOrchestrator:
         # 这里是简化实现
         return {
             'symbol': symbol,
-            'timestamp': datetime.now(),
+            'timestamp': pd.Timestamp.now(),
             'type': 'quote'
         }
     
@@ -289,7 +290,7 @@ class RealtimeDataOrchestrator:
         """
         return {
             'symbol': symbol,
-            'timestamp': datetime.now(),
+            'timestamp': pd.Timestamp.now(),
             'type': 'trade'
         }
     

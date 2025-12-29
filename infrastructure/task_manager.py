@@ -4,7 +4,7 @@
 
 import time
 import uuid
-from datetime import datetime
+
 from dataclasses import dataclass, field
 from typing import Dict, Any, List, Callable, Optional
 from .interfaces import ITaskManager
@@ -62,7 +62,7 @@ class TaskManager(ITaskManager):
         with self.lock:
             task_info = TaskInfo(
                 task_id=task_id,
-                start_time=datetime.now().isoformat(),
+                start_time=pd.Timestamp.now().isoformat(),
                 args=args,
                 kwargs=kwargs
             )
@@ -74,7 +74,7 @@ class TaskManager(ITaskManager):
         with self.lock:
             if task_id in self.active_tasks:
                 task_info = self.active_tasks[task_id]
-                task_info.end_time = datetime.now().isoformat()
+                task_info.end_time = pd.Timestamp.now().isoformat()
                 task_info.processing_time = processing_time
                 task_info.result = result
 
@@ -83,7 +83,7 @@ class TaskManager(ITaskManager):
         with self.lock:
             if task_id in self.active_tasks:
                 task_info = self.active_tasks[task_id]
-                task_info.end_time = datetime.now().isoformat()
+                task_info.end_time = pd.Timestamp.now().isoformat()
                 task_info.processing_time = processing_time
                 task_info.error = error
 

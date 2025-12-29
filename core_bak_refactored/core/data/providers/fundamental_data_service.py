@@ -1,7 +1,8 @@
 """基本面数据服务 - 获取公司财务、估值、比率等基本面数据"""
+import pandas as pd
 from typing import Any, Dict
 import logging
-from datetime import datetime
+
 
 
 class FundamentalDataService:
@@ -94,7 +95,7 @@ class FundamentalDataService:
             'operating_cash_flow': cash_flow.loc['Operating Cash Flow'].iloc[0] if not cash_flow.empty else None,
             'free_cash_flow': cash_flow.loc['Free Cash Flow'].iloc[0] if not cash_flow.empty else None,
             'data_source': 'yahoo',
-            'last_updated': datetime.now().isoformat()
+            'last_updated': pd.Timestamp.now().isoformat()
         }
 
     async def _get_alpha_vantage_fundamentals(self, symbol: str) -> Dict[str, Any]:

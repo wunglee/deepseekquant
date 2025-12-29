@@ -1,7 +1,5 @@
 import unittest
 
-from core_bak_refactored.core.risk.parameter_references import ParameterValidation
-
 
 class ParameterReferencesTest(unittest.TestCase):
     def test_manager_instantiation(self):

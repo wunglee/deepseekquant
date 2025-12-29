@@ -4,7 +4,7 @@
 """
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass, field
-from datetime import datetime
+
 import time
 import math
 
@@ -24,7 +24,7 @@ class StrategyContext:
     
     def __post_init__(self):
         if not self.timestamp:
-            self.timestamp = datetime.now().isoformat()
+            self.timestamp = pd.Timestamp.now().isoformat()
 
 
 class QuantitativeStrategies:
@@ -75,7 +75,7 @@ class QuantitativeStrategies:
             symbol=context.symbol,
             signal_type=signal_type,
             price=current_price,
-            timestamp=datetime.now().isoformat(),
+            timestamp=pd.Timestamp.now().isoformat(),
             metadata=SignalMetadata(
                 source=SignalSource.QUANTITATIVE,
                 confidence=confidence,
@@ -125,7 +125,7 @@ class QuantitativeStrategies:
             symbol=context.symbol,
             signal_type=signal_type,
             price=context.prices[-1],
-            timestamp=datetime.now().isoformat(),
+            timestamp=pd.Timestamp.now().isoformat(),
             metadata=SignalMetadata(
                 source=SignalSource.QUANTITATIVE,
                 confidence=confidence,
@@ -185,7 +185,7 @@ class QuantitativeStrategies:
             symbol=context.symbol,
             signal_type=signal_type,
             price=current_price,
-            timestamp=datetime.now().isoformat(),
+            timestamp=pd.Timestamp.now().isoformat(),
             metadata=SignalMetadata(
                 source=SignalSource.QUANTITATIVE,
                 confidence=0.7,
@@ -252,7 +252,7 @@ class QuantitativeStrategies:
             symbol=context.symbol,
             signal_type=SignalType.BUY,
             price=context.prices[-1],
-            timestamp=datetime.now().isoformat(),
+            timestamp=pd.Timestamp.now().isoformat(),
             metadata=SignalMetadata(
                 source=SignalSource.QUANTITATIVE,
                 confidence=0.6,

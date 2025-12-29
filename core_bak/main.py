@@ -11,7 +11,7 @@ import json
 import logging
 import numpy as np
 import pandas as pd
-from datetime import datetime, timedelta
+
 from typing import Dict, List, Optional, Any, Union
 from enum import Enum
 import traceback
@@ -519,7 +519,7 @@ class DeepSeekQuantSystem:
 
             # 记录信号历史
             signal_record = {
-                'timestamp': datetime.now().isoformat(),
+                'timestamp': pd.Timestamp.now().isoformat(),
                 'signals': signals,
                 'market_conditions': self._get_market_conditions(market_data)
             }
@@ -546,7 +546,7 @@ class DeepSeekQuantSystem:
             return {
                 'volatility': volatility,
                 'trend': trend,
-                'timestamp': datetime.now().isoformat()
+                'timestamp': pd.Timestamp.now().isoformat()
             }
         except Exception as e:
             logger.error(f"市场状况分析失败: {e}")
@@ -598,7 +598,7 @@ class DeepSeekQuantSystem:
 
             # 记录风险评估历史
             risk_record = {
-                'timestamp': datetime.now().isoformat(),
+                'timestamp': pd.Timestamp.now().isoformat(),
                 'assessment': risk_assessment.to_dict(),
                 'signals': signals,
                 'positions': positions
@@ -700,7 +700,7 @@ class DeepSeekQuantSystem:
         """记录交易"""
         try:
             trade_record = {
-                'timestamp': datetime.now().isoformat(),
+                'timestamp': pd.Timestamp.now().isoformat(),
                 'execution_result': execution_result,
                 'current_positions': self.current_positions.copy(),
                 'current_capital': self.current_capital,
@@ -799,7 +799,7 @@ class DeepSeekQuantSystem:
         except Exception as e:
             logger.error(f"性能指标计算失败: {e}")
             return {
-                'timestamp': datetime.now().isoformat(),
+                'timestamp': pd.Timestamp.now().isoformat(),
                 'error': str(e),
                 'system_state': self.state.value
             }
@@ -1051,7 +1051,7 @@ class DeepSeekQuantSystem:
             # 记录到审计日志
             self.audit_log.append({
                 'type': 'trading_cycle',
-                'timestamp': datetime.now().isoformat(),
+                'timestamp': pd.Timestamp.now().isoformat(),
                 'metrics': metrics_dict
             })
 
@@ -1063,7 +1063,7 @@ class DeepSeekQuantSystem:
     def _handle_initialization_error(self, error: Exception):
         """处理初始化错误"""
         error_info = {
-            'timestamp': datetime.now().isoformat(),
+            'timestamp': pd.Timestamp.now().isoformat(),
             'error_type': type(error).__name__,
             'error_message': str(error),
             'traceback': traceback.format_exc(),
@@ -1087,7 +1087,7 @@ class DeepSeekQuantSystem:
     def _handle_trading_error(self, error: Exception):
         """处理交易错误"""
         error_info = {
-            'timestamp': datetime.now().isoformat(),
+            'timestamp': pd.Timestamp.now().isoformat(),
             'error_type': type(error).__name__,
             'error_message': str(error),
             'traceback': traceback.format_exc(),
@@ -1117,7 +1117,7 @@ class DeepSeekQuantSystem:
         """处理周期错误"""
         error_info = {
             'cycle_id': cycle_id,
-            'timestamp': datetime.now().isoformat(),
+            'timestamp': pd.Timestamp.now().isoformat(),
             'error_type': type(error).__name__,
             'error_message': str(error),
             'traceback': traceback.format_exc(),
@@ -1128,8 +1128,8 @@ class DeepSeekQuantSystem:
         # 记录失败的周期指标
         failed_cycle_metrics = TradingCycleMetrics(
             cycle_id=cycle_id,
-            start_time=datetime.now().isoformat(),
-            end_time=datetime.now().isoformat(),
+            start_time=pd.Timestamp.now().isoformat(),
+            end_time=pd.Timestamp.now().isoformat(),
             duration=0,
             signals_generated=0,
             signals_executed=0,
@@ -1149,7 +1149,7 @@ class DeepSeekQuantSystem:
     def _handle_performance_error(self, error: Exception):
         """处理性能计算错误"""
         error_info = {
-            'timestamp': datetime.now().isoformat(),
+            'timestamp': pd.Timestamp.now().isoformat(),
             'error_type': type(error).__name__,
             'error_message': str(error),
             'traceback': traceback.format_exc(),
@@ -1162,7 +1162,7 @@ class DeepSeekQuantSystem:
     def _record_risk_rejection(self, risk_assessment: RiskAssessment):
         """记录风险拒绝"""
         rejection_record = {
-            'timestamp': datetime.now().isoformat(),
+            'timestamp': pd.Timestamp.now().isoformat(),
             'type': 'risk_rejection',
             'assessment': risk_assessment.to_dict(),
             'current_positions': self.current_positions.copy(),
@@ -1240,7 +1240,7 @@ class DeepSeekQuantSystem:
 
         except Exception as e:
             logger.error(f"性能报告生成失败: {e}")
-            return {'error': str(e), 'timestamp': datetime.now().isoformat()}
+            return {'error': str(e), 'timestamp': pd.Timestamp.now().isoformat()}
 
     def _generate_basic_performance_report(self, period: str) -> Dict:
         """生成基础性能报告"""
@@ -1288,7 +1288,7 @@ class DeepSeekQuantSystem:
                 'trading_volume': self.total_volume,
                 'risk_level': self._get_current_risk_level().value,
                 'performance_score': self._calculate_performance_score(total_return, avg_sharpe, max_drawdown),
-                'generated_at': datetime.now().isoformat()
+                'generated_at': pd.Timestamp.now().isoformat()
             }
 
         except Exception as e:
@@ -1324,14 +1324,14 @@ class DeepSeekQuantSystem:
             return {
                 'status': 'error',
                 'error': str(e),
-                'timestamp': datetime.now().isoformat()
+                'timestamp': pd.Timestamp.now().isoformat()
             }
 
     def _record_backtest_result(self, result: Dict):
         """记录回测结果"""
         try:
             backtest_record = {
-                'timestamp': datetime.now().isoformat(),
+                'timestamp': pd.Timestamp.now().isoformat(),
                 'result': result,
                 'strategy_name': result.get('strategy_name', 'unknown'),
                 'performance_metrics': result.get('performance_metrics', {}),
@@ -1341,7 +1341,7 @@ class DeepSeekQuantSystem:
             # 保存到审计日志
             self.audit_log.append({
                 'type': 'backtest_result',
-                'timestamp': datetime.now().isoformat(),
+                'timestamp': pd.Timestamp.now().isoformat(),
                 'data': backtest_record
             })
 
@@ -1382,14 +1382,14 @@ class DeepSeekQuantSystem:
             return {
                 'status': 'error',
                 'error': str(e),
-                'timestamp': datetime.now().isoformat()
+                'timestamp': pd.Timestamp.now().isoformat()
             }
 
     def _record_optimization_result(self, result: Dict):
         """记录优化结果"""
         try:
             optimization_record = {
-                'timestamp': datetime.now().isoformat(),
+                'timestamp': pd.Timestamp.now().isoformat(),
                 'result': result,
                 'strategy_name': result.get('strategy_name', 'unknown'),
                 'best_parameters': result.get('best_parameters', {}),
@@ -1403,7 +1403,7 @@ class DeepSeekQuantSystem:
             # 保存到审计日志
             self.audit_log.append({
                 'type': 'optimization_result',
-                'timestamp': datetime.now().isoformat(),
+                'timestamp': pd.Timestamp.now().isoformat(),
                 'data': optimization_record
             })
 
@@ -1450,7 +1450,7 @@ class DeepSeekQuantSystem:
             # 记录模式切换
             self.audit_log.append({
                 'type': 'mode_switch',
-                'timestamp': datetime.now().isoformat(),
+                'timestamp': pd.Timestamp.now().isoformat(),
                 'old_mode': old_mode.value,
                 'new_mode': new_mode.value,
                 'reason': 'manual_switch'
@@ -1574,7 +1574,7 @@ class DeepSeekQuantSystem:
         status = {
             'name': module_name,
             'active': hasattr(module, 'is_active') and module.is_active(),
-            'last_update': datetime.now().isoformat()
+            'last_update': pd.Timestamp.now().isoformat()
         }
 
         # 添加模块特定状态信息

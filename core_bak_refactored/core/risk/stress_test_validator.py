@@ -13,10 +13,11 @@
 - 回测引擎 → core/backtest/_fragments/event_window_backtester.py
 """
 
+import logging
 from dataclasses import dataclass, field
 from typing import Dict, List, Any, Protocol
-from datetime import datetime
-import logging
+
+import pandas as pd
 
 logger = logging.getLogger('DeepSeekQuant.StressTestValidator')
 
@@ -53,7 +54,7 @@ class ValidationResult:
     predicted_loss: float  # StressTester预测的损失
     actual_loss: float  # 历史实际损失
     prediction_error: float  # abs(predicted - actual) / abs(actual)
-    validation_date: datetime = field(default_factory=datetime.now)
+    validation_date: pd.Timestamp = field(default_factory=pd.Timestamp.now)
     metadata: Dict[str, Any] = field(default_factory=dict)
     
     def is_acceptable(self, threshold: float = 0.20) -> bool:
@@ -129,13 +130,6 @@ class StressTestValidator:
     设计模式：
     - 依赖注入：通过构造函数注入外部依赖
     - 接口抽象：通过Protocol定义依赖接口，降低耦合
-    
-    使用示例：
-    >>> validator = StressTestValidator(
-    >>>     data_source=mock_data_source,  # 当前使用Mock，未来替换为真实实现
-    >>>     portfolio_builder=mock_builder
-    >>> )
-    >>> result = validator.validate_scenario('2015_china_market_crash')
     """
     
     def __init__(self, 

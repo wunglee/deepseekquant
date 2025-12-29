@@ -3,8 +3,9 @@
 验证配置驱动的 provider 创建（新实现）
 """
 
+import pandas as pd
 import pytest
-from datetime import datetime
+
 from core_bak_refactored.core.data.providers.factory import get_global_factory, reset_global_factory
 from core_bak_refactored.core.share.config_manager import ConfigManager
 
@@ -74,7 +75,7 @@ class TestDataProviderIntegration:
         
         # 获取数据（使用 PriceData 对象）
         try:
-            price_data = provider.get_index_prices('000300.SH', '2020-01-01', '2020-01-10', datetime.now())
+            price_data = provider.get_index_prices('000300.SH', '2020-01-01', '2020-01-10', pd.Timestamp.now())
             
             # 验证 PriceData 对象
             assert price_data is not None
@@ -95,7 +96,7 @@ class TestDataProviderIntegration:
         
         # Yahoo 可能因限流失败，这是预期的
         try:
-            price_data = provider.get_index_prices('^GSPC', '2020-01-01', '2020-01-10', datetime.now())
+            price_data = provider.get_index_prices('^GSPC', '2020-01-01', '2020-01-10', pd.Timestamp.now())
             
             # 如果成功，验证 PriceData 对象
             assert price_data is not None
@@ -118,7 +119,7 @@ class TestDataProviderIntegration:
         
         # 应该成功获取数据（返回 PriceData 对象）
         try:
-            price_data = provider.get_index_prices('000300.SH', '2020-01-01', '2020-01-10', datetime.now())
+            price_data = provider.get_index_prices('000300.SH', '2020-01-01', '2020-01-10', pd.Timestamp.now())
             
             # 验证 PriceData 对象
             assert price_data is not None
@@ -153,7 +154,7 @@ class TestDataProviderIntegration:
         for provider_id, symbol in providers_to_test:
             try:
                 provider = factory.get(provider_id)
-                price_data = provider.get_index_prices(symbol, '2020-01-01', '2020-01-10', datetime.now())
+                price_data = provider.get_index_prices(symbol, '2020-01-01', '2020-01-10', pd.Timestamp.now())
                 price_data_list.append(price_data)
             except Exception:
                 pass
@@ -200,7 +201,7 @@ class TestBacktestFrameworkWithRealData:
                 else:
                     symbol = '000300.SH'
                 
-                price_data = provider.get_index_prices(symbol, '2020-01-01', '2020-01-10', datetime.now())
+                price_data = provider.get_index_prices(symbol, '2020-01-01', '2020-01-10', pd.Timestamp.now())
                 
                 # 验证 PriceData 格式
                 assert price_data is not None

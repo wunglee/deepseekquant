@@ -25,12 +25,10 @@
     provider = factory.get(provider_id)
 """
 
-import numpy as np
-import pandas as pd
-from typing import Dict, List, Optional, Any, Protocol, Union
-from datetime import datetime, timedelta
-from dataclasses import dataclass, field
 import logging
+from typing import Protocol
+
+import pandas as pd
 
 logger = logging.getLogger('DeepSeekQuant.BacktestFramework')
 
@@ -49,28 +47,28 @@ class HistoricalDataProvider(Protocol):
     - 为core_bak_refactored/core/data模块集成预留标准接口
     """
     
-    def get_index_prices(self, index_id: str, start_date: Union[str, datetime], end_date: Union[str, datetime]) -> pd.DataFrame:
+    def get_index_prices(self, index_id: str, start_date: pd.Timestamp, end_date: pd.Timestamp) -> pd.DataFrame:
         """
         获取指数价格数据
         
         Args:
             index_id: 指数代码（如'000300.SH'沪深300）
-            start_date: 开始日期 'YYYY-MM-DD' 或 datetime 对象
-            end_date: 结束日期 'YYYY-MM-DD' 或 datetime 对象
+            start_date: 开始日期 (pd.Timestamp)
+            end_date: 结束日期 (pd.Timestamp)
         
         Returns:
             DataFrame with columns: ['date', 'close', 'volume']
         """
         ...
     
-    def get_index_returns(self, index_id: str, start_date: Union[str, datetime], end_date: Union[str, datetime]) -> pd.Series:
+    def get_index_returns(self, index_id: str, start_date: pd.Timestamp, end_date: pd.Timestamp) -> pd.Series:
         """
         获取指数收益率序列
         
         Args:
             index_id: 指数代码
-            start_date: 开始日期 'YYYY-MM-DD' 或 datetime 对象
-            end_date: 结束日期 'YYYY-MM-DD' 或 datetime 对象
+            start_date: 开始日期 (pd.Timestamp)
+            end_date: 结束日期 (pd.Timestamp)
         
         Returns:
             Series with date index and return values
@@ -106,34 +104,18 @@ class HistoricalDataProvider(Protocol):
 #     factory = get_global_factory()
 #     provider = factory.get(provider_id)
 
-from core_bak_refactored.core.data.providers.factory import get_global_factory
-
 
 # =============================================================================
 # 合成组合构造器（基于专家answer.md 1.3节）
 # =============================================================================
-
-from core_bak_refactored.core.portfolio._fragments.synthetic_portfolio import SyntheticPortfolio
-
-
-from core_bak_refactored.core.portfolio._fragments.synthetic_portfolio import SyntheticPortfolioBuilder
 
 
 # =============================================================================
 # 事件窗口回测引擎（基于专家answer.md 1.3节）
 # =============================================================================
 
-from core_bak_refactored.core.backtest._fragments.event_window_backtester import BacktestEvent
-
-
-from core_bak_refactored.core.backtest._fragments.event_window_backtester import BacktestResult
-
-
-from core_bak_refactored.core.backtest._fragments.event_window_backtester import EventWindowBacktester
-
 
 # =============================================================================
 # 回测报告生成器
 # =============================================================================
 
-from core_bak_refactored.core.backtest._fragments.event_window_backtester import BacktestReporter

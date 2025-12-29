@@ -3,11 +3,12 @@
 """
 
 import unittest
+
 import numpy as np
+
 from core_bak_refactored.core.risk.incremental_calculator import (
     IncrementalCovarianceCalculator,
     IncrementalVaRCalculator,
-    IncrementalBoundary,
     compare_incremental_vs_full
 )
 

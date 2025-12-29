@@ -24,9 +24,10 @@
 import logging
 import threading
 import time
-from datetime import datetime
-from typing import Optional, Dict, Any, Callable
 from enum import Enum
+from typing import Optional, Dict, Any
+
+import pandas as pd
 
 logger = logging.getLogger('DeepSeekQuant.Scheduler')
 
@@ -189,7 +190,7 @@ class MonitoringScheduler:
         2. 更新监控周期计数
         3. 记录执行日志和统计
         """
-        cycle_start = datetime.now()
+        cycle_start = pd.Timestamp.now()
         logger.info("开始监控循环")
         
         try:
@@ -198,7 +199,7 @@ class MonitoringScheduler:
             # run_check_cycle 已经内部更新了 monitoring_cycles 计数
             
             # 记录日志
-            cycle_duration = (datetime.now() - cycle_start).total_seconds()
+            cycle_duration = (pd.Timestamp.now() - cycle_start).total_seconds()
             logger.info(
                 f"监控循环完成，耗时{cycle_duration:.2f}秒 | "
                 f"质量得分: {summary.get('quality_score', 0):.2%} | "

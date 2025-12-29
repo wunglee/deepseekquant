@@ -1,4 +1,4 @@
-from typing import Any, Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional
 
 from core_bak_refactored.core.data.fetcher.fetcher_orchestrator import DataFetcherOrchestrator
 

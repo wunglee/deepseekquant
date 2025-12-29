@@ -1,6 +1,7 @@
 """市场状态服务 - 评估市场开盘状态、波动率、情绪等"""
+import pandas as pd
 from typing import Any, Dict, List
-from datetime import datetime, time
+
 import logging
 import pytz
 import numpy as np
@@ -21,7 +22,7 @@ class MarketStatusService:
     async def get_market_status(self) -> Dict[str, Any]:
         """获取市场状态信息"""
         try:
-            now = datetime.now()
+            now = pd.Timestamp.now()
             market_open = self._is_market_open(now)
             vix_data = await self.historical_data_fetcher.get_historical_data(['^VIX'], '1d', '1d', 'ohlcv', False)
             vix_value = vix_data['^VIX'][-1].close if vix_data and '^VIX' in vix_data else None
@@ -46,10 +47,10 @@ class MarketStatusService:
             return {
                 'market_open': False,
                 'error': str(e),
-                'timestamp': datetime.now().isoformat()
+                'timestamp': pd.Timestamp.now().isoformat()
             }
 
-    def _is_market_open(self, dt: datetime) -> bool:
+    def _is_market_open(self, dt: pd.Timestamp) -> bool:
         """判断美国股市是否开盘"""
         if dt.weekday() >= 5:
             return False
@@ -61,7 +62,7 @@ class MarketStatusService:
         market_close_time = time(16, 0)
         return market_open_time <= dt_eastern.time() <= market_close_time
 
-    def _is_market_holiday(self, dt: datetime) -> bool:
+    def _is_market_holiday(self, dt: pd.Timestamp) -> bool:
         """检查是否为美国市场假日"""
         holidays = {
             (1, 1): "New Year's Day",
@@ -146,7 +147,7 @@ class MarketStatusService:
             'liquidity_risk': 'low',
             'volume_concentration': 'moderate',
             'market_impact_cost': 'low',
-            'timestamp': datetime.now().isoformat()
+            'timestamp': pd.Timestamp.now().isoformat()
         }
 
     def _determine_volatility_regime(self) -> Dict[str, Any]:
@@ -157,7 +158,7 @@ class MarketStatusService:
             'volatility_clustering': False,
             'regime_confidence': 0.85,
             'expected_duration': 'short_term',
-            'timestamp': datetime.now().isoformat()
+            'timestamp': pd.Timestamp.now().isoformat()
         }
 
     def _assess_market_sentiment(self) -> Dict[str, Any]:
@@ -170,5 +171,5 @@ class MarketStatusService:
             'market_outlook': 'neutral_bullish',
             'sentiment_extremes': False,
             'contrarian_indicator': False,
-            'timestamp': datetime.now().isoformat()
+            'timestamp': pd.Timestamp.now().isoformat()
         }

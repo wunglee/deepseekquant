@@ -3,12 +3,13 @@
 """
 
 import unittest
-from datetime import datetime
 
-from core_bak_refactored.core.signal.signal_models import (
-    TradingSignal, SignalType, SignalStrength, SignalSource, SignalMetadata
-)
+import pandas as pd
+
 from core_bak_refactored.core.signal.signal_aggregator import SignalAggregator
+from core_bak_refactored.core.signal.signal_models import (
+    TradingSignal, SignalType, SignalStrength, SignalMetadata
+)
 
 
 class TestSignalAggregator(unittest.TestCase):
@@ -36,7 +37,7 @@ class TestSignalAggregator(unittest.TestCase):
             symbol='000001.SZ',
             signal_type=SignalType.BUY,
             price=10.0,
-            timestamp=datetime.now().isoformat(),
+            timestamp=pd.Timestamp.now().isoformat(),
             metadata=SignalMetadata(confidence=0.85),
             weight=1.0
         )
@@ -52,7 +53,7 @@ class TestSignalAggregator(unittest.TestCase):
                 symbol='000001.SZ',
                 signal_type=SignalType.BUY,
                 price=10.0,
-                timestamp=datetime.now().isoformat(),
+                timestamp=pd.Timestamp.now().isoformat(),
                 metadata=SignalMetadata(confidence=0.6),
                 weight=1.0
             ),
@@ -61,7 +62,7 @@ class TestSignalAggregator(unittest.TestCase):
                 symbol='000001.SZ',
                 signal_type=SignalType.BUY,
                 price=10.0,
-                timestamp=datetime.now().isoformat(),
+                timestamp=pd.Timestamp.now().isoformat(),
                 metadata=SignalMetadata(confidence=0.8),
                 weight=1.0
             )
@@ -79,7 +80,7 @@ class TestSignalAggregator(unittest.TestCase):
                 symbol='000001.SZ',
                 signal_type=SignalType.BUY,
                 price=10.0,
-                timestamp=datetime.now().isoformat(),
+                timestamp=pd.Timestamp.now().isoformat(),
                 metadata=SignalMetadata(confidence=0.9),
                 weight=2.0  # 高权重
             ),
@@ -88,7 +89,7 @@ class TestSignalAggregator(unittest.TestCase):
                 symbol='000001.SZ',
                 signal_type=SignalType.BUY,
                 price=10.0,
-                timestamp=datetime.now().isoformat(),
+                timestamp=pd.Timestamp.now().isoformat(),
                 metadata=SignalMetadata(confidence=0.3),
                 weight=1.0  # 低权重
             )
@@ -106,7 +107,7 @@ class TestSignalAggregator(unittest.TestCase):
                 symbol='000001.SZ',
                 signal_type=SignalType.BUY,
                 price=10.0,
-                timestamp=datetime.now().isoformat(),
+                timestamp=pd.Timestamp.now().isoformat(),
                 metadata=SignalMetadata(confidence=0.9),
                 weight=0.0
             )
@@ -124,7 +125,7 @@ class TestSignalAggregator(unittest.TestCase):
                     symbol='000001.SZ',
                     signal_type=SignalType.BUY,
                     price=10.0,
-                    timestamp=datetime.now().isoformat(),
+                    timestamp=pd.Timestamp.now().isoformat(),
                     metadata=SignalMetadata(confidence=0.7)
                 )
             ]

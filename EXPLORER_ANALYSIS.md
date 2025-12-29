@@ -79,7 +79,7 @@ def get_index_prices_api():
         'status': 'success',
         'data': data,
         'count': len(data),
-        'timestamp': datetime.now().isoformat()
+        'timestamp': pd.Timestamp.now().isoformat()
     })
 ```
 

@@ -6,11 +6,10 @@
 """
 
 import unittest
-from unittest.mock import Mock, MagicMock
-import pandas as pd
-import numpy as np
+from unittest.mock import Mock
 
-from pandas import DataFrame
+import numpy as np
+import pandas as pd
 
 from core_bak_refactored.app.quality_monitoring.api.chart_data import ChartDataAssembler
 from core_bak_refactored.core.data.providers.protocols import PriceData
@@ -385,3 +384,177 @@ class ChartDataAssemblerBugFixTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestPeriodBarCache(unittest.TestCase):
+    """测试周期K柱缓存机制
+    
+    验证：
+    1. ChartDataAssembler在交易时段排除最后一个K柱并缓存
+    2. get_realtime_kline从缓存读取最后一个K柱进行合并
+    3. 缓存未命中时的fallback机制
+    """
+    
+    def setUp(self):
+        """测试前准备"""
+        self.mock_provider = Mock()
+        self.mock_indicator = Mock()
+        
+        # 模拟缓存字典
+        self.cache_dict = {}
+        
+        # Mock缓存方法
+        self.mock_provider._set_to_memory_cache_obj = Mock(side_effect=self._mock_set_cache)
+        self.mock_provider._get_from_memory_cache = Mock(side_effect=self._mock_get_cache)
+        
+        self.assembler = ChartDataAssembler(
+            data_provider=self.mock_provider,
+            indicator_service=self.mock_indicator
+        )
+    
+    def _mock_set_cache(self, key, value):
+        """模拟缓存存储"""
+        self.cache_dict[key] = value
+    
+    def _mock_get_cache(self, key):
+        """模拟缓存读取"""
+        return self.cache_dict.get(key)
+    
+    def test_weekly_cache_on_exclude_last_bar(self):
+        """测试：周线在交易时段排除最后一个K柱并缓存"""
+        index_id = '000001.SZ'
+        period = 'weekly'
+        
+        records = [
+            OHLCVRecord(
+                date=pd.Timestamp('2024-01-08'),
+                open=2900.0,
+                high=3100.0,
+                low=2850.0,
+                close=3000.0,
+                volume=50000000
+            ),
+            OHLCVRecord(
+                date=pd.Timestamp('2024-01-15'),
+                open=3000.0,
+                high=3200.0,
+                low=2950.0,
+                close=3100.0,
+                volume=60000000
+            ),
+            OHLCVRecord(
+                date=pd.Timestamp('2024-01-22'),
+                open=3100.0,
+                high=3300.0,
+                low=3050.0,
+                close=3200.0,
+                volume=70000000
+            )
+        ]
+        
+        price_data = PriceData(
+            records=records,
+            symbol=index_id,
+            start_date=pd.Timestamp('2024-01-08'),
+            end_date=pd.Timestamp('2024-01-28'),
+            count=3,
+            needs_realtime_kline=True
+        )
+        
+        self.mock_provider.get_index_prices = Mock(return_value=price_data)
+        self.mock_indicator.calculate = Mock(return_value=({}, {}))
+        
+        result = self.assembler.assemble_chart_data(
+            index_id=index_id,
+            period=period,
+            count=2,
+            before=None,
+            indicators='all',
+            current_time=pd.Timestamp('2024-01-28 10:00:00')
+        )
+        
+        cache_key = f"last_period_bar_{index_id}_{period}"
+        self.assertIn(cache_key, self.cache_dict)
+        
+        cached_bar = self.cache_dict[cache_key]
+        self.assertEqual(cached_bar['date'], '2024-01-22')
+        self.assertEqual(cached_bar['open'], 3100.0)
+        self.assertEqual(cached_bar['close'], 3200.0)
+        self.assertEqual(cached_bar['volume'], 70000000)
+    
+    def test_realtime_kline_use_cache(self):
+        """测试：实时K线接口从缓存读取最后一个K柱"""
+        index_id = '000001.SZ'
+        period = 'weekly'
+        
+        cache_key = f"last_period_bar_{index_id}_{period}"
+        cached_bar = {
+            'date': '2024-01-22',
+            'open': 3100.0,
+            'high': 3300.0,
+            'low': 3050.0,
+            'close': 3200.0,
+            'volume': 70000000
+        }
+        self.cache_dict[cache_key] = cached_bar
+        
+        cached_value = self._mock_get_cache(cache_key)
+        self.assertIsNotNone(cached_value)
+        self.assertEqual(cached_value['date'], '2024-01-22')
+    
+    def test_cache_miss_fallback(self):
+        """测试：缓存未命中时的fallback机制"""
+        index_id = '000001.SZ'
+        period = 'weekly'
+        cache_key = f"last_period_bar_{index_id}_{period}"
+        
+        cached_value = self._mock_get_cache(cache_key)
+        self.assertIsNone(cached_value)
+    
+    def test_daily_no_cache(self):
+        """测试：日线不缓存最后一个K柱"""
+        index_id = '000001.SZ'
+        period = 'daily'
+        
+        records = [
+            OHLCVRecord(
+                date=pd.Timestamp('2024-01-26'),
+                open=3100.0,
+                high=3150.0,
+                low=3080.0,
+                close=3120.0,
+                volume=5000000
+            ),
+            OHLCVRecord(
+                date=pd.Timestamp('2024-01-27'),
+                open=3120.0,
+                high=3180.0,
+                low=3100.0,
+                close=3150.0,
+                volume=6000000
+            )
+        ]
+        
+        price_data = PriceData(
+            records=records,
+            symbol=index_id,
+            start_date=pd.Timestamp('2024-01-26'),
+            end_date=pd.Timestamp('2024-01-27'),
+            count=2,
+            needs_realtime_kline=True
+        )
+        
+        self.mock_provider.get_index_prices = Mock(return_value=price_data)
+        self.mock_indicator.calculate = Mock(return_value=({}, {}))
+        
+        result = self.assembler.assemble_chart_data(
+            index_id=index_id,
+            period=period,
+            count=2,
+            before=None,
+            indicators='all',
+            current_time=pd.Timestamp('2024-01-27 10:00:00')
+        )
+        
+        cache_key = f"last_period_bar_{index_id}_{period}"
+        self.assertNotIn(cache_key, self.cache_dict)

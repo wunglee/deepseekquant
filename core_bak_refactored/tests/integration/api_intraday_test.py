@@ -6,14 +6,13 @@
 2. API层正确返回完整数据
 3. 字段命名正确（is_index, trading_phase）
 """
-import unittest
-from unittest.mock import Mock, patch
-import pandas as pd
-from datetime import datetime
-import sys
 import os
+import sys
+import unittest
 
-from core_bak_refactored.core.share.market.market_enums import TradingPhase
+from unittest.mock import Mock, patch
+
+import pandas as pd
 
 # 添加项目根目录到Python路径
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../'))

@@ -7,7 +7,6 @@
 - 各种辅助方法：分组、健康计算等
 """
 
-import pytest
 from core_bak_refactored.app.quality_monitoring.api.controllers import DataQualityControllers
 
 

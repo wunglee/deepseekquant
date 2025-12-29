@@ -26,8 +26,7 @@ pip install tushare
 import logging
 import os
 from dataclasses import dataclass
-from datetime import datetime
-from typing import Dict, Optional, Union, Any
+from typing import Dict, Optional, Any
 
 import pandas as pd
 
@@ -184,8 +183,8 @@ class TushareDataProvider(BaseDataProvider):
             raise RuntimeError("Tushare API not available")
             
         # 转换日期格式
-        start_date_str = start_date.strftime('%Y%m%d') if isinstance(start_date, (datetime, pd.Timestamp)) else start_date.replace('-', '')
-        end_date_str = end_date.strftime('%Y%m%d') if isinstance(end_date, (datetime, pd.Timestamp)) else end_date.replace('-', '')
+        start_date_str = start_date.strftime('%Y%m%d')
+        end_date_str = end_date.strftime('%Y%m%d')
         
         logger.info(f"Fetching index data for {index_id} from {start_date_str} to {end_date_str}")
         
@@ -272,8 +271,8 @@ class TushareDataProvider(BaseDataProvider):
                 raise RuntimeError("Tushare API not available")
                 
             # 转换日期格式
-            start_date_str = start_date.strftime('%Y%m%d') if isinstance(start_date, (datetime, pd.Timestamp)) else start_date.replace('-', '')
-            end_date_str = end_date.strftime('%Y%m%d') if isinstance(end_date, (datetime, pd.Timestamp)) else end_date.replace('-', '')
+            start_date_str = start_date.strftime('%Y%m%d')
+            end_date_str = end_date.strftime('%Y%m%d')
             
             logger.info(f"Fetching stock data for {symbol} from {start_date_str} to {end_date_str}")
             
@@ -296,7 +295,10 @@ class TushareDataProvider(BaseDataProvider):
         # 🔧 Tushare 不支持直接查询周线/月线，需要从日线转换（调用基类的通用方法）
         if period != 'daily':
             logger.info(f"Tushare 不支持直接查询 {period}，从日线转换（{price_data.count} 条日线数据）")
-            price_data = self._convert_period(price_data, period)
+            # 推断市场代码
+            from core_bak_refactored.core.share.market import MarketUtils
+            market_code = MarketUtils.infer_market_from_symbol(symbol)
+            price_data = self._convert_period(price_data, period, market_code)
         
         return price_data
     

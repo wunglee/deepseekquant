@@ -6,7 +6,7 @@ DeepSeekQuant 基础处理器模块 - 重构优化版本
 import time
 import threading
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional, List, Union, Callable
 from dataclasses import dataclass, asdict, field, fields
@@ -184,8 +184,8 @@ class BaseProcessor(ABC):
         self.state = ProcessorState.UNINITIALIZED
         self.health_status = HealthStatus.UNKNOWN
         self.state_lock = threading.RLock()
-        self.last_state_change = datetime.now().isoformat()
-        self.startup_time = datetime.now().isoformat()
+        self.last_state_change = pd.Timestamp.now().isoformat()
+        self.startup_time = pd.Timestamp.now().isoformat()
 
         # 配置初始化
         self._setup_configuration()
@@ -401,7 +401,7 @@ class BaseProcessor(ABC):
             audit_data = {
                 **self._log_context,
                 'action': action,
-                'timestamp': datetime.now().isoformat()
+                'timestamp': pd.Timestamp.now().isoformat()
             }
             if details:
                 audit_data.update(details)
@@ -418,7 +418,7 @@ class BaseProcessor(ABC):
                 'operation': operation,
                 'duration': duration,
                 'success': success,
-                'timestamp': datetime.now().isoformat()
+                'timestamp': pd.Timestamp.now().isoformat()
             }
             if details:
                 perf_data.update(details)
@@ -648,7 +648,7 @@ class BaseProcessor(ABC):
         with self.state_lock:
             old_state = self.state
             self.state = new_state
-            self.last_state_change = datetime.now().isoformat()
+            self.last_state_change = pd.Timestamp.now().isoformat()
 
             self.audit_logger.info("处理器状态变更", extra={
                 'processor': self.processor_name,

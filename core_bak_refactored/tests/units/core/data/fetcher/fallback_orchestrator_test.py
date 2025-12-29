@@ -1,6 +1,8 @@
-import pytest
-from unittest.mock import Mock, AsyncMock
 import asyncio
+from unittest.mock import Mock
+
+import pytest
+
 from core_bak_refactored.core.data.fetcher.fallback_orchestrator import try_fallback_sources
 
 

@@ -22,17 +22,17 @@
 - 提供实时K线数据计算（带缓存优化）
 """
 
-import random
 import logging
-import pandas as pd
+import random
 from typing import Optional, Tuple, List
-from datetime import datetime, timedelta
+
+import pandas as pd
 
 from core_bak_refactored.core.data.providers.base_provider import BaseDataProvider
-from core_bak_refactored.core.share.market.market_enums import TradingPhase
 from core_bak_refactored.core.data.providers.protocols import (
-    IntradayData, IntradayTickRecord, OrderBookLevel, TradeDetailRecord, TickRange, HistoricalDataProvider
+    IntradayData, IntradayTickRecord, OrderBookLevel, TradeDetailRecord, TickRange
 )
+from core_bak_refactored.core.share.market.market_enums import TradingPhase
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +68,7 @@ class MockDataProvider(BaseDataProvider):
         self._mock_trading_phase = trading_phase
         logger.info(f"🎭 设置Mock交易时段: {trading_phase.name}")
     
-    def set_needs_realtime_kline(self, price_data, current_time: datetime):
+    def set_needs_realtime_kline(self, price_data, current_time: pd.Timestamp):
         """
         🎭 Mock模式：根据前端传入的trading_phase设置needs_realtime_kline
         
@@ -91,7 +91,7 @@ class MockDataProvider(BaseDataProvider):
             price_data.needs_realtime_kline = False
             logger.warning("🎭 Mock模式未设置trading_phase，默认needs_realtime_kline=False")
 
-    def _fetch_from_external_api(self, symbol: str, start_date: str, end_date: str, period: str = 'daily'):
+    def _fetch_from_external_api(self, symbol: str, start_date: pd.Timestamp, end_date: pd.Timestamp, period: str = 'daily'):
         """
         生成模拟历史K线数据
 
@@ -105,8 +105,8 @@ class MockDataProvider(BaseDataProvider):
 
         Args:
             symbol: 证券代码
-            start_date: 开始日期 (YYYY-MM-DD)
-            end_date: 结束日期 (YYYY-MM-DD)
+            start_date: 开始日期 (pd.Timestamp)
+            end_date: 结束日期 (pd.Timestamp)
             period: 周期 ('daily', 'weekly', 'monthly') - Mock数据忽略此参数，总是生成日线
 
         Returns:
@@ -114,26 +114,31 @@ class MockDataProvider(BaseDataProvider):
         """
         import pandas as pd
         from core_bak_refactored.core.data.providers.protocols import PriceData
-        from datetime import datetime, timedelta
 
         logger.info(f"📊 生成模拟K线: {symbol}, {start_date} ~ {end_date}")
 
+        # 🔧 确保输入是 pd.Timestamp 类型
+        if not isinstance(start_date, pd.Timestamp):
+            start_date = pd.to_datetime(start_date)
+        if not isinstance(end_date, pd.Timestamp):
+            end_date = pd.to_datetime(end_date)
+        
         # 转换日期
-        start_dt = pd.to_datetime(start_date)
-        end_dt = pd.to_datetime(end_date)
+        start_dt = start_date
+        end_dt = end_date
         
         # 🎭 关键：根据_mock_trading_phase决定是否包含今天
-        today = datetime.now().date()
+        today = pd.Timestamp.now().date()
         if end_dt.date() == today and end_dt.weekday() < 5:  # 周一到周五
             # 如果是盘前或盘中，历史数据只到昨天
             if self._mock_trading_phase in [TradingPhase.BEFORE_OPEN, TradingPhase.TRADING, TradingPhase.NOON_BREAK]:
-                end_dt = end_dt - timedelta(days=1)
+                end_dt = end_dt - pd.Timedelta(days=1)
                 logger.info(f"🎭 盘前/盘中时段，历史K线只到昨天: {end_dt.strftime('%Y-%m-%d')}")
             elif self._mock_trading_phase == TradingPhase.AFTER_CLOSE:
                 logger.info(f"🎭 盘后时段，历史K线包含今天: {end_dt.strftime('%Y-%m-%d')}")
             else:
                 # 如果没有设置_mock_trading_phase，默认不包含今天
-                end_dt = end_dt - timedelta(days=1)
+                end_dt = end_dt - pd.Timedelta(days=1)
                 logger.warning(f"🎭 未设置trading_phase，默认历史K线只到昨天: {end_dt.strftime('%Y-%m-%d')}")
 
         # 生成交易日期序列（跳过周末）
@@ -143,7 +148,7 @@ class MockDataProvider(BaseDataProvider):
             # 跳过周末（0=周一, 6=周日）
             if current_dt.weekday() < 5:
                 dates.append(current_dt)
-            current_dt += timedelta(days=1)
+            current_dt += pd.Timedelta(days=1)
 
         # 生成基准价格（使用固定种子保证一致性）
         random.seed(symbol)
@@ -187,7 +192,7 @@ class MockDataProvider(BaseDataProvider):
         price_data = PriceData.from_dataframe(df, symbol)
         return price_data
 
-    def generate(self, symbol: str, trade_date: str, tick_range: Optional[TickRange] = None,
+    def generate(self, symbol: str, trade_date: pd.Timestamp, tick_range: Optional[TickRange] = None,
                  trading_phase: TradingPhase = TradingPhase.TRADING, last_price: Optional[float] = None,
                  is_index: bool = False) -> IntradayData:
         """
@@ -202,7 +207,7 @@ class MockDataProvider(BaseDataProvider):
         
         Args:
             symbol: 证券代码
-            trade_date: 交易日期 (YYYY-MM-DD)
+            trade_date: 交易日期 (pd.Timestamp)
             tick_range: Tick数据时间范围，如果None则根据交易时段自动计算
             trading_phase: 交易时段（TradingPhase枚举）
             last_price: 上次请求的最终价格，用于保证价格连续性
@@ -211,15 +216,21 @@ class MockDataProvider(BaseDataProvider):
         Returns:
             IntradayData: 分时数据对象
         """
+        # 🔧 类型安全：如果 trade_date 是 pd.Timestamp，转换为字符串
+        if isinstance(trade_date, pd.Timestamp):
+            trade_date_str = trade_date.strftime('%Y-%m-%d')
+        else:
+            trade_date_str = str(trade_date)
+        
         # 确保使用枚举类型
         phase = TradingPhase.parse(trading_phase) if isinstance(trading_phase, str) else trading_phase
-        logger.info(f"📊 生成模拟数据 - 交易时段: {phase}, 日期: {trade_date}, 是否指数: {is_index}")
+        logger.info(f"📊 生成模拟数据 - 交易时段: {phase}, 日期: {trade_date_str}, 是否指数: {is_index}")
 
         # 获取股票名称
         name = self.NAME_MAP.get(symbol, symbol)
 
         # 生成基准价格（使用固定种子保证一致性）
-        random.seed(symbol + trade_date)
+        random.seed(symbol + trade_date_str)
         base_price = 3000 + random.random() * 300
         yesterday_close = base_price
         logger.info(f"💰 生成基准价: {base_price:.2f}")
@@ -243,7 +254,7 @@ class MockDataProvider(BaseDataProvider):
             logger.info("📊 交易时段，返回实时数据 + 盘口 + 成交明细")
             # 如果未提供 tick_range，根据交易时段自动创建
             if tick_range is None:
-                tick_range = TickRange.from_trading_phase(phase, trade_date)
+                tick_range = TickRange.from_trading_phase(phase, trade_date_str)
                 logger.info(f"📅 自动创建 TickRange: {tick_range.start_time} ~ {tick_range.end_time}")
 
             # 生成分时数据
@@ -259,8 +270,8 @@ class MockDataProvider(BaseDataProvider):
             logger.info("🌞 午休时段，返回上午数据 + 盘口")
             # 构建上午时间范围（09:30-11:30）
             morning_tick_range = TickRange(
-                start_time=pd.Timestamp(f"{trade_date} 09:30:00"),
-                end_time=pd.Timestamp(f"{trade_date} 11:30:00"),
+                start_time=pd.Timestamp(f"{trade_date_str} 09:30:00"),
+                end_time=pd.Timestamp(f"{trade_date_str} 11:30:00"),
                 period_seconds=5
             )
             # 生成上午的分时数据
@@ -276,8 +287,8 @@ class MockDataProvider(BaseDataProvider):
             logger.info("🌙 盘后时段，返回全天数据（无盘口）")
             # 构建全天时间范围（09:30-15:00）
             full_day_tick_range = TickRange(
-                start_time=pd.Timestamp(f"{trade_date} 09:30:00"),
-                end_time=pd.Timestamp(f"{trade_date} 15:00:00"),
+                start_time=pd.Timestamp(f"{trade_date_str} 09:30:00"),
+                end_time=pd.Timestamp(f"{trade_date_str} 15:00:00"),
                 period_seconds=5
             )
             # 生成全天的分时数据
@@ -333,7 +344,7 @@ class MockDataProvider(BaseDataProvider):
             order_book_bids=order_book_bids,
             order_book_asks=order_book_asks,
             trade_records=trade_records,
-            trade_date=trade_date,
+            trade_date=trade_date_str,
             order_book_message=order_book_message,
             trade_records_message=trade_records_message,
             is_index=is_index,
@@ -469,9 +480,9 @@ class MockDataProvider(BaseDataProvider):
                 ))
         else:
             # 如果没有tick数据，生成随机的成交明细
-            now = datetime.now()
+            now = pd.Timestamp.now()
             for i in range(20):
-                tick_time = now - timedelta(seconds=i * 5)
+                tick_time = now - pd.Timedelta(seconds=i * 5)
                 trade_records.append(TradeDetailRecord(
                     time=tick_time.strftime('%H:%M:%S'),
                     price=round(current_price + (random.random() - 0.5) * 0.2, 2),
@@ -481,7 +492,7 @@ class MockDataProvider(BaseDataProvider):
 
         return trade_records
 
-    def get_realtime_kline(self, symbol: str, trade_date: str, trading_phase: TradingPhase,
+    def get_realtime_kline(self, symbol: str, trade_date: pd.Timestamp, trading_phase: TradingPhase,
                            is_index: bool, cached: Optional[dict] = None) -> dict:
         """
         获取实时K线数据（领域层方法）
@@ -497,7 +508,7 @@ class MockDataProvider(BaseDataProvider):
         
         Args:
             symbol: 证券代码
-            trade_date: 交易日期 (YYYY-MM-DD)
+            trade_date: 交易日期 (pd.Timestamp)
             trading_phase: 交易时段（由前端控制，用于模拟）
             is_index: 是否为指数
             cached: （已废弃，保留用于兼容）
@@ -515,16 +526,21 @@ class MockDataProvider(BaseDataProvider):
             }
         """
         import time
-        from datetime import datetime
+        
+        # 🔧 转换为字符串
+        if isinstance(trade_date, pd.Timestamp):
+            trade_date_str = trade_date.strftime('%Y-%m-%d')
+        else:
+            trade_date_str = str(trade_date)
 
         # 🔧 构建Mock专用缓存key（避免与真实缓存冲突）
-        cache_key = f"mock_realtime_{symbol}_{trade_date}_{trading_phase.name}"
+        cache_key = f"mock_realtime_{symbol}_{trade_date_str}_{trading_phase.name}"
         
         # 🔧 是否应该启动轮询（盘前或盘中）
         should_poll = trading_phase in [TradingPhase.BEFORE_OPEN, TradingPhase.TRADING]
         
         # 生成基准价格
-        random.seed(symbol + trade_date)
+        random.seed(symbol + trade_date_str)
         base_price = 3000 + random.random() * 300
         
         # 🔧 盘前时段：只返回开盘价（模拟集合竞价）
@@ -532,7 +548,7 @@ class MockDataProvider(BaseDataProvider):
             # 检查缓存，如果没有则初始化
             if cache_key not in self._mock_realtime_cache:
                 # 初始化：生成开盘价（在基准价±1%范围内波动）
-                random.seed(symbol + trade_date + str(int(time.time() * 1000)))
+                random.seed(symbol + trade_date_str + str(int(time.time() * 1000)))
                 open_price = base_price * (1 + (random.random() - 0.5) * 0.02)
                 
                 self._mock_realtime_cache[cache_key] = {
@@ -546,7 +562,7 @@ class MockDataProvider(BaseDataProvider):
             cached_data = self._mock_realtime_cache[cache_key]
             
             return {
-                'date': trade_date,
+                'date': trade_date_str,
                 'open': round(cached_data['open'], 2),
                 'high': round(cached_data['high'], 2),  # 盘前 high=open
                 'low': round(cached_data['low'], 2),    # 盘前 low=open
@@ -560,12 +576,12 @@ class MockDataProvider(BaseDataProvider):
         elif trading_phase == TradingPhase.TRADING:
             # 使用当前时间戳作为随机种子，让每次调用都生成不同的数据
             current_timestamp = int(time.time() * 1000)
-            random.seed(symbol + trade_date + str(current_timestamp))
+            random.seed(symbol + trade_date_str + str(current_timestamp))
             
             # 检查缓存，如果没有则从盘前缓存继承，或者初始化
             if cache_key not in self._mock_realtime_cache:
                 # 尝试从盘前缓存继承开盘价
-                before_cache_key = f"mock_realtime_{symbol}_{trade_date}_BEFORE_OPEN"
+                before_cache_key = f"mock_realtime_{symbol}_{trade_date_str}_BEFORE_OPEN"
                 if before_cache_key in self._mock_realtime_cache:
                     open_price = self._mock_realtime_cache[before_cache_key]['open']
                     logger.info(f"🎭 从盘前继承开盘价: {open_price:.2f}")
@@ -599,7 +615,7 @@ class MockDataProvider(BaseDataProvider):
                 f"high={cached_data['high']:.2f}, low={cached_data['low']:.2f}, volume={cached_data['volume']}")
             
             return {
-                'date': trade_date,
+                'date': trade_date_str,
                 'open': round(cached_data['open'], 2),
                 'high': round(cached_data['high'], 2),
                 'low': round(cached_data['low'], 2),
@@ -612,13 +628,13 @@ class MockDataProvider(BaseDataProvider):
         # 🔧 盘后时段：返回完整的当天K线数据（不再变化）
         else:
             # 尝试从盘中缓存获取数据
-            trading_cache_key = f"mock_realtime_{symbol}_{trade_date}_TRADING"
+            trading_cache_key = f"mock_realtime_{symbol}_{trade_date_str}_TRADING"
             if trading_cache_key in self._mock_realtime_cache:
                 cached_data = self._mock_realtime_cache[trading_cache_key]
                 logger.info(f"🌙 盘后使用盘中数据: {cached_data}")
                 
                 return {
-                    'date': trade_date,
+                    'date': trade_date_str,
                     'open': round(cached_data['open'], 2),
                     'high': round(cached_data['high'], 2),
                     'low': round(cached_data['low'], 2),
@@ -638,7 +654,7 @@ class MockDataProvider(BaseDataProvider):
                 logger.info(f"🌙 盘后生成完整K线数据")
                 
                 return {
-                    'date': trade_date,
+                    'date': trade_date_str,
                     'open': round(open_price, 2),
                     'high': round(high_price, 2),
                     'low': round(low_price, 2),

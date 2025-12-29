@@ -23,18 +23,17 @@ pip install finnhub-python
 - 或通过credentials.yml配置
 """
 
-import os
 import logging
-from datetime import datetime, timedelta
-from typing import Union, Optional
 import time
+from typing import Optional
 
+import finnhub
 import pandas as pd
 
-from core_bak_refactored.core.data.providers.protocols import HistoricalDataProvider, PriceData
 from core_bak_refactored.core.data.providers.base_provider import BaseDataProvider
+from core_bak_refactored.core.data.providers.protocols import HistoricalDataProvider, PriceData
 from core_bak_refactored.core.share.config_manager import ConfigManager
-import finnhub
+
 logger = logging.getLogger(__name__)
 
 
@@ -193,8 +192,8 @@ class FinnhubDataProvider(BaseDataProvider, HistoricalDataProvider):
         
         Args:
             index_id: 指数代码
-            start_date: 开始日期 'YYYY-MM-DD' 或 datetime 对象
-            end_date: 结束日期 'YYYY-MM-DD' 或 datetime 对象
+            start_date: 开始日期 pd.Timestamp对象
+            end_date: 结束日期 pd.Timestamp对象
             current_time:当前时间
             period:周期
         Returns:
@@ -355,7 +354,10 @@ class FinnhubDataProvider(BaseDataProvider, HistoricalDataProvider):
         # 🔧 Finnhub 不支持直接查询周线/月线，需要从日线转换（调用基类的通用方法）
         if period != 'daily':
             logger.info(f"Finnhub 不支持直接查询 {period}，从日线转换（{price_data.count} 条日线数据）")
-            price_data = self._convert_period(price_data, period)
+            # 推断市场代码
+            from core_bak_refactored.core.share.market import MarketUtils
+            market_code = MarketUtils.infer_market_from_symbol(symbol)
+            price_data = self._convert_period(price_data, period, market_code)
         
         return price_data
 
@@ -390,7 +392,7 @@ class FinnhubDataProvider(BaseDataProvider, HistoricalDataProvider):
                 'low': quote.get('l'),
                 'open': quote.get('o'),
                 'previous_close': quote.get('pc'),
-                'timestamp': datetime.fromtimestamp(quote.get('t', 0))
+                'timestamp': pd.Timestamp.fromtimestamp(quote.get('t', 0))
             }
         except Exception as e:
             logger.error(f"Finnhub获取实时报价失败 ({symbol}): {e}")

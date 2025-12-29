@@ -6,16 +6,17 @@
 - 提供跨模块共享的数据结构
 """
 
-from typing import Dict, Optional, Any
-from datetime import datetime
 from dataclasses import dataclass
+from typing import Dict, Optional
+
+import pandas as pd
 
 
 @dataclass
 class MarketData:
     """市场数据容器类"""
     symbol: str
-    timestamp: datetime
+    timestamp: pd.Timestamp
     open: float
     high: float
     low: float
@@ -63,7 +64,7 @@ class MarketData:
         """从字典创建"""
         return cls(
             symbol=data['symbol'],
-            timestamp=datetime.fromisoformat(data['timestamp']),
+            timestamp=pd.Timestamp.fromisoformat(data['timestamp']),
             open=data['open'],
             high=data['high'],
             low=data['low'],

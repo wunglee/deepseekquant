@@ -8,8 +8,8 @@
 4. 告警历史和统计
 """
 
-import pytest
-from datetime import datetime, timedelta
+import pandas as pd
+
 from core_bak_refactored.core.monitoring import (
     AlertManager,
     AlertConfig,
@@ -243,7 +243,7 @@ class TestAlertManager:
         assert error_alerts[0].severity == AlertSeverity.ERROR
         
         # 按时间筛选
-        since = datetime.now() - timedelta(minutes=1)
+        since = pd.Timestamp.now() - pd.Timedelta(minutes=1)
         recent_alerts = manager.get_alert_history(since=since)
         assert len(recent_alerts) == 3
     

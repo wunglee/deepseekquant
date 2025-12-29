@@ -38,7 +38,7 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime, timedelta
+
 from typing import Dict, Any, List, TYPE_CHECKING
 
 import numpy as np
@@ -72,7 +72,7 @@ class DataQualityAPIService:
                 return jsonify({
                     'status': 'success',
                     'data': quality_data,
-                    'timestamp': datetime.now().isoformat(),
+                    'timestamp': pd.Timestamp.now().isoformat(),
                     'metadata': {
                         'data_points': len(quality_data),
                         'time_range': f'last_{hours}_hours',
@@ -116,7 +116,7 @@ class DataQualityAPIService:
                     return jsonify({
                         'status': 'success',
                         'report': report,
-                        'timestamp': datetime.now().isoformat(),
+                        'timestamp': pd.Timestamp.now().isoformat(),
                         'report_id': report.get('report_id', f'report_{datetime.now().strftime("%Y%m%d_%H%M%S")}')
                     })
 
@@ -170,7 +170,7 @@ class DataQualityAPIService:
                         'by_severity': self._group_by_severity(alerts),
                         'by_source': self._group_by_source(alerts)
                     },
-                    'timestamp': datetime.now().isoformat()
+                    'timestamp': pd.Timestamp.now().isoformat()
                 })
 
             except Exception as e:
@@ -199,7 +199,7 @@ class DataQualityAPIService:
                 return jsonify({
                     'status': 'success',
                     'performance': enhanced_stats,
-                    'timestamp': datetime.now().isoformat()
+                    'timestamp': pd.Timestamp.now().isoformat()
                 })
 
             except Exception as e:
@@ -229,7 +229,7 @@ class DataQualityAPIService:
                         'aggregation': aggregation,
                         'data_points': len(metrics.get('data', []))
                     },
-                    'timestamp': datetime.now().isoformat()
+                    'timestamp': pd.Timestamp.now().isoformat()
                 })
 
             except Exception as e:
@@ -268,7 +268,7 @@ class DataQualityAPIService:
                         'message': '数据导出成功',
                         'export_type': data_type,
                         'format': format,
-                        'timestamp': datetime.now().isoformat()
+                        'timestamp': pd.Timestamp.now().isoformat()
                     })
                 else:
                     return jsonify({
@@ -295,7 +295,7 @@ class DataQualityAPIService:
                     return jsonify({
                         'status': 'success',
                         'config': config,
-                        'timestamp': datetime.now().isoformat()
+                        'timestamp': pd.Timestamp.now().isoformat()
                     })
                 else:
                     # 更新配置
@@ -312,7 +312,7 @@ class DataQualityAPIService:
                         return jsonify({
                             'status': 'success',
                             'message': '配置更新成功',
-                            'timestamp': datetime.now().isoformat()
+                            'timestamp': pd.Timestamp.now().isoformat()
                         })
                     else:
                         return jsonify({
@@ -356,7 +356,7 @@ class DataQualityAPIService:
                 return jsonify({
                     'status': 'success',
                     'diagnostics': diagnostics,
-                    'timestamp': datetime.now().isoformat()
+                    'timestamp': pd.Timestamp.now().isoformat()
                 })
 
             except Exception as e:
@@ -375,7 +375,7 @@ class DataQualityAPIService:
                 return jsonify({
                     'status': 'success',
                     'system_status': status,
-                    'timestamp': datetime.now().isoformat()
+                    'timestamp': pd.Timestamp.now().isoformat()
                 })
 
             except Exception as e:
@@ -402,7 +402,7 @@ class DataQualityAPIService:
                     return jsonify({
                         'status': 'success',
                         'message': f'维护模式{action}成功',
-                        'timestamp': datetime.now().isoformat()
+                        'timestamp': pd.Timestamp.now().isoformat()
                     })
                 else:
                     return jsonify({
@@ -656,7 +656,7 @@ class DataQualityAPIService:
 
             return {
                 'status': 'healthy' if all_healthy else 'degraded',
-                'timestamp': datetime.now().isoformat(),
+                'timestamp': pd.Timestamp.now().isoformat(),
                 'components': components,
                 'overall_score': self._calculate_overall_health_score(components),
                 'recommendations': self._generate_health_recommendations_from_components(components)
@@ -667,7 +667,7 @@ class DataQualityAPIService:
             return {
                 'status': 'unhealthy',
                 'error': str(e),
-                'timestamp': datetime.now().isoformat()
+                'timestamp': pd.Timestamp.now().isoformat()
             }
 
     def _check_component_health(self, component: str) -> Dict[str, Any]:
@@ -676,7 +676,7 @@ class DataQualityAPIService:
         return {
             'status': 'healthy',
             'response_time': 0.1,
-            'last_check': datetime.now().isoformat(),
+            'last_check': pd.Timestamp.now().isoformat(),
             'metrics': {}
         }
 
@@ -687,7 +687,7 @@ class DataQualityAPIService:
             'status': 'healthy',
             'connection_time': 0.05,
             'query_performance': 'good',
-            'last_check': datetime.now().isoformat()
+            'last_check': pd.Timestamp.now().isoformat()
         }
 
     def _check_external_services(self) -> Dict[str, Any]:
@@ -700,7 +700,7 @@ class DataQualityAPIService:
                 'alert_services': 'available',
                 'monitoring_services': 'available'
             },
-            'last_check': datetime.now().isoformat()
+            'last_check': pd.Timestamp.now().isoformat()
         }
 
     def _calculate_overall_health_score(self, components: Dict[str, Any]) -> float:
@@ -731,7 +731,7 @@ class DataQualityAPIService:
             'performance': self._run_performance_diagnostics(),
             'data_quality': self._run_data_quality_diagnostics(),
             'network': self._run_network_diagnostics(),
-            'timestamp': datetime.now().isoformat()
+            'timestamp': pd.Timestamp.now().isoformat()
         }
 
         # 生成诊断报告
@@ -819,7 +819,7 @@ class DataQualityAPIService:
             'critical_issues': sum(1 for comp in component_statuses.values() if comp['issue_count'] > 5),
             'warning_issues': sum(1 for comp in component_statuses.values() if 0 < comp['issue_count'] <= 5),
             'component_statuses': component_statuses,
-            'completion_time': datetime.now().isoformat(),
+            'completion_time': pd.Timestamp.now().isoformat(),
             'diagnostics_duration': self._calculate_diagnostics_duration(diagnostics),
             'recommendation_priority': 'high' if has_critical else ('medium' if total_issues > 0 else 'low')
         }
@@ -906,7 +906,7 @@ class DataQualityAPIService:
 
             return {
                 'overall_status': overall_status,
-                'timestamp': datetime.now().isoformat(),
+                'timestamp': pd.Timestamp.now().isoformat(),
                 'system_resources': system_resources,
                 'service_status': service_status,
                 'performance_metrics': performance_metrics,
@@ -925,7 +925,7 @@ class DataQualityAPIService:
             return {
                 'overall_status': 'unknown',
                 'error': str(e),
-                'timestamp': datetime.now().isoformat()
+                'timestamp': pd.Timestamp.now().isoformat()
             }
 
     def _get_system_resources(self) -> Dict[str, Any]:
@@ -1007,7 +1007,7 @@ class DataQualityAPIService:
         return {
             'status': 'running',
             'response_time': 0.05,
-            'last_check': datetime.now().isoformat(),
+            'last_check': pd.Timestamp.now().isoformat(),
             'version': '1.0.0',
             'health': 'good'
         }
@@ -1019,14 +1019,14 @@ class DataQualityAPIService:
             return {
                 'status': 'connected',
                 'response_time': 0.1,
-                'last_check': datetime.now().isoformat(),
+                'last_check': pd.Timestamp.now().isoformat(),
                 'health': 'good'
             }
         except Exception as e:
             return {
                 'status': 'disconnected',
                 'error': str(e),
-                'last_check': datetime.now().isoformat(),
+                'last_check': pd.Timestamp.now().isoformat(),
                 'health': 'poor'
             }
 
@@ -1038,14 +1038,14 @@ class DataQualityAPIService:
                 'status': 'connected',
                 'hit_rate': 0.85,
                 'memory_usage': 'normal',
-                'last_check': datetime.now().isoformat(),
+                'last_check': pd.Timestamp.now().isoformat(),
                 'health': 'good'
             }
         except Exception as e:
             return {
                 'status': 'disconnected',
                 'error': str(e),
-                'last_check': datetime.now().isoformat(),
+                'last_check': pd.Timestamp.now().isoformat(),
                 'health': 'poor'
             }
 
@@ -1056,14 +1056,14 @@ class DataQualityAPIService:
             return {
                 'status': 'running',
                 'pending_alerts': 0,
-                'last_alert_time': datetime.now().isoformat(),
+                'last_alert_time': pd.Timestamp.now().isoformat(),
                 'health': 'good'
             }
         except Exception as e:
             return {
                 'status': 'stopped',
                 'error': str(e),
-                'last_check': datetime.now().isoformat(),
+                'last_check': pd.Timestamp.now().isoformat(),
                 'health': 'poor'
             }
 
@@ -1111,7 +1111,7 @@ class DataQualityAPIService:
                 'seconds': uptime_seconds,
                 'human_readable': str(timedelta(seconds=int(uptime_seconds))),
                 'start_time': datetime.fromtimestamp(psutil.boot_time()).isoformat(),
-                'current_time': datetime.now().isoformat()
+                'current_time': pd.Timestamp.now().isoformat()
             }
         except Exception as e:
             return {'error': str(e)}
@@ -1119,7 +1119,7 @@ class DataQualityAPIService:
     def _run_health_check(self) -> Dict[str, Any]:
         """运行健康检查"""
         return {
-            'timestamp': datetime.now().isoformat(),
+            'timestamp': pd.Timestamp.now().isoformat(),
             'components_checked': 6,
             'components_healthy': 6,
             'overall_health': 'good',
@@ -1323,7 +1323,7 @@ class DataQualityAPIService:
             'average_response_time': 0.0,
             'endpoint_usage': {},
             'error_rates': {},
-            'timestamp': datetime.now().isoformat()
+            'timestamp': pd.Timestamp.now().isoformat()
         }
 
     def export_api_logs(self, filepath: str) -> bool:

@@ -12,7 +12,7 @@
 来源：从 core/data/analytics/sentiment.py 迁移而来（属于高级市场分析，非数据源处理）
 """
 from typing import Dict, Any
-from datetime import datetime
+
 import logging
 
 logger = logging.getLogger(__name__)
@@ -134,7 +134,7 @@ async def assess_market_sentiment(fetcher: Any) -> Dict[str, Any]:
             'contrarian_indicator': contrarian_indicator,
             'vix_value': vix_value,
             'advance_decline_ratio': ad_ratio,
-            'timestamp': datetime.now().isoformat()
+            'timestamp': pd.Timestamp.now().isoformat()
         }
         
         logger.info(
@@ -155,7 +155,7 @@ async def assess_market_sentiment(fetcher: Any) -> Dict[str, Any]:
             'sentiment_extremes': False,
             'contrarian_indicator': False,
             'error': str(e),
-            'timestamp': datetime.now().isoformat()
+            'timestamp': pd.Timestamp.now().isoformat()
         }
 
 
@@ -243,7 +243,7 @@ def assess_liquidity_conditions() -> Dict[str, Any]:
             'volume_concentration': 'moderate',  # low/moderate/high
             'market_impact_cost': 'low',  # low/moderate/high
             'trading_activity': 'normal',  # low/normal/high
-            'timestamp': datetime.now().isoformat()
+            'timestamp': pd.Timestamp.now().isoformat()
         }
         
         logger.info(
@@ -264,7 +264,7 @@ def assess_liquidity_conditions() -> Dict[str, Any]:
             'volume_concentration': 'moderate',
             'market_impact_cost': 'moderate',
             'error': str(e),
-            'timestamp': datetime.now().isoformat()
+            'timestamp': pd.Timestamp.now().isoformat()
         }
 
 
@@ -331,7 +331,7 @@ def determine_volatility_regime(vix_value: float = 20.0) -> Dict[str, Any]:
             'regime_confidence': regime_confidence,
             'expected_duration': expected_duration,
             'risk_adjustment_factor': vix_value / 20.0,  # 相对于正常水平的调整因子
-            'timestamp': datetime.now().isoformat()
+            'timestamp': pd.Timestamp.now().isoformat()
         }
         
         logger.info(
@@ -351,5 +351,5 @@ def determine_volatility_regime(vix_value: float = 20.0) -> Dict[str, Any]:
             'regime_confidence': 0.5,
             'expected_duration': 'unknown',
             'error': str(e),
-            'timestamp': datetime.now().isoformat()
+            'timestamp': pd.Timestamp.now().isoformat()
         }

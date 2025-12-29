@@ -5,8 +5,8 @@
 """
 
 from typing import Any, Dict, List
-from datetime import datetime
 import logging
+import pandas as pd
 
 logger = logging.getLogger('DeepSeekQuant.App.APIHealth')
 
@@ -34,7 +34,7 @@ class HealthChecker:
 
             return {
                 'status': 'healthy' if all_healthy else 'degraded',
-                'timestamp': datetime.now().isoformat(),
+                'timestamp': pd.Timestamp.now().isoformat(),
                 'components': components,
                 'overall_score': self.calculate_overall_health_score(components),
                 'recommendations': self.generate_health_recommendations_from_components(components)
@@ -45,7 +45,7 @@ class HealthChecker:
             return {
                 'status': 'unhealthy',
                 'error': str(e),
-                'timestamp': datetime.now().isoformat()
+                'timestamp': pd.Timestamp.now().isoformat()
             }
 
     def check_component_health(self, component: str) -> Dict[str, Any]:
@@ -53,7 +53,7 @@ class HealthChecker:
         return {
             'status': 'healthy',
             'response_time': 0.1,
-            'last_check': datetime.now().isoformat(),
+            'last_check': pd.Timestamp.now().isoformat(),
             'metrics': {}
         }
 
@@ -63,7 +63,7 @@ class HealthChecker:
             'status': 'healthy',
             'connection_time': 0.05,
             'query_performance': 'good',
-            'last_check': datetime.now().isoformat()
+            'last_check': pd.Timestamp.now().isoformat()
         }
 
     def check_external_services(self) -> Dict[str, Any]:
@@ -75,7 +75,7 @@ class HealthChecker:
                 'alert_services': 'available',
                 'monitoring_services': 'available'
             },
-            'last_check': datetime.now().isoformat()
+            'last_check': pd.Timestamp.now().isoformat()
         }
 
     def calculate_overall_health_score(self, components: Dict[str, Any]) -> float:
@@ -103,7 +103,7 @@ class HealthChecker:
     def run_health_check(self) -> Dict[str, Any]:
         """运行健康检查"""
         return {
-            'timestamp': datetime.now().isoformat(),
+            'timestamp': pd.Timestamp.now().isoformat(),
             'components_checked': 6,
             'components_healthy': 6,
             'overall_health': 'good',

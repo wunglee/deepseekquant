@@ -8,7 +8,6 @@
 - 诊断报告生成
 """
 
-import pytest
 from core_bak_refactored.app.quality_monitoring.api.diagnostics import DiagnosticsRunner
 
 

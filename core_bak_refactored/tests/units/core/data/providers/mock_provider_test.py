@@ -10,7 +10,7 @@
 """
 
 import unittest
-from datetime import datetime, date, timedelta
+
 import pandas as pd
 from core_bak_refactored.core.data.providers.mock_provider import MockDataProvider
 from core_bak_refactored.core.data.providers.protocols import PriceData
@@ -181,7 +181,7 @@ class MockProviderTest(unittest.TestCase):
         ])
         price_data = PriceData.from_dataframe(df, '000001.SZ')
         
-        self.provider.set_needs_realtime_kline(price_data, datetime.now())
+        self.provider.set_needs_realtime_kline(price_data, pd.Timestamp.now())
         
         self.assertTrue(price_data.needs_realtime_kline)
     
@@ -194,7 +194,7 @@ class MockProviderTest(unittest.TestCase):
         ])
         price_data = PriceData.from_dataframe(df, '000001.SZ')
         
-        self.provider.set_needs_realtime_kline(price_data, datetime.now())
+        self.provider.set_needs_realtime_kline(price_data, pd.Timestamp.now())
         
         self.assertTrue(price_data.needs_realtime_kline)
     
@@ -207,7 +207,7 @@ class MockProviderTest(unittest.TestCase):
         ])
         price_data = PriceData.from_dataframe(df, '000001.SZ')
         
-        self.provider.set_needs_realtime_kline(price_data, datetime.now())
+        self.provider.set_needs_realtime_kline(price_data, pd.Timestamp.now())
         
         self.assertFalse(price_data.needs_realtime_kline)
     
@@ -217,12 +217,12 @@ class MockProviderTest(unittest.TestCase):
         """测试盘前时段历史K线不包含今天"""
         self.provider.set_mock_trading_phase(TradingPhase.BEFORE_OPEN)
         
-        today = date.today()
+        today = pd.Timestamp.today().normalize()
         if today.weekday() >= 5:
             self.skipTest("周末跳过测试")
         
         today_str = today.strftime('%Y-%m-%d')
-        start_date = (today - timedelta(days=10)).strftime('%Y-%m-%d')
+        start_date = (today - pd.Timedelta(days=10)).strftime('%Y-%m-%d')
         
         price_data = self.provider._fetch_from_external_api(
             '000300.SH', start_date, today_str, 'daily'
@@ -236,12 +236,12 @@ class MockProviderTest(unittest.TestCase):
         """测试盘中时段历史K线不包含今天"""
         self.provider.set_mock_trading_phase(TradingPhase.TRADING)
         
-        today = date.today()
+        today = pd.Timestamp.today().normalize()
         if today.weekday() >= 5:
             self.skipTest("周末跳过测试")
         
         today_str = today.strftime('%Y-%m-%d')
-        start_date = (today - timedelta(days=10)).strftime('%Y-%m-%d')
+        start_date = (today - pd.Timedelta(days=10)).strftime('%Y-%m-%d')
         
         price_data = self.provider._fetch_from_external_api(
             '000300.SH', start_date, today_str, 'daily'
@@ -255,12 +255,12 @@ class MockProviderTest(unittest.TestCase):
         """测试盘后时段历史K线包含今天"""
         self.provider.set_mock_trading_phase(TradingPhase.AFTER_CLOSE)
         
-        today = date.today()
+        today = pd.Timestamp.today().normalize()
         if today.weekday() >= 5:
             self.skipTest("周末跳过测试")
         
         today_str = today.strftime('%Y-%m-%d')
-        start_date = (today - timedelta(days=10)).strftime('%Y-%m-%d')
+        start_date = (today - pd.Timedelta(days=10)).strftime('%Y-%m-%d')
         
         price_data = self.provider._fetch_from_external_api(
             '000300.SH', start_date, today_str, 'daily'

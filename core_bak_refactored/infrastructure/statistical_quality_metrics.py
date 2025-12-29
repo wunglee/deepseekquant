@@ -24,10 +24,11 @@
     consistency_score, issues = StatisticalQualityMetrics.calculate_time_series_consistency(data)
 """
 
+import logging
+from typing import List, Tuple, Dict, Any
+
 import numpy as np
 import pandas as pd
-from typing import List, Tuple, Dict, Any
-import logging
 
 logger = logging.getLogger('DeepSeekQuant.Infrastructure.StatisticalQualityMetrics')
 
@@ -377,8 +378,7 @@ class StatisticalQualityMetrics:
         
         # 检查数据新鲜度
         latest_timestamp = max(d['timestamp'] for d in data)
-        from datetime import datetime
-        data_age = (datetime.now() - latest_timestamp).total_seconds() / 60  # 分钟
+        data_age = (pd.Timestamp.now() - latest_timestamp).total_seconds() / 60  # 分钟
         
         freshness_thresholds = {
             'realtime': 5,  # 5分钟
@@ -504,8 +504,7 @@ class StatisticalQualityMetrics:
             return issues
         
         # 计算数据延迟（从数据时间戳到当前时间）
-        from datetime import datetime
-        current_time = datetime.now()
+        current_time = pd.Timestamp.now()
         latencies = [(current_time - d['timestamp']).total_seconds() / 60 for d in data]  # 分钟
         
         # 检查延迟分布

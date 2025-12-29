@@ -15,8 +15,9 @@
 
 from __future__ import annotations
 
+import pandas as pd
 import logging
-from datetime import datetime
+
 from typing import Dict, Any, List
 
 logger = logging.getLogger('DeepSeekQuant.App.API.Diagnostics')
@@ -47,7 +48,7 @@ class DiagnosticsRunner:
             'performance': self.run_performance_diagnostics(),
             'data_quality': self.run_data_quality_diagnostics(),
             'network': self.run_network_diagnostics(),
-            'timestamp': datetime.now().isoformat()
+            'timestamp': pd.Timestamp.now().isoformat()
         }
 
         # 生成诊断报告
@@ -158,7 +159,7 @@ class DiagnosticsRunner:
             'critical_issues': sum(1 for comp in component_statuses.values() if comp['issue_count'] > 5),
             'warning_issues': sum(1 for comp in component_statuses.values() if 0 < comp['issue_count'] <= 5),
             'component_statuses': component_statuses,
-            'completion_time': datetime.now().isoformat(),
+            'completion_time': pd.Timestamp.now().isoformat(),
             'diagnostics_duration': self.calculate_diagnostics_duration(diagnostics),
             'recommendation_priority': 'high' if has_critical else ('medium' if total_issues > 0 else 'low')
         }

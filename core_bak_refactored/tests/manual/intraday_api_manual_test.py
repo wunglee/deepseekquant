@@ -11,12 +11,12 @@
 """
 
 import logging
-import requests
-import json
-from datetime import datetime
 
-from core_bak_refactored.app.quality_monitoring.monitoring_service import QualityMonitoringService
+import pandas as pd
+import requests
+
 from core_bak_refactored.app.quality_monitoring.api_service import DataQualityAPIService
+from core_bak_refactored.app.quality_monitoring.monitoring_service import QualityMonitoringService
 
 # 配置日志
 logging.basicConfig(
@@ -33,7 +33,7 @@ def test_api_call():
     # 测试用例1: 沪深300
     params = {
         'symbol': '000300.SH',
-        'trade_date': datetime.now().strftime('%Y-%m-%d')
+        'trade_date': pd.Timestamp.now().strftime('%Y-%m-%d')
     }
     
     logger.info(f"发送请求: {url}?{params}")

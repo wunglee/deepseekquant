@@ -11,10 +11,10 @@
 """
 
 import logging
-from datetime import datetime
 from functools import wraps
-from typing import Callable, Any
+from typing import Callable
 
+import pandas as pd
 from flask import jsonify
 
 logger = logging.getLogger('DeepSeekQuant.App.API.RouteDecorators')
@@ -41,7 +41,7 @@ def handle_api_errors(error_code_prefix: str = 'API'):
                 return jsonify({
                     'status': 'success',
                     **result,
-                    'timestamp': datetime.now().isoformat()
+                    'timestamp': pd.Timestamp.now().isoformat()
                 })
             except Exception as e:
                 logger.error(f"{func.__name__} 失败: {e}")
@@ -73,6 +73,6 @@ def api_response(func: Callable) -> Callable:
         return jsonify({
             'status': 'success',
             'data': result,
-            'timestamp': datetime.now().isoformat()
+            'timestamp': pd.Timestamp.now().isoformat()
         })
     return wrapper

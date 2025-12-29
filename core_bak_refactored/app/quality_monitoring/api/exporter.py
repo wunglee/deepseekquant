@@ -14,8 +14,9 @@
 
 from __future__ import annotations
 
+import pandas as pd
 import logging
-from datetime import datetime
+
 from typing import Dict, Any
 
 logger = logging.getLogger('DeepSeekQuant.App.API.Exporter')
@@ -67,7 +68,7 @@ class DataExporter:
             
             # 处理报告数据
             summary = report.get('summary', {})
-            csv_lines.append(f"{datetime.now().isoformat()},{summary.get('overall_score', 0)},{summary.get('total_anomalies', 0)},all,{summary.get('quality_metrics', 'N/A')}")
+            csv_lines.append(f"{pd.Timestamp.now().isoformat()},{summary.get('overall_score', 0)},{summary.get('total_anomalies', 0)},all,{summary.get('quality_metrics', 'N/A')}")
             
             # 如果包含详细信息，添加更多行
             if include_details:

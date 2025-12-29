@@ -7,11 +7,11 @@
 - 跨市场风险对比
 """
 
+import logging
+from typing import Dict, Any, Optional
+
 import numpy as np
 import pandas as pd
-from typing import Dict, Any, Optional
-import logging
-from scipy import stats
 
 logger = logging.getLogger(__name__)
 

@@ -2,8 +2,9 @@
 信号数据模型测试
 """
 
+import pandas as pd
 import unittest
-from datetime import datetime
+
 
 from core_bak_refactored.core.signal.signal_models import (
     SignalType, SignalStrength, SignalSource, SignalStatus,
@@ -96,7 +97,7 @@ class TestTradingSignal(unittest.TestCase):
             symbol='000001.SZ',
             signal_type=SignalType.BUY,
             price=10.50,
-            timestamp=datetime.now().isoformat(),
+            timestamp=pd.Timestamp.now().isoformat(),
             metadata=self.metadata,
             quantity=1000,
             stop_loss=10.00,
@@ -121,7 +122,7 @@ class TestTradingSignal(unittest.TestCase):
             symbol='000002.SZ',
             signal_type=SignalType.SELL,
             price=20.0,
-            timestamp=datetime.now().isoformat(),
+            timestamp=pd.Timestamp.now().isoformat(),
             metadata=self.metadata
         )
         
@@ -154,7 +155,7 @@ class TestTradingSignal(unittest.TestCase):
             'symbol': '000003.SZ',
             'signal_type': 'sell',
             'price': 15.0,
-            'timestamp': datetime.now().isoformat(),
+            'timestamp': pd.Timestamp.now().isoformat(),
             'metadata': {
                 'source': 'quantitative',
                 'confidence': 0.60,
@@ -199,7 +200,7 @@ class TestTradingSignal(unittest.TestCase):
             symbol='000004.SZ',
             signal_type=SignalType.BUY,
             price=12.0,
-            timestamp=datetime.now().isoformat(),
+            timestamp=pd.Timestamp.now().isoformat(),
             metadata=self.metadata,
             correlation={'000005.SZ': 0.85, '000006.SZ': 0.72}
         )
@@ -215,7 +216,7 @@ class TestTradingSignal(unittest.TestCase):
             symbol='000007.SZ',
             signal_type=SignalType.BUY,
             price=8.0,
-            timestamp=datetime.now().isoformat(),
+            timestamp=pd.Timestamp.now().isoformat(),
             metadata=self.metadata,
             risk_score=0.45,
             expected_return=0.15,

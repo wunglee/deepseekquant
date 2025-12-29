@@ -6,7 +6,6 @@ Yahoo Finance数据提供者测试套件
 import unittest
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta
 from unittest.mock import Mock, patch, MagicMock
 
 # 导入被测试的类
@@ -46,7 +45,7 @@ class TestYahooFinanceDataProvider(unittest.TestCase):
         mock_download.return_value = mock_data
         
         # 测试获取指数价格数据
-        result = self.provider.get_index_prices('^GSPC', '2023-01-01', '2023-01-03', datetime.now())
+        result = self.provider.get_index_prices('^GSPC', pd.Timestamp('2023-01-01'), pd.Timestamp('2023-01-03'), pd.Timestamp.now())
         
         # 验证结果
         self.assertIsInstance(result, PriceData)
@@ -70,7 +69,7 @@ class TestYahooFinanceDataProvider(unittest.TestCase):
         
         # 应该抛出ValueError异常
         with self.assertRaises(ValueError) as context:
-            self.provider.get_index_prices('^GSPC', '2023-01-01', '2023-01-03', datetime.now())
+            self.provider.get_index_prices('^GSPC', pd.Timestamp('2023-01-01'), pd.Timestamp('2023-01-03'), pd.Timestamp.now())
             
         # 错误消息被包装在"Failed to fetch data"中
         self.assertIn("Failed to fetch data for ^GSPC", str(context.exception))
@@ -83,7 +82,7 @@ class TestYahooFinanceDataProvider(unittest.TestCase):
         
         # 应该抛出ValueError异常
         with self.assertRaises(ValueError) as context:
-            self.provider.get_index_prices('^GSPC', '2023-01-01', '2023-01-03', datetime.now())
+            self.provider.get_index_prices('^GSPC', pd.Timestamp('2023-01-01'), pd.Timestamp('2023-01-03'), pd.Timestamp.now())
             
         # 错误消息被包装在"Failed to fetch data"中
         self.assertIn("Failed to fetch data for ^GSPC", str(context.exception))
@@ -103,7 +102,7 @@ class TestYahooFinanceDataProvider(unittest.TestCase):
         mock_download.return_value = mock_data
         
         # 测试获取个股价格数据
-        result = self.provider.get_stock_prices('AAPL', '2023-01-01', '2023-01-03', datetime.now())
+        result = self.provider.get_stock_prices('AAPL', pd.Timestamp('2023-01-01'), pd.Timestamp('2023-01-03'), pd.Timestamp.now())
         
         # 验证结果
         self.assertIsInstance(result, PriceData)
@@ -119,7 +118,7 @@ class TestYahooFinanceDataProvider(unittest.TestCase):
         
         # 应该抛出ValueError异常
         with self.assertRaises(ValueError) as context:
-            self.provider.get_stock_prices('AAPL', '2023-01-01', '2023-01-03', datetime.now())
+            self.provider.get_stock_prices('AAPL', pd.Timestamp('2023-01-01'), pd.Timestamp('2023-01-03'), pd.Timestamp.now())
             
         # 错误消息被包装在"Failed to fetch data"中
         self.assertIn("Failed to fetch data for AAPL", str(context.exception))
@@ -138,11 +137,11 @@ class TestYahooFinanceDataProvider(unittest.TestCase):
         
         mock_download.return_value = mock_data
         
-        # 使用datetime对象
-        start_date = datetime(2023, 1, 1)
-        end_date = datetime(2023, 1, 1)
+        # 使用pd.Timestamp对象
+        start_date = pd.Timestamp(2023, 1, 1)
+        end_date = pd.Timestamp(2023, 1, 1)
         
-        result = self.provider.get_index_prices('^GSPC', start_date, end_date, datetime.now())
+        result = self.provider.get_index_prices('^GSPC', start_date, end_date, pd.Timestamp.now())
         
         self.assertIsInstance(result, PriceData)
         self.assertEqual(len(result.records), 1)
@@ -164,7 +163,7 @@ class TestYahooFinanceDataProvider(unittest.TestCase):
         
         mock_download.return_value = mock_data
         
-        result = self.provider.get_index_prices('^GSPC', '2023-01-01', '2023-01-02', datetime.now())
+        result = self.provider.get_index_prices('^GSPC', pd.Timestamp('2023-01-01'), pd.Timestamp('2023-01-02'), pd.Timestamp.now())
         
         self.assertIsInstance(result, PriceData)
         self.assertEqual(len(result.records), 2)

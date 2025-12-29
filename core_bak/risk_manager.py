@@ -9,7 +9,7 @@ from typing import Dict, List, Optional, Any, Union, Tuple, Set
 from dataclasses import dataclass, asdict, field
 from enum import Enum
 import logging
-from datetime import datetime, timedelta
+
 import time
 import json
 import scipy.stats as stats
@@ -431,12 +431,12 @@ class RiskManager(BaseProcessor):
                 'recommendations': recommendations,
                 'control_actions': control_actions,
                 'processing_time': processing_time,
-                'timestamp': datetime.now().isoformat()
+                'timestamp': pd.Timestamp.now().isoformat()
             }
 
         except Exception as e:
             logger.error(f"风险处理失败: {e}")
-            return {'error': str(e), 'timestamp': datetime.now().isoformat()}
+            return {'error': str(e), 'timestamp': pd.Timestamp.now().isoformat()}
 
     def _validate_inputs(self, portfolio_state: PortfolioState,
                          market_data: Dict[str, Any]) -> bool:
@@ -666,7 +666,7 @@ class RiskManager(BaseProcessor):
 
             # 创建风险评估对象
             assessment = RiskAssessment(
-                timestamp=datetime.now().isoformat(),
+                timestamp=pd.Timestamp.now().isoformat(),
                 portfolio_id=portfolio_state.portfolio_id,
                 overall_risk_level=risk_level,
                 risk_score=risk_score,
@@ -1139,7 +1139,7 @@ class RiskManager(BaseProcessor):
     def _create_default_risk_assessment(self, portfolio_state: PortfolioState) -> RiskAssessment:
         """创建默认风险评估"""
         return RiskAssessment(
-            timestamp=datetime.now().isoformat(),
+            timestamp=pd.Timestamp.now().isoformat(),
             portfolio_id=portfolio_state.portfolio_id,
             overall_risk_level=RiskLevel.MODERATE,
             risk_score=50.0,
@@ -1656,7 +1656,7 @@ class RiskManager(BaseProcessor):
                         event_id=f"risk_event_{int(time.time())}_{hash(breach['limit_type'])}",
                         event_type=RiskType.MARKET_RISK,  # 根据实际情况调整
                         severity=RiskLevel.HIGH if breach['severity'] == 'high' else RiskLevel.CRITICAL,
-                        timestamp=datetime.now().isoformat(),
+                        timestamp=pd.Timestamp.now().isoformat(),
                         description=f"{breach['limit_type']} 限额违反",
                         triggered_by=breach['metric'],
                         impact_assessment={'breach_amount': breach['breach_amount']},
@@ -1707,7 +1707,7 @@ class RiskManager(BaseProcessor):
                 'recent_assessments': [assessment.to_dict() for assessment in self.risk_history[-10:]],
                 'limit_utilization': self._calculate_limit_utilization(),
                 'risk_trends': self._calculate_risk_trends(),
-                'timestamp': datetime.now().isoformat()
+                'timestamp': pd.Timestamp.now().isoformat()
             }
 
         except Exception as e:

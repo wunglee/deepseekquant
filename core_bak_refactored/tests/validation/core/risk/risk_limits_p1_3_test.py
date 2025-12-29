@@ -3,11 +3,10 @@
 测试智能阈值、组合优化、违规优先级、市场差异化限额
 """
 
-import unittest
-import sys
 import os
+import sys
+import unittest
 from dataclasses import dataclass
-from datetime import datetime
 
 # 添加项目根目录到路径
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../../'))
@@ -15,8 +14,7 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 from core_bak_refactored.core.risk.risk_limits_enhanced import (
-    SmartThresholdChecker, ThresholdTier, ThresholdBreach,
-    PortfolioOptimizationAdvisor, BreachPrioritizer,
+    SmartThresholdChecker, ThresholdTier, PortfolioOptimizationAdvisor, BreachPrioritizer,
     MarketSpecificLimitsChecker, MARKET_SPECIFIC_LIMITS
 )
 

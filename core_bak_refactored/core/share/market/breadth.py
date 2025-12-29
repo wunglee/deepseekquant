@@ -6,8 +6,9 @@
 2. 计算涨跌比率
 3. 评估市场广度指标
 """
+import pandas as pd
 from typing import Dict, List, Any
-from datetime import datetime
+
 import logging
 
 logger = logging.getLogger(__name__)
@@ -83,7 +84,7 @@ async def get_advance_decline(fetcher: Any, symbols: List[str] = None) -> Dict[s
             'unchanged': unchanged,
             'advance_decline_ratio': advance_decline_ratio,
             'total_issues': total_issues,
-            'timestamp': datetime.now().isoformat()
+            'timestamp': pd.Timestamp.now().isoformat()
         }
 
         logger.info(
@@ -102,7 +103,7 @@ async def get_advance_decline(fetcher: Any, symbols: List[str] = None) -> Dict[s
             'advance_decline_ratio': 0,
             'total_issues': 0,
             'error': str(e),
-            'timestamp': datetime.now().isoformat()
+            'timestamp': pd.Timestamp.now().isoformat()
         }
 
 

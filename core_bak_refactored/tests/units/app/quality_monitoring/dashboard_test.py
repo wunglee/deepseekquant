@@ -3,8 +3,8 @@
 测试应用层DataQualityDashboard的基础功能
 使用Mock方式隔离对领域层的依赖
 """
-import pytest
-from unittest.mock import Mock, MagicMock
+from unittest.mock import Mock
+
 from core_bak_refactored.app.quality_monitoring.dashboard import DataQualityDashboard
 
 

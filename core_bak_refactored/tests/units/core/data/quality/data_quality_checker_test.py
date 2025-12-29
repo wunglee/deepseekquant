@@ -7,13 +7,11 @@
 3. 历史记录追踪
 """
 
-import pytest
-import pandas as pd
 import numpy as np
+import pandas as pd
+
 from core_bak_refactored.core.data.quality.data_quality_checker import (
-    DataQualityChecker,
-    DataQualityReport,
-    CrossValidationResult
+    DataQualityChecker
 )
 
 

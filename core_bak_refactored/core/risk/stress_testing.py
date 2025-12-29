@@ -5,18 +5,18 @@
 P1增强: 完整场景参数使用、组合场景测试（基于专家answer.md指导）
 """
 
-import numpy as np
-import pandas as pd
-import yaml
-from typing import Dict, List, Optional, Any
-import logging
 import copy
+import logging
 import random
 from pathlib import Path
+from typing import Dict, List, Optional, Any
 
-from .risk_models import StressTestScenario, RiskLevel
-from .risk_metrics_service import RiskMetricsService, RiskMetricsEngine
+import numpy as np
+import yaml
+
 from . import calculate_hhi
+from .risk_metrics_service import RiskMetricsService, RiskMetricsEngine
+from .risk_models import StressTestScenario
 
 logger = logging.getLogger('DeepSeekQuant.StressTesting')
 
@@ -694,11 +694,11 @@ class StressTester:
         
         示例：
             >>> # 区域传导：30%系数
-            >>> impact = self._calculate_proportional_impact(direct_loss, 0.8, 0.3)
+            >>> impact = self._calculate_proportional_impact(base_loss, 0.8, 0.3)
             >>> # 等价于：abs(direct_loss) * 0.8 * 0.3
             
             >>> # 流动性冲击：20%系数
-            >>> impact = self._calculate_proportional_impact(direct_loss, 0.7, 0.2)
+            >>> impact = self._calculate_proportional_impact(base_loss, 0.7, 0.2)
         """
         return abs(base_loss) * impact_factor * coefficient
     
@@ -1160,7 +1160,7 @@ class IndustryParameterAnalyzer:
             # 回退：极端保守值
             return 1.0
     
-    def compute_t_tests(self, samples: Dict[str, List[float]]) -> Dict[tuple, float]:
+    def compute_t_tests(self, samples: Dict[str, List[float]]) -> Dict[tuple[str, str], float]:
         """
         计算两两行业t检验p值（Welch + 正态近似）
         Args:
@@ -1169,7 +1169,7 @@ class IndustryParameterAnalyzer:
             { (industry_a, industry_b): p_value }
         """
         industries = list(samples.keys())
-        p_values: Dict[tuple, float] = {}
+        p_values: Dict[tuple[str, str], float] = {}
         for i in range(len(industries)):
             for j in range(i + 1, len(industries)):
                 a, b = industries[i], industries[j]

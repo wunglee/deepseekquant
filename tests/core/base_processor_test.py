@@ -11,7 +11,7 @@ import tempfile
 import os
 import sys
 from unittest.mock import Mock, patch, MagicMock
-from datetime import datetime, timedelta
+
 from concurrent.futures import Future
 from typing import Any
 
@@ -81,7 +81,7 @@ class TestProcessor(BaseProcessor):
         return {
             "status": "success",
             "data": data if data is not None else 'default',
-            "timestamp": datetime.now().isoformat()
+            "timestamp": pd.Timestamp.now().isoformat()
         }
 
     def _cleanup_core(self):

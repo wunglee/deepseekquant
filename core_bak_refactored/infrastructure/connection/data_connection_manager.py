@@ -7,8 +7,9 @@
 3. 连接健康检查
 4. 自动重连机制
 """
+import pandas as pd
 from typing import Dict, Any, Optional
-from datetime import datetime
+
 import asyncio
 import logging
 
@@ -28,7 +29,8 @@ class DataConnectionManager:
         self.max_connections = max_connections
         self.connections: Dict[str, Any] = {}
         self.connection_status: Dict[str, str] = {}
-        self.last_check: Dict[str, datetime] = {}
+        # 🔧 使用 pd.Timestamp 类型
+        self.last_check: Dict[str, pd.Timestamp] = {}
     
     async def create_connection(
         self,
@@ -55,7 +57,7 @@ class DataConnectionManager:
             
             self.connections[connection_id] = connection
             self.connection_status[connection_id] = 'active'
-            self.last_check[connection_id] = datetime.now()
+            self.last_check[connection_id] = pd.Timestamp.now()
             
             logger.info(f"连接创建成功: {connection_id}")
             return True
@@ -77,7 +79,7 @@ class DataConnectionManager:
         """
         # 占位符实现
         await asyncio.sleep(0.1)
-        return {'config': config, 'created_at': datetime.now()}
+        return {'config': config, 'created_at': pd.Timestamp.now()}
     
     async def close_connection(self, connection_id: str) -> bool:
         """
@@ -139,7 +141,7 @@ class DataConnectionManager:
             
             if is_healthy:
                 self.connection_status[connection_id] = 'active'
-                self.last_check[connection_id] = datetime.now()
+                self.last_check[connection_id] = pd.Timestamp.now()
             else:
                 self.connection_status[connection_id] = 'unhealthy'
             

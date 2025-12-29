@@ -7,10 +7,11 @@
 3. 时间格式化
 4. 货币格式化
 """
-from typing import Any, Optional
-from datetime import datetime, date
-from decimal import Decimal
+import datetime
 import logging
+from typing import Any, Optional
+
+import pandas as pd
 
 logger = logging.getLogger(__name__)
 
@@ -139,13 +140,13 @@ class DataFormatter:
         
         try:
             if isinstance(value, str):
-                # 尝试解析字符串
-                value = datetime.fromisoformat(value.replace('Z', '+00:00'))
+                # 🔧 尝试解析字符串：使用 pd.to_datetime
+                value = pd.to_datetime(value.replace('Z', '+00:00'))
             
-            if isinstance(value, datetime):
+            if isinstance(value, (datetime, pd.Timestamp)):
                 fmt = format_str if format_str else self.datetime_format
                 return value.strftime(fmt)
-            elif isinstance(value, date):
+            elif isinstance(value, datetime.date):
                 fmt = format_str if format_str else self.date_format
                 return value.strftime(fmt)
             else:

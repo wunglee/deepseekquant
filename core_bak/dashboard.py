@@ -24,7 +24,7 @@ import logging
 import os
 import threading
 import time
-from datetime import datetime
+
 from typing import Dict, Any, List, Set, TYPE_CHECKING
 
 from flask import Flask, jsonify, request, send_file
@@ -473,7 +473,7 @@ class DataQualityDashboard:
         performance_stats = self.quality_monitor.get_performance_statistics()
 
         return {
-            'timestamp': datetime.now().isoformat(),
+            'timestamp': pd.Timestamp.now().isoformat(),
             'overall_score': performance_stats.get('recent_quality_trend', {}).get('average', 0),
             'quality_trend': self._calculate_quality_trend(recent_quality),
             'anomaly_history': self._prepare_anomaly_data(recent_quality),
@@ -632,21 +632,21 @@ class DataQualityDashboard:
             ws.send(json.dumps({
                 'type': 'quality_data',
                 'data': data,
-                'timestamp': datetime.now().isoformat()
+                'timestamp': pd.Timestamp.now().isoformat()
             }))
         elif data_type == 'alerts':
             alerts = self.quality_monitor.get_alert_history(hours=24)
             ws.send(json.dumps({
                 'type': 'alerts',
                 'data': alerts,
-                'timestamp': datetime.now().isoformat()
+                'timestamp': pd.Timestamp.now().isoformat()
             }))
         elif data_type == 'performance':
             stats = self.quality_monitor.get_performance_statistics()
             ws.send(json.dumps({
                 'type': 'performance',
                 'data': stats,
-                'timestamp': datetime.now().isoformat()
+                'timestamp': pd.Timestamp.now().isoformat()
             }))
 
     def _dashboard_update_worker(self):
@@ -661,7 +661,7 @@ class DataQualityDashboard:
                 self._broadcast_to_websockets({
                     'type': 'quality_update',
                     'data': current_data,
-                    'timestamp': datetime.now().isoformat()
+                    'timestamp': pd.Timestamp.now().isoformat()
                 })
 
                 # 检查是否有新警报
@@ -670,7 +670,7 @@ class DataQualityDashboard:
                     self._broadcast_to_websockets({
                         'type': 'alert_update',
                         'data': recent_alerts,
-                        'timestamp': datetime.now().isoformat()
+                        'timestamp': pd.Timestamp.now().isoformat()
                     })
 
                 # 等待下一次更新

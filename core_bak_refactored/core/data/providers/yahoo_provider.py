@@ -20,18 +20,14 @@ pip install yfinance
 import logging
 import random
 import time
-import requests
 from dataclasses import dataclass
-from datetime import datetime
-from typing import Union
 
-import numpy as np
 import pandas as pd
+import requests
 
 from core_bak_refactored.core.data.providers.base_provider import BaseDataProvider
 # 导入新的数据结构
 from core_bak_refactored.core.data.providers.protocols import PriceData
-from core_bak_refactored.core.share.config_manager import ConfigManager
 # 导入 HTTP/2 补丁
 from core_bak_refactored.core.data.providers.yfinance_http2_patch import patch_yfinance
 
@@ -59,6 +55,9 @@ class YahooFinanceDataProvider(BaseDataProvider):
         # 创建自定义 Session（官方推荐，避免 429 限流）
         super().__init__()
         self._session = self._create_session()
+        
+        # 代理配置（初始化为None）
+        self.proxy = None
         
         # 请求限速器（避免 429）
         self._last_request_time = 0

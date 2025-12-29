@@ -2,13 +2,13 @@
 
 测试run_check_cycle方法是否完整等效于旧版DataQualityMonitor的监控循环
 """
-import pytest
 from unittest.mock import Mock
+
+import pandas as pd
+import pytest
+
 from core_bak_refactored.app.quality_monitoring.monitoring_service import QualityMonitoringService
 from core_bak_refactored.core.monitoring.alert_manager import AlertConfig
-from unittest.mock import patch
-import pandas as pd
-from datetime import datetime, timedelta
 
 # 基于工厂注入的真实provider路径（使用StubProvider避免外部依赖）
 stub_provider_instance = None
@@ -22,7 +22,7 @@ class StubProvider:
         self.last_index_id = index_id
         self.last_start = start_date
         self.last_end = end_date
-        dates = pd.date_range(end=datetime.now(), periods=100)
+        dates = pd.date_range(end=pd.Timestamp.now(), periods=100)
         return pd.DataFrame({
             'date': dates,
             'close': [100.0 + i for i in range(100)],

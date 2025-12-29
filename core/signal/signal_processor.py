@@ -1,5 +1,5 @@
 from typing import Any, Dict
-from datetime import datetime
+
 from core.base_processor import BaseProcessor
 from core.signal.indicators import TechnicalIndicators
 from common import TradingSignal, SignalType, SignalStatus, SignalMetadata
@@ -13,7 +13,7 @@ class SignalProcessor(BaseProcessor):
         price = kwargs.get('price', 0.0)
         prices_history = kwargs.get('prices', [])
         params = kwargs.get('params', {})
-        ts = kwargs.get('timestamp', datetime.now().isoformat())
+        ts = kwargs.get('timestamp', pd.Timestamp.now().isoformat())
         
         # 计算技术指标（可选）
         indicators: Dict[str, Any] = {}

@@ -7,8 +7,9 @@
 3. 计算数据质量指标
 4. 生成质量报告
 """
+import pandas as pd
 from typing import Dict, List, Any
-from datetime import datetime, timedelta
+
 import logging
 
 logger = logging.getLogger(__name__)
@@ -94,8 +95,9 @@ def get_data_quality_metrics(
         last_update_str = performance_metrics.get('last_update')
         if last_update_str:
             try:
-                last_update = datetime.fromisoformat(last_update_str)
-                now = datetime.now()
+                # 🔧 统一使用 pd.Timestamp
+                last_update = pd.to_datetime(last_update_str)
+                now = pd.Timestamp.now()
                 age_seconds = (now - last_update).total_seconds()
                 
                 if age_seconds < 60:
@@ -124,7 +126,7 @@ def get_data_quality_metrics(
             'failed_requests': failed_requests,
             'avg_response_time': avg_response_time,
             'recent_errors': recent_error_count,
-            'timestamp': datetime.now().isoformat()
+            'timestamp': pd.Timestamp.now().isoformat()
         }
 
         logger.info(
@@ -146,7 +148,7 @@ def get_data_quality_metrics(
             'error_rate': 1.0,
             'data_freshness': 'unknown',
             'error': str(e),
-            'timestamp': datetime.now().isoformat()
+            'timestamp': pd.Timestamp.now().isoformat()
         }
 
 

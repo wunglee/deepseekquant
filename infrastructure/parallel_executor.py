@@ -19,7 +19,7 @@ import multiprocessing as mp
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
 from typing import List, Callable, Any, Dict, Optional, Tuple
 from dataclasses import dataclass, field
-from datetime import datetime
+
 import logging
 import time
 
@@ -459,7 +459,7 @@ class ParallelExecutor:
         """获取性能指标"""
         return {
             **self.metrics.to_dict(),
-            'timestamp': datetime.now().isoformat()
+            'timestamp': pd.Timestamp.now().isoformat()
         }
     
     def reset_metrics(self):

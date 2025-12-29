@@ -293,8 +293,8 @@ class FactorModelEstimator:
             cache_key = self._generate_cache_key(returns, method_tag)
             # L1缓存检查
             l1_entry = self._l1_cache.get(cache_key)
-            from datetime import datetime
-            now_ts = datetime.now().timestamp()
+
+            now_ts = pd.Timestamp.now().timestamp()
             if l1_entry is not None:
                 (cached_cov, cached_meta), ts = l1_entry
                 if now_ts - ts <= self._l1_ttl_seconds:
@@ -401,7 +401,7 @@ class FactorModelEstimator:
                 self.cache_service.memory_cache[cache_key] = result
                 logger.debug("因子模型协方差: L2缓存设置 (P0-3优化)")
             # L1缓存设置
-            self._l1_cache[cache_key] = (result, datetime.now().timestamp())
+            self._l1_cache[cache_key] = (result, pd.Timestamp.now().timestamp())
             logger.debug("因子模型协方差: L1缓存设置 (P0-3优化)")
             
             return result

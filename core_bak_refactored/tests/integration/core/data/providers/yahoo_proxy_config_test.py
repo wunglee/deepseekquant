@@ -12,9 +12,10 @@ Note:
     位置符合规范：core_bak_refactored/tests/integration/core/data/providers/
 """
 
+import pandas as pd
 from core_bak_refactored.core.data.providers.yahoo_provider import YahooFinanceDataProvider
 from core_bak_refactored.core.share.config_manager import ConfigManager
-from datetime import datetime, timedelta
+
 
 print("=" * 60)
 print("Yahoo Finance 代理配置测试")
@@ -41,8 +42,8 @@ print(f"\n📊 测试获取数据...")
 try:
     data = provider.get_index_prices(
         '^GSPC', 
-        datetime.now() - timedelta(days=7), 
-        datetime.now()
+        pd.Timestamp.now() - pd.Timedelta(days=7), 
+        pd.Timestamp.now()
     )
     print(f"✅ 成功获取 {len(data.records)} 条数据")
     print(f"   日期范围: {data.records[0].date.date()} 到 {data.records[-1].date.date()}")

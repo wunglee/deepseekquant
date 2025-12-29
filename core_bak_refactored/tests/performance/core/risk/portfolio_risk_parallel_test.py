@@ -5,7 +5,7 @@
 import unittest
 import numpy as np
 import pandas as pd
-from datetime import datetime, timedelta
+
 from core_bak_refactored.core.risk.portfolio_risk import PortfolioRiskAnalyzer
 from core_bak_refactored.core.share.market.market_config import MarketConfig
 
@@ -72,7 +72,7 @@ class TestPortfolioRiskParallel(unittest.TestCase):
         
         # 生成时间戳
         timestamps = [
-            (datetime.now() - timedelta(days=n_days-i)).isoformat()
+            (pd.Timestamp.now() - pd.Timedelta(days=n_days-i)).isoformat()
             for i in range(n_days)
         ]
         

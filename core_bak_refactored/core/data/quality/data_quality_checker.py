@@ -16,7 +16,7 @@ import pandas as pd
 import numpy as np
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass, field
-from datetime import datetime
+
 import logging
 from core_bak_refactored.core.share.market.market_enums import MarketCode
 
@@ -149,7 +149,8 @@ class DataQualityChecker:
         self._source_ratings: Dict[str, int] = {}
         # 紧急回退缓存（专家第7轮问题6-2）
         self._emergency_cache: Dict[str, pd.DataFrame] = {}
-        self._cache_timestamps: Dict[str, datetime] = {}
+        # 🔧 缓存时间戳使用 pd.Timestamp
+        self._cache_timestamps: Dict[str, pd.Timestamp] = {}
         
         # 🔥 ML异常检测器管理器（可选）
         self._ml_detection_enabled = enable_ml_detection
@@ -227,7 +228,7 @@ class DataQualityChecker:
                 'index_id': index_id,
                 'rows': len(data),
                 'expected_days': expected_days,
-                'timestamp': datetime.now().isoformat(),
+                'timestamp': pd.Timestamp.now().isoformat(),
                 'advanced_checks_enabled': enable_advanced_checks,
                 'ts_consistency_score': ts_consistency_score if enable_advanced_checks else None,
                 'data_frequency': self._detect_data_frequency(data) if 'date' in data.columns else 'unknown',
@@ -616,7 +617,7 @@ class DataQualityChecker:
             data: 数据DataFrame
         """
         self._emergency_cache[source_name] = data.copy()
-        self._cache_timestamps[source_name] = datetime.now()
+        self._cache_timestamps[source_name] = pd.Timestamp.now()
         logger.info(f"已缓存数据源{source_name}的紧急回退数据，{len(data)}行")
     
     def get_emergency_fallback_data(self, source_name: str, max_age_hours: int = 24) -> Optional[pd.DataFrame]:
@@ -634,7 +635,7 @@ class DataQualityChecker:
             logger.warning(f"数据源{source_name}无紧急回退缓存")
             return None
         
-        cache_age = (datetime.now() - self._cache_timestamps[source_name]).total_seconds() / 3600
+        cache_age = (pd.Timestamp.now() - self._cache_timestamps[source_name]).total_seconds() / 3600
         if cache_age > max_age_hours:
             logger.warning(f"数据源{source_name}缓存已过期（{cache_age:.1f}小时 > {max_age_hours}小时）")
             return None

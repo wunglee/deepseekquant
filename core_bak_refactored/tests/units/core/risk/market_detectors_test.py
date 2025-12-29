@@ -1,6 +1,6 @@
 import unittest
 
-from core_bak_refactored.core.risk.market_detectors import MarketMechanismDetector, ChinaMarketDetector
+from core_bak_refactored.core.risk.market_detectors import ChinaMarketDetector
 
 
 class MarketDetectorsTest(unittest.TestCase):

@@ -18,7 +18,6 @@
 """
 
 import unittest
-from typing import Any, Optional
 
 
 class TestAssertions:

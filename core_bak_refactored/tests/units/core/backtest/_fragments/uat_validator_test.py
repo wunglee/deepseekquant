@@ -2,8 +2,9 @@
 UATValidator tests: exception handling (3-level alerts) and UAT report.
 """
 
-import pytest
-from datetime import datetime, timedelta
+
+import pandas as pd
+
 from core_bak_refactored.core.backtest._fragments.uat_validator import (
     UATValidator,
     AlertLevel,
@@ -258,7 +259,7 @@ class TestBusinessExemption:
                 category=category,
                 reason=f'{category}测试理由',
                 approvers=['测试审批人'],
-                period=(datetime.now(), datetime.now() + timedelta(days=7)),
+                period=(pd.Timestamp.now(), pd.Timestamp.now() + pd.Timedelta(days=7)),
                 audit_trail={'test': True}
             )
             assert exemption.category == category

@@ -4,7 +4,7 @@
 使用依赖注入方式Mock数据源
 """
 import pytest
-from datetime import datetime, timedelta
+
 from core_bak.data_fetcher import (
     DataFetcher,
     DataValidator,

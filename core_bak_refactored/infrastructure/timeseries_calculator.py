@@ -19,11 +19,12 @@
 - 增加边界条件处理
 """
 
-import numpy as np
-import pandas as pd
-from typing import Optional, Tuple
 import logging
 import warnings
+from typing import Tuple
+
+import numpy as np
+import pandas as pd
 
 logger = logging.getLogger('DeepSeekQuant.Infrastructure.TimeSeriesCalculator')
 

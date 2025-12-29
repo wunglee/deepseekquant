@@ -626,7 +626,7 @@ def get_chart_data():
             },
             'period': period,
             'count': len(kline_data),
-            'timestamp': datetime.now().isoformat()
+            'timestamp': pd.Timestamp.now().isoformat()
         })
     
     except Exception as e:

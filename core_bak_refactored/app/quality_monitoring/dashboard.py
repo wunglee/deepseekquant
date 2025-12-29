@@ -22,9 +22,9 @@ import logging
 import os
 import threading
 import time
-from datetime import datetime
-from typing import Dict, Any, List, Set, TYPE_CHECKING
+from typing import Dict, Any, TYPE_CHECKING
 
+import pandas as pd
 from flask import Flask, jsonify, request, send_file
 from flask_cors import CORS
 
@@ -74,7 +74,7 @@ class DataQualityDashboard:
         self.dashboard_data = {}
         self.update_interval = 300  # 5分钟更新一次
         self.dashboard_config = self._load_dashboard_config()
-        self.last_update_time = datetime.now()
+        self.last_update_time = pd.Timestamp.now()
         
         # 初始化组件
         self.data_aggregator = DashboardDataAggregator(quality_monitor)
@@ -229,7 +229,7 @@ class DataQualityDashboard:
             @app.route('/api/export-data')
             def export_data():
                 format = request.args.get('format', 'json')
-                filename = f"quality_data_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.{format}"
+                filename = f"quality_data_export_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.{format}"
                 filepath = os.path.join('exports', filename)
 
                 if self.quality_monitor.export_monitoring_data(filepath, format):
@@ -293,7 +293,7 @@ class DataQualityDashboard:
                 self.websocket_handler.broadcast({
                     'type': 'quality_update',
                     'data': current_data,
-                    'timestamp': datetime.now().isoformat()
+                    'timestamp': pd.Timestamp.now().isoformat()
                 })
 
                 # 检查是否有新警报
@@ -302,7 +302,7 @@ class DataQualityDashboard:
                     self.websocket_handler.broadcast({
                         'type': 'alert_update',
                         'data': recent_alerts,
-                        'timestamp': datetime.now().isoformat()
+                        'timestamp': pd.Timestamp.now().isoformat()
                     })
 
                 # 等待下一次更新

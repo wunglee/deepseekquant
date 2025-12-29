@@ -9,9 +9,10 @@
 1. get_sector_performance() - 获取板块表现数据
 2. calculate_daily_volatility() - 计算日波动率
 """
-import pytest
 from unittest.mock import AsyncMock, MagicMock
-import numpy as np
+
+import pytest
+
 from core_bak_refactored.core.share.market.sector import get_sector_performance, calculate_daily_volatility
 
 

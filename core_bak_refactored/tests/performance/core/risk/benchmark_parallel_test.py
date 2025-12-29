@@ -6,7 +6,7 @@
 import time
 import numpy as np
 import pandas as pd
-from datetime import datetime, timedelta
+
 import sys, os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../..')))
 from core_bak_refactored.core.risk.portfolio_risk import PortfolioRiskAnalyzer
@@ -52,7 +52,7 @@ def generate_mock_portfolio(n_assets: int = 100) -> tuple:
     
     # 生成时间戳
     timestamps = [
-        (datetime.now() - timedelta(days=n_days-i)).isoformat()
+        (pd.Timestamp.now() - pd.Timedelta(days=n_days-i)).isoformat()
         for i in range(n_days)
     ]
     

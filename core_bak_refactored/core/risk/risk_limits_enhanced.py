@@ -16,14 +16,16 @@
 - ❌ 可视化仪表板 → apps/模块
 """
 
-import numpy as np
-import yaml
-from typing import Dict, List, Optional, Any, Tuple
 import logging
-from enum import Enum
 from dataclasses import dataclass, field
-from datetime import datetime
+from enum import Enum
 from pathlib import Path
+from typing import Dict, List, Optional, Any
+
+import numpy as np
+import pandas as pd
+import yaml
+
 from ..share.market.market_enums import MarketCode
 
 logger = logging.getLogger('DeepSeekQuant.RiskLimitsEnhanced')
@@ -127,7 +129,7 @@ class ThresholdBreach:
     severity_score: float     # 严重性评分 (0-100)
     alert_level: str          # 'info', 'warning', 'critical'
     recommended_actions: List[str]
-    timestamp: datetime = field(default_factory=datetime.now)
+    timestamp: pd.Timestamp = field(default_factory=pd.Timestamp.now)
 
 
 # =============================================================================
@@ -280,8 +282,7 @@ class SmartThresholdChecker:
     
     def _get_recent_breaches(self, hours: int = 24) -> List[ThresholdBreach]:
         """获取最近N小时的违规记录"""
-        from datetime import timedelta
-        cutoff_time = datetime.now() - timedelta(hours=hours)
+        cutoff_time = pd.Timestamp.now() - pd.Timedelta(hours=hours)
         return [b for b in self.breach_history if b.timestamp >= cutoff_time]
     
     def _generate_threshold_actions(self, metric_name: str, tier: ThresholdTier, 
@@ -736,9 +737,9 @@ class BreachPrioritizer:
 class MarketSpecificLimitsChecker:
     """市场差异化限额检查器（P1-3-D）"""
     
-    def __init__(self, market_type: str = 'CN'):
+    def __init__(self, market_type: MarketCode = MarketCode.CN):
         self.market_type = market_type
-        self.market_limits = MARKET_SPECIFIC_LIMITS.get(market_type, MARKET_SPECIFIC_LIMITS['CN'])
+        self.market_limits = MARKET_SPECIFIC_LIMITS.get(market_type)
     
     def check_market_limits(self, portfolio_state) -> List[Dict[str, Any]]:
         """检查市场特定限额"""
@@ -1053,7 +1054,7 @@ class EnhancedLimitsConfig:
     weight_bounds: tuple = (0.10, 0.40)      # 权重范围：[10%, 40%]
     
     # 市场配置
-    default_market: str = 'CN'
+    default_market: MarketCode = MarketCode.CN
     
     # 性能配置（专家建议）
     enable_caching: bool = True
@@ -1242,27 +1243,6 @@ class EnhancedRiskLimitsManager:
                 )
                 if breach:
                     breaches.append(breach.__dict__)
-        
-        return breaches
-    
-    def update_config(self, **kwargs):
-        """动态更新配置（专家建议的热更新能力）"""
-        for key, value in kwargs.items():
-            if hasattr(self.config, key):
-                setattr(self.config, key, value)
-                logger.info(f"配置已更新: {key} = {value}")
-        
-        # 重新初始化组件
-        self._initialize_components()
-    
-    def get_feature_status(self) -> Dict[str, bool]:
-        """获取特性开关状态（用于监控和调试）"""
-        return {
-            'smart_threshold': self.config.enable_smart_threshold and self.smart_threshold is not None,
-            'portfolio_advisor': self.config.enable_portfolio_advisor and self.portfolio_advisor is not None,
-            'breach_prioritizer': self.config.enable_breach_prioritizer and self.breach_prioritizer is not None,
-            'market_specific': self.config.enable_market_specific and self.market_checker is not None
-        }
         
         return breaches
     

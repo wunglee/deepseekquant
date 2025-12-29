@@ -11,7 +11,6 @@ import pandas as pd
 from typing import Dict, List, Optional, Any, Tuple
 import logging
 import os
-from datetime import datetime
 import time
 import uuid
 from core_bak_refactored.core.share.config_manager import ConfigManager
@@ -59,12 +58,11 @@ except ImportError:
 # 全局缓存配置和分析器（进程级）
 class WorkerAnalyzerCache:
     def __init__(self, max_size: int = max(os.cpu_count() or 4, 4) * 2, ttl_seconds: int = 3600):
-        from datetime import datetime, timedelta
         self._cache: Dict[int, 'PortfolioRiskAnalyzer'] = {}
-        self._access_time: Dict[int, 'datetime'] = {}
+        self._access_time: Dict[int, 'pd.Timestamp'] = {}
         self.max_size = max_size
-        self.ttl = timedelta(seconds=ttl_seconds)
-        self._datetime = datetime
+        self.ttl = pd.Timedelta(seconds=ttl_seconds)
+        self._datetime = pd.Timestamp
     
     def get(self, worker_id: int) -> Optional['PortfolioRiskAnalyzer']:
         if worker_id in self._cache:
@@ -110,7 +108,6 @@ def _get_or_create_analyzer(config_dict: Dict[str, Any]) -> 'PortfolioRiskAnalyz
     worker_id = os.getpid()
     analyzer = _WORKER_ANALYZER_CACHE.get(worker_id)
     if analyzer is None:
-        from core_bak_refactored.core.risk.portfolio_risk import PortfolioRiskAnalyzer
         analyzer = PortfolioRiskAnalyzer(config_dict, enable_parallel=False)
         _WORKER_ANALYZER_CACHE.put(worker_id, analyzer)
         logger.debug(f"进程Worker {worker_id}: 创建分析器")
@@ -586,14 +583,15 @@ class PortfolioRiskAnalyzer:
             'portfolio_returns': pd.Series(),
             'concentration_risk': 0.0,
             # 新增：报告快照与模型健康
+
             'report_snapshot': {
                 'report_id': str(uuid.uuid4()),
                 'environment': ConfigManager._get_environment(),  # 💚 使用 ConfigManager
-                'timestamp': datetime.utcnow().isoformat() + 'Z',
+                'timestamp': pd.Timestamp.isoformat(self) + 'Z',
                 'market_type': str(MarketCode.parse(self.config.get('market_type', 'CN'))),
                 'trading_days_per_year': self.config.get('trading_days_per_year', 252),
                 'confidence_levels': self.config.get('confidence_levels', {}),
-                'risk_free_rate': self.risk_metrics_service.risk_free_rate,
+                'risk_free_rate': self.risk_metrics_service.get_risk_free_rate() if hasattr(self.risk_metrics_service, 'get_risk_free_rate') else 0.03,
                 'market_status': 'NORMAL',
                 'volatility_regime': 'LOW',
                 'liquidity_regime': 'NORMAL',
@@ -694,7 +692,7 @@ class PortfolioRiskAnalyzer:
                     if isinstance(market_data, dict):
                         last_updated_ts = market_data.get('last_updated_ts') or market_data.get('last_updated')
                     if isinstance(last_updated_ts, (int, float)):
-                        rs['data_freshness_seconds'] = int(max(0, time.time() - float(last_updated_ts)))
+                        rs['data_freshness_seconds'] = int(max(0.0, time.time() - float(last_updated_ts)))
                     else:
                         rs['data_freshness_seconds'] = rs.get('data_freshness_seconds', 0)
                 except Exception:
@@ -720,15 +718,23 @@ class PortfolioRiskAnalyzer:
             # 4. 计算夏普比率（使用增强版，考虑市场风险溢价）
             if len(portfolio_returns) > 1:
                 # 使用增强版夏普比率（国际化支持）
-                enhanced_result = self.risk_metrics_service.calculate_sharpe_ratio_enhanced(
-                    portfolio_returns,
-                    risk_free_rate=None,  # 使用动态无风险利率
-                    include_market_premium=True,  # 包含市场溢价
-                    adjust_for_anomalies=True,  # 调整市场异常
-                    prices=None
-                )
-                result['sharpe_ratio'] = enhanced_result['enhanced_sharpe']
-            
+                # 检查是否支持增强版方法（兼容 Protocol 类型注解）
+                if hasattr(self.risk_metrics_service, 'calculate_sharpe_ratio_enhanced'):
+                    enhanced_result = self.risk_metrics_service.calculate_sharpe_ratio_enhanced(
+                        portfolio_returns,
+                        risk_free_rate=None,  # 使用动态无风险利率
+                        include_market_premium=True,  # 包含市场溢价
+                        adjust_for_anomalies=True,  # 调整市场异常
+                        prices=None
+                    )
+                    result['sharpe_ratio'] = enhanced_result['enhanced_sharpe']
+                else:
+                    # 回退：使用标准夏普比率
+                    result['sharpe_ratio'] = self.risk_metrics_service.calculate_sharpe_ratio(
+                        portfolio_returns,
+                        risk_free_rate=None
+                    )
+
             # 5. 计算最大回撤
             if len(portfolio_returns) > 1:
                 max_dd = self.risk_metrics_service.calculate_max_drawdown(portfolio_returns)
@@ -771,7 +777,12 @@ class PortfolioRiskAnalyzer:
                             
                             if returns_df is not None and len(returns_df) > 0:
                                 # 生成收缩协方差矩阵
-                                auto_cov = self.risk_metrics_service.compute_shrunk_covariance(returns_df)
+                                # 使用 hasattr 检查方法是否存在（兼容 Protocol 类型注解）
+                                if hasattr(self.risk_metrics_service, 'compute_shrunk_covariance'):
+                                    auto_cov = self.risk_metrics_service.compute_shrunk_covariance(returns_df)
+                                else:
+                                    # 回退：使用简单协方差矩阵
+                                    auto_cov = returns_df.cov()
                                 result['risk_contributions'] = self.calculate_risk_contributions_covariance(
                                     portfolio_state, auto_cov
                                 )

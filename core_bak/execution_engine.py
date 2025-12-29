@@ -9,7 +9,7 @@ from typing import Dict, List, Optional, Any, Union, Tuple, Set
 from dataclasses import dataclass, asdict, field
 from enum import Enum
 import logging
-from datetime import datetime, timedelta
+
 import time
 import json
 import asyncio
@@ -171,8 +171,8 @@ class Order:
     parameters: OrderParameters
     execution_params: ExecutionParameters
     status: OrderStatus = OrderStatus.PENDING
-    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
-    updated_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    created_at: str = field(default_factory=lambda: pd.Timestamp.now().isoformat())
+    updated_at: str = field(default_factory=lambda: pd.Timestamp.now().isoformat())
     filled_quantity: float = 0.0
     average_fill_price: float = 0.0
     commission: float = 0.0
@@ -483,7 +483,7 @@ class ExecutionEngine(BaseProcessor):
             total_connections = len(connection_results)
 
             self.is_connected = successful_connections > 0
-            self.last_connection_check = datetime.now().isoformat()
+            self.last_connection_check = pd.Timestamp.now().isoformat()
 
             if self.is_connected:
                 logger.info(f"执行引擎连接成功: {successful_connections}/{total_connections} 个经纪商")
@@ -530,7 +530,7 @@ class ExecutionEngine(BaseProcessor):
             # 这里需要实际的IBKR连接逻辑
             # 简化实现：返回成功
             connection.connection_status = "connected"
-            connection.last_heartbeat = datetime.now().isoformat()
+            connection.last_heartbeat = pd.Timestamp.now().isoformat()
             return True
 
         except Exception as e:
@@ -543,7 +543,7 @@ class ExecutionEngine(BaseProcessor):
             # 这里需要实际的Alpaca连接逻辑
             # 简化实现：返回成功
             connection.connection_status = "connected"
-            connection.last_heartbeat = datetime.now().isoformat()
+            connection.last_heartbeat = pd.Timestamp.now().isoformat()
             return True
 
         except Exception as e:
@@ -556,7 +556,7 @@ class ExecutionEngine(BaseProcessor):
             # 这里需要实际的Binance连接逻辑
             # 简化实现：返回成功
             connection.connection_status = "connected"
-            connection.last_heartbeat = datetime.now().isoformat()
+            connection.last_heartbeat = pd.Timestamp.now().isoformat()
             return True
 
         except Exception as e:
@@ -585,7 +585,7 @@ class ExecutionEngine(BaseProcessor):
             for broker_name, connection in self.broker_connections.items():
                 if connection.connection_status == "connected":
                     # 模拟心跳检测
-                    connection.last_heartbeat = datetime.now().isoformat()
+                    connection.last_heartbeat = pd.Timestamp.now().isoformat()
 
         except Exception as e:
             logger.error(f"连接状态检查失败: {e}")
@@ -667,7 +667,7 @@ class ExecutionEngine(BaseProcessor):
 
         except Exception as e:
             logger.error(f"订单执行失败: {e}")
-            return {'error': str(e), 'timestamp': datetime.now().isoformat()}
+            return {'error': str(e), 'timestamp': pd.Timestamp.now().isoformat()}
 
     def _validate_orders(self, orders: List[Order],
                          market_data: Dict[str, Any],
@@ -963,7 +963,7 @@ class ExecutionEngine(BaseProcessor):
             'total_slippage': 0,
             'avg_execution_quality': 0,
             'order_results': [],
-            'start_time': datetime.now().isoformat(),
+            'start_time': pd.Timestamp.now().isoformat(),
             'end_time': None
         }
 
@@ -1009,14 +1009,14 @@ class ExecutionEngine(BaseProcessor):
                 avg_quality = sum(r.get('execution_quality', 0) for r in successful_results) / len(successful_results)
                 group_results['avg_execution_quality'] = avg_quality
 
-            group_results['end_time'] = datetime.now().isoformat()
+            group_results['end_time'] = pd.Timestamp.now().isoformat()
 
             return group_results
 
         except Exception as e:
             logger.error(f"订单组执行失败: {e}")
             group_results['error'] = str(e)
-            group_results['end_time'] = datetime.now().isoformat()
+            group_results['end_time'] = pd.Timestamp.now().isoformat()
             return group_results
 
     def _prioritize_orders(self, orders: List[Order]) -> List[Order]:
@@ -1056,7 +1056,7 @@ class ExecutionEngine(BaseProcessor):
         try:
             # 更新订单状态
             order.status = OrderStatus.SUBMITTED
-            order.updated_at = datetime.now().isoformat()
+            order.updated_at = pd.Timestamp.now().isoformat()
 
             # 选择执行算法
             algorithm_func = self.execution_algorithms.get(
@@ -1071,7 +1071,7 @@ class ExecutionEngine(BaseProcessor):
             execution_time = time.time() - start_time
 
             # 更新订单信息
-            order.updated_at = datetime.now().isoformat()
+            order.updated_at = pd.Timestamp.now().isoformat()
             order.filled_quantity = execution_result.get('executed_quantity', 0)
             order.average_fill_price = execution_result.get('average_price', 0)
             order.commission = execution_result.get('commission', 0)
@@ -1130,7 +1130,7 @@ class ExecutionEngine(BaseProcessor):
 
             # 更新订单状态为失败
             order.status = OrderStatus.REJECTED
-            order.updated_at = datetime.now().isoformat()
+            order.updated_at = pd.Timestamp.now().isoformat()
             order.rejection_reason = f"执行错误: {str(e)}"
 
             self._save_order_to_history(order)
@@ -1909,7 +1909,7 @@ class ExecutionEngine(BaseProcessor):
 
             # 模拟执行报告
             execution_reports = []
-            timestamp = datetime.now().isoformat()
+            timestamp = pd.Timestamp.now().isoformat()
 
             if partial_fill:
                 # 生成部分成交报告
@@ -1937,7 +1937,7 @@ class ExecutionEngine(BaseProcessor):
 
                 execution_reports.append({
                     'execution_id': f"EXEC_{int(time.time())}_2",
-                    'timestamp': datetime.now().isoformat(),
+                    'timestamp': pd.Timestamp.now().isoformat(),
                     'fill_price': second_execution_price,
                     'fill_quantity': remaining_qty,
                     'remaining_quantity': 0,
@@ -2682,7 +2682,7 @@ class ExecutionEngine(BaseProcessor):
             report = ExecutionReport(
                 report_id=report_id,
                 order_id=order.order_id,
-                timestamp=datetime.now().isoformat(),
+                timestamp=pd.Timestamp.now().isoformat(),
                 fill_price=execution_result.get('average_price', 0),
                 fill_quantity=execution_result.get('executed_quantity', 0),
                 remaining_quantity=order.quantity - execution_result.get('executed_quantity', 0),
@@ -2692,7 +2692,7 @@ class ExecutionEngine(BaseProcessor):
                 liquidity='added' if order.side == OrderSide.BUY else 'removed',
                 venue=execution_result.get('venue', 'unknown'),
                 execution_id=execution_result.get('broker_order_id', report_id),
-                transaction_time=datetime.now().isoformat(),
+                transaction_time=pd.Timestamp.now().isoformat(),
                 commission=execution_result.get('commission', 0),
                 fees=execution_result.get('fees', 0),
                 slippage=execution_result.get('slippage', 0),
@@ -2721,7 +2721,7 @@ class ExecutionEngine(BaseProcessor):
             return ExecutionReport(
                 report_id=f"ERROR_{int(time.time())}",
                 order_id=order.order_id,
-                timestamp=datetime.now().isoformat(),
+                timestamp=pd.Timestamp.now().isoformat(),
                 fill_price=0,
                 fill_quantity=0,
                 remaining_quantity=order.quantity,
@@ -2730,7 +2730,7 @@ class ExecutionEngine(BaseProcessor):
                 liquidity='unknown',
                 venue='unknown',
                 execution_id='error',
-                transaction_time=datetime.now().isoformat(),
+                transaction_time=pd.Timestamp.now().isoformat(),
                 commission=0,
                 fees=0,
                 slippage=0,
@@ -2765,7 +2765,7 @@ class ExecutionEngine(BaseProcessor):
         """汇总执行结果"""
         try:
             overall_result = {
-                'timestamp': datetime.now().isoformat(),
+                'timestamp': pd.Timestamp.now().isoformat(),
                 'total_orders': 0,
                 'successful_orders': 0,
                 'failed_orders': 0,
@@ -3029,7 +3029,7 @@ class ExecutionEngine(BaseProcessor):
 
             # 更新订单状态
             order.status = OrderStatus.CANCELLED
-            order.updated_at = datetime.now().isoformat()
+            order.updated_at = pd.Timestamp.now().isoformat()
             order.cancellation_reason = reason
 
             # 从活动订单移动到完成订单
@@ -3044,7 +3044,7 @@ class ExecutionEngine(BaseProcessor):
             cancel_report = ExecutionReport(
                 report_id=f"CANCEL_{order_id}_{int(time.time())}",
                 order_id=order_id,
-                timestamp=datetime.now().isoformat(),
+                timestamp=pd.Timestamp.now().isoformat(),
                 fill_price=0,
                 fill_quantity=0,
                 remaining_quantity=order.quantity - order.filled_quantity,
@@ -3053,7 +3053,7 @@ class ExecutionEngine(BaseProcessor):
                 liquidity='none',
                 venue='system',
                 execution_id=f"CANCEL_{order_id}",
-                transaction_time=datetime.now().isoformat(),
+                transaction_time=pd.Timestamp.now().isoformat(),
                 commission=0,
                 fees=0,
                 slippage=0,
@@ -3110,13 +3110,13 @@ class ExecutionEngine(BaseProcessor):
                     order.parameters.stop_price = new_stop
                     logger.debug(f"订单 {order_id} 止损价修改: {order.parameters.stop_price} -> {new_stop}")
 
-            order.updated_at = datetime.now().isoformat()
+            order.updated_at = pd.Timestamp.now().isoformat()
 
             # 生成修改报告
             modify_report = ExecutionReport(
                 report_id=f"MODIFY_{order_id}_{int(time.time())}",
                 order_id=order_id,
-                timestamp=datetime.now().isoformat(),
+                timestamp=pd.Timestamp.now().isoformat(),
                 fill_price=0,
                 fill_quantity=0,
                 remaining_quantity=order.quantity,
@@ -3125,7 +3125,7 @@ class ExecutionEngine(BaseProcessor):
                 liquidity='none',
                 venue='system',
                 execution_id=f"MODIFY_{order_id}",
-                transaction_time=datetime.now().isoformat(),
+                transaction_time=pd.Timestamp.now().isoformat(),
                 commission=0,
                 fees=0,
                 slippage=0,
@@ -3150,7 +3150,7 @@ class ExecutionEngine(BaseProcessor):
         """获取执行仪表板数据"""
         try:
             dashboard = {
-                'timestamp': datetime.now().isoformat(),
+                'timestamp': pd.Timestamp.now().isoformat(),
                 'connection_status': {
                     'is_connected': self.is_connected,
                     'broker_connections': {name: conn.connection_status for name, conn in
@@ -3602,7 +3602,7 @@ if __name__ == "__main__":
                 'avg_daily_volume': 1000000
             }
         },
-        'timestamp': datetime.now().isoformat()
+        'timestamp': pd.Timestamp.now().isoformat()
     }
 
     # 执行订单

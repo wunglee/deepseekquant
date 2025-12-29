@@ -12,7 +12,7 @@
 
 from typing import List, Optional
 import pandas as pd
-from datetime import datetime
+
 import logging
 
 logger = logging.getLogger('DeepSeekQuant.Converters')
@@ -27,14 +27,6 @@ def market_data_to_dataframe(data: List, symbol_filter: Optional[str] = None) ->
     
     Returns:
         包含OHLCV等字段的DataFrame
-        
-    示例:
-        >>> from core_bak_refactored.core.data.types import MarketData
-        >>> market_data_list = [...]  # List[MarketData]
-        >>> df = market_data_to_dataframe(market_data_list)
-        >>> df.columns
-        Index(['date', 'open', 'high', 'low', 'close', 'volume', 
-               'adj_close', 'turnover', 'vwap', 'symbol'], dtype='object')
     """
     if not data:
         return pd.DataFrame()

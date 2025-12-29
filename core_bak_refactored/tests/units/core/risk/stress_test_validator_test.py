@@ -1,5 +1,4 @@
 import unittest
-from datetime import datetime
 
 from core_bak_refactored.core.risk.stress_test_validator import (
     StressTestValidator, HistoricalEvent, ValidationResult

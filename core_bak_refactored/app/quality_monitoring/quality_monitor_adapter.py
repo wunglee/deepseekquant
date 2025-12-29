@@ -12,8 +12,9 @@
 - 可测试：依赖注入，方便Mock
 """
 
+import pandas as pd
 import logging
-from datetime import datetime, timedelta
+
 from typing import Dict, Any, List, Optional
 from core_bak_refactored.core.monitoring.alert_manager import AlertManager, AlertRecord, AlertSeverity
 
@@ -67,7 +68,7 @@ class QualityMonitorAdapter:
             'uptime_seconds': 0,
             'throughput': 0,
             'stability_score': 1.0,
-            'start_time': datetime.now().isoformat()
+            'start_time': pd.Timestamp.now().isoformat()
         }
         
         logger.info("QualityMonitorAdapter initialized")
@@ -85,11 +86,12 @@ class QualityMonitorAdapter:
             - overall_score: 总体评分
             - anomaly_count: 异常数量
         """
-        cutoff_time = datetime.now() - timedelta(hours=hours)
+        cutoff_time = pd.Timestamp.now() - pd.Timedelta(hours=hours)
         
         result = []
         for record in self._quality_history:
-            record_time = datetime.fromisoformat(record['timestamp'])
+            # 🔧 统一使用 pd.Timestamp
+            record_time = pd.to_datetime(record['timestamp'])
             if record_time >= cutoff_time:
                 result.append(record)
         
@@ -114,7 +116,7 @@ class QualityMonitorAdapter:
             return []
         
         # 从AlertManager获取告警
-        since = datetime.now() - timedelta(hours=hours)
+        since = pd.Timestamp.now() - pd.Timedelta(hours=hours)
         alert_records: List[AlertRecord] = self.alert_manager.get_alert_history(
             since=since,
             limit=1000
@@ -147,8 +149,9 @@ class QualityMonitorAdapter:
             - stability_score: 稳定性评分
         """
         # 计算运行时间
-        start_time = datetime.fromisoformat(self._performance_stats['start_time'])
-        uptime_seconds = (datetime.now() - start_time).total_seconds()
+        # 🔧 统一使用 pd.Timestamp
+        start_time = pd.to_datetime(self._performance_stats['start_time'])
+        uptime_seconds = (pd.Timestamp.now() - start_time).total_seconds()
         
         stats = self._performance_stats.copy()
         stats['uptime_seconds'] = int(uptime_seconds)
@@ -193,9 +196,9 @@ class QualityMonitorAdapter:
             alert_by_level[level] = alert_by_level.get(level, 0) + 1
         
         return {
-            'report_id': f'report_{datetime.now().strftime("%Y%m%d_%H%M%S")}',
+            'report_id': f'report_{pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")}',
             'period': period,
-            'generation_time': datetime.now().isoformat(),
+            'generation_time': pd.Timestamp.now().isoformat(),
             'quality_summary': {
                 'average_score': avg_score,
                 'total_anomalies': total_anomalies,
@@ -245,7 +248,7 @@ class QualityMonitorAdapter:
             details: 详细信息
         """
         record = {
-            'timestamp': datetime.now().isoformat(),
+            'timestamp': pd.Timestamp.now().isoformat(),
             'overall_score': overall_score,
             'anomaly_count': anomaly_count
         }

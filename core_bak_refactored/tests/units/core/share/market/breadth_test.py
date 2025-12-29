@@ -9,9 +9,10 @@
 1. get_advance_decline() - 获取涨跌家数
 2. _get_default_symbols() - 获取默认股票列表
 """
-import pytest
 from unittest.mock import AsyncMock, MagicMock
-from datetime import datetime
+
+import pytest
+
 from core_bak_refactored.core.share.market.breadth import get_advance_decline, _get_default_symbols
 
 

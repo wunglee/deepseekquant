@@ -4,7 +4,7 @@
 """
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass, field
-from datetime import datetime
+
 import time
 import copy
 
@@ -26,7 +26,7 @@ class AlgoSlice:
     slice_id: str
     quantity: float
     limit_price: Optional[float] = None
-    execute_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    execute_at: str = field(default_factory=lambda: pd.Timestamp.now().isoformat())
     urgency: str = "medium"
 
 
@@ -92,7 +92,7 @@ class ExecutionAlgorithms:
                 slices_result.append(AlgoSlice(
                     slice_id=f"{context.symbol}_vwap_slice_{slice_num}",
                     quantity=round(slice_quantities[slice_num], 6),
-                    execute_at=datetime.now().isoformat(),
+                    execute_at=pd.Timestamp.now().isoformat(),
                     urgency="medium"
                 ))
         
@@ -137,7 +137,7 @@ class ExecutionAlgorithms:
             slices.append(AlgoSlice(
                 slice_id=f"{context.symbol}_pov_slice_{slice_num}",
                 quantity=round(slice_qty, 6),
-                execute_at=datetime.now().isoformat(),
+                execute_at=pd.Timestamp.now().isoformat(),
                 urgency="medium"
             ))
             
@@ -168,7 +168,7 @@ class ExecutionAlgorithms:
             slices.append(AlgoSlice(
                 slice_id=f"{context.symbol}_iceberg_slice_{slice_num}",
                 quantity=round(slice_qty, 6),
-                execute_at=datetime.now().isoformat(),
+                execute_at=pd.Timestamp.now().isoformat(),
                 urgency="low"  # 冰山订单通常不急
             ))
             

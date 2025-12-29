@@ -4,8 +4,10 @@
 
 import os
 import sys
+
+
+import pandas as pd
 import pytest
-from datetime import datetime, timedelta
 
 # 确保可以从项目根导入模块
 sys.path.insert(0, os.path.abspath('.'))
@@ -16,8 +18,6 @@ from core_bak_refactored.core.risk.risk_models import (
     RiskMetric,
     RecommendationType,
     TimeHorizon,
-    CalculationMethod,
-    ImpactLevel,
     LimitBreach,
     Recommendation,
 )
@@ -119,10 +119,10 @@ def test_time_horizon_properties():
     assert TimeHorizon.MONTHLY.display_name == '每月'
     assert TimeHorizon.YEARLY.display_name == '每年'
 
-    assert TimeHorizon.DAILY.timedelta == timedelta(days=1)
-    assert TimeHorizon.WEEKLY.timedelta == timedelta(weeks=1)
-    assert TimeHorizon.MONTHLY.timedelta == timedelta(days=30)
-    assert TimeHorizon.YEARLY.timedelta == timedelta(days=365)
+    assert TimeHorizon.DAILY.timedelta == pd.Timedelta(days=1)
+    assert TimeHorizon.WEEKLY.timedelta == pd.Timedelta(weeks=1)
+    assert TimeHorizon.MONTHLY.timedelta == pd.Timedelta(days=30)
+    assert TimeHorizon.YEARLY.timedelta == pd.Timedelta(days=365)
 
 if __name__ == '__main__':
     unittest.main()

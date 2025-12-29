@@ -9,7 +9,7 @@ from typing import Dict, List, Optional, Any, Union, Tuple
 from dataclasses import dataclass, asdict, field
 from enum import Enum
 import logging
-from datetime import datetime, timedelta
+
 import time
 import json
 import scipy.optimize as opt
@@ -115,8 +115,8 @@ class PortfolioConstraints:
 @dataclass
 class PortfolioMetadata:
     """组合元数据"""
-    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
-    last_rebalanced: str = field(default_factory=lambda: datetime.now().isoformat())
+    created_at: str = field(default_factory=lambda: pd.Timestamp.now().isoformat())
+    last_rebalanced: str = field(default_factory=lambda: pd.Timestamp.now().isoformat())
     optimization_method: AllocationMethod = AllocationMethod.MAX_SHARPE
     risk_model: RiskModel = RiskModel.LEDOIT_WOLF
     objective: PortfolioObjective = PortfolioObjective.MAXIMIZE_SHARPE
@@ -170,7 +170,7 @@ class PortfolioState:
     performance: Dict[str, float]
     risk_metrics: Dict[str, float]
     constraints: PortfolioConstraints
-    timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
+    timestamp: str = field(default_factory=lambda: pd.Timestamp.now().isoformat())
     status: str = "active"
     version: int = 1
     benchmark: str = "SPY"
@@ -634,7 +634,7 @@ class PortfolioManager(BaseProcessor):
             # 更新元数据
             optimized_portfolio.metadata.optimization_method = optimization_method
             optimized_portfolio.metadata.objective = objective
-            optimized_portfolio.metadata.last_rebalanced = datetime.now().isoformat()
+            optimized_portfolio.metadata.last_rebalanced = pd.Timestamp.now().isoformat()
             optimized_portfolio.metadata.expected_return = optimized_portfolio.risk_metrics.get('expected_return', 0.0)
             optimized_portfolio.metadata.expected_risk = optimized_portfolio.risk_metrics.get('volatility', 0.0)
             optimized_portfolio.metadata.sharpe_ratio = optimized_portfolio.risk_metrics.get('sharpe_ratio', 0.0)
@@ -1057,7 +1057,7 @@ class PortfolioManager(BaseProcessor):
             # 创建新的组合状态
             new_portfolio = copy.deepcopy(portfolio)
             new_portfolio.version += 1
-            new_portfolio.timestamp = datetime.now().isoformat()
+            new_portfolio.timestamp = pd.Timestamp.now().isoformat()
 
             # 更新资产配置
             total_value = portfolio.total_value
@@ -1695,7 +1695,7 @@ class PortfolioManager(BaseProcessor):
                 'tax_implication': total_tax,
                 'execution_priority': overall_priority,
                 'status': 'generated',
-                'generated_at': datetime.now().isoformat(),
+                'generated_at': pd.Timestamp.now().isoformat(),
                 'processing_time': processing_time
             }
 
@@ -1844,7 +1844,7 @@ class PortfolioManager(BaseProcessor):
                     'quantity': allocation.notional / allocation.current_value if allocation.current_value > 0 else 0,
                     'average_cost': metadata.get('average_cost', allocation.current_value),
                     'acquisition_date': datetime.fromisoformat(
-                        metadata.get('acquisition_date', datetime.now().isoformat())),
+                        metadata.get('acquisition_date', pd.Timestamp.now().isoformat())),
                     'acquisition_cost': metadata.get('acquisition_cost', allocation.current_value),
                     'unrealized_gain': metadata.get('unrealized_gain', 0),
                     'dividends_received': metadata.get('dividends_received', 0),
@@ -2024,7 +2024,7 @@ class PortfolioManager(BaseProcessor):
 
                 # 记录再平衡操作
                 rebalance_record = {
-                    'timestamp': datetime.now().isoformat(),
+                    'timestamp': pd.Timestamp.now().isoformat(),
                     'portfolio_id': new_portfolio.portfolio_id,
                     'previous_value': self.current_portfolio.total_value if self.current_portfolio else 0,
                     'new_value': new_portfolio.total_value,
@@ -2308,7 +2308,7 @@ class PortfolioManager(BaseProcessor):
                     'current_portfolio': self.current_portfolio.to_dict() if self.current_portfolio else None,
                     'portfolio_history': [p.to_dict() for p in self.portfolio_history],
                     'performance_stats': self.performance_stats,
-                    'timestamp': datetime.now().isoformat()
+                    'timestamp': pd.Timestamp.now().isoformat()
                 }
 
                 with open(filepath, 'w') as f:
@@ -2675,7 +2675,7 @@ class PortfolioManager(BaseProcessor):
         """生成再平衡报告"""
         try:
             report = {
-                'timestamp': datetime.now().isoformat(),
+                'timestamp': pd.Timestamp.now().isoformat(),
                 'current_value': current_portfolio['total_value'],
                 'target_value': target_portfolio['total_value'],
                 'value_change': target_portfolio['total_value'] - current_portfolio['total_value'],
@@ -4178,7 +4178,7 @@ class PortfolioManager(BaseProcessor):
         """生成绩效报告"""
         try:
             report = {
-                'report_date': datetime.now().isoformat(),
+                'report_date': pd.Timestamp.now().isoformat(),
                 'period': period,
                 'portfolio_summary': self._get_portfolio_summary(portfolio_state),
                 'performance_metrics': self._get_performance_metrics(portfolio_state, market_data, period),
@@ -4742,7 +4742,7 @@ class PortfolioManager(BaseProcessor):
 
             # 生成综合报告
             comprehensive_report = {
-                'generated_at': datetime.now().isoformat(),
+                'generated_at': pd.Timestamp.now().isoformat(),
                 'portfolio_id': portfolio_state.portfolio_id,
                 'total_value': portfolio_state.total_value,
                 'performance_by_period': performance_reports,

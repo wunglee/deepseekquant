@@ -5,14 +5,12 @@ P0任务测试：验证RiskMetricsService.calculate_var_monte_carlo正确实现�
 RiskCalculator委托调用正常，且deprecated警告正确触发
 """
 
-import pytest
+from typing import Dict
+
 import numpy as np
-import pandas as pd
-import warnings
-from typing import Dict, Any
+import pytest
 
 from core_bak_refactored.core.risk.risk_metrics_service import RiskMetricsService
-from core_bak_refactored.core.risk.risk_calculator import RiskCalculator
 
 
 class MockPortfolioState:

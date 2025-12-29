@@ -18,7 +18,7 @@ Mock API端点:
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+
 from typing import TYPE_CHECKING
 
 import pandas as pd
@@ -157,7 +157,7 @@ class DataQualityMockAPIService:
                         'events_count': len(chart_data.get('events', [])),
                         'data_source': 'mock'
                     },
-                    'timestamp': datetime.now().isoformat()
+                    'timestamp': pd.Timestamp.now().isoformat()
                 })
 
             except ValueError as e:
@@ -285,7 +285,8 @@ class DataQualityMockAPIService:
                 is_index = symbol in ['000001.SH', '000300.SH', '399001.SZ', '399006.SZ']
 
                 # 使用系统当前日期
-                trade_date = datetime.now().strftime('%Y-%m-%d')
+                # 🔧 直接使用 pd.Timestamp，不转换为字符串
+                trade_date = pd.Timestamp.now()
 
                 # tick_range 由前端直接传入，不需要转换
 
@@ -327,7 +328,7 @@ class DataQualityMockAPIService:
                 return jsonify({
                     'status': 'success',
                     'data': intraday_data,
-                    'timestamp': datetime.now().isoformat()
+                    'timestamp': pd.Timestamp.now().isoformat()
                 })
 
             except Exception as e:
@@ -388,10 +389,11 @@ class DataQualityMockAPIService:
                 start_date = end_date - pd.Timedelta(days=days_needed)
 
                 # 获取原始日线数据
+                # ✅ 直接传递 pd.Timestamp 对象，不转换为字符串
                 df = mock_provider.get_index_prices(
                     index_id, 
-                    start_date.strftime('%Y-%m-%d'),
-                    end_date.strftime('%Y-%m-%d'), 
+                    start_date,
+                    end_date, 
                     pd.Timestamp.now()
                 )
                 
@@ -457,7 +459,7 @@ class DataQualityMockAPIService:
                     'period': period, 
                     'count': len(data), 
                     'events': events,
-                    'timestamp': datetime.now().isoformat()
+                    'timestamp': pd.Timestamp.now().isoformat()
                 })
                 
             except Exception as e:
@@ -509,7 +511,13 @@ class DataQualityMockAPIService:
                         'error_code': 'INVALID_TRADING_PHASE'
                     }), 400
 
-                trade_date = request.args.get('trade_date', datetime.now().strftime('%Y-%m-%d'))
+                trade_date = request.args.get('trade_date')
+                # 🔧 如果没有提供 trade_date，使用当前日期的 pd.Timestamp
+                if not trade_date:
+                    trade_date = pd.Timestamp.now()
+                else:
+                    trade_date = pd.to_datetime(trade_date)
+                    
                 is_index_str = request.args.get('is_index', 'false').lower()
                 is_index = is_index_str in ['true', '1', 'yes']
 
@@ -527,7 +535,7 @@ class DataQualityMockAPIService:
                 return jsonify({
                     'status': 'success',
                     'data': result,
-                    'timestamp': datetime.now().isoformat()
+                    'timestamp': pd.Timestamp.now().isoformat()
                 })
 
             except Exception as e:
@@ -594,7 +602,7 @@ def register_mock_routes(app: Flask):
             chart_assembler = ChartDataAssembler(data_provider=mock_provider, indicator_service=indicator_service)
             chart_data = chart_assembler.assemble_chart_data(index_id=index_id, period=period, count=count, before=before, indicators=indicators, current_time=pd.Timestamp.now())
 
-            return jsonify({'status': 'success', 'data': chart_data, 'metadata': {'index_id': index_id, 'period': period, 'count': len(chart_data.get('kline', [])), 'indicators': list(chart_data.get('indicators', {}).keys()), 'events_count': len(chart_data.get('events', [])), 'data_source': 'mock'}, 'timestamp': datetime.now().isoformat()})
+            return jsonify({'status': 'success', 'data': chart_data, 'metadata': {'index_id': index_id, 'period': period, 'count': len(chart_data.get('kline', [])), 'indicators': list(chart_data.get('indicators', {}).keys()), 'events_count': len(chart_data.get('events', [])), 'data_source': 'mock'}, 'timestamp': pd.Timestamp.now().isoformat()})
         except Exception as e:
             logger.error(f"获取Mock图表数据失败: {e}", exc_info=True)
             return jsonify({'status': 'error', 'message': f'获取图表数据失败: {str(e)}', 'error_code': 'CHART_DATA_FETCH_FAILED'}), 500
@@ -627,7 +635,8 @@ def register_mock_routes(app: Flask):
 
             generator = MockDataProvider()
             is_index = symbol in ['000001.SH', '000300.SH', '399001.SZ', '399006.SZ']
-            trade_date = datetime.now().strftime('%Y-%m-%d')
+            # 🔧 直接使用 pd.Timestamp，不转换为字符串
+            trade_date = pd.Timestamp.now()
             mock_data = generator.generate(symbol=symbol, trade_date=trade_date, tick_range=tick_range, trading_phase=trading_phase, last_price=last_price, is_index=is_index)
 
             intraday_data = {
@@ -639,7 +648,7 @@ def register_mock_routes(app: Flask):
                 'trade_records': {'items': [{'time': t.time, 'price': t.price, 'volume': t.volume, 'type': t.direction} for t in mock_data.trade_records], 'message': mock_data.trade_records_message},
                 'is_index': mock_data.is_index, 'should_poll': mock_data.should_poll
             }
-            return jsonify({'status': 'success', 'data': intraday_data, 'timestamp': datetime.now().isoformat()})
+            return jsonify({'status': 'success', 'data': intraday_data, 'timestamp': pd.Timestamp.now().isoformat()})
         except Exception as e:
             logger.error(f"获取模拟分时数据失败: {e}", exc_info=True)
             return jsonify({'status': 'error', 'message': f'获取模拟分时数据失败: {str(e)}', 'error_code': 'INTRADAY_MOCK_FAILED'}), 500
@@ -663,7 +672,8 @@ def register_mock_routes(app: Flask):
             days_needed = count * multiplier * 2
             end_date = before if before else pd.Timestamp.now()
             start_date = end_date - pd.Timedelta(days=days_needed)
-            df = mock_provider.get_index_prices(index_id, start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'), pd.Timestamp.now())
+            # ✅ 直接传递 pd.Timestamp 对象，不转换为字符串
+            df = mock_provider.get_index_prices(index_id, start_date, end_date, pd.Timestamp.now())
             if hasattr(df, 'empty') and df.empty:
                 return jsonify({'status': 'error', 'message': '无数据', 'error_code': 'NO_DATA'}), 404
 
@@ -705,7 +715,7 @@ def register_mock_routes(app: Flask):
                         record[key] = None
                     elif key == 'date' and hasattr(value, 'strftime'):
                         record[key] = value.strftime('%Y-%m-%d')
-            return jsonify({'status': 'success', 'data': data, 'period': period, 'count': len(data), 'events': events, 'timestamp': datetime.now().isoformat()})
+            return jsonify({'status': 'success', 'data': data, 'period': period, 'count': len(data), 'events': events, 'timestamp': pd.Timestamp.now().isoformat()})
         except Exception as e:
             logger.error(f"模拟K线数据生成失败: {e}")
             return jsonify({'status': 'error', 'message': str(e), 'error_code': 'MOCK_KLINE_FAILED'}), 500
@@ -722,13 +732,19 @@ def register_mock_routes(app: Flask):
                 trading_phase = TradingPhase.parse(trading_phase_str)
             except KeyError:
                 return jsonify({'status': 'error', 'message': f'无效的trading_phase: {trading_phase_str}', 'error_code': 'INVALID_TRADING_PHASE'}), 400
-            trade_date = request.args.get('trade_date', datetime.now().strftime('%Y-%m-%d'))
+            trade_date = request.args.get('trade_date')
+            # 🔧 如果没有提供 trade_date，使用当前日期的 pd.Timestamp
+            if not trade_date:
+                trade_date = pd.Timestamp.now()
+            else:
+                trade_date = pd.to_datetime(trade_date)
+                
             is_index_str = request.args.get('is_index', 'false').lower()
             is_index = is_index_str in ['true', '1', 'yes']
 
             provider = MockDataProvider()
             result = provider.get_realtime_kline(symbol=index_id, trade_date=trade_date, trading_phase=trading_phase, is_index=is_index)
-            return jsonify({'status': 'success', 'data': result, 'timestamp': datetime.now().isoformat()})
+            return jsonify({'status': 'success', 'data': result, 'timestamp': pd.Timestamp.now().isoformat()})
         except Exception as e:
             logger.error(f"处理模拟实时K线请求失败: {e}")
             return jsonify({'status': 'error', 'message': str(e), 'error_code': 'MOCK_REALTIME_KLINE_FAILED'}), 500

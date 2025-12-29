@@ -16,9 +16,9 @@ Level 3 (>25%):    企业微信 + 短信 + 电话（立即） → 15分钟后重
 import logging
 import time
 from typing import Dict, Any, Optional, List, Callable
-from datetime import datetime, timedelta
+
 from dataclasses import dataclass, field
-import json
+import pandas as pd
 
 from .enums import AlertChannel, AlertSeverity
 
@@ -62,9 +62,9 @@ class AlertRecord:
     message: str
     metadata: Dict[str, Any]
     channels_used: List[AlertChannel]
-    created_at: datetime
-    escalated_at: Optional[datetime] = None
-    resolved_at: Optional[datetime] = None
+    created_at: pd.Timestamp
+    escalated_at: Optional[pd.Timestamp] = None
+    resolved_at: Optional[pd.Timestamp] = None
     dedup_key: Optional[str] = None
 
 
@@ -157,7 +157,7 @@ class AlertManager:
             message=message,
             metadata=metadata or {},
             channels_used=channels,
-            created_at=datetime.now(),
+            created_at=pd.Timestamp.now(),
             dedup_key=dedup_key
         )
         
@@ -224,7 +224,7 @@ class AlertManager:
     
     def _is_duplicate(self, dedup_key: str) -> bool:
         """检查是否重复告警"""
-        cutoff_time = datetime.now() - timedelta(minutes=self.config.dedup_window_minutes)
+        cutoff_time = pd.Timestamp.now() - pd.Timedelta(minutes=self.config.dedup_window_minutes)
         
         for record in reversed(self._alert_history):
             if record.created_at < cutoff_time:
@@ -236,14 +236,14 @@ class AlertManager:
     
     def _check_rate_limit(self) -> bool:
         """检查频率限制"""
-        cutoff_time = datetime.now() - timedelta(hours=1)
+        cutoff_time = pd.Timestamp.now() - pd.Timedelta(hours=1)
         recent_alerts = [r for r in self._alert_history if r.created_at >= cutoff_time]
         
         return len(recent_alerts) < self.config.max_alerts_per_hour
     
     def _schedule_escalation(self, record: AlertRecord, interval_minutes: int):
         """调度告警升级"""
-        record.escalated_at = datetime.now() + timedelta(minutes=interval_minutes)
+        record.escalated_at = pd.Timestamp.now() + pd.Timedelta(minutes=interval_minutes)
         self._pending_escalations.append(record)
         logger.info(f"Scheduled escalation for {record.alert_id} in {interval_minutes} minutes")
     
@@ -253,7 +253,7 @@ class AlertManager:
         
         建议在后台线程或定时任务中调用
         """
-        now = datetime.now()
+        now = pd.Timestamp.now()
         escalated = []
         
         for record in self._pending_escalations[:]:
@@ -366,7 +366,7 @@ class AlertManager:
     
     def get_alert_history(self,
                           severity: Optional[AlertSeverity] = None,
-                          since: Optional[datetime] = None,
+                          since: Optional[pd.Timestamp] = None,
                           limit: int = 100) -> List[AlertRecord]:
         """
         获取告警历史
@@ -402,7 +402,7 @@ class AlertManager:
         Returns:
             统计字典
         """
-        cutoff_time = datetime.now() - timedelta(hours=hours)
+        cutoff_time = pd.Timestamp.now() - pd.Timedelta(hours=hours)
         recent_alerts = [a for a in self._alert_history if a.created_at >= cutoff_time]
         
         return {

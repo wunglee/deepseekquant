@@ -15,11 +15,9 @@ Database Layer - 数据库抽象层
 
 import logging
 import sqlite3
-from abc import ABC, abstractmethod
 from contextlib import contextmanager
-from datetime import datetime
-from typing import Protocol, List, Dict, Any, Optional, Union
 from pathlib import Path
+from typing import Protocol, List, Dict, Any, Optional, Union
 
 import pandas as pd
 
@@ -324,7 +322,7 @@ class MarketDataRepository:
         self.db.commit()
         logger.info("数据表已初始化")
     
-    def get_latest_date(self, index_id: str) -> Optional[str]:
+    def get_latest_date(self, index_id: str) -> Optional[pd.Timestamp]:
         """
         获取指定指数的最新数据日期
         
@@ -332,7 +330,7 @@ class MarketDataRepository:
             index_id: 指数代码
         
         Returns:
-            最新日期（YYYY-MM-DD）或None
+            最新日期（pd.Timestamp）或None
         """
         query = """
             SELECT MAX(date) as latest_date 
@@ -340,14 +338,16 @@ class MarketDataRepository:
             WHERE index_id = ?
         """
         result = self.db.fetch_one(query, (index_id,))
-        return result['latest_date'] if result and result['latest_date'] else None
+        if result and result['latest_date']:
+            return pd.to_datetime(result['latest_date'])
+        return None
     
-    def get_date_range(self, index_id: str) -> Optional[Dict[str, str]]:
+    def get_date_range(self, index_id: str) -> Optional[Dict[str, pd.Timestamp]]:
         """
         获取指定指数的数据日期范围
         
         Returns:
-            {'start': 'YYYY-MM-DD', 'end': 'YYYY-MM-DD'} 或 None
+            {'start': pd.Timestamp, 'end': pd.Timestamp} 或 None
         """
         query = """
             SELECT MIN(date) as start_date, MAX(date) as end_date
@@ -358,28 +358,32 @@ class MarketDataRepository:
         
         if result and result['start_date']:
             return {
-                'start': result['start_date'],
-                'end': result['end_date']
+                'start': pd.to_datetime(result['start_date']),
+                'end': pd.to_datetime(result['end_date'])
             }
         return None
     
     def query_prices(
         self,
         index_id: str,
-        start_date: str,
-        end_date: str
+        start_date: pd.Timestamp,
+        end_date: pd.Timestamp
     ) -> pd.DataFrame:
         """
         查询价格数据
         
         Args:
             index_id: 指数代码
-            start_date: 开始日期
-            end_date: 结束日期
+            start_date: 开始日期（pd.Timestamp）
+            end_date: 结束日期（pd.Timestamp）
         
         Returns:
             DataFrame with columns: ['date', 'close', 'volume', ...]
         """
+        # 转换为字符串用于SQL查询
+        start_date_str = start_date.strftime('%Y-%m-%d')
+        end_date_str = end_date.strftime('%Y-%m-%d')
+        
         query = """
             SELECT date, open, high, low, close, volume, source
             FROM index_prices
@@ -389,7 +393,7 @@ class MarketDataRepository:
             ORDER BY date ASC
         """
         
-        rows = self.db.fetch_all(query, (index_id, start_date, end_date))
+        rows = self.db.fetch_all(query, (index_id, start_date_str, end_date_str))
         
         if not rows:
             return pd.DataFrame()
@@ -450,7 +454,7 @@ class MarketDataRepository:
         self,
         index_id: str,
         source: str,
-        last_date: str,
+        last_date: pd.Timestamp,
         count: int
     ) -> None:
         """更新同步记录"""
@@ -461,26 +465,26 @@ class MarketDataRepository:
         """
         self.db.execute(
             query,
-            (index_id, source, last_date, count, datetime.now().isoformat())
+            (index_id, source, last_date.strftime('%Y-%m-%d'), count, pd.Timestamp.now().isoformat())
         )
         self.db.commit()
     
     def get_missing_dates(
         self,
         index_id: str,
-        start_date: str,
-        end_date: str
-    ) -> List[str]:
+        start_date: pd.Timestamp,
+        end_date: pd.Timestamp
+    ) -> List[pd.Timestamp]:
         """
         获取缺失的日期
         
         Args:
             index_id: 指数代码
-            start_date: 开始日期
-            end_date: 结束日期
+            start_date: 开始日期（pd.Timestamp）
+            end_date: 结束日期（pd.Timestamp）
         
         Returns:
-            缺失的日期列表
+            缺失的日期列表（pd.Timestamp）
         """
         # 查询已有数据
         existing = self.query_prices(index_id, start_date, end_date)
@@ -488,14 +492,13 @@ class MarketDataRepository:
         if existing.empty:
             # 全部缺失
             date_range = pd.date_range(start_date, end_date, freq='D')
-            return [d.strftime('%Y-%m-%d') for d in date_range]
+            return list(date_range)
         
         # 计算缺失日期
-        existing_dates = set(existing['date'].dt.strftime('%Y-%m-%d'))
+        existing_dates = set(existing['date'].dt.date)
         all_dates = pd.date_range(start_date, end_date, freq='D')
-        all_dates_str = [d.strftime('%Y-%m-%d') for d in all_dates]
         
-        missing = [d for d in all_dates_str if d not in existing_dates]
+        missing = [d for d in all_dates if d.date() not in existing_dates]
         return missing
 
 

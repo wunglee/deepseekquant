@@ -7,7 +7,7 @@
 
 from typing import Any, Dict, List
 import pandas as pd
-from datetime import datetime
+
 
 from core_bak_refactored.core.data.quality.data_quality_checker import DataQualityChecker
 from core_bak_refactored.core.data.quality.quality_types import DataQualityReport
@@ -46,7 +46,7 @@ def get_quality_summary(reports: List[DataQualityReport]) -> Dict[str, Any]:
             'total_reports': 0,
             'avg_score': 0.0,
             'pass_rate': 0.0,
-            'timestamp': datetime.now().isoformat()
+            'timestamp': pd.Timestamp.now().isoformat()
         }
     
     total_score = sum(r.overall_score for r in reports)
@@ -61,5 +61,5 @@ def get_quality_summary(reports: List[DataQualityReport]) -> Dict[str, Any]:
         'avg_accuracy': sum(r.accuracy_score for r in reports) / len(reports),
         'total_outliers': sum(r.outliers_detected for r in reports),
         'total_issues': sum(len(r.issues) for r in reports),
-        'timestamp': datetime.now().isoformat()
+        'timestamp': pd.Timestamp.now().isoformat()
     }

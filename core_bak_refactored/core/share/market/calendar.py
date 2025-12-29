@@ -1,21 +1,25 @@
 """
-市场日历模块（从 DataFetcher._is_market_open 和 _is_market_holiday 迁移而来）
+市场日历模块（从Da taFetcher._is_market_open 和 _is_market_holiday 迁移而来）
 
 职责：
 1. 判断市场是否开盘
 2. 检查市场假日
 3. 时区转换（转换为东部时间）
 4. 开盘时间验证
+
+注意：所有时间处理统一使用 pd.Timestamp
 """
-from datetime import datetime, time
-from typing import Dict, Tuple
+
 import logging
+from datetime import time
+
+import pandas as pd
 import pytz
 
 logger = logging.getLogger(__name__)
 
 
-def is_market_open(dt: datetime) -> bool:
+def is_market_open(dt: pd.Timestamp) -> bool:
     """
     判断市场是否开盘（从 DataFetcher._is_market_open 迁移而来）。
     
@@ -28,7 +32,7 @@ def is_market_open(dt: datetime) -> bool:
         True如果市场开盘，False否则
     
     Example:
-        >>> from datetime import datetime
+        >>>
         >>> import pytz
         >>> ny_time = pytz.timezone('US/Eastern').localize(datetime(2024, 1, 15, 10, 30))
         >>> is_market_open(ny_time)
@@ -70,7 +74,7 @@ def is_market_open(dt: datetime) -> bool:
         return False
 
 
-def is_market_holiday(dt: datetime) -> bool:
+def is_market_holiday(dt: pd.Timestamp) -> bool:
     """
     检查是否为市场假日（从 DataFetcher._is_market_holiday 迁移而来）。
     
@@ -93,7 +97,7 @@ def is_market_holiday(dt: datetime) -> bool:
         True如果是假日，False否则
     
     Example:
-        >>> from datetime import datetime
+        >>>
         >>> is_market_holiday(datetime(2024, 12, 25))
         True  # 圣诞节
         >>> is_market_holiday(datetime(2024, 1, 15))
@@ -158,7 +162,7 @@ def is_market_holiday(dt: datetime) -> bool:
         return False
 
 
-def get_nth_weekday(year: int, month: int, weekday: int, n: int) -> datetime:
+def get_nth_weekday(year: int, month: int, weekday: int, n: int) -> pd.Timestamp:
     """
     获取某月的第N个星期几。
     
@@ -169,10 +173,10 @@ def get_nth_weekday(year: int, month: int, weekday: int, n: int) -> datetime:
         n: 第几个（1-5）
     
     Returns:
-        对应的日期
+        对应的日期 (pd.Timestamp)
     """
     # 从该月第一天开始查找
-    first_day = datetime(year, month, 1)
+    first_day = pd.Timestamp(year=year, month=month, day=1)
     first_weekday = first_day.weekday()
     
     # 计算第一个目标星期几的日期
@@ -184,10 +188,10 @@ def get_nth_weekday(year: int, month: int, weekday: int, n: int) -> datetime:
     # 第N个目标星期几
     target_day = 1 + days_until_target + (n - 1) * 7
     
-    return datetime(year, month, target_day)
+    return pd.Timestamp(year=year, month=month, day=target_day)
 
 
-def get_last_weekday(year: int, month: int, weekday: int) -> datetime:
+def get_last_weekday(year: int, month: int, weekday: int) -> pd.Timestamp:
     """
     获取某月的最后一个星期几。
     
@@ -197,12 +201,12 @@ def get_last_weekday(year: int, month: int, weekday: int) -> datetime:
         weekday: 星期几（0=周一, 1=周二, ..., 6=周日）
     
     Returns:
-        对应的日期
+        对应的日期 (pd.Timestamp)
     """
     # 从该月最后一天往前查找
     import calendar
     last_day = calendar.monthrange(year, month)[1]
-    last_date = datetime(year, month, last_day)
+    last_date = pd.Timestamp(year=year, month=month, day=last_day)
     last_weekday = last_date.weekday()
     
     # 计算最后一个目标星期几的日期
@@ -213,4 +217,4 @@ def get_last_weekday(year: int, month: int, weekday: int) -> datetime:
     
     target_day = last_day - days_back
     
-    return datetime(year, month, target_day)
+    return pd.Timestamp(year=year, month=month, day=target_day)

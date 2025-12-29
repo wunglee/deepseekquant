@@ -14,7 +14,7 @@ import pandas as pd
 
 from core_bak_refactored.core.share.market.data_types import OHLCVRecord
 from core_bak_refactored.core.share.market.market_enums import MarketCode, TradingPhase
-from datetime import datetime as dt, timedelta
+
 logger = logging.getLogger(__name__)
 
 
@@ -408,7 +408,7 @@ class MarketUtils:
         return False
     
     @staticmethod
-    def get_last_trade_date(market: MarketCode, trade_date: pd.Timestamp, current_time: dt = None) -> pd.Timestamp:
+    def get_last_trade_date(market: MarketCode, trade_date: pd.Timestamp, current_time: pd.Timestamp = None) -> pd.Timestamp:
         """
         获取最后一个交易日（可能是今天，也可能是前一交易日）
 
@@ -437,7 +437,7 @@ class MarketUtils:
         request_date = trade_date
         
         # 使用传入的时间或当前系统时间
-        now = current_time if current_time is not None else dt.now()
+        now = current_time if current_time is not None else pd.Timestamp.now()
         now_time = now.time()
         request_weekday = request_date.weekday()
 
@@ -445,7 +445,7 @@ class MarketUtils:
         if request_weekday >= 5:  # 5=周六, 6=周日
             # 周末 -> 返回上周五
             days_to_subtract = request_weekday - 4  # 周六减2天，周日减3天
-            last_trade_date = request_date - timedelta(days=days_to_subtract)
+            last_trade_date = request_date - pd.Timedelta(days=days_to_subtract)
             return last_trade_date
 
         # 工作日：判断当前时间是否已经开盘
@@ -465,9 +465,9 @@ class MarketUtils:
         else:
             # 当前时间还未开盘（盘前时段） -> 返回前一个交易日
             if request_weekday == 0:  # 周一盘前 -> 返回上周五
-                last_trade_date = request_date - timedelta(days=3)
+                last_trade_date = request_date - pd.Timedelta(days=3)
             else:  # 其他工作日盘前 -> 返回昨天
-                last_trade_date = request_date - timedelta(days=1)
+                last_trade_date = request_date - pd.Timedelta(days=1)
             return last_trade_date
     
     @staticmethod
@@ -570,4 +570,3 @@ class MarketUtils:
             else:
                 # 收盘后到次日集合竞价前
                 return TradingPhase.AFTER_CLOSE
-

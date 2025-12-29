@@ -17,7 +17,8 @@
 """
 
 import logging
-from typing import Optional, List, Union
+from typing import Optional, List
+
 import pandas as pd
 
 from core_bak_refactored.core.share.market.market_enums import MarketCode
@@ -108,7 +109,7 @@ class TradingCalendarService:
         
         Args:
             market_code: 市场代码枚举或字符串 (MarketCode.CN 或 'CN')
-            date: 日期 (支持 datetime 或 pd.Timestamp)
+            date: 日期 (pd.Timestamp)
         
         Returns:
             bool: True表示是交易日，False表示非交易日
@@ -173,8 +174,8 @@ class TradingCalendarService:
         
         Args:
             market_code: 市场代码枚举或字符串
-            start_date: 起始日期（包含）(支持 datetime 或 pd.Timestamp)
-            end_date: 结束日期（包含）(支持 datetime 或 pd.Timestamp)
+            start_date: 起始日期（包含）(pd.Timestamp)
+            end_date: 结束日期（包含）(支持 pd.Timestamp)
         
         Returns:
             交易日列表 (pd.Timestamp 类型)
@@ -242,8 +243,8 @@ class TradingCalendarService:
         
         Args:
             market_code: 市场代码枚举或字符串
-            date1: 第一个日期（应早于date2）(支持 datetime 或 pd.Timestamp)
-            date2: 第二个日期 (支持 datetime 或 pd.Timestamp)
+            date1: 第一个日期（应早于date2）(支持 pd.Timestamp)
+            date2: 第二个日期 (支持 pd.Timestamp)
         
         Returns:
             bool: True表示连续，False表示不连续
@@ -285,7 +286,7 @@ class TradingCalendarService:
         
         Args:
             market_code: 市场代码枚举或字符串
-            date: 当前日期 (支持 datetime 或 pd.Timestamp)
+            date: 当前日期 (支持 pd.Timestamp)
         
         Returns:
             下一个交易日 (pd.Timestamp)，如果未来30天内没有则返回None
@@ -309,7 +310,7 @@ class TradingCalendarService:
         
         Args:
             market_code: 市场代码枚举或字符串
-            date: 当前日期 (支持 datetime 或 pd.Timestamp)
+            date: 当前日期 (支持 pd.Timestamp)
         
         Returns:
             上一个交易日 (pd.Timestamp)，如果过去30天内没有则返回None

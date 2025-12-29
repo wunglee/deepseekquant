@@ -4,11 +4,10 @@
 
 模拟从 Web 页面点击测试按钮的完整调用流程，带详细的链路追踪日志
 """
-import sys
-import os
 import logging
+import os
+import sys
 import time
-from datetime import datetime
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 

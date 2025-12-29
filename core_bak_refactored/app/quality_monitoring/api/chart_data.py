@@ -62,6 +62,10 @@ class ChartDataAssembler:
                            current_time:pd.Timestamp=pd.Timestamp.now()) -> Dict[str, Any]:
         """组装完整的图表数据（全程使用强类型 PriceData）
         
+        🆕 新逻辑：在交易时段（盘前/盘中），将历史数据和实时数据分离：
+        - 非交易时段：返回完整的历史数据（包含最后一个周期）
+        - 交易时段：除最后一个周期（留给实时数据叠加）
+        
         Args:
             index_id: 股票/指数代码
             period: 周期（daily/weekly/monthly）
@@ -107,9 +111,37 @@ class ChartDataAssembler:
             
             logger.info(f"K线数据获取成功，共 {price_data_full.count} 条（包含{warmup_count}条预热数据）")
             
+            # 🆕 新逻辑：在交易时段，需要排除最后一个周期K柱（留给实时数据）
+            exclude_last_bar = price_data_full.needs_realtime_kline
+            last_bar_for_cache = None  # 用于缓存的最后一个K柱
+            
+            if exclude_last_bar:
+                logger.info(f"🔄 交易时段，排除最后一个{period}周期K柱，留给实时数据叠加")
+                # 从完整数据中移除最后一条
+                price_data_for_calculation = self._slice_price_data(price_data_full, 0, -1)
+                
+                # 💾 缓存最后一个K柱（用于实时K线合并）
+                if period in ['weekly', 'monthly'] and price_data_full.count > 0:
+                    last_record = price_data_full.records[-1]
+                    last_bar_for_cache = {
+                        'date': last_record.date.strftime('%Y-%m-%d'),
+                        'open': float(last_record.open),
+                        'high': float(last_record.high),
+                        'low': float(last_record.low),
+                        'close': float(last_record.close),
+                        'volume': int(last_record.volume)
+                    }
+                    # 构建缓存key
+                    cache_key = f"last_period_bar_{index_id}_{period}"
+                    # 存入内存缓存（使用DataProvider的缓存机制）
+                    self._data_provider._set_to_memory_cache_obj(cache_key, last_bar_for_cache)
+                    logger.info(f"💾 缓存最后一个{period}K柱: date={last_bar_for_cache['date']}, open={last_bar_for_cache['open']:.2f}")
+            else:
+                price_data_for_calculation = price_data_full
+            
             # 2. 计算技术指标（使用完整 PriceData）
             logger.info(f"步骤2: 计算技术指标 ({indicators})...")
-            kline_with_ma_full, indicators_data_full = self._calculate_indicators(price_data_full, indicators)
+            kline_with_ma_full, indicators_data_full = self._calculate_indicators(price_data_for_calculation, indicators)
             logger.info(f"技术指标计算成功: {list(indicators_data_full.keys())}")
             
             # 🔧 关键优化：裁剪掉预热数据，只返回请求的条数
@@ -120,7 +152,7 @@ class ChartDataAssembler:
             }
             
             # 🔧 添加详细日志，诊断数据不一致问题
-            logger.info(f"裁剪后的数据: kline={len(kline_with_ma)} 条")
+            logger.info(f"裁剪后的数据: kline={len(kline_with_ma)} 条, exclude_last_bar={exclude_last_bar}")
             for key, value in indicators_data.items():
                 logger.info(f"  - {key}: {len(value)} 条")
             
@@ -134,7 +166,7 @@ class ChartDataAssembler:
             
             # 3. 检测市场事件（只在请求的范围内，使用裁剪后的 PriceData）
             logger.info("步骤3: 检测市场事件...")
-            price_data_requested = self._slice_price_data(price_data_full, -count)
+            price_data_requested = self._slice_price_data(price_data_for_calculation, -count, None)
             # 💚 强类型: 直接传入 PriceData 对象
             events = self._detect_events(price_data_requested)
             logger.info(f"事件检测成功，共 {len(events)} 个事件")
@@ -222,16 +254,14 @@ class ChartDataAssembler:
             # 日线：60条日线 = 60天，加冗余（周末/节假日）→ 120天
             days_needed = count * 2
             start_date = end_date - pd.Timedelta(days=days_needed)
-        start_date_str = start_date.strftime('%Y-%m-%d')
-        end_date_str = end_date.strftime('%Y-%m-%d')
         
         # 💚 直接调用 DataProvider，三层缓存已封装在内
         # 🔧 对于不支持直接查询的数据源（如 AKShare），会返回日线数据
         # 🔧 关键修复：传入 pd.Timestamp 类型，而不是字符串
         price_data = self._data_provider.get_index_prices(
             index_id,
-            pd.to_datetime(start_date_str),
-            pd.to_datetime(end_date_str),
+            start_date,
+            end_date,
             current_time,
             period  # 传递周期参数给数据源
         )
@@ -252,17 +282,21 @@ class ChartDataAssembler:
         
         return price_data
     
-    def _slice_price_data(self, price_data: PriceData, slice_count: int) -> PriceData:
+    def _slice_price_data(self, price_data: PriceData, start: int = 0, end: Optional[int] = None) -> PriceData:
         """裁剪 PriceData（保持强类型）
         
         Args:
             price_data: 原始价格数据
-            slice_count: 裁剪条数（负数表示从尾部取）
+            start: 开始索引（支持负数）
+            end: 结束索引（支持负数，None表示到最后）
         
         Returns:
             裁剪后的 PriceData 对象
         """
-        sliced_records = price_data.records[slice_count:] if slice_count < 0 else price_data.records[:slice_count]
+        if end is None:
+            sliced_records = price_data.records[start:]
+        else:
+            sliced_records = price_data.records[start:end]
         
         return PriceData(
             records=sliced_records,

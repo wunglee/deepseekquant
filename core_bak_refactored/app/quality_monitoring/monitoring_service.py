@@ -29,11 +29,10 @@ QualityMonitoringService (本文件 - 整合层)
   - AlertManager: 告警管理
   - QualityMonitoringService: 整合层（本文件）
 """
-
 from __future__ import annotations
-
+import pandas as pd
 import logging
-from datetime import datetime, timedelta
+
 from typing import Dict, Any, List, Optional
 
 from core_bak_refactored.core.data.providers.factory import get_global_factory
@@ -45,6 +44,7 @@ from core_bak_refactored.core.monitoring.alert_manager import (
     AlertConfig,
     AlertSeverity
 )
+from core_bak_refactored.core.share.market import MarketUtils
 from core_bak_refactored.infrastructure import (
     PerformanceStatsManager,
     ConfigManager,
@@ -105,7 +105,7 @@ class QualityMonitoringService:
         default_index = data_config.default_index  # 例如: '000300.SH'
         
         # 根据指数代码推断市场
-        market = self._infer_market_from_index(default_index)
+        market = MarketUtils.infer_market_from_symbol(default_index)
         
         # 从 MarketConfig 的 market_sources 映射获取该市场的数据源ID
         market_config = self.config_manager.get_market_config()
@@ -142,7 +142,7 @@ class QualityMonitoringService:
             - issues: 问题列表
             - metadata: 元数据
         """
-        cutoff_time = datetime.now() - timedelta(hours=hours)
+        cutoff_time = pd.Timestamp.now() - pd.Timedelta(hours=hours)
         
         # 从质量检查器的历史记录转换
         history = []
@@ -150,7 +150,8 @@ class QualityMonitoringService:
             # 检查时间戳
             report_time_str = report.metadata.get('timestamp', '')
             try:
-                report_time = datetime.fromisoformat(report_time_str)
+                # 🔧 统一使用 pd.Timestamp
+                report_time = pd.to_datetime(report_time_str)
                 if report_time < cutoff_time:
                     continue
             except (ValueError, TypeError):
@@ -190,7 +191,7 @@ class QualityMonitoringService:
             - data_source: 数据源（从metadata提取）
             - metadata: 元数据
         """
-        since = datetime.now() - timedelta(hours=hours)
+        since = pd.Timestamp.now() - pd.Timedelta(hours=hours)
         
         # 从AlertManager获取历史
         alert_records = self.alert_manager.get_alert_history(since=since, limit=1000)
@@ -286,9 +287,9 @@ class QualityMonitoringService:
         recommendations = self._generate_recommendations(quality_analysis, alert_analysis, performance_analysis)
         
         return {
-            'report_id': f"report_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+            'report_id': f"report_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}",
             'period': period,
-            'generated_at': datetime.now().isoformat(),
+            'generated_at': pd.Timestamp.now().isoformat(),
             'quality_analysis': quality_analysis,
             'alert_analysis': alert_analysis,
             'performance_analysis': performance_analysis,
@@ -298,42 +299,7 @@ class QualityMonitoringService:
     
     # ==================== 私有辅助方法 ====================
     
-    def _infer_market_from_index(self, index_code: str) -> str:
-        """
-        根据指数代码推断市场
-        
-        Args:
-            index_code: 指数代码（如 '000300.SH', '^GSPC'）
-        
-        Returns:
-            市场代码（CN, US, HK, JP, EU, SG等）
-        """
-        if not index_code:
-            return 'CN'  # 默认中国市场
-        
-        index_upper = index_code.upper()
-        
-        # 中国市场
-        if '.SH' in index_upper or '.SZ' in index_upper or '.BJ' in index_upper:
-            return 'CN'
-        # 香港市场
-        elif '.HK' in index_upper:
-            return 'HK'
-        # 美国市场
-        elif index_upper.startswith('^') or '.US' in index_upper:
-            return 'US'
-        # 日本市场
-        elif '.T' in index_upper or '.JP' in index_upper:
-            return 'JP'
-        # 欧洲市场
-        elif any(x in index_upper for x in ['.L', '.PA', '.DE', '.EU']):
-            return 'EU'
-        # 新加坡市场
-        elif '.SI' in index_upper or '.SG' in index_upper:
-            return 'SG'
-        else:
-            # 默认中国市场
-            return 'CN'
+
     
     def _map_severity_to_level(self, severity: AlertSeverity) -> str:
         """将AlertSeverity映射到遗留API的level"""
@@ -454,7 +420,7 @@ class QualityMonitoringService:
             - alerts_triggered: 触发的告警数
             - quality_score: 质量得分
         """
-        cycle_start = datetime.now()
+        cycle_start = pd.Timestamp.now()
         summary = {
             'cycle_time': 0.0,
             'data_points_checked': 0,
@@ -474,18 +440,20 @@ class QualityMonitoringService:
             index_id = self.config_manager.get_provider_config().default_index
             if not index_id:
                 raise RuntimeError("未配置默认指数代码，禁止使用模拟数据。请在配置中设置 data.default_index")
-            end_date = datetime.now().strftime('%Y-%m-%d')
-            start_date = (datetime.now() - timedelta(days=100)).strftime('%Y-%m-%d')
+            
+            # 🔧 统一使用 pd.Timestamp，不转换为字符串
+            end_date = pd.Timestamp.now()
+            start_date = pd.Timestamp.now() - pd.Timedelta(days=100)
             
             try:
-                data = self.data_provider.get_index_prices(index_id, start_date, end_date, datetime.now())
+                # ✅ 直接传递 pd.Timestamp 对象，不转换为字符串
+                data = self.data_provider.get_index_prices(index_id, start_date, end_date, pd.Timestamp.now())
             except Exception as e:
                 # 如果真实数据获取失败，使用示例数据演示功能
                 logger.warning(f"真实数据获取失败，使用示例数据: {e}")
                 # 生成示例数据
-                import pandas as pd
                 import numpy as np
-                dates = pd.date_range(end=datetime.now(), periods=100, freq='D')
+                dates = pd.date_range(end=pd.Timestamp.now(), periods=100, freq='D')
                 data = pd.DataFrame({
                     'close': np.random.uniform(4000, 5000, 100),
                     'volume': np.random.uniform(1e9, 5e9, 100)
@@ -501,7 +469,7 @@ class QualityMonitoringService:
             
             # 2. 转换为字典并写入质量历史
             quality_dict = {
-                'timestamp': datetime.now().isoformat(),
+                'timestamp': pd.Timestamp.now().isoformat(),
                 'overall_score': quality_report.overall_score,
                 'completeness': quality_report.completeness_score,
                 'consistency': quality_report.consistency_score,
@@ -533,13 +501,13 @@ class QualityMonitoringService:
                         'issues': quality_report.issues,
                         'index_id': '000300.SH'
                     },
-                    dedup_key=f"quality_{datetime.now().strftime('%Y%m%d%H')}"
+                    dedup_key=f"quality_{pd.Timestamp.now().strftime('%Y%m%d%H')}"
                 )
                 if alert_record:
                     alerts_triggered += 1
             
             # 4. 更新性能统计
-            cycle_time = (datetime.now() - cycle_start).total_seconds()
+            cycle_time = (pd.Timestamp.now() - cycle_start).total_seconds()
             data_points = len(data)
             anomalies = quality_dict['anomaly_count']
             
@@ -573,7 +541,7 @@ class QualityMonitoringService:
                        f"耗时{cycle_time:.2f}秒")
         
         except Exception as e:
-            cycle_time = (datetime.now() - cycle_start).total_seconds()
+            cycle_time = (pd.Timestamp.now() - cycle_start).total_seconds()
             logger.error(f"监控周期执行失败: {e}", exc_info=True)
             summary.update({
                 'cycle_time': cycle_time,
@@ -603,7 +571,7 @@ class QualityMonitoringService:
                     'quality_history': self.get_quality_history(hours=24*7),  # 7天
                     'alert_history': self.get_alert_history(hours=24*7),
                     'performance_stats': self.get_performance_statistics(),
-                    'exported_at': datetime.now().isoformat()
+                    'exported_at': pd.Timestamp.now().isoformat()
                 }
                 with open(filepath, 'w', encoding='utf-8') as f:
                     json.dump(data, f, indent=2, ensure_ascii=False)

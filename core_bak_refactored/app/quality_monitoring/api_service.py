@@ -47,7 +47,6 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime, timedelta
 from typing import Dict, Any, TYPE_CHECKING
 
 import pandas as pd
@@ -63,7 +62,6 @@ from core_bak_refactored.app.quality_monitoring.api.exporter import DataExporter
 from core_bak_refactored.app.quality_monitoring.api.health import HealthChecker
 from core_bak_refactored.app.quality_monitoring.api.system_metrics import MetricsCollector
 from core_bak_refactored.app.quality_monitoring.api.system_status import SystemStatusManager
-from core_bak_refactored.core.share import MarketCode
 from core_bak_refactored.core.share.config_manager import ConfigManager
 from core_bak_refactored.core.signal.indicator_service import TechnicalIndicators
 
@@ -225,7 +223,7 @@ class DataQualityAPIService:
                 return jsonify({
                     'status': 'success',
                     **result,
-                    'timestamp': datetime.now().isoformat()
+                    'timestamp': pd.Timestamp.now().isoformat()
                 })
             except Exception as e:
                 logger.error(f"获取当前质量数据失败: {e}")
@@ -250,7 +248,7 @@ class DataQualityAPIService:
                     csv_data = self.data_exporter.convert_report_to_csv(report, include_details)
                     response = Response(csv_data, mimetype='text/csv')
                     response.headers[
-                        'Content-Disposition'] = f'attachment; filename=quality_report_{datetime.now().strftime("%Y%m%d")}.csv'
+                        'Content-Disposition'] = f'attachment; filename=quality_report_{pd.Timestamp.now().strftime("%Y%m%d")}.csv'
                     return response
                 else:
                     if not include_details:
@@ -262,8 +260,8 @@ class DataQualityAPIService:
                     return jsonify({
                         'status': 'success',
                         'report': report,
-                        'timestamp': datetime.now().isoformat(),
-                        'report_id': report.get('report_id', f'report_{datetime.now().strftime("%Y%m%d_%H%M%S")}')
+                        'timestamp': pd.Timestamp.now().isoformat(),
+                        'report_id': report.get('report_id', f'report_{pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")}')
                     })
 
             except Exception as e:
@@ -292,7 +290,7 @@ class DataQualityAPIService:
                 return jsonify({
                     'status': 'success',
                     **result,
-                    'timestamp': datetime.now().isoformat()
+                    'timestamp': pd.Timestamp.now().isoformat()
                 })
 
             except Exception as e:
@@ -311,7 +309,7 @@ class DataQualityAPIService:
                 return jsonify({
                     'status': 'success',
                     'performance': enhanced_stats,
-                    'timestamp': datetime.now().isoformat()
+                    'timestamp': pd.Timestamp.now().isoformat()
                 })
 
             except Exception as e:
@@ -341,7 +339,7 @@ class DataQualityAPIService:
                         'aggregation': aggregation,
                         'data_points': len(metrics.get('data', []))
                     },
-                    'timestamp': datetime.now().isoformat()
+                    'timestamp': pd.Timestamp.now().isoformat()
                 })
 
             except Exception as e:
@@ -362,7 +360,7 @@ class DataQualityAPIService:
 
                 if data_type == 'quality':
                     success = self.data_exporter.export_quality_data(
-                        f'quality_export_{datetime.now().strftime("%Y%m%d_%H%M%S")}.{format}',
+                        f'quality_export_{pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")}.{format}',
                         format
                     )
                 elif data_type == 'alerts':
@@ -380,7 +378,7 @@ class DataQualityAPIService:
                         'message': '数据导出成功',
                         'export_type': data_type,
                         'format': format,
-                        'timestamp': datetime.now().isoformat()
+                        'timestamp': pd.Timestamp.now().isoformat()
                     })
                 else:
                     return jsonify({
@@ -503,7 +501,7 @@ class DataQualityAPIService:
                         'indicators': list(chart_data.get('indicators', {}).keys()),
                         'events_count': len(chart_data.get('events', []))
                     },
-                    'timestamp': datetime.now().isoformat()
+                    'timestamp': pd.Timestamp.now().isoformat()
                 })
 
             except ValueError as e:
@@ -619,7 +617,7 @@ class DataQualityAPIService:
                 return jsonify({
                     'status': 'success',
                     'data': intraday_data,
-                    'timestamp': datetime.now().isoformat()
+                    'timestamp': pd.Timestamp.now().isoformat()
                 })
 
             except ValueError as e:
@@ -655,7 +653,7 @@ class DataQualityAPIService:
                     return jsonify({
                         'status': 'success',
                         'config': config,
-                        'timestamp': datetime.now().isoformat()
+                        'timestamp': pd.Timestamp.now().isoformat()
                     })
                 else:
                     # 更新配置
@@ -672,7 +670,7 @@ class DataQualityAPIService:
                     return jsonify({
                         'status': 'success',
                         'message': '配置更新成功',
-                        'timestamp': datetime.now().isoformat()
+                        'timestamp': pd.Timestamp.now().isoformat()
                     })
 
             except Exception as e:
@@ -716,7 +714,7 @@ class DataQualityAPIService:
                 return jsonify({
                     'status': 'success',
                     'diagnostics': diagnostics,
-                    'timestamp': datetime.now().isoformat()
+                    'timestamp': pd.Timestamp.now().isoformat()
                 })
 
             except Exception as e:
@@ -735,7 +733,7 @@ class DataQualityAPIService:
                 return jsonify({
                     'status': 'success',
                     'system_status': status,
-                    'timestamp': datetime.now().isoformat()
+                    'timestamp': pd.Timestamp.now().isoformat()
                 })
 
             except Exception as e:
@@ -762,7 +760,7 @@ class DataQualityAPIService:
                     return jsonify({
                         'status': 'success',
                         'message': f'维护模式{action}成功',
-                        'timestamp': datetime.now().isoformat()
+                        'timestamp': pd.Timestamp.now().isoformat()
                     })
                 else:
                     return jsonify({
@@ -900,7 +898,7 @@ class DataQualityAPIService:
                     'status': 'success',
                     'current_quality': current,
                     'history': history[-100:],  # 最近100条记录
-                    'timestamp': datetime.now().isoformat()
+                    'timestamp': pd.Timestamp.now().isoformat()
                 })
             except Exception as e:
                 logger.error(f"获取仪表板数据失败: {e}")
@@ -921,7 +919,7 @@ class DataQualityAPIService:
                     'status': 'success',
                     'alerts': alerts,
                     'total_count': len(alerts),
-                    'timestamp': datetime.now().isoformat()
+                    'timestamp': pd.Timestamp.now().isoformat()
                 })
             except Exception as e:
                 logger.error(f"获取仪表板告警失败: {e}")
@@ -939,7 +937,7 @@ class DataQualityAPIService:
                 return jsonify({
                     'status': 'success',
                     'performance': stats,
-                    'timestamp': datetime.now().isoformat()
+                    'timestamp': pd.Timestamp.now().isoformat()
                 })
             except Exception as e:
                 logger.error(f"获取仪表板性能数据失败: {e}")
@@ -959,7 +957,7 @@ class DataQualityAPIService:
                     return jsonify({
                         'status': 'success',
                         'message': '质量检查已触发',
-                        'timestamp': datetime.now().isoformat()
+                        'timestamp': pd.Timestamp.now().isoformat()
                     })
                 else:
                     return jsonify({
@@ -1096,7 +1094,7 @@ class DataQualityAPIService:
                         'market_sources': market_sources,
                         'credentials': credentials
                     },
-                    'timestamp': datetime.now().isoformat()
+                    'timestamp': pd.Timestamp.now().isoformat()
                 })
             except Exception as e:
                 logger.error(f"获取市场配置失败: {e}")
@@ -1131,7 +1129,7 @@ class DataQualityAPIService:
                             'updated_markets': list(market_sources.keys()),
                             'config_file': self.config_manager.get_config_path('market')
                         },
-                        'timestamp': datetime.now().isoformat()
+                        'timestamp': pd.Timestamp.now().isoformat()
                     })
                 except ValueError as ve:
                     # 验证失败
@@ -1180,7 +1178,7 @@ class DataQualityAPIService:
                             'configured': True,
                             'test_status': 'success'
                         },
-                        'timestamp': datetime.now().isoformat()
+                        'timestamp': pd.Timestamp.now().isoformat()
                     })
                 else:
                     return jsonify({
@@ -1213,7 +1211,7 @@ class DataQualityAPIService:
                     return jsonify({
                         'status': 'success',
                         'message': f'{provider_id} 凭证已删除',
-                        'timestamp': datetime.now().isoformat()
+                        'timestamp': pd.Timestamp.now().isoformat()
                     })
                 else:
                     return jsonify({
@@ -1269,7 +1267,7 @@ class DataQualityAPIService:
                         'test_result': 'failed',
                         'available': False,
                         'message': str(e),
-                        'timestamp': datetime.now().isoformat()
+                        'timestamp': pd.Timestamp.now().isoformat()
                     }
 
                 # 根据结果返回 HTTP 状态码
@@ -1312,7 +1310,7 @@ class DataQualityAPIService:
                     'primary_source': primary_source,
                     'total': len(implemented_providers),
                     'total_configured': len(all_providers),  # 配置文件中的总数
-                    'timestamp': datetime.now().isoformat()
+                    'timestamp': pd.Timestamp.now().isoformat()
                 })
             except Exception as e:
                 logger.error(f"获取数据源列表失败: {e}")
@@ -1342,7 +1340,7 @@ class DataQualityAPIService:
                 return jsonify({
                     'status': 'success',
                     'provider': provider,
-                    'timestamp': datetime.now().isoformat()
+                    'timestamp': pd.Timestamp.now().isoformat()
                 })
             except Exception as e:
                 logger.error(f"获取数据源配置失败: {e}")
@@ -1388,7 +1386,7 @@ class DataQualityAPIService:
                 # 添加默认字段
                 new_provider.setdefault('enabled', True)
                 new_provider.setdefault('priority', len(providers) + 1)
-                new_provider.setdefault('created_at', datetime.now().isoformat())
+                new_provider.setdefault('created_at', pd.Timestamp.now().isoformat())
 
                 providers.append(new_provider)
                 config['providers'] = providers
@@ -1400,7 +1398,7 @@ class DataQualityAPIService:
                     'status': 'success',
                     'message': '数据源创建成功',
                     'provider': new_provider,
-                    'timestamp': datetime.now().isoformat()
+                    'timestamp': pd.Timestamp.now().isoformat()
                 }), 201
             except Exception as e:
                 logger.error(f"创建数据源失败: {e}")
@@ -1438,7 +1436,7 @@ class DataQualityAPIService:
 
                 # 更新字段
                 providers[provider_index].update(updated_data)
-                providers[provider_index]['updated_at'] = datetime.now().isoformat()
+                providers[provider_index]['updated_at'] = pd.Timestamp.now().isoformat()
 
                 config['providers'] = providers
                 self.config_manager.update({'data': config})
@@ -1448,7 +1446,7 @@ class DataQualityAPIService:
                     'status': 'success',
                     'message': '数据源更新成功',
                     'provider': providers[provider_index],
-                    'timestamp': datetime.now().isoformat()
+                    'timestamp': pd.Timestamp.now().isoformat()
                 })
             except Exception as e:
                 logger.error(f"更新数据源失败: {e}")
@@ -1486,7 +1484,7 @@ class DataQualityAPIService:
                     'status': 'success',
                     'message': '数据源删除成功',
                     'deleted_provider': deleted_provider,
-                    'timestamp': datetime.now().isoformat()
+                    'timestamp': pd.Timestamp.now().isoformat()
                 })
             except Exception as e:
                 logger.error(f"删除数据源失败: {e}")
@@ -1520,8 +1518,9 @@ class DataQualityAPIService:
                 temp_credentials = request_data.get('credentials', {})
                 proxy_config = request_data.get('proxy', {})
                 test_symbol = request_data.get('test_symbol', 'AAPL')
-                start_date = request_data.get('start_date', '2023-01-01')
-                end_date = request_data.get('end_date', '2023-12-31')
+                # 🔧 统一使用 pd.Timestamp，不使用字符串日期
+                start_date = pd.to_datetime(request_data.get('start_date', '2023-01-01'))
+                end_date = pd.to_datetime(request_data.get('end_date', '2023-12-31'))
 
                 # 如果没有传入代理配置，则从系统配置中获取
                 if not proxy_config:
@@ -1596,7 +1595,7 @@ class DataQualityAPIService:
                             'date_range': f'{start_date} to {end_date}',
                             'latency_ms': latency_ms
                         },
-                        'timestamp': datetime.now().isoformat()
+                        'timestamp': pd.Timestamp.now().isoformat()
                     }
 
                     # 测试成功后，保存凭证到文件
@@ -1646,11 +1645,11 @@ class DataQualityAPIService:
                 # 停用所有数据源
                 for p in providers:
                     p['status'] = 'inactive'
-                    p['updated_at'] = datetime.now().isoformat()
+                    p['updated_at'] = pd.Timestamp.now().isoformat()
 
                 # 激活目标数据源
                 target_provider['status'] = 'active'
-                target_provider['updated_at'] = datetime.now().isoformat()
+                target_provider['updated_at'] = pd.Timestamp.now().isoformat()
 
                 # 更新配置文件中的 primary_source
                 config['primary_source'] = provider_id
@@ -1663,7 +1662,7 @@ class DataQualityAPIService:
                     'status': 'success',
                     'message': f'已切换到 {target_provider.get("name", provider_id)}',
                     'active_provider': provider_id,
-                    'timestamp': datetime.now().isoformat()
+                    'timestamp': pd.Timestamp.now().isoformat()
                 })
             except Exception as e:
                 logger.error(f"激活数据源失败: {e}")
@@ -1702,7 +1701,7 @@ class DataQualityAPIService:
                     'status': 'success',
                     'credentials': credentials_list,
                     'total': len(credentials_list),
-                    'timestamp': datetime.now().isoformat()
+                    'timestamp': pd.Timestamp.now().isoformat()
                 })
             except Exception as e:
                 logger.error(f"获取凭证列表失败: {e}")
@@ -1741,7 +1740,7 @@ class DataQualityAPIService:
                 return jsonify({
                     'status': 'success',
                     'credential': sanitized_cred,
-                    'timestamp': datetime.now().isoformat()
+                    'timestamp': pd.Timestamp.now().isoformat()
                 })
             except Exception as e:
                 logger.error(f"获取凭证失败: {e}")
@@ -1785,7 +1784,7 @@ class DataQualityAPIService:
 
                 # 添加默认字段
                 new_cred.setdefault('enabled', True)
-                new_cred.setdefault('created_at', datetime.now().isoformat())
+                new_cred.setdefault('created_at', pd.Timestamp.now().isoformat())
 
                 config[new_cred['id']] = new_cred
                 self.config_manager.update({'credentials': config})
@@ -1803,7 +1802,7 @@ class DataQualityAPIService:
                     'status': 'success',
                     'message': '凭证创建成功',
                     'credential': sanitized,
-                    'timestamp': datetime.now().isoformat()
+                    'timestamp': pd.Timestamp.now().isoformat()
                 }), 201
             except Exception as e:
                 logger.error(f"创建凭证失败: {e}")
@@ -1836,7 +1835,7 @@ class DataQualityAPIService:
 
                 # 更新字段
                 config[credential_id].update(updated_data)
-                config[credential_id]['updated_at'] = datetime.now().isoformat()
+                config[credential_id]['updated_at'] = pd.Timestamp.now().isoformat()
 
                 self.config_manager.update({'credentials': config})
                 logger.info(f"更新凭证成功: {credential_id}")
@@ -1844,7 +1843,7 @@ class DataQualityAPIService:
                 return jsonify({
                     'status': 'success',
                     'message': '凭证更新成功',
-                    'timestamp': datetime.now().isoformat()
+                    'timestamp': pd.Timestamp.now().isoformat()
                 })
             except Exception as e:
                 logger.error(f"更新凭证失败: {e}")
@@ -1874,7 +1873,7 @@ class DataQualityAPIService:
                 return jsonify({
                     'status': 'success',
                     'message': '凭证删除成功',
-                    'timestamp': datetime.now().isoformat()
+                    'timestamp': pd.Timestamp.now().isoformat()
                 })
             except Exception as e:
                 logger.error(f"删除凭证失败: {e}")
@@ -1889,18 +1888,21 @@ class DataQualityAPIService:
             """获取指数价格数据（直接来自当前数据提供者）"""
             try:
                 index_id = request.args.get('index_id', type=str)
-                start_date = request.args.get('start_date', type=str)
-                end_date = request.args.get('end_date', type=str)
-                if not all([index_id, start_date, end_date]):
+                start_date_str = request.args.get('start_date', type=str)
+                end_date_str = request.args.get('end_date', type=str)
+                if not all([index_id, start_date_str, end_date_str]):
                     return jsonify({'status': 'error', 'message': '缺少必要参数', 'error_code': 'MISSING_PARAMS'}), 400
+                # 🔧 统一使用 pd.Timestamp，不使用字符串日期
+                start_date = pd.to_datetime(start_date_str)
+                end_date = pd.to_datetime(end_date_str)
                 provider = getattr(self.quality_monitor, 'data_provider_config', None)
                 if not provider or not hasattr(provider, 'get_index_prices'):
                     return jsonify({'status': 'error', 'message': '数据提供者不可用',
                                     'error_code': 'DATA_PROVIDER_UNAVAILABLE'}), 503
-                df = provider.get_index_prices(index_id, start_date, end_date, datetime.now())
+                df = provider.get_index_prices(index_id, start_date, end_date, pd.Timestamp.now())
                 data = df.to_dict(orient='records') if hasattr(df, 'to_dict') else []
                 return jsonify(
-                    {'status': 'success', 'data': data, 'count': len(data), 'timestamp': datetime.now().isoformat()})
+                    {'status': 'success', 'data': data, 'count': len(data), 'timestamp': pd.Timestamp.now().isoformat()})
             except Exception as e:
                 logger.error(f"获取指数价格失败: {e}")
                 return jsonify({'status': 'error', 'message': str(e), 'error_code': 'INDEX_PRICES_FETCH_FAILED'}), 500
@@ -1910,10 +1912,13 @@ class DataQualityAPIService:
             """获取指数收益率序列（排除异常日）"""
             try:
                 index_id = request.args.get('index_id', type=str)
-                start_date = request.args.get('start_date', type=str)
-                end_date = request.args.get('end_date', type=str)
-                if not all([index_id, start_date, end_date]):
+                start_date_str = request.args.get('start_date', type=str)
+                end_date_str = request.args.get('end_date', type=str)
+                if not all([index_id, start_date_str, end_date_str]):
                     return jsonify({'status': 'error', 'message': '缺少必要参数', 'error_code': 'MISSING_PARAMS'}), 400
+                # 🔧 统一使用 pd.Timestamp，不使用字符串日期
+                start_date = pd.to_datetime(start_date_str)
+                end_date = pd.to_datetime(end_date_str)
                 provider = getattr(self.quality_monitor, 'data_provider_config', None)
                 if not provider or not hasattr(provider, 'get_index_returns'):
                     return jsonify({'status': 'error', 'message': '数据提供者不可用',
@@ -1922,7 +1927,7 @@ class DataQualityAPIService:
                 data = [{'date': str(idx), 'return': float(val)} for idx, val in
                         (series.items() if hasattr(series, 'items') else [])]
                 return jsonify(
-                    {'status': 'success', 'data': data, 'count': len(data), 'timestamp': datetime.now().isoformat()})
+                    {'status': 'success', 'data': data, 'count': len(data), 'timestamp': pd.Timestamp.now().isoformat()})
             except Exception as e:
                 logger.error(f"获取指数收益率失败: {e}")
                 return jsonify({'status': 'error', 'message': str(e), 'error_code': 'INDEX_RETURNS_FETCH_FAILED'}), 500
@@ -1985,7 +1990,7 @@ class DataQualityAPIService:
                     'baseline': {'count': len(baseline_records) if hasattr(baseline_records, '__len__') else 0,
                                  'samples': baseline_data},
                     'config': result.get('config', {}),
-                    'timestamp': datetime.now().isoformat()
+                    'timestamp': pd.Timestamp.now().isoformat()
                 })
             except Exception as e:
                 logger.error(f"获取事件窗口数据失败: {e}")
@@ -2001,7 +2006,7 @@ class DataQualityAPIService:
                                     'error_code': 'DATA_PROVIDER_UNAVAILABLE'}), 503
                 log = provider.get_cross_validation_log()
                 return jsonify(
-                    {'status': 'success', 'log': log, 'count': len(log), 'timestamp': datetime.now().isoformat()})
+                    {'status': 'success', 'log': log, 'count': len(log), 'timestamp': pd.Timestamp.now().isoformat()})
             except Exception as e:
                 logger.error(f"获取交叉验证日志失败: {e}")
                 return jsonify(
@@ -2033,14 +2038,16 @@ class DataQualityAPIService:
                     multiplier = {'daily': 1, 'weekly': 7, 'monthly': 30}.get(period, 1)
                     days_needed = count * multiplier * 2
 
+                    # 🔧 统一使用 pd.Timestamp，不转换为字符串
                     if before:
-                        end_date = before.strftime('%Y-%m-%d')
+                        end_date = before
                     else:
                         end_date = pd.Timestamp.now()
 
-                    start_date = end_date - timedelta(days=days_needed)
-                    df = provider.get_index_prices(index_id, start_date.strftime('%Y-%m-%d'),
-                                                   end_date.strftime('%Y-%m-%d'), datetime.now())
+                    start_date = end_date - pd.Timedelta(days=days_needed)
+                    
+                    # ✅ 直接传递 pd.Timestamp 对象，不转换为字符串
+                    df = provider.get_index_prices(index_id, start_date, end_date, pd.Timestamp.now())
                     if hasattr(df, 'empty') and df.empty:
                         # 生产环境：真实数据为空时返回错误，不降级为Mock
                         return jsonify({'status': 'error', 'message': '无数据', 'error_code': 'NO_DATA'}), 404
@@ -2105,7 +2112,7 @@ class DataQualityAPIService:
                             record[key] = value.strftime('%Y-%m-%d')
                 return jsonify(
                     {'status': 'success', 'data': data, 'period': period, 'count': len(data), 'events': events,
-                     'timestamp': datetime.now().isoformat()})
+                     'timestamp': pd.Timestamp.now().isoformat()})
             except Exception as e:
                 logger.error(f"获取K线数据失败: {e}")
                 return jsonify({'status': 'error', 'message': str(e), 'error_code': 'KLINE_FETCH_FAILED'}), 500
@@ -2114,16 +2121,21 @@ class DataQualityAPIService:
         @self.app.route('/api/v1/data/kline/realtime', methods=['GET'])
         def get_realtime_kline():
             """
-            获取当天K线柱的实时数据（真实模式，独立于分时图）
+            获取实时K线柱数据（真实模式，支持日线/周线/月线）
+            
+            🆕 新逻辑：
+            - 日线：返回独立的当天K柱
+            - 周线/月线：返回合并后的周期K柱（如果当天不是新周/新月，则合并到最后一个周期）
             
             参数：
-                index_id: 证券代码
+                index_id: 证券代码（必需）
+                period: 周期（daily/weekly/monthly，默认 daily）
             
             返回：
                 {
                     status: 'success',
                     data: {
-                        date: 'YYYY-MM-DD',
+                        date: 'YYYY-MM-DD',  # 周线/月线为周期开始日期
                         open: float,
                         high: float,
                         low: float,
@@ -2136,8 +2148,13 @@ class DataQualityAPIService:
             """
             try:
                 index_id = request.args.get('index_id', type=str)
+                period = request.args.get('period', default='daily', type=str)  # 🆕 新增：周期参数
+                
                 if not index_id:
                     return jsonify({'status': 'error', 'message': '缺少index_id', 'error_code': 'MISSING_PARAMS'}), 400
+                
+                if period not in ['daily', 'weekly', 'monthly']:
+                    return jsonify({'status': 'error', 'message': f'无效的period: {period}', 'error_code': 'INVALID_PERIOD'}), 400
 
                 provider = getattr(self.quality_monitor, 'data_provider_config', None)
                 if not provider:
@@ -2145,22 +2162,117 @@ class DataQualityAPIService:
                                     'error_code': 'DATA_PROVIDER_UNAVAILABLE'}), 503
 
                 try:
-                    # 🔧 直接调用领域层，所有逻辑由领域层处理
-                    result = provider.get_realtime_kline(symbol=index_id)
+                    # 🆕 步骤1: 获取实时K线数据（日线维度）
+                    realtime_kline = provider.get_realtime_kline(symbol=index_id)
+                    
+                    # 🆕 步骤2: 如果是周线/月线，需要合并到历史数据
+                    if period in ['weekly', 'monthly']:
+                        # 2.1 从缓存读取最后一个周期K柱（由第一个接口缓存）
+                        cache_key = f"last_period_bar_{index_id}_{period}"
+                        last_period_bar = provider._get_from_memory_cache(cache_key)
+                        
+                        if last_period_bar:
+                            # 2.2 使用缓存的最后一个K柱进行合并
+                            logger.info(f"💾 从缓存读取最后一个{period}K柱: date={last_period_bar['date']}")
+                            
+                            # 构造PriceData对象（只包含最后一个K柱）
+                            from core_bak_refactored.core.share.market.data_types import PriceData, OHLCVRecord
+                            import pandas as pd
+                            
+                            last_record = OHLCVRecord(
+                                date=pd.Timestamp(last_period_bar['date']),
+                                open=last_period_bar['open'],
+                                high=last_period_bar['high'],
+                                low=last_period_bar['low'],
+                                close=last_period_bar['close'],
+                                volume=last_period_bar['volume']
+                            )
+                            
+                            price_data = PriceData(
+                                records=[last_record],
+                                symbol=index_id,
+                                start_date=last_record.date,
+                                end_date=last_record.date,
+                                count=1
+                            )
+                            
+                            # 2.3 调用合并逻辑
+                            current_time = pd.Timestamp.now()
+                            merged_price_data = provider.merge_realtime_kline_to_period(
+                                price_data=price_data,
+                                realtime_kline=realtime_kline,
+                                period=period,
+                                current_time=current_time
+                            )
+                            
+                            # 2.4 提取最后一个K柱返回给前端
+                            last_record = merged_price_data.records[-1]
+                            result = {
+                                'date': last_record.date.strftime('%Y-%m-%d'),
+                                'open': float(last_record.open),
+                                'high': float(last_record.high),
+                                'low': float(last_record.low),
+                                'close': float(last_record.close),
+                                'volume': int(last_record.volume),
+                                'should_poll': realtime_kline.get('should_poll', False)
+                            }
+                            logger.info(f"🔄 {period}线 - 使用缓存合并后返回: date={result['date']}, open={result['open']:.2f}, close={result['close']:.2f}")
+                        else:
+                            # 缓存中没有，需要查询历史数据（fallback机制）
+                            logger.warning(f"⚠️ {period}线 - 缓存未命中，需要查询历史数据")
+                            current_time = pd.Timestamp.now()
+                            end_date = current_time
+                            start_date = end_date - pd.Timedelta(days=90)
+                            
+                            from core_bak_refactored.core.share.market.data_types import PriceData
+                            price_data: PriceData = provider.get_index_prices(
+                                index_id,
+                                start_date,
+                                end_date,
+                                current_time,
+                                period
+                            )
+                            
+                            if price_data and price_data.count > 0:
+                                merged_price_data = provider.merge_realtime_kline_to_period(
+                                    price_data=price_data,
+                                    realtime_kline=realtime_kline,
+                                    period=period,
+                                    current_time=current_time
+                                )
+                                
+                                last_record = merged_price_data.records[-1]
+                                result = {
+                                    'date': last_record.date.strftime('%Y-%m-%d'),
+                                    'open': float(last_record.open),
+                                    'high': float(last_record.high),
+                                    'low': float(last_record.low),
+                                    'close': float(last_record.close),
+                                    'volume': int(last_record.volume),
+                                    'should_poll': realtime_kline.get('should_poll', False)
+                                }
+                                logger.info(f"🔄 {period}线 - fallback合并后返回: date={result['date']}, open={result['open']:.2f}, close={result['close']:.2f}")
+                            else:
+                                # 没有历史数据时，返回原始实时数据
+                                result = realtime_kline
+                                logger.warning(f"⚠️ {period}线 - 无历史数据，返回原始实时K线")
+                    else:
+                        # 日线：直接返回实时K线
+                        result = realtime_kline
 
                     return jsonify({
                         'status': 'success',
                         'data': result,
-                        'timestamp': datetime.now().isoformat()
+                        'timestamp': pd.Timestamp.now().isoformat()
                     })
 
                 except Exception as e:
-                    logger.error(f"获取实时K线失败: {e}")
+                    logger.error(f"获取实时K线失败: {e}", exc_info=True)
                     return jsonify(
                         {'status': 'error', 'message': str(e), 'error_code': 'REALTIME_KLINE_FETCH_FAILED'}), 500
 
             except Exception as e:
-                logger.error(f"处理实时K线请求失败: {e}")
+                logger.error(f"处理实时K线请求失败: {e}", exc_info=True)
                 return jsonify(
                     {'status': 'error', 'message': str(e), 'error_code': 'REALTIME_KLINE_REQUEST_FAILED'}), 500
 
@@ -2275,7 +2387,7 @@ class DataQualityAPIService:
             emit('connection_response', {
                 'status': 'connected',
                 'message': '已连接到数据质量监控服务',
-                'timestamp': datetime.now().isoformat()
+                'timestamp': pd.Timestamp.now().isoformat()
             })
 
         @self.socketio.on('disconnect')
@@ -2291,7 +2403,7 @@ class DataQualityAPIService:
                 emit('quality_update', {
                     'status': 'success',
                     'data': result,
-                    'timestamp': datetime.now().isoformat()
+                    'timestamp': pd.Timestamp.now().isoformat()
                 })
             except Exception as e:
                 logger.error(f"Socket.IO获取质量数据失败: {e}")
@@ -2313,7 +2425,7 @@ class DataQualityAPIService:
             self.socketio.emit('quality_update', {
                 'status': 'success',
                 'data': quality_data,
-                'timestamp': datetime.now().isoformat()
+                'timestamp': pd.Timestamp.now().isoformat()
             })
             logger.debug("已广播质量数据更新到所有客户端")
         except Exception as e:
@@ -2333,7 +2445,7 @@ class DataQualityAPIService:
             'average_response_time': 0.0,
             'endpoint_usage': {},
             'error_rates': {},
-            'timestamp': datetime.now().isoformat()
+            'timestamp': pd.Timestamp.now().isoformat()
         }
 
     def export_api_logs(self, filepath: str) -> bool:

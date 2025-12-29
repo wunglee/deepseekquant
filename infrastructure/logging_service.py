@@ -11,7 +11,7 @@ from pathlib import Path
 import os
 import json
 import sys
-from datetime import datetime, timedelta
+
 import threading
 from enum import Enum
 import gzip
@@ -365,7 +365,7 @@ class DeepSeekQuantFormatter(logging.Formatter):
                 return super().format(record)
         except Exception as e:
             # 格式化失败时的备选方案
-            return f"LOG_FORMAT_ERROR - {datetime.now().isoformat()} - {record.levelname} - {record.getMessage()}"
+            return f"LOG_FORMAT_ERROR - {pd.Timestamp.now().isoformat()} - {record.levelname} - {record.getMessage()}"
 
 
 class AuditLogFilter(logging.Filter):
@@ -1078,8 +1078,8 @@ class LoggingSystem:
             'critical_logs': 0,
             'audit_logs': 0,
             'performance_logs': 0,
-            'last_flush': datetime.now().isoformat(),
-            'start_time': datetime.now().isoformat()
+            'last_flush': pd.Timestamp.now().isoformat(),
+            'start_time': pd.Timestamp.now().isoformat()
         }
         
         # 日志查询引擎
@@ -1398,7 +1398,7 @@ class LoggingSystem:
             audit_record.resource = resource
             audit_record.status = status
             audit_record.details = details or {}
-            audit_record.timestamp = datetime.now().isoformat()
+            audit_record.timestamp = pd.Timestamp.now().isoformat()
             audit_record.is_audit = True
 
             self.audit_logger.handle(audit_record)
@@ -1433,7 +1433,7 @@ class LoggingSystem:
             performance_record.duration = duration
             performance_record.success = success
             performance_record.metrics = metrics or {}
-            performance_record.timestamp = datetime.now().isoformat()
+            performance_record.timestamp = pd.Timestamp.now().isoformat()
             performance_record.is_performance = True
 
             self.performance_logger.handle(performance_record)
@@ -1463,7 +1463,7 @@ class LoggingSystem:
             error_record.error_type = error_type
             error_record.error_message = error_message
             error_record.context = context or {}
-            error_record.timestamp = datetime.now().isoformat()
+            error_record.timestamp = pd.Timestamp.now().isoformat()
 
             self.error_logger.handle(error_record)
             self._update_stats('error_logs')
@@ -1566,7 +1566,7 @@ class LoggingSystem:
                 except Exception as e:
                     self._log_internal_error("flush", e)
 
-            self.stats['last_flush'] = datetime.now().isoformat()
+            self.stats['last_flush'] = pd.Timestamp.now().isoformat()
 
     def rotate_logs(self):
         """轮转日志文件"""
@@ -1665,7 +1665,7 @@ class LoggingSystem:
                     failed_handlers.append({'handler': name, 'error': str(e)})
             
             # 计算运行时间
-            start_time = datetime.fromisoformat(self.stats.get('start_time', datetime.now().isoformat()))
+            start_time = datetime.fromisoformat(self.stats.get('start_time', pd.Timestamp.now().isoformat()))
             uptime_seconds = (datetime.now() - start_time).total_seconds()
             
             return {
@@ -1760,7 +1760,7 @@ class LoggingSystem:
             stats['handlers_count'] = len(self.handlers)
             stats['initialized'] = self._initialized
             stats['shutdown'] = self._shutdown
-            stats['current_time'] = datetime.now().isoformat()
+            stats['current_time'] = pd.Timestamp.now().isoformat()
 
             # 添加文件大小信息
             stats['file_sizes'] = self._get_log_file_sizes()

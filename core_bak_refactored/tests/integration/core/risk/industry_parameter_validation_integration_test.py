@@ -10,13 +10,12 @@
 """
 
 import unittest
+
 import numpy as np
-from typing import Dict, List
 from scipy import stats
 
-from core_bak_refactored.core.risk.stress_testing import IndustryParameterAnalyzer
 from core_bak_refactored.core.backtest._fragments.uat_validator import UATValidator
-
+from core_bak_refactored.core.risk.stress_testing import IndustryParameterAnalyzer
 # 导入测试辅助工具（消除重复代码）
 from core_bak_refactored.tests.fixtures.core.backtest.backtest_fixtures import IndustrySampleGenerator
 

@@ -7,8 +7,9 @@
 3. 处理缓存和备用数据源
 4. 更新性能指标
 """
+import pandas as pd
 from typing import Dict, List, Any, Optional
-from datetime import datetime
+
 import asyncio
 import time
 import logging
@@ -118,7 +119,7 @@ async def get_historical_data(
         fetcher.performance_metrics['avg_response_time'] = (
             fetcher.performance_metrics.get('avg_response_time', 0) * 0.9 + duration * 0.1
         )
-        fetcher.performance_metrics['last_update'] = datetime.now().isoformat()
+        fetcher.performance_metrics['last_update'] = pd.Timestamp.now().isoformat()
         
         logger.info(
             f"历史数据获取完成: {len(results)} 成功, {len(failed_symbols)} 失败, "

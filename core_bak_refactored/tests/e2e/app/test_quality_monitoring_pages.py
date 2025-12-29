@@ -34,15 +34,15 @@
 - API 测试可以在 CI/CD 中运行（使用 mock 模式）
 """
 
-import pytest
-import time
 import os
+import time
+
+import pytest
+import requests
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException
-import requests
+from selenium.webdriver.support.ui import WebDriverWait
 
 # E2E 测试标记
 E2E_MARKER = pytest.mark.e2e

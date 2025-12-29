@@ -96,7 +96,7 @@ def record_error_with_context(self, error: Exception, context: str,
             return
             
         error_record = ErrorRecord(
-            timestamp=datetime.now().isoformat(),
+            timestamp=pd.Timestamp.now().isoformat(),
             error_type=type(error).__name__,
             error_message=str(error),
             context=context,
@@ -132,7 +132,7 @@ def record_operation(self, operation_type: str, success: bool,
             
         # 记录详细的操作信息
         operation_record = {
-            'timestamp': datetime.now().isoformat(),
+            'timestamp': pd.Timestamp.now().isoformat(),
             'operation_type': operation_type,
             'success': success,
             'processing_time': processing_time,
@@ -170,7 +170,7 @@ class ResourceManager:
             self.allocated_resources[resource_id] = {
                 'type': resource_type,
                 'size': size,
-                'timestamp': datetime.now().isoformat()
+                'timestamp': pd.Timestamp.now().isoformat()
             }
             return True
             

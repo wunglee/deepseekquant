@@ -13,9 +13,8 @@
 - 函数命名使用数学/统计术语，而非业务术语
 """
 
-import numpy as np
-from typing import List, Dict, Any
 import logging
+from typing import List, Dict, Any
 
 logger = logging.getLogger('DeepSeekQuant.Infrastructure.QualityAnalysisCalculators')
 

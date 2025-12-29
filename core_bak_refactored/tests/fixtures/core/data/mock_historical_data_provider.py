@@ -1,4 +1,4 @@
-from datetime import datetime
+
 
 import numpy as np
 import pandas as pd
@@ -112,7 +112,7 @@ class MockHistoricalDataProvider:
 
         return prices
 
-    def get_index_prices(self, index_id: str, start_date: str, end_date: str,current_time:datetime) -> pd.DataFrame:
+    def get_index_prices(self, index_id: str, start_date: str, end_date: str,current_time: pd.Timestamp) -> pd.DataFrame:
         """
         获取指数价格数据
         
@@ -193,7 +193,7 @@ class MockHistoricalDataProvider:
         })
 
     def get_index_returns(self, index_id: str, start_date: str, end_date: str) -> pd.Series:
-        df = self.get_index_prices(index_id, start_date, end_date, datetime.now())
+        df = self.get_index_prices(index_id, start_date, end_date, pd.Timestamp.now())
         returns = df['close'].pct_change().fillna(0)
         returns.index = df['date']
         return returns
@@ -298,7 +298,7 @@ class MockHistoricalDataProvider:
         event_start = event_dt - pd.Timedelta(days=window_days + 30)
         event_end = event_dt + pd.Timedelta(days=window_days + 30)
 
-        baseline_data = self.get_index_prices(index_id, baseline_start.strftime('%Y-%m-%d'), baseline_end.strftime('%Y-%m-%d'), datetime.now())
+        baseline_data = self.get_index_prices(index_id, baseline_start.strftime('%Y-%m-%d'), baseline_end.strftime('%Y-%m-%d'), pd.Timestamp.now())
         # 基于baseline统计进行校准生成事件段数据
         r = baseline_data['close'].pct_change().dropna().values
         if r.size > 5:

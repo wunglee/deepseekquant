@@ -7,9 +7,6 @@ DataProviderFactory 测试 - 验证工厂模式和配置文件管理
 - 工厂从配置文件加载 provider 定义
 """
 import unittest
-import pandas as pd
-from datetime import datetime
-from unittest.mock import patch, MagicMock
 
 from core_bak_refactored.core.data.providers.factory import (
     DataProviderFactory,

@@ -6,12 +6,11 @@ API endpoint -> ChartDataAssembler -> DataProvider (AKShare) -> 真实/缓存数
 """
 
 import unittest
-from unittest.mock import Mock, patch
-from datetime import datetime
+
+import pandas as pd
 
 from core_bak_refactored.app.quality_monitoring.api.chart_data import ChartDataAssembler
 from core_bak_refactored.core.data.providers.akshare_provider import AKShareDataProvider
-from core_bak_refactored.core.data.providers.protocols import IntradayData
 
 
 class TestIntradayIntegration(unittest.TestCase):
@@ -31,7 +30,7 @@ class TestIntradayIntegration(unittest.TestCase):
         # 调用组装器
         result = self.assembler.assemble_intraday_data(
             symbol='000300.SH',
-            trade_date=datetime.now().strftime('%Y-%m-%d')
+            trade_date=pd.Timestamp.now().strftime('%Y-%m-%d')
         )
         
         # 验证返回结构
@@ -61,7 +60,7 @@ class TestIntradayIntegration(unittest.TestCase):
     def test_caching_mechanism(self):
         """测试缓存机制"""
         symbol = '000300.SH'
-        trade_date = datetime.now().strftime('%Y-%m-%d')
+        trade_date = pd.Timestamp.now().strftime('%Y-%m-%d')
         
         # 第一次调用
         result1 = self.assembler.assemble_intraday_data(symbol, trade_date)

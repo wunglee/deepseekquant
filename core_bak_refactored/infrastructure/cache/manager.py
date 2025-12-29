@@ -74,7 +74,8 @@ class ThreeLayerCacheManager:
             period: str = 'daily',
             market_code: Optional[MarketCode] = None,
             db_fetch_func: Callable[..., pd.DataFrame] = None,
-            api_fetch_func: Callable[..., pd.DataFrame] = None
+            api_fetch_func: Callable[..., pd.DataFrame] = None,
+            current_time: pd.Timestamp = None
     ) -> pd.DataFrame:
         """
         获取数据（三层缓存核心方法）
@@ -101,22 +102,20 @@ class ThreeLayerCacheManager:
             market_code: 市场代码枚举 (MarketCode.CN/US/HK/JP/EU/SG)，用于交易日历判断，如为None则从 symbol 推断
             db_fetch_func: 数据库查询函数，签名为 func(start_date, end_date, period) -> DataFrame
             api_fetch_func: API查询函数，签名为 func(start_date, end_date, period) -> DataFrame
-        
+            current_time:当前时间
         Returns:
             完整的 DataFrame
         """
-        logger.debug(f"📋 三层缓存查询: {symbol}, {from_date} ~ {to_date}")
-
         # 推断市场代码（用于交易日历）
         if market_code is None:
             market_code = MarketUtils.infer_market_from_symbol(symbol)
-        logger.debug(f"🌏 使用市场代码: {market_code}")
 
         cached_windows, missing_windows = self._window_cache.get_cached_and_missing_windows(symbol,
                                                                                             from_date,
                                                                                             to_date,
                                                                                             market_code,
-                                                                                            period)
+                                                                                            period,
+                                                                                            current_time)
         # ========== 第3步：处理缺失窗口（合并连续窗口，批量查询）==========
         if missing_windows:
             logger.info(f"🔍 缺失 {len(missing_windows)} 个窗口，开始三层查询")
@@ -141,18 +140,13 @@ class ThreeLayerCacheManager:
                 db_df = None
                 if db_fetch_func:
                     db_df = db_fetch_func(range_start, range_end, period=period)
-                # range总是以周期为单位，所以range_start可能会早于from_data，例如range_start是周一，
-                # 但from_data是周三，那么周一、周二的数据可能为空，不能因此判断周三之前是没有数据，
-                # 以此判定符合“上市时间”的条件，因此，判定条件必须以from_data为准
-                search_from_data = range_start
-                if range_start < from_date:
-                    search_from_data = from_date
+
                 # 分配数据到各个窗口
                 if db_df is not None and not db_df.empty:
-                    logger.info(f"✅ 数据库批量命中: {range_start.strftime('%Y-%m-%d')} ~ {range_end} ({len(db_df)} 条)")
-                    # 分配数据到各个穗口
+                    logger.info(f"✅ 数据库批量命中: {range_start.strftime('%Y-%m-%d')} ~ {range_end.strftime('%Y-%m-%d')} ({len(db_df)} 条)")
+                    # 分配数据到各个窗口
                     self._window_cache.distribute_data_to_windows(symbol, period, db_df, range_windows, cached_windows,
-                                                                  search_from_data, market_code)
+                                                                  from_date, market_code)
                     continue
                 # 3.2 数据库也未命中，调用外部 API
                 logger.info(f"🌐 API批量查询: {range_start} ~ {range_end}")
@@ -170,7 +164,7 @@ class ThreeLayerCacheManager:
                             f"✅ API批量返回: {range_start.strftime('%Y-%m-%d')} ~ {range_end.strftime('%Y-%m-%d')} ({len(api_df)} 条)")
 
                         self._window_cache.distribute_data_to_windows(symbol, period, api_df, range_windows,
-                                                                      cached_windows, search_from_data, market_code)
+                                                                      cached_windows, from_date, market_code)
                     else:
                         logger.warning(
                             f"⚠️ API无数据: {range_start.strftime('%Y-%m-%d')} ~ {range_end.strftime('%Y-%m-%d')}")

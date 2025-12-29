@@ -9,7 +9,7 @@ from typing import Dict, List, Optional, Any, Union, Tuple
 from dataclasses import dataclass, asdict, field
 from enum import Enum
 import logging
-from datetime import datetime, timedelta
+
 import time
 import json
 import talib
@@ -89,7 +89,7 @@ class SignalStatus(Enum):
 @dataclass
 class SignalMetadata:
     """信号元数据"""
-    generated_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    generated_at: str = field(default_factory=lambda: pd.Timestamp.now().isoformat())
     source: SignalSource = SignalSource.TECHNICAL
     confidence: float = 0.0  # 0.0 - 1.0
     strength: SignalStrength = SignalStrength.MILD
@@ -502,7 +502,7 @@ class SignalEngine(BaseProcessor):
                             symbol=symbol,
                             signal_type=signal_type,
                             price=price_data['close'],
-                            timestamp=datetime.now().isoformat(),
+                            timestamp=pd.Timestamp.now().isoformat(),
                             metadata=SignalMetadata(
                                 source=SignalSource.MACHINE_LEARNING,
                                 confidence=confidence,
@@ -577,7 +577,7 @@ class SignalEngine(BaseProcessor):
                 symbol=symbol,
                 signal_type=signal_type,
                 price=weighted_price,
-                timestamp=datetime.now().isoformat(),
+                timestamp=pd.Timestamp.now().isoformat(),
                 metadata=SignalMetadata(
                     source=SignalSource.COMPOSITE,
                     confidence=weighted_confidence,
@@ -876,7 +876,7 @@ class SignalEngine(BaseProcessor):
     def _handle_processing_error(self, error: Exception):
         """处理处理错误"""
         error_info = {
-            'timestamp': datetime.now().isoformat(),
+            'timestamp': pd.Timestamp.now().isoformat(),
             'error_type': type(error).__name__,
             'error_message': str(error),
             'traceback': traceback.format_exc(),
@@ -960,7 +960,7 @@ class SignalEngine(BaseProcessor):
                     symbol=symbol,
                     signal_type=SignalType.BUY,
                     price=current_price,
-                    timestamp=datetime.now().isoformat(),
+                    timestamp=pd.Timestamp.now().isoformat(),
                     metadata=SignalMetadata(
                         source=SignalSource.TECHNICAL,
                         confidence=0.6,
@@ -979,7 +979,7 @@ class SignalEngine(BaseProcessor):
                     symbol=symbol,
                     signal_type=SignalType.SELL,
                     price=current_price,
-                    timestamp=datetime.now().isoformat(),
+                    timestamp=pd.Timestamp.now().isoformat(),
                     metadata=SignalMetadata(
                         source=SignalSource.TECHNICAL,
                         confidence=0.6,
@@ -1026,7 +1026,7 @@ class SignalEngine(BaseProcessor):
                     symbol=symbol,
                     signal_type=SignalType.BUY,
                     price=current_price,
-                    timestamp=datetime.now().isoformat(),
+                    timestamp=pd.Timestamp.now().isoformat(),
                     metadata=SignalMetadata(
                         source=SignalSource.TECHNICAL,
                         confidence=0.65,
@@ -1045,7 +1045,7 @@ class SignalEngine(BaseProcessor):
                     symbol=symbol,
                     signal_type=SignalType.SELL,
                     price=current_price,
-                    timestamp=datetime.now().isoformat(),
+                    timestamp=pd.Timestamp.now().isoformat(),
                     metadata=SignalMetadata(
                         source=SignalSource.TECHNICAL,
                         confidence=0.65,
@@ -1101,7 +1101,7 @@ class SignalEngine(BaseProcessor):
                     symbol=symbol,
                     signal_type=SignalType.BUY,
                     price=closes[-1],
-                    timestamp=datetime.now().isoformat(),
+                    timestamp=pd.Timestamp.now().isoformat(),
                     metadata=SignalMetadata(
                         source=SignalSource.TECHNICAL,
                         confidence=0.7,
@@ -1125,7 +1125,7 @@ class SignalEngine(BaseProcessor):
                     symbol=symbol,
                     signal_type=SignalType.SELL,
                     price=closes[-1],
-                    timestamp=datetime.now().isoformat(),
+                    timestamp=pd.Timestamp.now().isoformat(),
                     metadata=SignalMetadata(
                         source=SignalSource.TECHNICAL,
                         confidence=0.7,
@@ -1178,7 +1178,7 @@ class SignalEngine(BaseProcessor):
                     symbol=symbol,
                     signal_type=SignalType.BUY,
                     price=closes[-1],
-                    timestamp=datetime.now().isoformat(),
+                    timestamp=pd.Timestamp.now().isoformat(),
                     metadata=SignalMetadata(
                         source=SignalSource.TECHNICAL,
                         confidence=0.75,
@@ -1202,7 +1202,7 @@ class SignalEngine(BaseProcessor):
                     symbol=symbol,
                     signal_type=SignalType.SELL,
                     price=closes[-1],
-                    timestamp=datetime.now().isoformat(),
+                    timestamp=pd.Timestamp.now().isoformat(),
                     metadata=SignalMetadata(
                         source=SignalSource.TECHNICAL,
                         confidence=0.75,
@@ -1260,7 +1260,7 @@ class SignalEngine(BaseProcessor):
                     symbol=symbol,
                     signal_type=SignalType.SELL,
                     price=current_price,
-                    timestamp=datetime.now().isoformat(),
+                    timestamp=pd.Timestamp.now().isoformat(),
                     metadata=SignalMetadata(
                         source=SignalSource.QUANTITATIVE,
                         confidence=min(z_score / 3, 0.9),  # 置信度基于Z-score
@@ -1286,7 +1286,7 @@ class SignalEngine(BaseProcessor):
                     symbol=symbol,
                     signal_type=SignalType.BUY,
                     price=current_price,
-                    timestamp=datetime.now().isoformat(),
+                    timestamp=pd.Timestamp.now().isoformat(),
                     metadata=SignalMetadata(
                         source=SignalSource.QUANTITATIVE,
                         confidence=min(abs(z_score) / 3, 0.9),
@@ -1336,7 +1336,7 @@ class SignalEngine(BaseProcessor):
                     symbol=symbol,
                     signal_type=SignalType.BUY,
                     price=closes[-1],
-                    timestamp=datetime.now().isoformat(),
+                    timestamp=pd.Timestamp.now().isoformat(),
                     metadata=SignalMetadata(
                         source=SignalSource.QUANTITATIVE,
                         confidence=min(momentum / 20, 0.9),  # 置信度基于动量强度
@@ -1362,7 +1362,7 @@ class SignalEngine(BaseProcessor):
                     symbol=symbol,
                     signal_type=SignalType.SELL,
                     price=closes[-1],
-                    timestamp=datetime.now().isoformat(),
+                    timestamp=pd.Timestamp.now().isoformat(),
                     metadata=SignalMetadata(
                         source=SignalSource.QUANTITATIVE,
                         confidence=min(abs(momentum) / 20, 0.9),
@@ -1416,7 +1416,7 @@ class SignalEngine(BaseProcessor):
                     symbol=symbol,
                     signal_type=SignalType.BUY,
                     price=current_price,
-                    timestamp=datetime.now().isoformat(),
+                    timestamp=pd.Timestamp.now().isoformat(),
                     metadata=SignalMetadata(
                         source=SignalSource.QUANTITATIVE,
                         confidence=0.7,
@@ -1441,7 +1441,7 @@ class SignalEngine(BaseProcessor):
                     symbol=symbol,
                     signal_type=SignalType.SELL,
                     price=current_price,
-                    timestamp=datetime.now().isoformat(),
+                    timestamp=pd.Timestamp.now().isoformat(),
                     metadata=SignalMetadata(
                         source=SignalSource.QUANTITATIVE,
                         confidence=0.7,
@@ -1509,7 +1509,7 @@ class SignalEngine(BaseProcessor):
                             symbol=symbol,
                             signal_type=SignalType.SELL,
                             price=main_price,
-                            timestamp=datetime.now().isoformat(),
+                            timestamp=pd.Timestamp.now().isoformat(),
                             metadata=SignalMetadata(
                                 source=SignalSource.ARBITRAGE,
                                 confidence=min(opportunity['deviation'] * 10, 0.9),
@@ -1535,7 +1535,7 @@ class SignalEngine(BaseProcessor):
                             symbol=symbol,
                             signal_type=SignalType.BUY,
                             price=main_price,
-                            timestamp=datetime.now().isoformat(),
+                            timestamp=pd.Timestamp.now().isoformat(),
                             metadata=SignalMetadata(
                                 source=SignalSource.ARBITRAGE,
                                 confidence=min(opportunity['deviation'] * 10, 0.9),
@@ -1608,7 +1608,7 @@ class SignalEngine(BaseProcessor):
                         symbol=symbol,
                         signal_type=SignalType.SELL,
                         price=price_data['close'][-1],
-                        timestamp=datetime.now().isoformat(),
+                        timestamp=pd.Timestamp.now().isoformat(),
                         metadata=SignalMetadata(
                             source=SignalSource.ARBITRAGE,
                             confidence=min(abs(z_score) / 3, 0.9),
@@ -1634,7 +1634,7 @@ class SignalEngine(BaseProcessor):
                         symbol=symbol,
                         signal_type=SignalType.BUY,
                         price=price_data['close'][-1],
-                        timestamp=datetime.now().isoformat(),
+                        timestamp=pd.Timestamp.now().isoformat(),
                         metadata=SignalMetadata(
                             source=SignalSource.ARBITRAGE,
                             confidence=min(abs(z_score) / 3, 0.9),
@@ -1687,7 +1687,7 @@ class SignalEngine(BaseProcessor):
                     symbol=symbol,
                     signal_type=SignalType.SELL,
                     price=closes[-1],
-                    timestamp=datetime.now().isoformat(),
+                    timestamp=pd.Timestamp.now().isoformat(),
                     metadata=SignalMetadata(
                         source=SignalSource.QUANTITATIVE,
                         confidence=0.6,
@@ -1712,7 +1712,7 @@ class SignalEngine(BaseProcessor):
                     symbol=symbol,
                     signal_type=SignalType.BUY,
                     price=closes[-1],
-                    timestamp=datetime.now().isoformat(),
+                    timestamp=pd.Timestamp.now().isoformat(),
                     metadata=SignalMetadata(
                         source=SignalSource.QUANTITATIVE,
                         confidence=0.6,
@@ -1788,7 +1788,7 @@ class SignalEngine(BaseProcessor):
                             symbol=symbol,
                             signal_type=SignalType.BUY,
                             price=closes[-1],
-                            timestamp=datetime.now().isoformat(),
+                            timestamp=pd.Timestamp.now().isoformat(),
                             metadata=SignalMetadata(
                                 source=SignalSource.QUANTITATIVE,
                                 confidence=min(abs(corr_data['change']) * 5, 0.8),
@@ -1813,7 +1813,7 @@ class SignalEngine(BaseProcessor):
                             symbol=symbol,
                             signal_type=SignalType.SELL,
                             price=closes[-1],
-                            timestamp=datetime.now().isoformat(),
+                            timestamp=pd.Timestamp.now().isoformat(),
                             metadata=SignalMetadata(
                                 source=SignalSource.QUANTITATIVE,
                                 confidence=min(abs(corr_data['change']) * 5, 0.8),
@@ -1873,7 +1873,7 @@ class SignalEngine(BaseProcessor):
             symbol=best_signal.symbol,
             signal_type=signal_type,
             price=best_signal.price,
-            timestamp=datetime.now().isoformat(),
+            timestamp=pd.Timestamp.now().isoformat(),
             metadata=SignalMetadata(
                 source=SignalSource.COMPOSITE,
                 confidence=min(best_signal.metadata.confidence * 1.2, 0.95),
@@ -1903,7 +1903,7 @@ class SignalEngine(BaseProcessor):
             symbol=base_signal.symbol,
             signal_type=SignalType.HOLD,
             price=base_signal.price,
-            timestamp=datetime.now().isoformat(),
+            timestamp=pd.Timestamp.now().isoformat(),
             metadata=SignalMetadata(
                 source=SignalSource.COMPOSITE,
                 confidence=0.5,
@@ -1937,7 +1937,7 @@ class SignalEngine(BaseProcessor):
             sharpe_ratio = self._calculate_sharpe_ratio()
 
             report = {
-                'timestamp': datetime.now().isoformat(),
+                'timestamp': pd.Timestamp.now().isoformat(),
                 'performance_summary': {
                     'total_signals_generated': total_signals,
                     'signals_executed': executed_signals,
@@ -2238,7 +2238,7 @@ if __name__ == "__main__":
 
     # 测试市场数据
     test_market_data = {
-        'timestamp': datetime.now().isoformat(),
+        'timestamp': pd.Timestamp.now().isoformat(),
         'symbols': ['AAPL', 'GOOGL'],
         'prices': {
             'AAPL': {

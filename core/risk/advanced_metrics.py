@@ -38,7 +38,7 @@ class AdvancedRiskMetrics:
         if not returns or len(returns) < 2:
             return None
         
-        from datetime import datetime
+
         
         if method == "historical":
             # 历史模拟法 (line 724-736)
@@ -47,7 +47,7 @@ class AdvancedRiskMetrics:
                     value_at_risk=-0.1,
                     confidence_level=confidence_level,
                     method="historical",
-                    timestamp=datetime.now().isoformat()
+                    timestamp=pd.Timestamp.now().isoformat()
                 )
             
             # 计算指定置信水平的分位数
@@ -59,7 +59,7 @@ class AdvancedRiskMetrics:
                 value_at_risk=float(var),
                 confidence_level=confidence_level,
                 method="historical",
-                timestamp=datetime.now().isoformat()
+                timestamp=pd.Timestamp.now().isoformat()
             )
         
         elif method == "parametric":
@@ -69,7 +69,7 @@ class AdvancedRiskMetrics:
                     value_at_risk=-0.1,
                     confidence_level=confidence_level,
                     method="parametric",
-                    timestamp=datetime.now().isoformat()
+                    timestamp=pd.Timestamp.now().isoformat()
                 )
             
             mean_return = sum(returns) / len(returns)
@@ -92,7 +92,7 @@ class AdvancedRiskMetrics:
                 value_at_risk=float(var),
                 confidence_level=confidence_level,
                 method="parametric",
-                timestamp=datetime.now().isoformat()
+                timestamp=pd.Timestamp.now().isoformat()
             )
         
         elif method == "monte_carlo":

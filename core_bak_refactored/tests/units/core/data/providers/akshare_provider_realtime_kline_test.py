@@ -10,17 +10,18 @@ AKShareDataProvider.get_realtime_kline 方法单元测试
 """
 
 import unittest
-from datetime import datetime, time
-from unittest.mock import Mock, patch, MagicMock
+
+from unittest.mock import Mock, patch
+
 import pandas as pd
 
 from core_bak_refactored.core.data.providers.akshare_provider import AKShareDataProvider
-from core_bak_refactored.core.share.market.market_enums import MarketCode, TradingPhase
 from core_bak_refactored.core.data.providers.protocols import (
     IntradayTickRecord,
     IntradayData,
     OrderBookLevel
 )
+from core_bak_refactored.core.share.market.market_enums import MarketCode
 
 
 class AKShareProviderRealtimeKlineTest(unittest.TestCase):
@@ -41,7 +42,7 @@ class AKShareProviderRealtimeKlineTest(unittest.TestCase):
         """测试盘中时段K线计算（无缓存）"""
         # 准备测试数据
         symbol = '000001.SZ'
-        test_time = datetime(2025, 12, 16, 10, 30, 0)  # 盘中时间
+        test_time = pd.Timestamp(2025, 12, 16, 10, 30, 0)  # 盘中时间
 
         # Mock分时数据
         mock_ticks = [
@@ -60,7 +61,7 @@ class AKShareProviderRealtimeKlineTest(unittest.TestCase):
             order_book_bids=[],
             order_book_asks=[],
             trade_records=[],
-            trade_date='2025-12-16',
+            trade_date=pd.Timestamp('2025-12-16'),
             order_book_message='',
             trade_records_message='',
             is_index=False,
@@ -84,7 +85,7 @@ class AKShareProviderRealtimeKlineTest(unittest.TestCase):
 
         with patch.object(self.provider, 'get_intraday_data', return_value=mock_intraday):
             with patch.object(self.provider, '_get_from_memory_cache', return_value=None):
-                with patch.object(self.provider, '_set_to_memory_cache') as mock_set_cache:
+                with patch.object(self.provider, '_set_to_memory_cache_obj') as mock_set_cache:
                     with patch.object(self.provider, '_map_to_akshare', return_value='000001'):
                         with patch.object(self.provider.ak, 'stock_zh_a_hist_min_em', return_value=mock_minute_df):
                             # 执行方法
@@ -103,7 +104,7 @@ class AKShareProviderRealtimeKlineTest(unittest.TestCase):
     def test_trading_phase_with_cache(self):
         """测试盘中时段K线计算（有缓存）"""
         symbol = '000001.SZ'
-        test_time = datetime(2025, 12, 16, 14, 30, 0)
+        test_time = pd.Timestamp(2025, 12, 16, 14, 30, 0)
 
         # Mock缓存数据
         cached_data = {
@@ -131,7 +132,7 @@ class AKShareProviderRealtimeKlineTest(unittest.TestCase):
         })
 
         with patch.object(self.provider, '_get_from_memory_cache', return_value=cached_data):
-            with patch.object(self.provider, '_set_to_memory_cache') as mock_update_cache:
+            with patch.object(self.provider, '_set_to_memory_cache_obj') as mock_update_cache:
                 with patch.object(self.provider, '_map_to_akshare', return_value='000001'):
                     with patch.object(self.provider.ak, 'stock_zh_a_hist_min_em', return_value=mock_minute_df):
                         result = self.provider.get_realtime_kline(symbol, test_time)
@@ -150,7 +151,7 @@ class AKShareProviderRealtimeKlineTest(unittest.TestCase):
     def test_before_open_phase(self):
         """测试盘前时段（集合竞价）"""
         symbol = '000001.SZ'
-        test_time = datetime(2025, 12, 16, 9, 20, 0)  # 集合竞价时间
+        test_time = pd.Timestamp(2025, 12, 16, 9, 20, 0)  # 集合竞价时间
 
         # Mock盘口数据（买一价作为集合竞价参考）
         mock_bids = [
@@ -176,7 +177,7 @@ class AKShareProviderRealtimeKlineTest(unittest.TestCase):
     def test_after_close_phase(self):
         """测试盘后时段"""
         symbol = '000001.SZ'
-        test_time = datetime(2025, 12, 16, 16, 0, 0)  # 盘后时间
+        test_time = pd.Timestamp(2025, 12, 16, 16, 0, 0)  # 盘后时间
 
         result = self.provider.get_realtime_kline(symbol, test_time)
 
@@ -192,7 +193,7 @@ class AKShareProviderRealtimeKlineTest(unittest.TestCase):
     def test_no_intraday_data(self):
         """测试获取分时数据失败"""
         symbol = '000001.SZ'
-        test_time = datetime(2025, 12, 16, 10, 30, 0)
+        test_time = pd.Timestamp(2025, 12, 16, 10, 30, 0)
 
         # Mock空的分时数据
         mock_intraday = IntradayData(
@@ -206,7 +207,7 @@ class AKShareProviderRealtimeKlineTest(unittest.TestCase):
             order_book_bids=[],
             order_book_asks=[],
             trade_records=[],
-            trade_date='2025-12-16',
+            trade_date=pd.Timestamp('2025-12-16'),
             order_book_message='',
             trade_records_message='',
             is_index=False,
@@ -225,7 +226,7 @@ class AKShareProviderRealtimeKlineTest(unittest.TestCase):
     def test_akshare_api_failure(self):
         """测试akshare API调用失败"""
         symbol = '000001.SZ'
-        test_time = datetime(2025, 12, 16, 10, 30, 0)
+        test_time = pd.Timestamp(2025, 12, 16, 10, 30, 0)
 
         # Mock分时数据
         mock_ticks = [
@@ -242,7 +243,7 @@ class AKShareProviderRealtimeKlineTest(unittest.TestCase):
             order_book_bids=[],
             order_book_asks=[],
             trade_records=[],
-            trade_date='2025-12-16',
+            trade_date=pd.Timestamp('2025-12-16'),
             order_book_message='',
             trade_records_message='',
             is_index=False,
@@ -274,9 +275,9 @@ class AKShareProviderRealtimeKlineTest(unittest.TestCase):
     def test_cross_market_symbols(self):
         """测试不同市场的股票代码"""
         test_cases = [
-            ('000001.SZ', datetime(2025, 12, 16, 10, 30, 0), MarketCode.CN),  # 深圳
-            ('600000.SH', datetime(2025, 12, 16, 10, 30, 0), MarketCode.CN),  # 上海
-            ('000300.SH', datetime(2025, 12, 16, 10, 30, 0), MarketCode.CN),  # 指数
+            ('000001.SZ', pd.Timestamp(2025, 12, 16, 10, 30, 0), MarketCode.CN),  # 深圳
+            ('600000.SH', pd.Timestamp(2025, 12, 16, 10, 30, 0), MarketCode.CN),  # 上海
+            ('000300.SH', pd.Timestamp(2025, 12, 16, 10, 30, 0), MarketCode.CN),  # 指数
         ]
 
         for symbol, test_time, expected_market in test_cases:
@@ -287,7 +288,7 @@ class AKShareProviderRealtimeKlineTest(unittest.TestCase):
                     symbol=symbol, name='测试', current_price=100.0, yesterday_close=99.0,
                     change=1.0, change_percent=1.01, ticks=mock_ticks,
                     order_book_bids=[], order_book_asks=[], trade_records=[],
-                    trade_date=test_time.strftime('%Y-%m-%d'),
+                    trade_date=pd.Timestamp(test_time.strftime('%Y-%m-%d')),
                     order_book_message='', trade_records_message='',
                     is_index=True if '.' in symbol and symbol.startswith('00030') else False,
                     should_poll=True

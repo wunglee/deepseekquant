@@ -1,7 +1,7 @@
-import pytest
-from datetime import datetime, timedelta
+
+
 import pandas as pd
-import numpy as np
+
 from core_bak_refactored.core.data.aggregation.aggregator import DataAggregator
 
 
@@ -23,7 +23,7 @@ class TestDataAggregator:
         for i in range(60):
             data.append({
                 'symbol': 'AAPL',
-                'timestamp': base_time + timedelta(minutes=i),
+                'timestamp': base_time + pd.Timedelta(minutes=i),
                 'open': 150.0 + i * 0.1,
                 'high': 151.0 + i * 0.1,
                 'low': 149.0 + i * 0.1,
@@ -65,7 +65,7 @@ class TestDataAggregator:
         base_time = datetime(2024, 1, 1)
         for i in range(20):
             data.append({
-                'timestamp': base_time + timedelta(days=i),
+                'timestamp': base_time + pd.Timedelta(days=i),
                 'close': 150.0 + i
             })
         
@@ -161,7 +161,7 @@ class TestDataAggregator:
         base_time = datetime(2024, 1, 1, 10, 0)
         for i in range(48):
             data.append({
-                'timestamp': base_time + timedelta(hours=i),
+                'timestamp': base_time + pd.Timedelta(hours=i),
                 'close': 150.0
             })
         
@@ -178,7 +178,7 @@ class TestDataAggregator:
         base_time = datetime(2024, 1, 1)
         for i in range(60):
             data.append({
-                'timestamp': base_time + timedelta(days=i),
+                'timestamp': base_time + pd.Timedelta(days=i),
                 'close': 150.0
             })
         

@@ -4,21 +4,20 @@
 职责: 风险处理流程协调、状态管理
 """
 
-import numpy as np
-import pandas as pd
-from typing import Dict, List, Optional, Any, TYPE_CHECKING
-from datetime import datetime
+import hashlib
+import json
 import logging
+from typing import Dict, List, Optional, Any
 
-from .risk_models import RiskAssessment, RiskLevel
+import pandas as pd
+
+from .portfolio_risk import PortfolioRiskAnalyzer
+from .position_risk import PositionRiskAnalyzer
 from .risk_calculator import RiskCalculator
 from .risk_limits import RiskLimitsManager
 from .risk_metrics_service import RiskMetricsEngine
+from .risk_models import RiskAssessment, RiskLevel, Recommendation, RecommendationType
 from .stress_testing import StressTester
-from .portfolio_risk import PortfolioRiskAnalyzer
-from .position_risk import PositionRiskAnalyzer
-import hashlib
-import json
 
 logger = logging.getLogger('DeepSeekQuant.RiskProcessor')
 
@@ -102,7 +101,7 @@ class RiskProcessor:
             return {
                 'success': True,
                 'assessment': assessment,
-                'timestamp': datetime.now().isoformat(),
+                'timestamp': pd.Timestamp.now().isoformat(),
                 'audit_trail': self.audit_trail if self.enable_audit_trail else []
             }
             
@@ -133,7 +132,7 @@ class RiskProcessor:
         risk_level = self._determine_risk_level(risk_score)
         
         return RiskAssessment(
-            timestamp=datetime.now().isoformat(),
+            timestamp=pd.Timestamp.now(),
             portfolio_id=self.config.get('portfolio_id', 'default'),
             overall_risk_level=risk_level,
             risk_score=risk_score,
@@ -188,23 +187,26 @@ class RiskProcessor:
     
     def _generate_recommendations(self,
                                   limit_breaches: List,
-                                  risk_score: float) -> List[Dict[str, Any]]:
+                                  risk_score: float) -> list[Recommendation]:
         """生成风险建议"""
-        recommendations = []
+        recommendations: list[Recommendation] = []
         
         if limit_breaches:
-            recommendations.append({
-                'priority': 'high',
-                'action': 'review_limits',
-                'description': f'发现{len(limit_breaches)}处限额违规，需要立即处理'
-            })
+            recommendations.append(Recommendation(
+                type=RecommendationType.MONITOR,
+                priority=1,  # 最高优先级
+                description=f'发现{len(limit_breaches)}处限额违规，需要立即处理',
+                action_items=['review_limits', '检查所有违规项目', '评估风险影响']
+            ))
         
         if risk_score > 80:
-            recommendations.append({
-                'priority': 'high',
-                'action': 'reduce_exposure',
-                'description': '风险评分过高，建议减少市场敞口'
-            })
+            recommendations.append(Recommendation(
+                type=RecommendationType.REDUCE,
+                priority=1,  # 最高优先级
+                description='风险评分过高，建议减少市场敞口',
+                action_items=['reduce_exposure', '减少权益仓位', '提高现金比例'],
+                estimated_impact=0.15  # 预期降低15%风险
+            ))
         
         return recommendations
     
@@ -225,7 +227,7 @@ class RiskProcessor:
         if not self.enable_audit_trail:
             return
         
-        timestamp = datetime.now().isoformat()
+        timestamp = pd.Timestamp.now().isoformat()
         
         # 计算输入hash(仅针对非空输入)
         input_hash = None

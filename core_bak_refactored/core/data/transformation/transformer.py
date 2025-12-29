@@ -6,9 +6,10 @@
 2. 处理时区转换和时间戳标准化
 3. 数据清洗和规范化
 4. 支持多种数据类型转换
+
+注意：所有时间戳统一转换为 pd.Timestamp 类型
 """
 from typing import List, Dict, Any, Optional
-from datetime import datetime, timezone
 import pytz
 import pandas as pd
 import logging
@@ -156,42 +157,55 @@ class DataTransformer:
             'quality_score': self._calculate_quality_score(item)
         }
     
-    def _normalize_timestamp(self, timestamp: Any) -> datetime:
+    def _normalize_timestamp(self, timestamp: Any) -> pd.Timestamp:
         """
-        标准化时间戳。
+        标准化时间戳为 pd.Timestamp。
         
         Args:
-            timestamp: 时间戳（可能是datetime、字符串或Unix时间戳）
+            timestamp: 时间戳（可能是datetime、pd.Timestamp、字符串或Unix时间戳）
         
         Returns:
-            标准化的datetime对象
+            标准化的 pd.Timestamp 对象
         """
-        if isinstance(timestamp, datetime):
+        # 🔧 情况1：已经是 pd.Timestamp
+        if isinstance(timestamp, pd.Timestamp):
             # 确保有时区信息
             if timestamp.tzinfo is None:
-                timestamp = self.target_tz.localize(timestamp)
+                return timestamp.tz_localize(self.target_tz)
             else:
-                timestamp = timestamp.astimezone(self.target_tz)
-            return timestamp
+                return timestamp.tz_convert(self.target_tz)
         
+        # 🔧 情况2：是 datetime 对象（兼容处理）
+        elif hasattr(timestamp, 'tzinfo') and hasattr(timestamp, 'year'):
+            # 转换为 pd.Timestamp
+            ts = pd.Timestamp(timestamp)
+            if ts.tzinfo is None:
+                return ts.tz_localize(self.target_tz)
+            else:
+                return ts.tz_convert(self.target_tz)
+        
+        # 🔧 情况3：Unix 时间戳（整数或浮点数）
         elif isinstance(timestamp, (int, float)):
-            # Unix时间戳
-            return datetime.fromtimestamp(timestamp, tz=self.target_tz)
+            return pd.Timestamp.fromtimestamp(timestamp, tz=self.target_tz)
         
+        # 🔧 情况4：字符串格式
         elif isinstance(timestamp, str):
-            # 字符串格式
             try:
                 dt = pd.to_datetime(timestamp)
                 if dt.tzinfo is None:
-                    dt = self.target_tz.localize(dt)
-                return dt.to_pydatetime()
+                    dt = dt.tz_localize(self.target_tz)
+                else:
+                    dt = dt.tz_convert(self.target_tz)
+                return dt
             except Exception as e:
                 logger.error(f"解析时间戳失败: {timestamp}, {e}")
-                return datetime.now(tz=self.target_tz)
+                # 返回当前时间（带时区）
+                return pd.Timestamp.now(tz=self.target_tz)
         
+        # 🔧 情况5：未知类型
         else:
             logger.warning(f"未知的时间戳类型: {type(timestamp)}")
-            return datetime.now(tz=self.target_tz)
+            return pd.Timestamp.now(tz=self.target_tz)
     
     def _calculate_quality_score(self, item: Dict) -> float:
         """
@@ -333,7 +347,7 @@ class DataTransformer:
         for data in data_dict.values():
             all_data.extend(data)
         
-        # 按时间戳排序
-        all_data.sort(key=lambda x: x.get('timestamp', datetime.min), reverse=True)
+        # 🔧 按时间戳排序：使用 pd.Timestamp.min 作为默认值
+        all_data.sort(key=lambda x: x.get('timestamp', pd.Timestamp.min), reverse=True)
         
         return all_data
