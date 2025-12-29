@@ -559,8 +559,8 @@ class AKShareDataProvider(BaseDataProvider):
                 else:
                     intraday_data = None
             except Exception as e:
-                # 其他异常（如网络错误、API错误），记录警告
-                logger.warning(f"获取真实分时数据失败: {e}")
+                # 其他异常（如网络错误、API错误），记录详细错误
+                logger.error(f"🔴 获取真实分时数据失败: {e}", exc_info=True)
                 intraday_data = None
 
         # 如果所有尝试都失败了，抛出异常
@@ -892,15 +892,32 @@ class AKShareDataProvider(BaseDataProvider):
                 logger.warning(f"无法获取成交明细: {symbol}")
                 return []
 
-            # 解析成交明细（字段：成交时间,成交价,价格变动,成交量,成交额,性质）
-            trade_records = []
+            # 🔧 调试：输出AKShare返回的实际列名
+            logger.info(f"🔍 AKShare成交明细列名: {df.columns.tolist()}")
+            if not df.empty:
+                logger.info(f"🔍 第一条数据示例: {df.head(1).to_dict('records')}")
 
+            # 解析成交明细
+            # 🔧 AKShare 返回的字段名：成交时间, 成交价格, 价格变动, 成交量, 成交额, 性质
+            trade_records = []
+            
             # 只取最近20条
             for _, row in df.head(20).iterrows():
-                time_str = str(row.get('成交时间', ''))  # HH:MM:SS
-                price = float(row.get('成交价', 0))
+                # 成交时间
+                time_str = str(row.get('成交时间', ''))
+                
+                # 成交价格（注意是"成交价格"而不是"成交价"）
+                price = float(row.get('成交价格', 0))
+                
+                # 成交量（单位：手）
                 volume = int(row.get('成交量', 0))
+                
+                # 性质：买盘/卖盘/中性盘
                 nature = str(row.get('性质', ''))
+
+                # 🔧 调试：如果价格为0，记录警告
+                if price == 0:
+                    logger.warning(f"⚠️ 成交明细价格为0，原始数据: {row.to_dict()}")
 
                 # 性质: '买盘' -> 'buy', '卖盘' -> 'sell', '中性盘' -> 'neutral'
                 if '买' in nature:
@@ -958,133 +975,18 @@ class AKShareDataProvider(BaseDataProvider):
 
     def _interpolate_to_5_seconds(self, ticks: list) -> list:
         """
-        将1分钟粒度的tick数据插值为5秒粒度（与模拟数据一致）
-
-        策略：
-        - 价格/均价：三次样条插值（平滑过渡）
-        - 成交量：平均分配
+        处理1分钟粒度的tick数据
+        
+        🔧 修改：直接返回原始数据，不做插值（1分钟数据已经足够）
 
         Args:
             ticks: 原始1分钟粒度的tick列表
 
         Returns:
-            插值后的5秒粒度tick列表
+            原始 tick 列表（不再插值）
         """
-        if len(ticks) <= 1:
-            return ticks
-
-        # 尝试导入scipy的三次样条插值
-        try:
-            from scipy.interpolate import CubicSpline
-            use_cubic_spline = True
-        except ImportError:
-            logger.warning("未安装scipy，降级为线性插值")
-            use_cubic_spline = False
-            CubicSpline = None  # 定义为None以避免未定义错误
-
-        interpolated_ticks = []
-
-        # 准备数据：收集所有原始数据点
-        times = []
-        prices = []
-        avg_prices = []
-
-        for tick in ticks:
-            tick_time = pd.to_datetime(tick.time)
-            times.append(tick_time)
-            prices.append(tick.price)
-            avg_prices.append(tick.avg_price)
-
-        if use_cubic_spline and len(times) >= 3:
-            # 使用三次样条插值（需要至少3个点）
-            # 将时间转换为秒数（从第一个点开始）
-            base_time = times[0]
-            x_seconds = [(t - base_time).total_seconds() for t in times]
-
-            # 创建三次样条插值函数
-            cs_price = CubicSpline(x_seconds, prices, bc_type='natural')
-            cs_avg_price = CubicSpline(x_seconds, avg_prices, bc_type='natural')
-
-            # 生成插值点
-            for i in range(len(ticks)):
-                current_tick = ticks[i]
-                current_time = times[i]
-                current_seconds = x_seconds[i]
-
-                # 添加当前分钟的第0秒数据（原始数据点）
-                interpolated_ticks.append(current_tick)
-
-                # 如果不是最后一个tick，则生成到下一个tick之间的插值点
-                if i < len(ticks) - 1:
-                    next_time = times[i + 1]
-                    next_seconds = x_seconds[i + 1]
-                    time_diff_seconds = (next_time - current_time).total_seconds()
-
-                    # 只对相邻的分钟进行插值（差值 <= 60秒）
-                    if 0 < time_diff_seconds <= 60:
-                        # 计算需要插值的点数（5秒间隔）
-                        num_intervals = int(time_diff_seconds / 5)
-
-                        # 成交量平均分配
-                        volume_per_interval = current_tick.volume / num_intervals if num_intervals > 0 else 0
-
-                        # 生成中间的5秒间隔数据点
-                        for j in range(1, num_intervals):
-                            interpolated_seconds = current_seconds + j * 5
-                            interpolated_time = base_time + pd.Timedelta(seconds=interpolated_seconds)
-
-                            # 使用三次样条插值计算价格
-                            interpolated_price = float(cs_price(interpolated_seconds))
-                            interpolated_avg_price = float(cs_avg_price(interpolated_seconds))
-
-                            interpolated_ticks.append(IntradayTickRecord(
-                                time=interpolated_time.strftime('%H:%M:%S'),
-                                price=round(interpolated_price, 2),
-                                volume=int(volume_per_interval),
-                                avg_price=round(interpolated_avg_price, 2)
-                            ))
-        else:
-            # 降级为线性插值（scipy不可用或数据点太少）
-            for i in range(len(ticks)):
-                current_tick = ticks[i]
-                current_time = pd.to_datetime(current_tick.time)
-
-                # 添加当前分钟的第0秒数据（原始数据点）
-                interpolated_ticks.append(current_tick)
-
-                # 如果不是最后一个tick，则生成到下一个tick之间的插值点
-                if i < len(ticks) - 1:
-                    next_tick = ticks[i + 1]
-                    next_time = pd.to_datetime(next_tick.time)
-
-                    time_diff_seconds = (next_time - current_time).total_seconds()
-
-                    # 只对相邻的分钟进行插值（差值 <= 60秒）
-                    if 0 < time_diff_seconds <= 60:
-                        # 计算需要插值的点数（5秒间隔）
-                        num_intervals = int(time_diff_seconds / 5)
-
-                        # 成交量平均分配
-                        volume_per_interval = current_tick.volume / num_intervals if num_intervals > 0 else 0
-
-                        # 生成中间的5秒间隔数据点
-                        for j in range(1, num_intervals):
-                            interpolated_time = current_time + pd.Timedelta(seconds=j * 5)
-
-                            # 线性插值计算价格
-                            ratio = (j * 5) / time_diff_seconds
-                            interpolated_price = current_tick.price + (next_tick.price - current_tick.price) * ratio
-                            interpolated_avg_price = current_tick.avg_price + (
-                                    next_tick.avg_price - current_tick.avg_price) * ratio
-
-                            interpolated_ticks.append(IntradayTickRecord(
-                                time=interpolated_time.strftime('%H:%M:%S'),
-                                price=round(interpolated_price, 2),
-                                volume=int(volume_per_interval),
-                                avg_price=round(interpolated_avg_price, 2)
-                            ))
-
-        return interpolated_ticks
+        # 直接返回原始数据，不做插值
+        return ticks
 
     def get_realtime_kline(self, symbol: str, current_time: pd.Timestamp = None) -> dict:
         """
