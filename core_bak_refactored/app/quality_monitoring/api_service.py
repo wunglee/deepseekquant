@@ -592,7 +592,7 @@ class DataQualityAPIService:
 
                         # 转换为 TickRange 对象
                         from core_bak_refactored.core.data.providers.protocols import TickRange
-                        import pandas as pd
+                        # 🔧 删除局部导入，使用文件顶部的全局导入
                         tick_range = TickRange(
                             start_time=pd.Timestamp(tick_range_dict['start_time']),
                             end_time=pd.Timestamp(tick_range_dict['end_time']),
@@ -2177,7 +2177,7 @@ class DataQualityAPIService:
                             
                             # 构造PriceData对象（只包含最后一个K柱）
                             from core_bak_refactored.core.share.market.data_types import PriceData, OHLCVRecord
-                            import pandas as pd
+                            # 🔧 删除局部导入，使用文件顶部的全局导入
                             
                             last_record = OHLCVRecord(
                                 date=pd.Timestamp(last_period_bar['date']),

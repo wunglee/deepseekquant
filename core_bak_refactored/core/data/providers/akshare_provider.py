@@ -38,7 +38,7 @@ from core_bak_refactored.core.data.providers.protocols import (PriceData,
 from core_bak_refactored.core.data.providers.protocols import TickRange
 from core_bak_refactored.core.share.config_manager import ConfigManager
 from core_bak_refactored.core.share.market import MarketUtils
-from core_bak_refactored.core.share.market.market_enums import TradingPhase
+from core_bak_refactored.core.share.market.market_enums import MarketCode, TradingPhase
 
 logger = logging.getLogger(__name__)
 
@@ -248,7 +248,7 @@ class AKShareDataProvider(BaseDataProvider):
                 )
 
             # 🔧 先标准化格式（处理列名差异）
-            from core_bak_refactored.core.share.market.market_utils import MarketUtils
+            # 使用文件顶部的全局导入
             standardized_data = MarketUtils.standardize_format(df)
 
             # 筛选日期范围（使用标准化后的数据）
@@ -282,8 +282,7 @@ class AKShareDataProvider(BaseDataProvider):
             # 🔧 AKShare 不支持直接查询周线/月线，需要从日线转换
             if period != 'daily':
                 logger.info(f"AKShare 不支持直接查询 {period}，从日线转换（{price_data.count} 条日线数据）")
-                # 推断市场代码
-                from core_bak_refactored.core.share.market import MarketUtils
+                # 推断市场代码（使用文件顶部的全局导入）
                 market_code = MarketUtils.infer_market_from_symbol(symbol)
                 price_data = self._convert_period(price_data, period, market_code)
             
@@ -363,8 +362,7 @@ class AKShareDataProvider(BaseDataProvider):
         ak_symbol = self._map_to_akshare(symbol_id)
         logger.info(f"Fetching data for {symbol_id} (mapped to {ak_symbol})")
 
-        # 使用领域层工具推断市场
-        from core_bak_refactored.core.share.market import MarketUtils, MarketCode
+        # 使用领域层工具推断市场（使用文件顶部的全局导入）
         market = MarketUtils.infer_market_from_symbol(symbol_id)
 
         try:
@@ -680,8 +678,7 @@ class AKShareDataProvider(BaseDataProvider):
             logger.info(f"使用tick_range时间范围: {start_time} ~ {end_time}")
         else:
             # tick_range=None：盘后获取全天数据
-            from core_bak_refactored.core.share.market.market_utils import MarketUtils
-            from core_bak_refactored.core.share.config_manager import ConfigManager
+            # 使用文件顶部的全局导入
 
             # 获取市场代码
             market_code = MarketUtils.infer_market_from_symbol(symbol)
@@ -696,17 +693,32 @@ class AKShareDataProvider(BaseDataProvider):
 
         logger.info(f"调用AKShare API: symbol={ak_symbol}, 时间范围: {start_time} ~ {end_time}")
 
+        # 🔧 判断是个股还是指数，使用不同的 API
+        is_index = MarketUtils.is_index(symbol)
+        
         try:
-            # 调用AKShare API获取1分钟数据
-            df = self.ak.stock_zh_a_hist_min_em(
-                symbol=ak_symbol,
-                start_date=start_time,
-                end_date=end_time,
-                period='1',
-                adjust=''
-            )
+            if is_index:
+                # 指数使用 index_zh_a_hist_min_em
+                logger.info(f"调用指数分时API: index_zh_a_hist_min_em({ak_symbol})")
+                df = self.ak.index_zh_a_hist_min_em(
+                    symbol=ak_symbol,
+                    start_date=start_time,
+                    end_date=end_time,
+                    period='1'
+                )
+            else:
+                # 个股使用 stock_zh_a_hist_min_em
+                logger.info(f"调用个股分时API: stock_zh_a_hist_min_em({ak_symbol})")
+                df = self.ak.stock_zh_a_hist_min_em(
+                    symbol=ak_symbol,
+                    start_date=start_time,
+                    end_date=end_time,
+                    period='1',
+                    adjust=''
+                )
 
-            if df is None:
+            if df is None or df.empty:
+                logger.warning(f"⚠️ AKShare 返回空数据: {symbol}")
                 return None
             if tick_range is None:
                 # 一个完整交易日应该有270分钟的数据（09:30-12:00 = 150分钟，13:00-15:00 = 120分钟）
@@ -927,7 +939,7 @@ class AKShareDataProvider(BaseDataProvider):
         - DataFrame虽然为空，但会携带必要的初始化信息供转换使用
         """
         import pandas as pd
-        from core_bak_refactored.core.share.market.market_utils import MarketUtils
+        # 🔧 使用文件顶部的全局导入
 
         # 创建空的DataFrame，列名与AKShare API返回格式一致
         # AKShare返回格式：时间,开盘,收盘,最高,最低,成交量,成交额,振幅,涨跌幅,涨跌额,换手率

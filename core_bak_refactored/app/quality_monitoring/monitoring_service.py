@@ -447,7 +447,12 @@ class QualityMonitoringService:
             
             try:
                 # ✅ 直接传递 pd.Timestamp 对象，不转换为字符串
-                data = self.data_provider.get_index_prices(index_id, start_date, end_date, pd.Timestamp.now())
+                price_data = self.data_provider.get_index_prices(index_id, start_date, end_date, pd.Timestamp.now())
+                # 🔧 关键修复：将 PriceData 对象转换为 DataFrame
+                if hasattr(price_data, 'to_dataframe'):
+                    data = price_data.to_dataframe()
+                else:
+                    data = price_data  # 如果已经是 DataFrame
             except Exception as e:
                 # 如果真实数据获取失败，使用示例数据演示功能
                 logger.warning(f"真实数据获取失败，使用示例数据: {e}")
@@ -455,9 +460,10 @@ class QualityMonitoringService:
                 import numpy as np
                 dates = pd.date_range(end=pd.Timestamp.now(), periods=100, freq='D')
                 data = pd.DataFrame({
+                    'date': dates,
                     'close': np.random.uniform(4000, 5000, 100),
                     'volume': np.random.uniform(1e9, 5e9, 100)
-                }, index=dates)
+                })
                 logger.info("已生成示例数据用于演示")
             
             # 1. 执行质量检查
