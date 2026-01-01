@@ -191,10 +191,43 @@ class MockDataProvider(BaseDataProvider):
 
         price_data = PriceData.from_dataframe(df, symbol)
         return price_data
+    
+    def get_intraday_data(self, symbol: str, tick_range: Optional[TickRange] = None,
+                          market_local_time: pd.Timestamp = None) -> IntradayData:
+        """
+        伪实现：仅用于满足 HistoricalDataProvider 抽象接口要求
+        
+        注意：
+        - MockDataProvider 的实际使用中，API 直接调用 generate() 方法
+        - 此方法不应被调用，只是为了确保 MockDataProvider 可以被实例化
+        - 如果意外被调用，会抛出 NotImplementedError
+        
+        Args:
+            symbol: 证券代码
+            tick_range: Tick数据时间范围
+            market_local_time: 当前时间
+        
+        Raises:
+            NotImplementedError: 总是抛出，因为实际应该调用 generate() 方法
+        """
+        raise NotImplementedError(
+            f"MockDataProvider.get_intraday_data() 是伪实现，不应被调用。\n"
+            f"\n"
+            f"请直接调用 generate_intraday_data() 方法：\n"
+            f"  mock_provider.generate_intraday_data(\n"
+            f"      symbol='{symbol}',\n"
+            f"      trade_date=pd.Timestamp.now(),\n"
+            f"      tick_range=tick_range,\n"
+            f"      trading_phase=TradingPhase.TRADING,\n"
+            f"      is_index=False\n"
+            f"  )\n"
+            f"\n"
+            f"参考: api_service_mock.py 第293行和第640行"
+        )
 
-    def generate(self, symbol: str, trade_date: pd.Timestamp, tick_range: Optional[TickRange] = None,
-                 trading_phase: TradingPhase = TradingPhase.TRADING, last_price: Optional[float] = None,
-                 is_index: bool = False) -> IntradayData:
+    def generate_intraday_data(self, symbol: str, trade_date: pd.Timestamp, tick_range: Optional[TickRange] = None,
+                               trading_phase: TradingPhase = TradingPhase.TRADING, last_price: Optional[float] = None,
+                               is_index: bool = False) -> IntradayData:
         """
         生成模拟分时数据（与真实数据规则一致）
         

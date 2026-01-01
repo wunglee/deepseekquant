@@ -24,17 +24,16 @@ from typing import Dict, Any, Optional
 import yaml
 import pandas as pd
 
-from core_bak_refactored.core.data.providers.protocols import PriceData, HistoricalDataProvider
+from core_bak_refactored.core.data.providers.protocols import PriceData, HistoricalDataProvider, TickRange, IntradayData
 from core_bak_refactored.core.share.config_manager import ConfigManager
 from core_bak_refactored.core.share.market import MarketUtils
 from core_bak_refactored.core.share.market.data_types import OHLCVRecord
 from core_bak_refactored.core.share.market.market_enums import TradingPhase, MarketCode
-from core_bak_refactored.core.share.market.trading_calendar_service import TradingCalendarService
 
 logger = logging.getLogger('DeepSeekQuant.DataProviders')
 
 
-class BaseDataProvider(ABC, HistoricalDataProvider):
+class BaseDataProvider(HistoricalDataProvider):
     """
     数据提供者基类（封装缓存管理）
     
@@ -45,6 +44,8 @@ class BaseDataProvider(ABC, HistoricalDataProvider):
     
     子类必须实现:
     - _fetch_from_external_api(symbol, start_date, end_date, period) -> PriceData
+    - get_intraday_data(symbol, tick_range, market_local_time) -> IntradayData
+    - 其他 HistoricalDataProvider 的抽象方法
     """
     
     def __init__(self):
@@ -57,7 +58,7 @@ class BaseDataProvider(ABC, HistoricalDataProvider):
                         index_id: str,
                         start_date: pd.Timestamp,
                         end_date: pd.Timestamp,
-                        current_time: pd.Timestamp,
+                        market_local_time: pd.Timestamp,
                         period: str = 'daily'):
         """
         带缓存的数据获取（核心方法）
@@ -66,7 +67,7 @@ class BaseDataProvider(ABC, HistoricalDataProvider):
             index_id: 指数代码
             start_date: 开始日期 (YYYY-MM-DD)
             end_date: 结束日期 (YYYY-MM-DD)
-            current_time: 当前时间
+            market_local_time: 目标市场当前本地时间（不带时区信息）
             period: 数据粒度 ('daily'/'weekly'/'monthly'，传给API，默认 daily)
         
         Returns:
@@ -82,7 +83,7 @@ class BaseDataProvider(ABC, HistoricalDataProvider):
             period=period,  # 数据粒度/K线类型，必须作为缓存键的一部分
             db_fetch_func=None,  # ThreeLayerCacheManager 内部处理数据库缓存
             api_fetch_func=lambda s, e, period: self._fetch_from_api(index_id, s, e, period),
-            current_time=current_time  # 传递 current_time 参数
+            current_time=market_local_time  # 传递 market_local_time 参数
         )
         
         # 转换为 PriceData
@@ -102,7 +103,7 @@ class BaseDataProvider(ABC, HistoricalDataProvider):
         
         # 设置 needs_realtime_kline 标记
         if price_data and price_data.count > 0:
-            self.set_needs_realtime_kline(price_data, current_time)
+            self.set_needs_realtime_kline(price_data, market_local_time)
             logger.debug(f"✅ needs_realtime_kline已设置为: {price_data.needs_realtime_kline}")
         
         return price_data
@@ -139,7 +140,7 @@ class BaseDataProvider(ABC, HistoricalDataProvider):
         
         return None
     
-    def set_needs_realtime_kline(self, price_data: PriceData, current_time: pd.Timestamp):
+    def set_needs_realtime_kline(self, price_data: PriceData, market_local_time: pd.Timestamp):
         """设置 needs_realtime_kline 标记
         
         根据当前交易时段判断是否需要获取实时K线：
@@ -148,10 +149,13 @@ class BaseDataProvider(ABC, HistoricalDataProvider):
         
         Args:
             price_data: 价格数据对象
-            current_time: 当前时间
+            market_local_time: 市场本地时间（必须带正确的市场时区，由API层传入）
         """
+        from core_bak_refactored.core.share.market.market_time_utils import MarketTimeUtils
+        
         market_code = MarketUtils.infer_market_from_symbol(price_data.symbol)
-        trading_phase = MarketUtils.determine_trading_phase(market_code, current_time)
+        # market_local_time 已经是市场本地时间，直接传给 MarketTimeUtils
+        trading_phase = MarketTimeUtils.determine_trading_phase(market_code, market_local_time)
         
         # 🔧 直接修改 price_data 对象的属性
         price_data.needs_realtime_kline = trading_phase in [
@@ -164,7 +168,7 @@ class BaseDataProvider(ABC, HistoricalDataProvider):
                                        price_data: PriceData, 
                                        realtime_kline: dict, 
                                        period: str,
-                                       current_time: pd.Timestamp) -> PriceData:
+                                       current_time_utc: pd.Timestamp) -> PriceData:
         """将实时K线数据合并到周线/月线K线数据中
         
         逻辑：
@@ -269,7 +273,7 @@ class BaseDataProvider(ABC, HistoricalDataProvider):
     # 数据获取接口（对外提供，自动使用缓存）
     # ========================================================================
     
-    def get_index_prices(self, index_id: str, start_date: pd.Timestamp, end_date: pd.Timestamp, current_time: pd.Timestamp, period: str = 'daily'):
+    def get_index_prices(self, index_id: str, start_date: pd.Timestamp, end_date: pd.Timestamp, market_local_time: pd.Timestamp, period: str = 'daily'):
         """
         获取指数价格数据（对外接口，自动使用缓存）
         
@@ -277,15 +281,15 @@ class BaseDataProvider(ABC, HistoricalDataProvider):
             index_id: 指数代码
             start_date: 开始日期 (YYYY-MM-DD)
             end_date: 结束日期 (YYYY-MM-DD)
-            current_time: 操作时间
+            market_local_time: 目标市场当前本地时间（不带时区信息）
             period: 数据粒度 ('daily'/'weekly'/'monthly'，默认 daily)
         
         Returns:
             PriceData: 价格数据对象
         """
-        return self._get_with_cache(index_id, start_date, end_date, current_time, period)
+        return self._get_with_cache(index_id, start_date, end_date, market_local_time, period)
     
-    def get_stock_prices(self, stock_id: str, start_date: pd.Timestamp, end_date: pd.Timestamp, current_time: pd.Timestamp, period: str = 'daily'):
+    def get_stock_prices(self, stock_id: str, start_date: pd.Timestamp, end_date: pd.Timestamp, market_local_time: pd.Timestamp, period: str = 'daily'):
         """
         获取股票价格数据（对外接口，自动使用缓存）
         
@@ -293,13 +297,48 @@ class BaseDataProvider(ABC, HistoricalDataProvider):
             stock_id: 股票代码
             start_date: 开始日期 (YYYY-MM-DD)
             end_date: 结束日期 (YYYY-MM-DD)
-            current_time: 操作时间
+            market_local_time: 目标市场当前本地时间（不带时区信息）
             period: 数据粒度 ('daily'/'weekly'/'monthly'，默认 daily)
         
         Returns:
             PriceData: 价格数据对象
         """
-        return self._get_with_cache(stock_id, start_date, end_date, current_time, period)
+        return self._get_with_cache(stock_id, start_date, end_date, market_local_time, period)
+    
+    def get_index_returns(self, index_id: str,
+                          start_date: pd.Timestamp,
+                          end_date: pd.Timestamp) -> pd.Series:
+        """
+        获取指数收益率序列（通用实现）
+        
+        此方法在 BaseDataProvider 中实现，所有子类自动继承
+        从 get_index_prices 获取价格数据并计算收益率
+        
+        Args:
+            index_id: 指数代码
+            start_date: 开始日期
+            end_date: 结束日期
+        
+        Returns:
+            pd.Series: 收益率序列，以日期为索引
+        """
+        # 获取价格数据
+        from core_bak_refactored.core.share.market.market_time_utils import MarketTimeUtils
+
+
+
+        market_local_time = MarketTimeUtils.get_market_time_now(index_id)
+        price_data = self.get_index_prices(index_id, start_date, end_date, market_local_time)
+        
+        if not price_data or price_data.count == 0:
+            return pd.Series(dtype=float)
+        
+        # 转换为 DataFrame 并计算收益率
+        df = price_data.to_dataframe()
+        df = df.set_index('date')
+        returns = df['close'].pct_change().dropna()
+        
+        return returns
     
     # ========================================================================
     # 内部接口（子类必须实现）

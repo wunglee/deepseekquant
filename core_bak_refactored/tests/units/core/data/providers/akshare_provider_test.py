@@ -322,7 +322,7 @@ class TestAKShareIntradayHelperMethods(unittest.TestCase):
         from core_bak_refactored.core.data.providers.mock_provider import MockDataProvider
 
         generator = MockDataProvider()
-        result = generator.generate(
+        result = generator.generate_intraday_data(
             symbol='000300.SH',
             trade_date=pd.Timestamp('2023-01-03'),
             tick_range=None,  # 根据 trading_phase 自动创建
@@ -632,11 +632,11 @@ class TestCacheStrategy(unittest.TestCase):
         mock_fetch.return_value = mock_df
         
         # 第一次调用
-        result1 = self.provider.get_intraday_data('000001.SZ', current_time=test_time)
+        result1 = self.provider.get_intraday_data('000001.SZ', market_local_time=test_time)
         self.assertEqual(mock_fetch.call_count, 1)
         
         # 第二次调用（盘中时段应该再次获取，不使用缓存）
-        result2 = self.provider.get_intraday_data('000001.SZ', current_time=test_time)
+        result2 = self.provider.get_intraday_data('000001.SZ', market_local_time=test_time)
         self.assertEqual(mock_fetch.call_count, 2)  # 应该调用2次
         
     @patch('core_bak_refactored.core.share.market.market_utils.MarketUtils.determine_trading_phase')

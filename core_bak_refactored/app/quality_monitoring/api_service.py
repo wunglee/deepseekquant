@@ -45,24 +45,33 @@ API端点:
 
 from __future__ import annotations
 
+import importlib
+import json
 import logging
 import os
-from typing import Dict, Any, TYPE_CHECKING
+from typing import Any, Dict, TYPE_CHECKING
 
 import pandas as pd
-from flask import Flask, jsonify, request, Response, render_template
+import yaml
+from flask import Flask, Response, jsonify, render_template, request
 from flask_cors import CORS
 from flask_socketio import SocketIO, emit
 
 from core_bak_refactored.app.quality_monitoring.api.chart_data import ChartDataAssembler
-# 从组件导入
 from core_bak_refactored.app.quality_monitoring.api.controllers import DataQualityControllers
 from core_bak_refactored.app.quality_monitoring.api.diagnostics import DiagnosticsRunner
 from core_bak_refactored.app.quality_monitoring.api.exporter import DataExporter
 from core_bak_refactored.app.quality_monitoring.api.health import HealthChecker
 from core_bak_refactored.app.quality_monitoring.api.system_metrics import MetricsCollector
 from core_bak_refactored.app.quality_monitoring.api.system_status import SystemStatusManager
+from core_bak_refactored.core.data.providers.base_provider import BaseDataProvider
+from core_bak_refactored.core.data.providers.factory import get_global_factory
+from core_bak_refactored.core.data.providers.protocols import TickRange
+from core_bak_refactored.core.data.providers.provider_selector import ProviderSelector
 from core_bak_refactored.core.share.config_manager import ConfigManager
+from core_bak_refactored.core.share.market.data_types import OHLCVRecord, PriceData
+from core_bak_refactored.core.share.market.market_time_utils import MarketTimeUtils
+from core_bak_refactored.core.share.market.market_utils import MarketUtils
 from core_bak_refactored.core.signal.indicator_service import TechnicalIndicators
 
 if TYPE_CHECKING:
@@ -118,9 +127,6 @@ class DataQualityAPIService:
         self.system_status_manager = SystemStatusManager(quality_monitor)
 
         # 初始化全局 factory（用于运行时动态获取 provider）
-        from core_bak_refactored.core.data.providers.factory import get_global_factory
-        from core_bak_refactored.core.data.providers.provider_selector import ProviderSelector
-
         self.provider_factory = get_global_factory()
         self.provider_selector = ProviderSelector(self.config_manager)  # 领域层服务
 
@@ -138,8 +144,6 @@ class DataQualityAPIService:
         Returns:
             ChartDataAssembler: 图表数据组装器实例
         """
-
-        from core_bak_refactored.core.share.market import MarketUtils
 
         # 1. 使用领域层服务选择数据提供者
         data_provider = self.provider_selector.select_provider_for_symbol(
@@ -192,7 +196,6 @@ class DataQualityAPIService:
                 return None
 
             # 动态导入模块（与 factory.py 一致）
-            import importlib
             module = importlib.import_module(adapter_module)
             provider_class = getattr(module, adapter_class)
 
@@ -403,7 +406,7 @@ class DataQualityAPIService:
                 - index_id: 股票/指数代码（必需）
                 - period: 周期（daily/weekly/monthly，默认 daily）
                 - count: 数据条数（默认 120）
-                - before: 获取此日期之前的数据（YYYY-MM-DD，可选）
+                - before: 获取此日期之前的数据（YYYY-MM-DD，已获取的K线日期，市场本地时间，可选）
                 - indicators: 需要的指标，逗号分隔（默认 'all'）
                                支持: vol, macd, rsi, kdj, obv
             
@@ -457,9 +460,20 @@ class DataQualityAPIService:
 
                 period = request.args.get('period', 'daily')
                 count = request.args.get('count', 120, type=int)
-                before_str = request.args.get('before')  # 可选
-                # 🔧 关键修复：将字符串转换为 pd.Timestamp 类型
-                before = pd.to_datetime(before_str) if before_str else None
+                before_str = request.args.get('before')  # K线日期（市场本地时间）
+                
+                # 🔧 before 是已获取的K线日期，本身就是市场本地时间，无需时区转换
+                before = None
+                if before_str:
+                    try:
+                        before = pd.Timestamp(before_str)  # 直接使用，不转换时区
+                    except Exception as e:
+                        return jsonify({
+                            'status': 'error',
+                            'message': f'无效的日期格式: {str(e)}',
+                            'error_code': 'INVALID_DATE_FORMAT'
+                        }), 400
+                
                 indicators = request.args.get('indicators', 'all')
 
                 # 参数验证
@@ -488,7 +502,7 @@ class DataQualityAPIService:
                     count=count,
                     before=before,
                     indicators=indicators,
-                    current_time=pd.Timestamp.now()
+                    current_time=pd.Timestamp.now(tz='UTC')
                 )
 
                 return jsonify({
@@ -572,7 +586,6 @@ class DataQualityAPIService:
                     }), 400
 
                 # 解析 tick_range（可选）
-                import json
                 tick_range_str = request.args.get('tick_range')
                 tick_range = None
 
@@ -591,8 +604,6 @@ class DataQualityAPIService:
                                 }), 400
 
                         # 转换为 TickRange 对象
-                        from core_bak_refactored.core.data.providers.protocols import TickRange
-                        # 🔧 删除局部导入，使用文件顶部的全局导入
                         tick_range = TickRange(
                             start_time=pd.Timestamp(tick_range_dict['start_time']),
                             end_time=pd.Timestamp(tick_range_dict['end_time']),
@@ -607,7 +618,7 @@ class DataQualityAPIService:
 
                 # 📊 真实模式：调用 ChartDataAssembler（会调用 akshare_provider）
                 logger.info(f"📊 真实模式: symbol={symbol}, tick_range={'已提供' if tick_range else '未提供'}")
-
+                
                 chart_assembler = self._create_chart_assembler(symbol, timeframe='daily')
                 intraday_data = chart_assembler.assemble_intraday_data(
                     symbol=symbol,
@@ -1057,10 +1068,7 @@ class DataQualityAPIService:
                 market_sources = data_market_config.market_sources or {}
 
                 # 从真实凭证文件读取凭证状态
-                import os
-                import yaml
                 # 使用 ConfigManager 获取配置路径（封装环境逻辑）
-                from core_bak_refactored.core.share.config_manager import ConfigManager
                 config_manager_temp = ConfigManager()
                 credentials_yml_path = config_manager_temp.get_config_path('credentials')
 
@@ -1159,11 +1167,8 @@ class DataQualityAPIService:
                     }), 400
 
                 # 使用环境变量或默认 dev
-                import os
 
                 # 使用 BaseDataProvider 的通用方法保存凭证
-                from core_bak_refactored.core.data.providers.base_provider import BaseDataProvider
-
                 success = BaseDataProvider.save_credentials(provider_id, data)
 
                 if success:
@@ -1200,11 +1205,8 @@ class DataQualityAPIService:
             """删除数据源凭证（调用领域层 Provider 的删除方法）"""
             try:
                 # 使用环境变量或默认 dev
-                import os
 
                 # 使用 BaseDataProvider 的通用方法删除凭证
-                from core_bak_refactored.core.data.providers.base_provider import BaseDataProvider
-
                 success = BaseDataProvider.delete_credentials(provider_id)
 
                 if success:
@@ -1236,8 +1238,6 @@ class DataQualityAPIService:
                 test_params = request.get_json() or {}
 
                 # 使用 factory 获取 provider 类并调用 test_provider 方法
-                from core_bak_refactored.core.data.providers.factory import get_global_factory
-
                 factory = get_global_factory()
 
                 try:
@@ -1498,8 +1498,6 @@ class DataQualityAPIService:
         def test_provider(provider_id):
             """测试数据源连接（使用临时凭证）"""
             try:
-                import time
-
                 config = self.config_manager.get('data', {})
                 providers = config.get('providers', [])
 
@@ -1544,13 +1542,15 @@ class DataQualityAPIService:
                 credentials = test_instance.credentials
 
                 # 执行测试
-                start_time = time.time()
+                start_time = pd.Timestamp.now()
                 test_data = test_instance.test_connection(
                     test_symbol=test_symbol,
                     start_date=start_date,
                     end_date=end_date
                 )
-                latency_ms = round((time.time() - start_time) * 1000, 2)
+                # 计算延迟（毫秒）
+                end_time = pd.Timestamp.now()
+                latency_ms = round((end_time - start_time).total_seconds() * 1000, 2)
 
                 # 检查测试数据
                 if hasattr(test_data, 'to_dataframe'):
@@ -1600,8 +1600,6 @@ class DataQualityAPIService:
 
                     # 测试成功后，保存凭证到文件
                     if requires_auth and credentials:
-                        from core_bak_refactored.core.data.providers.base_provider import BaseDataProvider
-                        import os
                         BaseDataProvider.save_credentials(provider_id, credentials)
                         logger.info(f"{provider_id} 凭证已保存")
 
@@ -1899,7 +1897,9 @@ class DataQualityAPIService:
                 if not provider or not hasattr(provider, 'get_index_prices'):
                     return jsonify({'status': 'error', 'message': '数据提供者不可用',
                                     'error_code': 'DATA_PROVIDER_UNAVAILABLE'}), 503
-                df = provider.get_index_prices(index_id, start_date, end_date, pd.Timestamp.now())
+                # 🔧 使用目标市场当前本地时间
+                market_local_time = MarketTimeUtils.get_market_time_now(index_id)
+                df = provider.get_index_prices(index_id, start_date, end_date, market_local_time)
                 data = df.to_dict(orient='records') if hasattr(df, 'to_dict') else []
                 return jsonify(
                     {'status': 'success', 'data': data, 'count': len(data), 'timestamp': pd.Timestamp.now().isoformat()})
@@ -2020,7 +2020,7 @@ class DataQualityAPIService:
                 period = request.args.get('period', default='daily', type=str)
                 count = request.args.get('count', default=30, type=int)
                 before_str = request.args.get('before', type=str)  # 新增：获取此日期之前的数据
-                before = pd.Timestamp.now()
+                before = None
                 if before_str:
                     before = pd.Timestamp(before_str)
                     
@@ -2042,12 +2042,14 @@ class DataQualityAPIService:
                     if before:
                         end_date = before
                     else:
-                        end_date = pd.Timestamp.now()
+                        # 🔧 获取目标市场当前时间
+                        end_date = MarketTimeUtils.get_market_time_now(index_id)
 
                     start_date = end_date - pd.Timedelta(days=days_needed)
                     
-                    # ✅ 直接传递 pd.Timestamp 对象，不转换为字符串
-                    df = provider.get_index_prices(index_id, start_date, end_date, pd.Timestamp.now())
+                    # ✅ 使用目标市场当前本地时间
+                    market_local_time = MarketTimeUtils.get_market_time_now(index_id)
+                    df = provider.get_index_prices(index_id, start_date, end_date, market_local_time)
                     if hasattr(df, 'empty') and df.empty:
                         # 生产环境：真实数据为空时返回错误，不降级为Mock
                         return jsonify({'status': 'error', 'message': '无数据', 'error_code': 'NO_DATA'}), 404
@@ -2176,9 +2178,6 @@ class DataQualityAPIService:
                             logger.info(f"💾 从缓存读取最后一个{period}K柱: date={last_period_bar['date']}")
                             
                             # 构造PriceData对象（只包含最后一个K柱）
-                            from core_bak_refactored.core.share.market.data_types import PriceData, OHLCVRecord
-                            # 🔧 删除局部导入，使用文件顶部的全局导入
-                            
                             last_record = OHLCVRecord(
                                 date=pd.Timestamp(last_period_bar['date']),
                                 open=last_period_bar['open'],
@@ -2197,12 +2196,12 @@ class DataQualityAPIService:
                             )
                             
                             # 2.3 调用合并逻辑
-                            current_time = pd.Timestamp.now()
+                            market_local_time = MarketTimeUtils.get_market_time_now(index_id)
                             merged_price_data = provider.merge_realtime_kline_to_period(
                                 price_data=price_data,
                                 realtime_kline=realtime_kline,
                                 period=period,
-                                current_time=current_time
+                                market_local_time=market_local_time
                             )
                             
                             # 2.4 提取最后一个K柱返回给前端
@@ -2220,16 +2219,15 @@ class DataQualityAPIService:
                         else:
                             # 缓存中没有，需要查询历史数据（fallback机制）
                             logger.warning(f"⚠️ {period}线 - 缓存未命中，需要查询历史数据")
-                            current_time = pd.Timestamp.now()
-                            end_date = current_time
+                            market_local_time = MarketTimeUtils.get_market_time_now(index_id)
+                            end_date = market_local_time
                             start_date = end_date - pd.Timedelta(days=90)
                             
-                            from core_bak_refactored.core.share.market.data_types import PriceData
                             price_data: PriceData = provider.get_index_prices(
                                 index_id,
                                 start_date,
                                 end_date,
-                                current_time,
+                                market_local_time,
                                 period
                             )
                             
@@ -2238,7 +2236,7 @@ class DataQualityAPIService:
                                     price_data=price_data,
                                     realtime_kline=realtime_kline,
                                     period=period,
-                                    current_time=current_time
+                                    market_local_time=market_local_time
                                 )
                                 
                                 last_record = merged_price_data.records[-1]
@@ -2321,6 +2319,7 @@ class DataQualityAPIService:
     def _register_mock_routes(self):
         """注册Mock API路由 - 从 api_service_mock.py 导入"""
         from core_bak_refactored.app.quality_monitoring.api_service_mock import register_mock_routes
+        
         # 将Mock路由注册到当前 Flask app
         register_mock_routes(self.app)
         logger.info("🎭 Mock API路由已注册")

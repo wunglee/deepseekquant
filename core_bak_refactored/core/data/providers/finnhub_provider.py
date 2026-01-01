@@ -33,6 +33,7 @@ import pandas as pd
 from core_bak_refactored.core.data.providers.base_provider import BaseDataProvider
 from core_bak_refactored.core.data.providers.protocols import HistoricalDataProvider, PriceData
 from core_bak_refactored.core.share.config_manager import ConfigManager
+from core_bak_refactored.core.share.market.market_time_utils import MarketTimeUtils
 
 logger = logging.getLogger(__name__)
 
@@ -184,7 +185,7 @@ class FinnhubDataProvider(BaseDataProvider, HistoricalDataProvider):
         index_id: str,
         start_date:pd.Timestamp,
         end_date: pd.Timestamp,
-        current_time: pd.Timestamp,
+        market_local_time: pd.Timestamp,
         period: str = 'daily'
     ) -> PriceData:
         """
@@ -194,8 +195,8 @@ class FinnhubDataProvider(BaseDataProvider, HistoricalDataProvider):
             index_id: 指数代码
             start_date: 开始日期 pd.Timestamp对象
             end_date: 结束日期 pd.Timestamp对象
-            current_time:当前时间
-            period:周期
+            market_local_time: 目标市场当前本地时间（不带时区信息）
+            period: 周期
         Returns:
             PriceData: 包含标准OHLCV数据的结构化对象
         """
@@ -257,7 +258,7 @@ class FinnhubDataProvider(BaseDataProvider, HistoricalDataProvider):
             
             # 返回PriceData对象
             price_data = PriceData.from_dataframe(df, index_id)
-            self.set_needs_realtime_kline(price_data, current_time)
+            self.set_needs_realtime_kline(price_data, market_local_time)
             return price_data
             
         except Exception as e:
@@ -300,7 +301,7 @@ class FinnhubDataProvider(BaseDataProvider, HistoricalDataProvider):
         Returns:
             Series with date index and return values
         """
-        price_data = self.get_index_prices(index_id, start_date, end_date,pd.Timestamp.now())
+        price_data = self.get_index_prices(index_id, start_date, end_date, MarketTimeUtils.get_market_time_now(index_id))
         df = price_data.to_dataframe().set_index('date')
         returns = df['close'].pct_change().dropna()
         return returns
@@ -310,7 +311,7 @@ class FinnhubDataProvider(BaseDataProvider, HistoricalDataProvider):
         stock_id: str,
         start_date:pd.Timestamp,
         end_date: pd.Timestamp,
-        current_time: pd.Timestamp,
+        market_local_time: pd.Timestamp,
         period: str = 'daily'
     ) -> PriceData:
         """
@@ -322,13 +323,13 @@ class FinnhubDataProvider(BaseDataProvider, HistoricalDataProvider):
             stock_id: 股票代码
             start_date: 开始日期
             end_date: 结束日期
-            current_time:当前时间
-            period:周期
+            market_local_time: 目标市场当前本地时间（不带时区信息）
+            period: 周期
         Returns:
             PriceData: 包含标准OHLCV数据的结构化对象
         """
         # 💚 由基类自动处理缓存
-        return super().get_stock_prices(stock_id, start_date, end_date,current_time,period)
+        return super().get_stock_prices(stock_id, start_date, end_date, market_local_time, period)
     
     def _fetch_from_external_api(self, symbol: str, start_date: pd.Timestamp, end_date: pd.Timestamp, period: str = 'daily') -> PriceData:
         """
@@ -349,7 +350,8 @@ class FinnhubDataProvider(BaseDataProvider, HistoricalDataProvider):
             PriceData: 价格数据对象
         """
         # 获取日线数据（Finnhub API 只返回日线）
-        price_data = self.get_index_prices(symbol, start_date, end_date,pd.Timestamp.now())
+        market_local_time = MarketTimeUtils.get_market_time_now(symbol)
+        price_data = self.get_index_prices(symbol, start_date, end_date, market_local_time)
         
         # 🔧 Finnhub 不支持直接查询周线/月线，需要从日线转换（调用基类的通用方法）
         if period != 'daily':

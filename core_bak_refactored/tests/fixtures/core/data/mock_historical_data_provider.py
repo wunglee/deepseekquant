@@ -112,9 +112,15 @@ class MockHistoricalDataProvider:
 
         return prices
 
-    def get_index_prices(self, index_id: str, start_date: str, end_date: str,current_time: pd.Timestamp) -> pd.DataFrame:
+    def get_index_prices(self, index_id: str, start_date: pd.Timestamp | str, end_date: pd.Timestamp | str, current_time: pd.Timestamp) -> pd.DataFrame:
         """
         获取指数价格数据
+        
+        Args:
+            index_id: 指数代码
+            start_date: 开始日期（pd.Timestamp 或 str）
+            end_date: 结束日期（pd.Timestamp 或 str）
+            current_time: 当前时间（pd.Timestamp）
         
         Returns:
             DataFrame with columns: ['date', 'open', 'high', 'low', 'close', 'volume']
@@ -192,15 +198,20 @@ class MockHistoricalDataProvider:
             'volume': volumes
         })
 
-    def get_index_returns(self, index_id: str, start_date: str, end_date: str) -> pd.Series:
+    def get_index_returns(self, index_id: str, start_date: pd.Timestamp | str, end_date: pd.Timestamp | str) -> pd.Series:
         df = self.get_index_prices(index_id, start_date, end_date, pd.Timestamp.now())
         returns = df['close'].pct_change().fillna(0)
         returns.index = df['date']
         return returns
 
-    def get_stock_prices(self, symbol: str, start_date, end_date) -> pd.DataFrame:
+    def get_stock_prices(self, symbol: str, start_date: pd.Timestamp | str, end_date: pd.Timestamp | str) -> pd.DataFrame:
         """
         获取个股价格数据（Mock实现，接口与YahooFinanceDataProvider一致）
+        
+        Args:
+            symbol: 股票代码
+            start_date: 开始日期（pd.Timestamp 或 str）
+            end_date: 结束日期（pd.Timestamp 或 str）
         
         Returns:
             DataFrame with columns: ['date', 'open', 'high', 'low', 'close', 'volume']
@@ -248,10 +259,17 @@ class MockHistoricalDataProvider:
             'volume': volumes
         })
     
-    def get_volatility_index(self, index_id: str, start_date, end_date) -> pd.Series:
+    def get_volatility_index(self, index_id: str, start_date: pd.Timestamp | str, end_date: pd.Timestamp | str) -> pd.Series:
         """
         获取波动率指数（Mock实现，接口与YahooFinanceDataProvider一致）
-        返回范围: [0.05, 0.5]
+        
+        Args:
+            index_id: 指数代码
+            start_date: 开始日期（pd.Timestamp 或 str）
+            end_date: 结束日期（pd.Timestamp 或 str）
+        
+        Returns:
+            pd.Series: 波动率指数序列，范围 [0.05, 0.5]
         """
         start = pd.to_datetime(start_date)
         end = pd.to_datetime(end_date)

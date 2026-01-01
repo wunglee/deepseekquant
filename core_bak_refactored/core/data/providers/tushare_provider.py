@@ -210,7 +210,7 @@ class TushareDataProvider(BaseDataProvider):
         stock_id: str,
         start_date:pd.Timestamp,
         end_date: pd.Timestamp,
-        current_time: pd.Timestamp,
+        market_local_time: pd.Timestamp,
         period: str = 'daily'
     ) -> PriceData:
         """
@@ -222,6 +222,8 @@ class TushareDataProvider(BaseDataProvider):
             stock_id: 股票ID（如 "000001.SZ"）
             start_date: 开始日期
             end_date: 结束日期
+            market_local_time: 目标市场当前本地时间（不带时区信息）
+            period: 周期
             
         Returns:
             PriceData: 标准化的价格数据
@@ -230,7 +232,7 @@ class TushareDataProvider(BaseDataProvider):
             ValueError: 当无法获取有效数据时
         """
         # 💚 由基类自动处理缓存
-        return super().get_stock_prices(stock_id, start_date, end_date,current_time)
+        return super().get_stock_prices(stock_id, start_date, end_date, market_local_time, period)
     
     def _fetch_from_external_api(self, symbol: str, start_date: pd.Timestamp, end_date: pd.Timestamp, period: str = 'daily') -> PriceData:
         """
@@ -263,7 +265,9 @@ class TushareDataProvider(BaseDataProvider):
         
         if is_index:
             # 调用原有的 get_index_prices 逻辑
-            price_data = self.get_index_prices(symbol, start_date, end_date,pd.Timestamp.now())
+            from core_bak_refactored.core.share.market.market_time_utils import MarketTimeUtils
+            market_local_time = MarketTimeUtils.get_market_time_now(symbol)
+            price_data = self.get_index_prices(symbol, start_date, end_date, market_local_time)
         else:
             # 调用原有的 get_stock_prices 逻辑
             # 为了避免循环调用，直接实现逻辑

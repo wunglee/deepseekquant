@@ -38,6 +38,7 @@ from core_bak_refactored.core.data.providers.protocols import (PriceData,
 from core_bak_refactored.core.data.providers.protocols import TickRange
 from core_bak_refactored.core.share.config_manager import ConfigManager
 from core_bak_refactored.core.share.market import MarketUtils
+from core_bak_refactored.core.share.market.market_time_utils import MarketTimeUtils
 from core_bak_refactored.core.share.market.market_enums import MarketCode, TradingPhase
 
 logger = logging.getLogger(__name__)
@@ -179,28 +180,6 @@ class AKShareDataProvider(BaseDataProvider):
                 
         except Exception as e:
             logger.warning(f"配置代理时出错: {e}，将使用默认设置")
-
-    def get_index_returns(
-            self,
-            index_id: str,
-            start_date: pd.Timestamp,
-            end_date: pd.Timestamp
-    ) -> pd.Series:
-        """
-        获取指数收益率序列（实现HistoricalDataProvider接口）
-
-        Args:
-            index_id: 指数代码
-            start_date: 开始日期 pd.Timestamp对象
-            end_date: 结束日期 pd.Timestamp对象
-
-        Returns:
-            Series with date index and return values
-        """
-        price_data = self.get_index_prices(index_id, start_date, end_date, pd.Timestamp.now())
-        prices = price_data.to_dataframe().set_index('date')
-        returns = prices['close'].pct_change().dropna()
-        return returns
 
     def _fetch_from_external_api(self, symbol: str, start_date: pd.Timestamp, end_date: pd.Timestamp, period: str = 'daily') -> PriceData:
         """
@@ -437,27 +416,29 @@ class AKShareDataProvider(BaseDataProvider):
     # _standardize_format method has been moved to MarketUtils.standardize_format
 
     def get_intraday_data(self, symbol: str, tick_range: TickRange = None,
-                          current_time: pd.Timestamp = None) -> IntradayData:
+                          market_local_time: pd.Timestamp = None) -> IntradayData:
         """
-        获取分时图数据（1分钟级别） - 仅负责真实数据
-
-        实现策略：
-        1. 智能日期处理：如果是周末/节假日，自动获取最近交易日数据
-        2. 优先从内存缓存获取
-        3. 然后尝试真实API（AKShare stock_zh_a_hist_min_em）
-        4. API失败则fallback到前一交易日缓存
+        获取分时数据（日内Tick数据）
+        
+        策略：
+        1. 集合竞价时段（9:00-9:30）：返回空数据用于清空分时图 + 实时盘口
+        2. 交易时段（上午或下午）：返回当前时刻之前的数据 + 实时盘口
+        3. 午盘休市时段（11:30-13:00）：返回上午的分时数据 + 最后的盘口
+        4. 盘后时段（15:00之后）：返回当天的全天分时数据（无盘口）
         5. 最后返回空数据
 
         Args:
             symbol: 证券代码
             tick_range: 时间范围
-            current_time: 当前时间（用于测试，默认使用系统时间）
+            market_local_time: 目标市场当前本地时间（不带时区信息）
+                              如果为None，自动使用 MarketTimeUtils.get_market_time_now(symbol) 获取
+        
+        Returns:
+            IntradayData: 完整的分时数据对象
+        
         注意：
         - 此方法只负责获取真实数据
         - 模拟数据由 MockDataProvider 单独处理
-        :param symbol: 证券代码
-        :param tick_range: 时间范围
-        :param current_time: 当前时间（用于测试）
         """
 
         logger.info(f"获取真实分时数据: symbol={symbol}")
@@ -466,13 +447,15 @@ class AKShareDataProvider(BaseDataProvider):
         market_code = MarketUtils.infer_market_from_symbol(symbol)
         logger.info(f"识别市场: {symbol} -> {market_code.value}")
 
-        # 使用传入的时间或当前系统时间
-        if current_time is None:
-            current_time = pd.Timestamp.now()
-        now = current_time
-        trade_date = now
+        # 如果没有提供 market_local_time，使用 MarketTimeUtils.get_market_time_now 获取
+        if market_local_time is None:
+            market_local_time = MarketTimeUtils.get_market_time_now(symbol)
+            logger.info(f"自动获取市场当前时间: {market_local_time}")
+        
+        trade_date = market_local_time.normalize()
+        
         intraday_data = None
-        trading_phase = MarketUtils.determine_trading_phase(market_code, now)
+        trading_phase = MarketTimeUtils.determine_trading_phase(market_code, market_local_time)
         trading_hours = self.config_manager.get_trading_hours(market_code.value)
         if trading_phase == TradingPhase.BEFORE_OPEN:
             # 集合竞价时段（9:00-9:30）：返回空数据，用于清空分时图
@@ -487,7 +470,7 @@ class AKShareDataProvider(BaseDataProvider):
                 fetch_trade_records=True, should_poll=True, enable_cache=False
             )
         elif trading_phase == TradingPhase.AFTER_CLOSE:
-            last_trade_date = MarketUtils.get_last_trade_date(market_code, trade_date, now)
+            last_trade_date = MarketTimeUtils.get_last_trade_date(market_code, market_local_time)
             last_trade_date_cache_key = f"intraday_{symbol}_{last_trade_date.strftime('%Y-%m-%d')}_TRADING"
             if self._enable_memory_cache:
                 date_cache = self._get_from_memory_cache(last_trade_date_cache_key)
@@ -539,7 +522,7 @@ class AKShareDataProvider(BaseDataProvider):
                 # 创建从开盘到当前时刻的tick_range
                 tick_range = TickRange(
                     start_time=pd.Timestamp(f"{trade_date} {trading_hours['open']}"),
-                    end_time=pd.Timestamp(now),
+                    end_time=market_local_time,  # 使用不带时区的本地时间
                     period_seconds=5
                 )
                 logger.info(f"📅 自动创建 TickRange（盘中首次加载）: {tick_range.start_time} ~ {tick_range.end_time}")
@@ -988,30 +971,23 @@ class AKShareDataProvider(BaseDataProvider):
         # 直接返回原始数据，不做插值
         return ticks
 
-    def get_realtime_kline(self, symbol: str, current_time: pd.Timestamp = None) -> dict:
+    def get_realtime_kline(self, symbol: str, market_local_time: pd.Timestamp = None) -> dict:
         """
-        获取实时K线数据（领域层方法）
-
-        职责：
-        1. 自动判断交易时段
-        2. 获取当天分时数据
-        3. 根据分时数据计算OHLCV
-        4. 缓存管理（开盘价、最高价、最低价）
-        5. 盘前时段返回集合竞价价格（从盘口获取）
-        6. 返回 should_poll 标志
+        获取实时K线数据（当日K柱）
 
         Args:
             symbol: 证券代码
-            current_time: 当前时间（用于测试，默认使用系统时间）
+            market_local_time: 市场本地时间（必须带正确的市场时区，由API层传入）
 
         Returns:
+            dict: K线数据字典，格式：
             {
-                'date': str,
-                'open': float,
-                'high': float,
-                'low': float,
-                'close': float,
-                'volume': int,
+                'date': str,  # '2024-01-15'
+                'open': float,  # 开盘价
+                'high': float,  # 最高价
+                'low': float,   # 最低价
+                'close': float, # 收盘价（当前价）
+                'volume': int,  # 成交量
                 'trading_phase': str,  # 交易时段：BEFORE_OPEN, TRADING, AFTER_CLOSE等
                 'should_poll': bool  # 服务器根据 trading_phase 决定，前端只依赖此字段控制行为
             }
@@ -1029,13 +1005,19 @@ class AKShareDataProvider(BaseDataProvider):
             'should_poll': False
         }
 
-        # 判断交易时段
-        if current_time is None:
-            current_time = pd.Timestamp.now()
-        now = current_time
         market_code = MarketUtils.infer_market_from_symbol(symbol)
-        trading_phase = MarketUtils.determine_trading_phase(market_code, now)
-        trade_date = now.normalize()  # 获取日期部分
+        
+        # 使用传入的市场本地时间或当前系统UTC时间转换为本地时间
+        if market_local_time is None:
+            utc_now = pd.Timestamp.now(tz='UTC')
+            market_tz = MarketTimeUtils._get_market_timezone(market_code)
+            market_local_time = utc_now.astimezone(market_tz)
+        
+        # market_local_time 已经是市场本地时间，直接使用
+        trading_phase = MarketTimeUtils.determine_trading_phase(market_code, market_local_time)
+        
+        # 获取市场本地日期作为交易日
+        trade_date = market_local_time.normalize()
         cache_key = f"realtime_kline_{symbol}_{trade_date.strftime('%Y-%m-%d')}"
 
         if trading_phase == TradingPhase.TRADING:
@@ -1071,7 +1053,7 @@ class AKShareDataProvider(BaseDataProvider):
 
                 # 3. 使用akshare获取最新分钟数据更新K线
                 ak_symbol = self._map_to_akshare(symbol, with_market_prefix=False)
-                current_time_str = now.strftime('%Y-%m-%d %H:%M:%S')
+                current_time_str = market_local_time.strftime('%Y-%m-%d %H:%M:%S')
 
                 try:
                     df = self.ak.stock_zh_a_hist_min_em(

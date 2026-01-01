@@ -21,13 +21,14 @@ import logging
 import random
 import time
 from dataclasses import dataclass
+from typing import Dict, Any
 
 import pandas as pd
 import requests
 
 from core_bak_refactored.core.data.providers.base_provider import BaseDataProvider
 # 导入新的数据结构
-from core_bak_refactored.core.data.providers.protocols import PriceData
+from core_bak_refactored.core.data.providers.protocols import PriceData, TickRange, IntradayData
 # 导入 HTTP/2 补丁
 from core_bak_refactored.core.data.providers.yfinance_http2_patch import patch_yfinance
 
@@ -349,6 +350,271 @@ class YahooFinanceDataProvider(BaseDataProvider):
             return self._inter_get_index_prices(symbol, start_date, end_date, period)
         else:
             return self._inter_get_stock_prices(symbol, start_date, end_date, period)
+    
+    def get_intraday_data(self, symbol: str, tick_range: TickRange = None,
+                          market_local_time: pd.Timestamp = None) -> 'IntradayData':
+        """
+        获取分时数据（通过 Yahoo Finance API）
+        
+        Args:
+            symbol: 证券代码
+            tick_range: 时间范围（可选）
+            market_local_time: 市场本地时间（必须带正确的市场时区，由API层传入）
+        
+        Returns:
+            IntradayData: 分时数据对象
+        """
+        from core_bak_refactored.core.data.providers.protocols import IntradayData, IntradayTickRecord
+        from core_bak_refactored.core.share.market.market_utils import MarketUtils
+        from core_bak_refactored.core.share.market.market_time_utils import MarketTimeUtils
+        from core_bak_refactored.core.share.market.market_enums import TradingPhase
+        import pytz
+
+        # 使用传入的市场本地时间或当前系统UTC时间转换为本地时间
+        market_code = MarketUtils.infer_market_from_symbol(symbol)
+        if market_local_time is None:
+            utc_now = pd.Timestamp.now(tz='UTC')
+            market_tz = MarketTimeUtils._get_market_timezone(market_code)
+            market_local_time = utc_now.astimezone(market_tz)
+        
+        # market_local_time 已经是市场本地时间，直接使用
+        trade_date = market_local_time.date()
+        
+        logger.info(f"🌍 使用市场本地时间: {market_local_time.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+        
+        # 使用市场本地时间判断交易时段
+        trading_phase = MarketTimeUtils.determine_trading_phase(market_code, market_local_time)
+        
+        logger.info(f"识别市场: {symbol} -> {market_code.value}, 交易时段: {trading_phase.value}")
+        
+        # 判断是否为盘前时段，盘前返回空数据
+        if trading_phase == TradingPhase.BEFORE_OPEN:
+            logger.info("集合竞价时段，返回空数据")
+            return self._generate_empty_intraday_data(symbol, trade_date, should_poll=True)
+        
+        # 🔧 关键修复：盘后时段获取最近一个交易日的数据
+        if trading_phase == TradingPhase.AFTER_CLOSE:
+            logger.info("🌃 盘后时段，获取最近一个交易日的数据")
+            last_trade_date = MarketTimeUtils.get_last_trade_date(market_code, market_local_time)
+            trade_date = last_trade_date.date()
+            logger.info(f"📅 最近交易日: {trade_date}")
+        
+        try:
+            # 计算时间范围
+            if tick_range is not None:
+                start_time = tick_range.start_time
+                end_time = tick_range.end_time
+            else:
+                # 默认获取当日数据
+                trading_hours = self.config_manager.get_trading_hours(market_code.value)
+                market_timezone_str = trading_hours.get('timezone', 'UTC')
+                market_timezone = pytz.timezone(market_timezone_str)
+                start_time = pd.Timestamp(f"{trade_date} {trading_hours['open']}", tz=market_timezone)
+                
+                if trading_phase == TradingPhase.AFTER_CLOSE:
+                    # 盘后获取全天数据
+                    end_time = pd.Timestamp(f"{trade_date} {trading_hours['close']}", tz=market_timezone)
+                elif trading_phase == TradingPhase.NOON_BREAK:
+                    # 午休获取上午数据
+                    end_time = pd.Timestamp(f"{trade_date} {trading_hours['lunch_start']}", tz=market_timezone)
+                else:
+                    # 盘中获取到当前时间的数据
+                    end_time = market_local_time
+            
+            logger.info(f"时间范围: {start_time} ~ {end_time}")
+            
+            # 请求限速
+            self._throttle_request()
+            
+            # 使用 yfinance 获取 1分钟数据
+            ticker_obj = self.yf.Ticker(symbol, session=self._session)
+            
+            # Yahoo Finance 的 1m 数据最多只能获取 7 天
+            # 如果时间范围超过 7 天，使用 5m 数据
+            time_diff = (end_time - start_time).days
+            if time_diff > 7:
+                interval = '5m'
+                period = '60d'  # 5分钟数据最多60天
+                logger.info("时间范围超过 7 天，使用 5分钟数据")
+            else:
+                interval = '1m'
+                period = '7d'  # 1分钟数据最多7天
+                logger.info("使用 1分钟数据")
+            
+            # 获取数据
+            df = ticker_obj.history(period=period, interval=interval)
+            
+            if df is None or df.empty:
+                logger.warning(f"⚠️ Yahoo Finance 返回空数据: {symbol}")
+                # 返回空数据
+                logger.info(f"返回空数据对象（可能是盘后或节假日）")
+                return self._generate_empty_intraday_data(symbol, trade_date, should_poll=(trading_phase != TradingPhase.AFTER_CLOSE))
+            
+            # 🔧 关键修复：确保时区一致性
+            # yfinance 返回的 df.index 可能没有时区信息，需要统一处理
+            if df.index.tz is None:
+                # DataFrame 是 tz-naive，将 start_time 和 end_time 转换为 tz-naive
+                start_time_naive = start_time.tz_localize(None) if hasattr(start_time, 'tz_localize') else start_time.replace(tzinfo=None)
+                end_time_naive = end_time.tz_localize(None) if hasattr(end_time, 'tz_localize') else end_time.replace(tzinfo=None)
+                df = df[(df.index >= start_time_naive) & (df.index <= end_time_naive)]
+            else:
+                # DataFrame 有时区信息，直接使用
+                df = df[(df.index >= start_time) & (df.index <= end_time)]
+            
+            if df.empty:
+                logger.warning(f"⚠️ 过滤后数据为空: {symbol}")
+                return self._generate_empty_intraday_data(symbol, trade_date, should_poll=(trading_phase != TradingPhase.AFTER_CLOSE))
+            
+            # 转换为 IntradayData
+            intraday_data = self._convert_yahoo_df_to_intraday(df, symbol, trade_date)
+            
+            # 设置 should_poll
+            intraday_data.should_poll = trading_phase in [TradingPhase.BEFORE_OPEN, TradingPhase.TRADING]
+            
+            logger.info(f"✅ 成功获取 {len(intraday_data.ticks)} 条分时数据")
+            return intraday_data
+            
+        except Exception as e:
+            error_msg = str(e)
+            
+            # 处理速率限制错误：返回空数据而不是抛出异常
+            if "Rate limit" in error_msg or "Too Many Requests" in error_msg or "429" in error_msg:
+                logger.warning(f"⚠️ Yahoo Finance 速率限制: {symbol}, 返回空数据")
+                return self._generate_empty_intraday_data(symbol, trade_date, should_poll=False)
+            
+            # 其他错误：记录并抛出
+            logger.error(f"获取Yahoo Finance分时数据失败: {e}", exc_info=True)
+            raise RuntimeError(f"获取分时数据失败: {symbol}, {str(e)}")
+    
+    def _generate_empty_intraday_data(self, symbol: str, trade_date, should_poll: bool = False) -> 'IntradayData':
+        """
+        生成空的分时数据对象
+        
+        Args:
+            symbol: 证券代码
+            trade_date: 交易日期
+            should_poll: 是否需要轮询
+        
+        Returns:
+            IntradayData: 空的分时数据对象
+        """
+        from core_bak_refactored.core.data.providers.protocols import IntradayData
+        from core_bak_refactored.core.share.market.market_utils import MarketUtils
+        
+        is_index = MarketUtils.is_index(symbol)
+        
+        return IntradayData(
+            symbol=symbol,
+            name=symbol,  # Yahoo Finance 不提供中文名称
+            current_price=0.0,
+            yesterday_close=0.0,
+            change=0.0,
+            change_percent=0.0,
+            ticks=[],
+            order_book_bids=[],
+            order_book_asks=[],
+            trade_records=[],
+            trade_date=trade_date,
+            order_book_message='实时盘口数据仅在交易时段可用' if not is_index else '指数不可交易',
+            trade_records_message='Yahoo Finance 仅提供 K 线数据，不提供逐笔成交明细' if not is_index else '指数无成交明细',
+            is_index=is_index,
+            should_poll=should_poll
+        )
+    
+    def _convert_yahoo_df_to_intraday(self, df: pd.DataFrame, symbol: str, trade_date) -> 'IntradayData':
+        """
+        将 Yahoo Finance 的 DataFrame 转换为 IntradayData
+        
+        Args:
+            df: Yahoo Finance 返回的 DataFrame（index 为时间戳）
+            symbol: 证券代码
+            trade_date: 交易日期
+        
+        Returns:
+            IntradayData: 分时数据对象
+        """
+        from core_bak_refactored.core.data.providers.protocols import IntradayData, IntradayTickRecord, OrderBookLevel
+        from core_bak_refactored.core.share.market.market_utils import MarketUtils
+        import yfinance as yf
+        
+        is_index = MarketUtils.is_index(symbol)
+        
+        # 获取昨收价（使用第一个开盘价作为近似值）
+        yesterday_close = float(df['Open'].iloc[0]) if not df.empty else 0.0
+        
+        # 获取当前价格（最后一条数据的收盘价）
+        current_price = float(df['Close'].iloc[-1]) if not df.empty else 0.0
+        
+        # 计算涨跌
+        change = current_price - yesterday_close
+        change_percent = (change / yesterday_close * 100) if yesterday_close > 0 else 0.0
+        
+        # 转换 ticks
+        ticks = []
+        total_volume = 0
+        total_amount = 0.0
+        
+        for idx, row in df.iterrows():
+            price = float(row['Close'])
+            volume = int(row['Volume']) if pd.notna(row['Volume']) else 0
+            
+            total_volume += volume
+            total_amount += price * volume
+            avg_price = total_amount / total_volume if total_volume > 0 else price
+            
+            ticks.append(IntradayTickRecord(
+                time=idx.strftime('%H:%M:%S'),
+                price=round(price, 2),
+                volume=volume,
+                avg_price=round(avg_price, 2)
+            ))
+        
+        # 获取实时盘口数据（一档买卖盘）
+        order_book_bids = []
+        order_book_asks = []
+        if not is_index:
+            try:
+                ticker = yf.Ticker(symbol)
+                info = ticker.info
+                
+                bid_price = info.get('bid')
+                ask_price = info.get('ask')
+                bid_size = info.get('bidSize')
+                ask_size = info.get('askSize')
+                
+                if bid_price and bid_size:
+                    order_book_bids.append(OrderBookLevel(
+                        price=round(float(bid_price), 2),
+                        volume=int(bid_size)
+                    ))
+                
+                if ask_price and ask_size:
+                    order_book_asks.append(OrderBookLevel(
+                        price=round(float(ask_price), 2),
+                        volume=int(ask_size)
+                    ))
+                
+                logger.debug(f"📊 Yahoo Finance 盘口: {symbol} bid={bid_price}x{bid_size} ask={ask_price}x{ask_size}")
+            except Exception as e:
+                logger.warning(f"⚠️ 获取 Yahoo Finance 盘口数据失败: {symbol}, {e}")
+        
+        return IntradayData(
+            symbol=symbol,
+            name=symbol,  # Yahoo Finance 不提供中文名称
+            current_price=round(current_price, 2),
+            yesterday_close=round(yesterday_close, 2),
+            change=round(change, 2),
+            change_percent=round(change_percent, 2),
+            ticks=ticks,
+            order_book_bids=order_book_bids,  # Yahoo Finance 提供一档买盘
+            order_book_asks=order_book_asks,  # Yahoo Finance 提供一档卖盘
+            trade_records=[],  # Yahoo Finance 不提供逐笔成交明细
+            trade_date=str(trade_date),
+            order_book_message='' if order_book_bids or order_book_asks else ('实时盘口数据仅在交易时段可用' if not is_index else '指数不可交易'),
+            trade_records_message='Yahoo Finance 仅提供 K 线数据，不提供逐笔成交明细' if not is_index else '指数无成交明细',
+            is_index=is_index,
+            should_poll=False
+        )
     
     # _standardize_format method has been moved to MarketUtils.standardize_format_to_price_data
     

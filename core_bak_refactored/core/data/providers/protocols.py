@@ -1,4 +1,4 @@
-"""
+"""  
 历史数据提供者协议接口
 
 职责：
@@ -7,11 +7,12 @@
 - 为数据模块提供统一的接口规范
 
 设计原则：
-- Protocol接口，支持鸭子类型
+- ABC抽象基类，强制子类实现所有抽象方法
 - 接口稳定，向后兼容
 """
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Protocol, Dict, Any, List, Union, Optional
+from typing import Dict, Any, List, Union, Optional
 
 import pandas as pd
 
@@ -332,7 +333,7 @@ class TickRange:
         return cls(start_time=start_time, end_time=end_time, period_seconds=5)
 
 
-class HistoricalDataProvider(Protocol):
+class HistoricalDataProvider(ABC):
     """
     历史数据提供者接口（数据模块标准接口）
     
@@ -358,10 +359,11 @@ class HistoricalDataProvider(Protocol):
     - 不得包含缺失值（NaN）
     """
 
+    @abstractmethod
     def get_index_prices(self, index_id: str,
                          start_date: pd.Timestamp,
                          end_date: pd.Timestamp,
-                         current_time: pd.Timestamp,
+                         market_local_time: pd.Timestamp,
                          period: str = 'daily') -> PriceData:
         """
         获取指数价格数据
@@ -370,8 +372,8 @@ class HistoricalDataProvider(Protocol):
             index_id: 指数代码（如'000300.SH'沪深300）
             start_date: 开始日期 'YYYY-MM-DD'
             end_date: 结束日期 'YYYY-MM-DD'
-            current_time:当前时间
-            period:周期
+            market_local_time: 目标市场当前本地时间（不带时区信息）
+            period: 周期
         Returns:
             PriceData: 包含标准OHLCV数据的结构化对象，具有明确的属性字段：
                 - records: List[OHLCVRecord] - OHLCV数据记录列表
@@ -390,8 +392,9 @@ class HistoricalDataProvider(Protocol):
             
         注意：所有实现必须返回完整的OHLCV数据，用于技术指标计算
         """
-        ...
+        pass
 
+    @abstractmethod
     def get_index_returns(self, index_id: str,
                           start_date: pd.Timestamp,
                           end_date: pd.Timestamp) -> pd.Series:
@@ -406,10 +409,11 @@ class HistoricalDataProvider(Protocol):
         Returns:
             Series with date index and return values
         """
-        ...
+        pass
 
+    @abstractmethod
     def get_stock_prices(self, symbol: str, start_date: pd.Timestamp, end_date: pd.Timestamp,
-                         current_time: pd.Timestamp,period: str = 'daily') -> PriceData:
+                         market_local_time: pd.Timestamp, period: str = 'daily') -> PriceData:
         """
         获取个股历史价格数据
 
@@ -417,6 +421,8 @@ class HistoricalDataProvider(Protocol):
             symbol: 股票代码（支持市场后缀，如 '000001.SZ'）
             start_date: 开始日期
             end_date: 结束日期
+            market_local_time: 目标市场当前本地时间（不带时区信息）
+            period: 周期
         
         Returns:
             PriceData: 包含标准OHLCV数据的结构化对象，具有明确的属性字段：
@@ -428,43 +434,18 @@ class HistoricalDataProvider(Protocol):
             
         数据标准：与 get_index_prices 相同
         """
-        ...
+        pass
 
-    def get_volatility_index(self, index_id: str, start_date: pd.Timestamp, end_date: pd.Timestamp) -> pd.Series:
-        """
-        获取波动率指数（如VIX）
-        
-        Args:
-            index_id: 波动率指数代码
-            start_date: 开始日期
-            end_date: 结束日期
-        
-        Returns:
-            Series with date index and volatility values
-        """
-        ...
-
-    def validate_data_quality(self, data: pd.DataFrame) -> Dict[str, Any]:
-        """
-        数据质量验证报告
-        
-        Args:
-            data: 待验证的数据
-            
-        Returns:
-            质量报告字典，包含completeness_score、consistency_score等
-        """
-        ...
-
+    @abstractmethod
     def get_intraday_data(self, symbol: str, tick_range: TickRange = None,
-                          current_time: pd.Timestamp = None) -> IntradayData:
+                          market_local_time: pd.Timestamp = None) -> IntradayData:
         """
         获取分时图数据（1分钟级别）
         
         Args:
             symbol: 证券代码（如'000001.SH'上证指数）
             tick_range: 时间范围
-            current_time: 当前时间（用于测试，默认使用系统时间）
+            market_local_time: 目标市场当前本地时间（不带时区信息）
         
         Returns:
             IntradayData: 包含完整分时数据的结构化对象：
@@ -487,4 +468,4 @@ class HistoricalDataProvider(Protocol):
         
         注意：实现类可以返回实时数据或历史分时数据
         """
-        ...
+        pass

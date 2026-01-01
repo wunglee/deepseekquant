@@ -17,17 +17,25 @@ Mock API端点:
 
 from __future__ import annotations
 
+import json
 import logging
-
 from typing import TYPE_CHECKING
 
+import numpy as np
 import pandas as pd
+import pytz
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
 from core_bak_refactored.app.quality_monitoring.api.chart_data import ChartDataAssembler
+from core_bak_refactored.core.data.providers.mock_provider import MockDataProvider
+from core_bak_refactored.core.data.providers.protocols import TickRange
 from core_bak_refactored.core.share import MarketCode
+from core_bak_refactored.core.share.market import MarketUtils
+from core_bak_refactored.core.share.market.market_enums import TradingPhase
+from core_bak_refactored.core.share.market.market_time_utils import MarketTimeUtils
 from core_bak_refactored.core.signal.indicator_service import TechnicalIndicators
+from core_bak_refactored.tests.fixtures.core.data.mock_historical_data_provider import MockHistoricalDataProvider
 
 if TYPE_CHECKING:
     from core_bak_refactored.app.quality_monitoring.monitoring_service import QualityMonitoringService
@@ -65,7 +73,7 @@ class DataQualityMockAPIService:
                 - index_id: 股票/指数代码（必需）
                 - period: 周期（daily/weekly/monthly，默认 daily）
                 - count: 数据条数（默认 120）
-                - before: 获取此日期之前的数据（YYYY-MM-DD，可选）
+                - before: 获取此日期之前的数据（YYYY-MM-DD，已获取的K线日期，市场本地时间，可选）
                 - indicators: 需要的指标，逗号分隔（默认 'all'）
                                支持: vol, macd, rsi, kdj, obv
                 - trading_phase: 交易时段（BEFORE_OPEN/TRADING/NOON_BREAK/AFTER_CLOSE，默认 TRADING）
@@ -93,8 +101,20 @@ class DataQualityMockAPIService:
 
                 period = request.args.get('period', 'daily')
                 count = request.args.get('count', 120, type=int)
-                before_str = request.args.get('before')  # 可选
-                before = pd.to_datetime(before_str) if before_str else None
+                before_str = request.args.get('before')  # K线日期（市场本地时间）
+                
+                # 🔧 before 是已获取的K线日期，本身就是市场本地时间，无需时区转换
+                before = None
+                if before_str:
+                    try:
+                        before = pd.Timestamp(before_str)  # 直接使用，不转换时区
+                    except Exception as e:
+                        return jsonify({
+                            'status': 'error',
+                            'message': f'无效的日期格式: {str(e)}',
+                            'error_code': 'INVALID_DATE_FORMAT'
+                        }), 400
+                
                 indicators = request.args.get('indicators', 'all')
 
                 # 参数验证
@@ -114,9 +134,6 @@ class DataQualityMockAPIService:
 
                 # 使用Mock数据源
                 logger.info(f"🎭 使用模拟数据源: {index_id}")
-                from core_bak_refactored.core.data.providers.mock_provider import MockDataProvider
-                from core_bak_refactored.core.share.market.market_enums import TradingPhase
-
                 mock_provider = MockDataProvider()
 
                 # 🎭 从前端获取trading_phase参数（用于needs_realtime_kline判断）
@@ -136,6 +153,9 @@ class DataQualityMockAPIService:
                     indicator_service=indicator_service
                 )
 
+                # 🔧 API层统一使用UTC时间
+                current_time_utc = pd.Timestamp.now(tz='UTC')
+                
                 # 调用组装器
                 chart_data = chart_assembler.assemble_chart_data(
                     index_id=index_id,
@@ -143,7 +163,7 @@ class DataQualityMockAPIService:
                     count=count,
                     before=before,
                     indicators=indicators,
-                    current_time=pd.Timestamp.now()
+                    current_time=current_time_utc
                 )
 
                 return jsonify({
@@ -196,8 +216,6 @@ class DataQualityMockAPIService:
             
             🔧 注意：服务器根据 trading_phase 决定返回 should_poll，前端只依赖 should_poll 控制行为
             """
-            from core_bak_refactored.core.share.market.market_enums import TradingPhase
-
             try:
                 symbol = request.args.get('symbol')
                 if not symbol:
@@ -241,7 +259,6 @@ class DataQualityMockAPIService:
                         }), 400
 
                 # 解析 tick_range
-                import json
                 tick_range_str = request.args.get('tick_range')
                 tick_range = None
 
@@ -260,7 +277,6 @@ class DataQualityMockAPIService:
                                 }), 400
 
                         # 转换为 TickRange 对象
-                        from core_bak_refactored.core.data.providers.protocols import TickRange
                         tick_range = TickRange(
                             start_time=pd.Timestamp(tick_range_dict['start_time']),
                             end_time=pd.Timestamp(tick_range_dict['end_time']),
@@ -277,20 +293,20 @@ class DataQualityMockAPIService:
                     f"🎮 模拟模式: symbol={symbol}, trading_phase={trading_phase_str}(前端按钮控制), tick_range={'已提供' if tick_range else '未提供'}")
 
                 # 直接调用 MockDataProvider
-                from core_bak_refactored.core.data.providers.mock_provider import MockDataProvider
-
                 generator = MockDataProvider()
 
                 # 判断是否为指数
                 is_index = symbol in ['000001.SH', '000300.SH', '399001.SZ', '399006.SZ']
 
-                # 使用系统当前日期
-                # 🔧 直接使用 pd.Timestamp，不转换为字符串
-                trade_date = pd.Timestamp.now()
+                # 🔧 API层统一使用UTC时间，然后转换为市场本地时间
+                utc_now = pd.Timestamp.now(tz='UTC')
+                market_code = MarketUtils.infer_market_from_symbol(symbol)
+                market_tz = MarketTimeUtils._get_market_timezone(market_code)
+                trade_date = utc_now.tz_convert(market_tz)
 
                 # tick_range 由前端直接传入，不需要转换
 
-                mock_data = generator.generate(
+                mock_data = generator.generate_intraday_data(
                     symbol=symbol,
                     trade_date=trade_date,
                     tick_range=tick_range,
@@ -347,7 +363,7 @@ class DataQualityMockAPIService:
                 - index_id: 股票/指数代码（必需）
                 - period: 周期（daily/weekly/monthly，默认 daily）
                 - count: 数据条数（默认 30）
-                - before: 获取此日期之前的数据（YYYY-MM-DD，可选）
+                - before: 获取此日期之前的数据（YYYY-MM-DD，已获取的K线日期，市场本地时间，可选）
             
             返回示例：
             {
@@ -365,36 +381,43 @@ class DataQualityMockAPIService:
 
                 period = request.args.get('period', default='daily', type=str)
                 count = request.args.get('count', default=30, type=int)
-                before_str = request.args.get('before', type=str)
+                before_str = request.args.get('before', type=str)  # K线日期（市场本地时间）
+                
+                # 🔧 before 是已获取的K线日期，本身就是市场本地时间，无需时区转换
                 before = None
                 if before_str:
-                    before = pd.Timestamp(before_str)
+                    try:
+                        before = pd.Timestamp(before_str)  # 直接使用，不转换时区
+                    except Exception as e:
+                        return jsonify({
+                            'status': 'error',
+                            'message': f'无效的日期格式: {str(e)}',
+                            'error_code': 'INVALID_DATE_FORMAT'
+                        }), 400
 
                 # 使用 MockHistoricalDataProvider 生成逼真的K线数据
-                from core_bak_refactored.tests.fixtures.core.data.mock_historical_data_provider import \
-                    MockHistoricalDataProvider
-                import numpy as np
-
                 mock_provider = MockHistoricalDataProvider()
 
                 # 计算日期范围
                 multiplier = {'daily': 1, 'weekly': 7, 'monthly': 30}.get(period, 1)
                 days_needed = count * multiplier * 2
                 
+                # 🔧 API层统一使用UTC时间
                 if before:
                     end_date = before
                 else:
-                    end_date = pd.Timestamp.now()
+                    end_date = pd.Timestamp.now(tz='UTC')
                     
                 start_date = end_date - pd.Timedelta(days=days_needed)
 
                 # 获取原始日线数据
                 # ✅ 直接传递 pd.Timestamp 对象，不转换为字符串
+                current_time_utc = pd.Timestamp.now(tz='UTC')
                 df = mock_provider.get_index_prices(
                     index_id, 
                     start_date,
                     end_date, 
-                    pd.Timestamp.now()
+                    current_time_utc
                 )
                 
                 if hasattr(df, 'empty') and df.empty:
@@ -474,7 +497,8 @@ class DataQualityMockAPIService:
             参数：
                 index_id: 证券代码
                 trading_phase: 交易时段 (BEFORE_OPEN, TRADING, AFTER_CLOSE) - 用于模拟控制
-                trade_date: 交易日期 (YYYY-MM-DD)，默认今天
+                trade_date: 交易日期 (YYYY-MM-DD，浏览器本地时间)，默认今天
+                client_timezone: 浏览器时区（如 'Asia/Shanghai'，必需如果提供trade_date）
                 is_index: 是否为指数，默认false
             
             返回：
@@ -499,8 +523,6 @@ class DataQualityMockAPIService:
                     return jsonify({'status': 'error', 'message': '缺少index_id', 'error_code': 'MISSING_PARAMS'}), 400
 
                 # 🔧 获取前端传入的trading_phase参数（用于模拟控制）
-                from core_bak_refactored.core.share.market.market_enums import TradingPhase
-
                 trading_phase_str = request.args.get('trading_phase', 'TRADING')  # 默认盘中
                 try:
                     trading_phase = TradingPhase.parse(trading_phase_str)
@@ -511,17 +533,39 @@ class DataQualityMockAPIService:
                         'error_code': 'INVALID_TRADING_PHASE'
                     }), 400
 
-                trade_date = request.args.get('trade_date')
-                # 🔧 如果没有提供 trade_date，使用当前日期的 pd.Timestamp
-                if not trade_date:
-                    trade_date = pd.Timestamp.now()
+                trade_date_str = request.args.get('trade_date')
+                client_timezone = request.args.get('client_timezone')
+                
+                # 🔧 API层统一使用UTC时间，然后转换为市场本地时间
+                if not trade_date_str:
+                    # 没有提供日期，使用服务器UTC时间
+                    utc_now = pd.Timestamp.now(tz='UTC')
+                    market_code = MarketUtils.infer_market_from_symbol(index_id)
+                    market_tz = MarketTimeUtils._get_market_timezone(market_code)
+                    trade_date = utc_now.tz_convert(market_tz)
                 else:
-                    trade_date = pd.to_datetime(trade_date)
+                    # 提供了日期，需要从浏览器本地时间转换
+                    if not client_timezone:
+                        return jsonify({
+                            'status': 'error',
+                            'message': '提供trade_date参数时必须同时提供client_timezone参数',
+                            'error_code': 'MISSING_CLIENT_TIMEZONE'
+                        }), 400
+                    try:
+                        # 使用统一的转换方法
+                        market_code = MarketUtils.infer_market_from_symbol(index_id)
+                        trade_date = MarketTimeUtils.convert_client_time_to_market_time(
+                            trade_date_str, client_timezone, market_code
+                        )
+                    except ValueError as e:
+                        return jsonify({
+                            'status': 'error',
+                            'message': str(e),
+                            'error_code': 'INVALID_TIMEZONE_OR_DATE'
+                        }), 400
                     
                 is_index_str = request.args.get('is_index', 'false').lower()
                 is_index = is_index_str in ['true', '1', 'yes']
-
-                from core_bak_refactored.core.data.providers.mock_provider import MockDataProvider
 
                 # 🔧 调用领域层，显式传入参数
                 provider = MockDataProvider()
@@ -635,9 +679,9 @@ def register_mock_routes(app: Flask):
 
             generator = MockDataProvider()
             is_index = symbol in ['000001.SH', '000300.SH', '399001.SZ', '399006.SZ']
-            # 🔧 直接使用 pd.Timestamp，不转换为字符串
-            trade_date = pd.Timestamp.now()
-            mock_data = generator.generate(symbol=symbol, trade_date=trade_date, tick_range=tick_range, trading_phase=trading_phase, last_price=last_price, is_index=is_index)
+            # 🔧 获取目标市场当前时间
+            trade_date = MarketTimeUtils.get_market_time_now(symbol)
+            mock_data = generator.generate_intraday_data(symbol=symbol, trade_date=trade_date, tick_range=tick_range, trading_phase=trading_phase, last_price=last_price, is_index=is_index)
 
             intraday_data = {
                 'symbol': mock_data.symbol, 'name': mock_data.name, 'current_price': mock_data.current_price,
@@ -670,10 +714,16 @@ def register_mock_routes(app: Flask):
             mock_provider = MockHistoricalDataProvider()
             multiplier = {'daily': 1, 'weekly': 7, 'monthly': 30}.get(period, 1)
             days_needed = count * multiplier * 2
-            end_date = before if before else pd.Timestamp.now()
+            # 🔧 end_date: K线日期或目标市场时间
+            if before:
+                end_date = before  # K线日期，不需转换
+            else:
+                # 获取目标市场当前时间
+                end_date = MarketTimeUtils.get_market_time_now(index_id)
             start_date = end_date - pd.Timedelta(days=days_needed)
-            # ✅ 直接传递 pd.Timestamp 对象，不转换为字符串
-            df = mock_provider.get_index_prices(index_id, start_date, end_date, pd.Timestamp.now())
+            # 使用目标市场当前本地时间
+            market_local_time = MarketTimeUtils.get_market_time_now(index_id)
+            df = mock_provider.get_index_prices(index_id, start_date, end_date, market_local_time)
             if hasattr(df, 'empty') and df.empty:
                 return jsonify({'status': 'error', 'message': '无数据', 'error_code': 'NO_DATA'}), 404
 
@@ -733,9 +783,9 @@ def register_mock_routes(app: Flask):
             except KeyError:
                 return jsonify({'status': 'error', 'message': f'无效的trading_phase: {trading_phase_str}', 'error_code': 'INVALID_TRADING_PHASE'}), 400
             trade_date = request.args.get('trade_date')
-            # 🔧 如果没有提供 trade_date，使用当前日期的 pd.Timestamp
+            # 🔧 如果没有提供 trade_date，获取目标市场当前时间
             if not trade_date:
-                trade_date = pd.Timestamp.now()
+                trade_date = MarketTimeUtils.get_market_time_now(index_id)
             else:
                 trade_date = pd.to_datetime(trade_date)
                 

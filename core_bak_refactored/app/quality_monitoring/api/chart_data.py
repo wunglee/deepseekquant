@@ -22,6 +22,7 @@ import logging
 from typing import Dict, Any, List, Optional
 import pandas as pd
 from core_bak_refactored.core.data.providers.protocols import PriceData, TickRange
+from core_bak_refactored.core.share.market.market_time_utils import MarketTimeUtils
 
 logger = logging.getLogger('DeepSeekQuant.App.API.ChartData')
 
@@ -59,7 +60,7 @@ class ChartDataAssembler:
                            count: int = 120,
                            before: Optional[pd.Timestamp] = None,
                            indicators: Optional[str] = 'all',
-                           current_time:pd.Timestamp=pd.Timestamp.now()) -> Dict[str, Any]:
+                           current_time:pd.Timestamp=None) -> Dict[str, Any]:
         """组装完整的图表数据（全程使用强类型 PriceData）
         
         🆕 新逻辑：在交易时段（盘前/盘中），将历史数据和实时数据分离：
@@ -72,6 +73,7 @@ class ChartDataAssembler:
             count: 数据条数
             before: 获取此日期之前的数据（pd.Timestamp 类型）
             indicators: 需要的指标（逗号分隔或 'all'）
+            current_time: 当前UTC时间（默认自动获取）
         
         Returns:
             {
@@ -86,6 +88,10 @@ class ChartDataAssembler:
             RuntimeError: 数据获取或计算失败
         """
         try:
+            # 🔧 如果没有传入current_time，自动获取UTC时间
+            if current_time is None:
+                current_time = pd.Timestamp.now(tz='UTC')
+            
             logger.info(f"开始组装图表数据: index_id={index_id}, period={period}, count={count}, before={before}")
             
             # 1. 获取K线数据（🔧 额外获取预热数据用于指标计算，返回 PriceData）
@@ -197,7 +203,7 @@ class ChartDataAssembler:
                          period: str,
                          count: int,
                          before: Optional[pd.Timestamp],
-                         current_time: pd.Timestamp) -> PriceData:
+                         current_time_utc: pd.Timestamp) -> PriceData:
         """获取K线数据（DataProvider 已内置三层缓存）
         
         💚 DataProvider 自动处理:
@@ -233,8 +239,8 @@ class ChartDataAssembler:
                 end_date = before - pd.Timedelta(days=1)
             logger.info(f"🔄 无限滚动：before={before.strftime('%Y-%m-%d')}, period={period}, end_date={end_date.strftime('%Y-%m-%d')}")
         else:
-            # 初次加载：end_date = 今天
-            end_date = pd.Timestamp.now()
+            # 初次加载：end_date = 今天（目标市场本地时间）
+            end_date = MarketTimeUtils.get_market_time_now(index_id)
         
         # 🔧 根据周期调整查询范围，确保获取足够的数据点
         # 💡 关键：akshare等数据源可能限制历史数据范围，需要足够的冗余
@@ -257,12 +263,12 @@ class ChartDataAssembler:
         
         # 💚 直接调用 DataProvider，三层缓存已封装在内
         # 🔧 对于不支持直接查询的数据源（如 AKShare），会返回日线数据
-        # 🔧 关键修复：传入 pd.Timestamp 类型，而不是字符串
+        # 🔧 关键修复：传入 pd.Timestamp 类型（UTC时间）
         price_data = self._data_provider.get_index_prices(
             index_id,
             start_date,
             end_date,
-            current_time,
+            current_time_utc,  # 传入UTC时间
             period  # 传递周期参数给数据源
         )
         
@@ -270,11 +276,14 @@ class ChartDataAssembler:
         if price_data is None or price_data.count == 0:
             logger.info(f"⚠️ 无数据：{index_id}，返回空 PriceData（可能是无限滚动到头）")
             # 返回空 PriceData 对象，而非抛异常
+            # 🔧 使用目标市场时间
+            market_now = MarketTimeUtils.get_market_time_now(index_id)
+            
             return price_data if price_data else PriceData(
                 records=[],
                 symbol=index_id,
-                start_date=pd.Timestamp.now(),
-                end_date=pd.Timestamp.now(),
+                start_date=market_now,
+                end_date=market_now,
                 count=0
             )
         
@@ -630,8 +639,7 @@ class ChartDataAssembler:
             # - 首次加载（tick_range=None）：返回开盘到当前的全部数据
             # - 增量更新（tick_range有值）：只返回指定时间范围的增量数据
             intraday_data = self._data_provider.get_intraday_data(symbol, tick_range=tick_range)
-            
-            # 转换为前端需要的格式
+
             times = [tick.time for tick in intraday_data.ticks]
             prices = [tick.price for tick in intraday_data.ticks]
             volumes = [tick.volume for tick in intraday_data.ticks]
