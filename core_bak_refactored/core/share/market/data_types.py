@@ -17,6 +17,8 @@ from typing import List
 
 import pandas as pd
 
+from core_bak_refactored.core.share.market.market_time_utils import MarketTimeUtils
+
 
 @dataclass
 class OHLCVRecord:
@@ -117,8 +119,8 @@ class PriceData:
             )
             records.append(record)
 
-        start_date = records[0].date if records else pd.Timestamp.now()
-        end_date = records[-1].date if records else pd.Timestamp.now()
+        start_date = records[0].date if records else MarketTimeUtils.get_market_time_now(symbol)
+        end_date = records[-1].date if records else MarketTimeUtils.get_market_time_now(symbol)
 
         return cls(
             records=records,

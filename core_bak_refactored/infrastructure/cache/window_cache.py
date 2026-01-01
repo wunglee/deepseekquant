@@ -25,6 +25,7 @@ from typing import List, Tuple, Optional, Dict
 import pandas as pd
 
 from core_bak_refactored.core.share.market.market_enums import MarketCode
+from core_bak_refactored.core.share.market.market_time_utils import MarketTimeUtils
 from core_bak_refactored.core.share.market.trading_calendar_service import get_trading_calendar_service
 from core_bak_refactored.infrastructure.cache.memory import MemoryCache
 from core_bak_refactored.infrastructure.cache.redis import RedisCache
@@ -818,9 +819,8 @@ class WindowsCache:
         cached_windows = {}
         missing_windows = []
         first_window_key = None  # 记录起始窗口（最早数据）
-        # 使用传入的 current_time 或当前系统时间
         if current_time is None:
-            current_time = pd.Timestamp.now()
+            current_time = MarketTimeUtils.get_market_time_now(symbol)
         current_window_key = self._make_window_key(current_time, period, market_code)
         for window_key in window_keys:
             cached_value = self._fast_cache.get(symbol, period, window_key)

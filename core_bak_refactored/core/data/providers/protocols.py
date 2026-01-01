@@ -17,7 +17,7 @@ from typing import Dict, Any, List, Union, Optional
 import pandas as pd
 
 # 导入市场数据类型
-from core_bak_refactored.core.share.market.data_types import PriceData
+from core_bak_refactored.core.share.market.data_types import PriceData, OHLCVRecord
 # 导入 TradingPhase 枚举
 from core_bak_refactored.core.share.market.market_enums import TradingPhase
 

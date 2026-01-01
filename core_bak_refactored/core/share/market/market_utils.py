@@ -14,6 +14,7 @@ import pandas as pd
 
 from core_bak_refactored.core.share.market.data_types import OHLCVRecord
 from core_bak_refactored.core.share.market.market_enums import MarketCode, TradingPhase
+from core_bak_refactored.core.share.market.market_time_utils import MarketTimeUtils
 
 logger = logging.getLogger(__name__)
 
@@ -304,8 +305,8 @@ class MarketUtils:
             return PriceData(
                 symbol=symbol, 
                 records=[], 
-                start_date=pd.Timestamp.now(),
-                end_date=pd.Timestamp.now(),
+                start_date=MarketTimeUtils.get_market_time_now(symbol),
+                end_date=MarketTimeUtils.get_market_time_now(symbol),
                 count=0
             )
         
@@ -330,8 +331,8 @@ class MarketUtils:
                 continue
         
         # 计算start_date和end_date
-        start_date = records[0].date if records else pd.Timestamp.now()
-        end_date = records[-1].date if records else pd.Timestamp.now()
+        start_date = records[0].date if records else MarketTimeUtils.get_market_time_now(symbol)
+        end_date = records[-1].date if records else MarketTimeUtils.get_market_time_now(symbol)
         
         return PriceData(
             symbol=symbol, 

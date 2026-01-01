@@ -60,7 +60,7 @@ class ChartDataAssembler:
                            count: int = 120,
                            before: Optional[pd.Timestamp] = None,
                            indicators: Optional[str] = 'all',
-                           current_time:pd.Timestamp=None) -> Dict[str, Any]:
+                           market_local_time:pd.Timestamp=None) -> Dict[str, Any]:
         """组装完整的图表数据（全程使用强类型 PriceData）
         
         🆕 新逻辑：在交易时段（盘前/盘中），将历史数据和实时数据分离：
@@ -73,7 +73,7 @@ class ChartDataAssembler:
             count: 数据条数
             before: 获取此日期之前的数据（pd.Timestamp 类型）
             indicators: 需要的指标（逗号分隔或 'all'）
-            current_time: 当前UTC时间（默认自动获取）
+            market_local_time: 当前市场本地时间（默认自动获取）
         
         Returns:
             {
@@ -88,9 +88,9 @@ class ChartDataAssembler:
             RuntimeError: 数据获取或计算失败
         """
         try:
-            # 🔧 如果没有传入current_time，自动获取UTC时间
-            if current_time is None:
-                current_time = pd.Timestamp.now(tz='UTC')
+            # 🔧 如果没有传入market_local_time，自动获取市场本地时间
+            if market_local_time is None:
+                market_local_time = MarketTimeUtils.get_market_time_now(index_id)
             
             logger.info(f"开始组装图表数据: index_id={index_id}, period={period}, count={count}, before={before}")
             
@@ -103,7 +103,7 @@ class ChartDataAssembler:
                 warmup_count = 10  # 周线：10周预热（约2.5个月）
             else:
                 warmup_count = 30  # 日线：30天预热（约1个月）
-            price_data_full = self._fetch_kline_data(index_id, period, count + warmup_count, before,current_time)
+            price_data_full = self._fetch_kline_data(index_id, period, count + warmup_count, before,market_local_time)
             
             # 🔧 关键修复：数据为空时直接返回空结果（无限滚动到头）
             if price_data_full is None or price_data_full.count == 0:

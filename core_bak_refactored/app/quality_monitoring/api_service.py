@@ -466,7 +466,7 @@ class DataQualityAPIService:
                 before = None
                 if before_str:
                     try:
-                        before = pd.Timestamp(before_str)  # 直接使用，不转换时区
+                        before = index_id, pd.Timestamp(before_str)  # 直接使用，不转换时区
                     except Exception as e:
                         return jsonify({
                             'status': 'error',
@@ -495,6 +495,9 @@ class DataQualityAPIService:
                 logger.info(f"🎯 使用真实数据源: {index_id}")
                 chart_assembler = self._create_chart_assembler(index_id, timeframe=period)
 
+                # 🔧 关键修复：将UTC时间转换为不带时区的市场本地时间
+                market_local_time = MarketTimeUtils.get_market_time_now(index_id)
+
                 # 调用组装器
                 chart_data = chart_assembler.assemble_chart_data(
                     index_id=index_id,
@@ -502,7 +505,7 @@ class DataQualityAPIService:
                     count=count,
                     before=before,
                     indicators=indicators,
-                    current_time=pd.Timestamp.now(tz='UTC')
+                    market_local_time=market_local_time
                 )
 
                 return jsonify({

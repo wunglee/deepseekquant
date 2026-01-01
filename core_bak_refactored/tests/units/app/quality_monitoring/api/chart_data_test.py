@@ -470,7 +470,7 @@ class TestPeriodBarCache(unittest.TestCase):
             count=2,
             before=None,
             indicators='all',
-            current_time=pd.Timestamp('2024-01-28 10:00:00')
+            market_local_time=pd.Timestamp('2024-01-28 10:00:00')
         )
         
         cache_key = f"last_period_bar_{index_id}_{period}"
@@ -553,7 +553,7 @@ class TestPeriodBarCache(unittest.TestCase):
             count=2,
             before=None,
             indicators='all',
-            current_time=pd.Timestamp('2024-01-27 10:00:00')
+            market_local_time=pd.Timestamp('2024-01-27 10:00:00')
         )
         
         cache_key = f"last_period_bar_{index_id}_{period}"
