@@ -61,7 +61,46 @@ class TestWindowsCacheBasic(unittest.TestCase):
         self.assertIsInstance(window_key, str)
         # 月窗口键格式：YYYY-MM_YYYY-MM
         self.assertRegex(window_key, r'^\d{4}-\d{2}_\d{4}-\d{2}$')
-    
+
+    def test_generate_window_keys_no_overlap(self):
+        """测试生成的窗口首尾时间正好衔接不重叠"""
+        start = pd.Timestamp('2025-01-01')
+        end = pd.Timestamp('2026-01-01')  # 恢复原始的测试范围
+
+        keys = self.window_cache._generate_window_keys(start, end, 'daily', self.market_code)
+        next_start=None
+        for key in keys:
+            start, end = self.window_cache._window_key_to_date_range(key, 'daily')
+            if next_start:
+                self.assertEqual(start, next_start)
+            next_start = end + pd.Timedelta(days=1)
+
+    def test_generate_window_keys_no_overlap_weekly(self):
+        """测试生成的周窗口首尾时间正好衔接不重叠"""
+        start = pd.Timestamp('2025-01-01')
+        end = pd.Timestamp('2025-12-31')
+
+        keys = self.window_cache._generate_window_keys(start, end, 'weekly', self.market_code)
+        next_start = None
+        for key in keys:
+            start_date, end_date = self.window_cache._window_key_to_date_range(key, 'weekly')
+            if next_start:
+                self.assertEqual(start_date, next_start)
+            next_start = end_date + pd.Timedelta(days=1)
+
+    def test_generate_window_keys_no_overlap_monthly(self):
+        """测试生成的月窗口首尾时间正好衔接不重叠"""
+        start = pd.Timestamp('2025-01-01')
+        end = pd.Timestamp('2025-12-31')
+
+        keys = self.window_cache._generate_window_keys(start, end, 'monthly', self.market_code)
+        next_start = None
+        for key in keys:
+            start_date, end_date = self.window_cache._window_key_to_date_range(key, 'monthly')
+            if next_start:
+                self.assertEqual(start_date, next_start)
+            next_start = end_date + pd.Timedelta(days=1)
+
     def test_generate_window_keys_single_week(self):
         """测试生成单周的窗口键列表"""
         start = pd.Timestamp('2025-01-13')  # 周一
@@ -258,14 +297,13 @@ class TestConsecutiveWindows(unittest.TestCase):
     def setUp(self):
         from core_bak_refactored.infrastructure.cache.window_cache import WindowsCache
         self.window_cache = WindowsCache()
-        self.market_code = MarketCode.CN
     
     def test_is_consecutive_windows_daily_consecutive(self):
         """测试日窗口连续情况"""
-        key1 = '20250106_20250110'
+        key1 = '20250106_20250112'
         key2 = '20250113_20250117'
         
-        result = self.window_cache.is_consecutive_windows(key1, key2, 'daily', self.market_code)
+        result = self.window_cache.is_consecutive_windows(key1, key2, 'daily')
         # 结果取决于交易日历，1月10日到1月13日是否连续
         self.assertIsInstance(result, bool)
     
@@ -274,7 +312,7 @@ class TestConsecutiveWindows(unittest.TestCase):
         key1 = '2025-W01_2025-W04'
         key2 = '2025-W05_2025-W08'
         
-        result = self.window_cache.is_consecutive_windows(key1, key2, 'weekly', self.market_code)
+        result = self.window_cache.is_consecutive_windows(key1, key2, 'weekly')
         self.assertTrue(result)
     
     def test_is_consecutive_windows_weekly_not_consecutive(self):
@@ -282,7 +320,7 @@ class TestConsecutiveWindows(unittest.TestCase):
         key1 = '2025-W01_2025-W04'
         key2 = '2025-W10_2025-W13'
         
-        result = self.window_cache.is_consecutive_windows(key1, key2, 'weekly', self.market_code)
+        result = self.window_cache.is_consecutive_windows(key1, key2, 'weekly')
         self.assertFalse(result)
     
     def test_is_consecutive_windows_weekly_cross_year(self):
@@ -291,7 +329,7 @@ class TestConsecutiveWindows(unittest.TestCase):
         key1 = '2024-W52_2024-W52'
         key2 = '2025-W01_2025-W01'
         
-        result = self.window_cache.is_consecutive_windows(key1, key2, 'weekly', self.market_code)
+        result = self.window_cache.is_consecutive_windows(key1, key2, 'weekly')
         self.assertTrue(result)
     
     def test_is_consecutive_windows_monthly_consecutive(self):
@@ -299,7 +337,7 @@ class TestConsecutiveWindows(unittest.TestCase):
         key1 = '2025-01_2025-03'
         key2 = '2025-04_2025-06'
         
-        result = self.window_cache.is_consecutive_windows(key1, key2, 'monthly', self.market_code)
+        result = self.window_cache.is_consecutive_windows(key1, key2, 'monthly')
         self.assertTrue(result)
     
     def test_is_consecutive_windows_monthly_not_consecutive(self):
@@ -307,7 +345,7 @@ class TestConsecutiveWindows(unittest.TestCase):
         key1 = '2025-01_2025-03'
         key2 = '2025-05_2025-07'
         
-        result = self.window_cache.is_consecutive_windows(key1, key2, 'monthly', self.market_code)
+        result = self.window_cache.is_consecutive_windows(key1, key2, 'monthly')
         self.assertFalse(result)
     
     def test_is_consecutive_windows_monthly_cross_year(self):
@@ -315,7 +353,7 @@ class TestConsecutiveWindows(unittest.TestCase):
         key1 = '2024-10_2024-12'
         key2 = '2025-01_2025-03'
         
-        result = self.window_cache.is_consecutive_windows(key1, key2, 'monthly', self.market_code)
+        result = self.window_cache.is_consecutive_windows(key1, key2, 'monthly')
         self.assertTrue(result)
     
     def test_is_consecutive_windows_invalid_period(self):
@@ -323,7 +361,7 @@ class TestConsecutiveWindows(unittest.TestCase):
         key1 = '20250113_20250119'
         key2 = '20250120_20250126'
         
-        result = self.window_cache.is_consecutive_windows(key1, key2, 'invalid', self.market_code)
+        result = self.window_cache.is_consecutive_windows(key1, key2, 'invalid')
         self.assertFalse(result)
 
 
@@ -342,7 +380,7 @@ class TestMergeWindows(unittest.TestCase):
     
     def test_merge_continuous_windows_single_window(self):
         """测试单个窗口"""
-        keys = ['20250113_20250119']
+        keys = ['20250113_20260102']
         result = self.window_cache.merge_continuous_windows(keys, 'daily', self.market_code)
         
         self.assertEqual(len(result), 1)

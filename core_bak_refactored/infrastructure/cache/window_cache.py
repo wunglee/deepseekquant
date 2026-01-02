@@ -23,6 +23,7 @@
 import logging
 from typing import List, Tuple, Optional, Dict
 import pandas as pd
+from pandas.tseries.offsets import DateOffset
 
 from core_bak_refactored.core.share.market.market_enums import MarketCode
 from core_bak_refactored.core.share.market.market_time_utils import MarketTimeUtils
@@ -95,41 +96,22 @@ class WindowsCache:
         if period == 'daily':
             window_size = self._window_size.get('daily')
             # Daily窗口：按window_size天一个窗口
-            # 🔧 修复BUG：直接使用date计算，而不是对齐到周一
+            # 窗口边界按固定周期长度对齐，不考虑交易日历
             year_start = pd.Timestamp(f'{date.year}-01-01')
             days_from_year_start = (date - year_start).days
             window_index = days_from_year_start // window_size
 
-            # 计算窗口边界
+            # 计算窗口边界（按固定长度）
             window_start = year_start + pd.Timedelta(days=window_index * window_size)
             window_end = window_start + pd.Timedelta(days=window_size - 1)
 
-            # 🔧 关键：调整窗口边界到交易日
-            # window_start: 向后推到下一个交易日
-            # window_end: 向前推到上一个交易日
-            # 这个调整是确定性的，只依赖于窗口边界本身，不依赖查询时间
-
-            # 调整window_start到下一个交易日
-            if not self._calendar_service.is_trading_day(market_code, window_start):
-                next_trading = self._calendar_service.get_next_trading_day(market_code, window_start)
-                if next_trading:
-                    window_start = pd.Timestamp(next_trading)
-                else:
-                    logger.warning(f"⚠️ 无法找到 {window_start.date()} 之后的交易日，返回None")
-                    return None
-
-            # 调整window_end到上一个交易日
-            if not self._calendar_service.is_trading_day(market_code, window_end):
-                prev_trading = self._calendar_service.get_previous_trading_day(market_code, window_end)
-                if prev_trading:
-                    window_end = pd.Timestamp(prev_trading)
-                else:
-                    logger.warning(f"⚠️ 无法找到 {window_end.date()} 之前的交易日，返回None")
-                    return None
-
-            # 检查调整后的窗口是否有效（起始日期必须早于或等于结束日期）
-            if window_start > window_end:
-                return None
+            # 不再进行交易日历调整 - 窗口是固定长度的数据容器
+            # 检查窗口是否在有效范围内
+            if window_start > date:
+                # 如果计算出的窗口在给定日期之后，需要向前调整一个窗口
+                window_index = (days_from_year_start // window_size) - 1
+                window_start = year_start + pd.Timedelta(days=window_index * window_size)
+                window_end = window_start + pd.Timedelta(days=window_size - 1)
 
             return f"{window_start.strftime('%Y%m%d')}_{window_end.strftime('%Y%m%d')}"
 
@@ -142,7 +124,6 @@ class WindowsCache:
             window_index = (iso_week - 1) // window_size
             start_week = window_index * window_size + 1
             
-            # 🔧 关键修复：通过实际日期计算结束周，处理跨年情况
             # 计算窗口起始日期（该年第start_week周的周一）
             start_date = pd.to_datetime(f'{iso_year}-W{start_week:02d}-1', format='%G-W%V-%u')
             
@@ -163,7 +144,7 @@ class WindowsCache:
             start_month = window_index * window_size + 1
             end_month = start_month + window_size - 1
 
-            # 🔧 处理跨年情况
+            # 处理跨年情况
             start_year = date.year
             if end_month > 12:
                 # 跨年情况：结束月份在下一年
@@ -210,31 +191,43 @@ class WindowsCache:
         if start > end:
             return []
 
-        # 生成日期范围内的所有代表性日期
-        if period == 'daily':
-            # 每天生成一个日期
-            dates = pd.date_range(start=start, end=end, freq='D')
-        elif period == 'weekly':
-            # 每周生成一个日期（周一）
-            dates = pd.date_range(start=start, end=end, freq='W-MON')
-            # 确保包含起始日期所在的周
-            if dates.empty or dates[0] > start:
-                dates = pd.DatetimeIndex([start]).union(dates)
-        elif period == 'monthly':
-            # 每月生成一个日期（月初）
-            dates = pd.date_range(start=start, end=end, freq='MS')
-            # 确保包含起始月份
-            if dates.empty or dates[0] > start:
-                dates = pd.DatetimeIndex([start]).union(dates)
-        else:
-            raise ValueError(f"不支持的 period: {period}")
-
-        # 为每个日期生成窗口键，去重，过滤None
+        # 生成连续的窗口键，确保窗口之间连续且不重叠
         window_keys = set()
-        for date in dates:
-            window_key = self._make_window_key(date, period, market_code)
-            if window_key is not None:  # 过滤无效窗口
-                window_keys.add(window_key)
+        
+        # 从起始日期开始生成第一个窗口
+        current_date = start
+        while current_date <= end:
+            # 为当前日期生成窗口
+            window_key = self._make_window_key(current_date, period, market_code)
+            if window_key is None:
+                # 如果无法生成窗口，跳到下一天继续尝试
+                current_date += pd.Timedelta(days=1)
+                continue
+            
+            # 检查窗口是否已经在结果中（防止重复）
+            if window_key in window_keys:
+                # 如果窗口已存在，前进一天避免无限循环
+                current_date += pd.Timedelta(days=1)
+                continue
+            
+            # 添加窗口键
+            window_keys.add(window_key)
+            
+            # 获取当前窗口的结束日期
+            _, window_end = self._window_key_to_date_range(window_key, period)
+            
+            # 如果当前窗口的结束日期已经超过了总的结束日期，则结束循环
+            if window_end > end:
+                break
+            
+            # 计算下一个窗口的开始日期
+            # 如果当前窗口结束日期小于当前处理的日期，说明需要前进一天
+            # 否则从当前窗口的结束日期的下一天开始
+            if window_end >= current_date:
+                current_date = window_end + pd.Timedelta(days=1)
+            else:
+                current_date += pd.Timedelta(days=1)
+
         logger.info(f"📦 需要 {len(window_keys)} 个窗口 (period={period}, window_size={self._window_size.get(period)})")
         return sorted(list(window_keys))
 
@@ -377,7 +370,7 @@ class WindowsCache:
             curr_key = sorted_keys[i]
 
             # 检查是否连续：下一个窗口紧跟上一个窗口
-            if self.is_consecutive_windows(prev_key, curr_key, period, market_code):
+            if self.is_consecutive_windows(prev_key, curr_key, period):
                 # 连续，加入当前范围
                 current_range_windows.append(curr_key)
             else:
@@ -402,7 +395,7 @@ class WindowsCache:
 
         return merged_ranges
 
-    def is_consecutive_windows(self, key1: str, key2: str, period: str, market_code: MarketCode) -> bool:
+    def is_consecutive_windows(self, key1: str, key2: str, period: str) -> bool:
         """
         判断两个窗口是否连续（基于不同周期的判断逻辑）
 
@@ -410,19 +403,18 @@ class WindowsCache:
             key1: 第一个窗口键
             key2: 第二个窗口键
             period: 数据粒度 (daily/weekly/monthly)
-            market_code: 市场代码枚举（MarketCode.CN/US/HK/JP/EU/SG）
 
         Returns:
             True 表示连续，False 表示不连续
 
         逻辑：
-            - daily: 使用交易日历判断连续性（考虑节假日）
+            - daily: 判断日期是否连续（简单日期连续性）
             - weekly: 判断ISO周号是否连续
             - monthly: 判断月份是否连续
         """
 
         if period == 'daily':
-            # Daily周期：使用交易日历判断连续性
+            # Daily周期：判断日期范围是否连续
             # 获取两个窗口的日期范围
             _, end1 = self._window_key_to_date_range(key1, period)
             start2, _ = self._window_key_to_date_range(key2, period)
@@ -431,8 +423,8 @@ class WindowsCache:
             end1_dt = pd.to_datetime(end1)
             start2_dt = pd.to_datetime(start2)
 
-            # 使用交易日历服务判断连续性
-            return self._calendar_service.is_consecutive_trading_days(market_code, end1_dt, start2_dt)
+            # 简单判断：第一个窗口的结束日期 + 1天 = 第二个窗口的开始日期
+            return end1_dt + pd.Timedelta(days=1) == start2_dt
 
         elif period == 'weekly':
             # Weekly周期：判断ISO周号是否连续
