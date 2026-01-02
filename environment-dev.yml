@@ -74,6 +74,7 @@ dependencies:
     - mlflow>=2.0.0
     - slack-sdk>=3.39.0
     - twilio>=9.8.8
+    - cloudscraper>=1.2.71
 variables:
   DEEPSEEKQUANT_ENV: "development"
   PYTHONPATH: "."
