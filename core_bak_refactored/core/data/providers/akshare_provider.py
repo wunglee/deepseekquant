@@ -33,7 +33,7 @@ import pandas as pd
 
 from core_bak_refactored.core.data.providers.base_provider import BaseDataProvider
 from core_bak_refactored.core.data.providers.protocols import (PriceData,
-                                                               IntradayData, IntradayTickRecord,
+                                                               IntradayData,
                                                                OrderBookLevel, TradeDetailRecord)
 from core_bak_refactored.core.data.providers.protocols import TickRange
 from core_bak_refactored.core.share.config_manager import ConfigManager
@@ -42,6 +42,15 @@ from core_bak_refactored.core.share.market.market_time_utils import MarketTimeUt
 from core_bak_refactored.core.share.market.market_enums import MarketCode, TradingPhase
 
 logger = logging.getLogger(__name__)
+
+
+def _clear_proxy(original_get, original_post, requests):
+    # 恢复原始的 requests 方法
+    if original_get is not None:
+        requests.get = original_get
+    if 'original_post' in locals():
+        requests.post = original_post
+    logger.info("🔧 已恢复原始 requests 方法")
 
 
 class AKShareDataProvider(BaseDataProvider):
@@ -64,11 +73,11 @@ class AKShareDataProvider(BaseDataProvider):
         """初始化AKShare数据提供者"""
         # 💚 调用基类构造函数（初始化缓存）
         super().__init__()
-        
+
         # 🔧 禁用数据库缓存（避免 iCloud 路径的 disk I/O error）
         self._enable_db_cache = False
         logger.info("💾 已禁用数据库缓存（仅使用内存缓存）")
-        
+
         # 🔧 初始化分时数据专用的内存缓存（与历史数据缓存分开）
         self._enable_memory_cache = True  # 启用分时数据内存缓存
         self._memory_cache = {}  # 分时数据缓存字典
@@ -78,7 +87,7 @@ class AKShareDataProvider(BaseDataProvider):
         self._load_us_symbol_mapping()
         self._initialize()
         self.config_manager = ConfigManager()
-        
+
         # 🔧 读取代理配置并处理环境变量
         self._configure_proxy()
 
@@ -90,7 +99,8 @@ class AKShareDataProvider(BaseDataProvider):
         """加载美股符号映射配置"""
         try:
             config_path = os.path.join(
-                os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))), 'config',
+                os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))),
+                'config',
                 'us_symbol_mapping.json')
             with open(config_path, 'r', encoding='utf-8') as f:
                 config = json.load(f)
@@ -140,48 +150,49 @@ class AKShareDataProvider(BaseDataProvider):
             '399001.SZ': '深证成指',
             '399006.SZ': '创业板指'
         }
-    
+
     def _configure_proxy(self):
         """配置代理设置
         
         从 data_provider.yml 读取 use_proxy 配置，如果为 false，则禁用代理：
-        1. 清除环境变量中的代理设置
-        2. 设置 requests 库不使用代理
+        1. 不再清除环境变量中的代理设置（避免影响其他组件）
+        2. 设置 AKShare 不使用代理（通过 akshare 自身的配置）
         """
         try:
             # 从 ConfigManager 读取 providers 配置
             provider_config = self.config_manager.get_provider_config()
-            
             # 查找 akshare provider 的 use_proxy 配置
             use_proxy = False
             for provider in provider_config.providers:
                 if provider.get('id') == 'akshare':
                     use_proxy = provider.get('use_proxy', False)
                     break
-            
+            self._akshare_proxy_config = None  # 默认设置为 None
             if not use_proxy:
-                logger.info("🚫 AKShare 配置为不使用代理，清除环境变量中的代理设置")
-                
-                # 清除环境变量中的代理
-                import os
-                proxy_vars = ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy']
-                for var in proxy_vars:
-                    if var in os.environ:
-                        logger.info(f"  清除环境变量: {var} = {os.environ[var]}")
-                        del os.environ[var]
-                
-                # 设置 requests 会话不使用代理
-                import requests
-                requests.Session().trust_env = False
-                
-                logger.info("✅ 代理已禁用")
+                logger.info("🚫 AKShare 配置为不使用代理（通过参数控制）")
             else:
                 logger.info("🌐 AKShare 配置为使用代理")
-                
+                # 查找可用的代理设置
+                import os
+                proxy_vars = [
+                    'HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy',
+                    'https_proxy', 'ALL_PROXY', 'all_proxy'
+                ]
+                for var in proxy_vars:
+                    if var in os.environ:
+                        self._akshare_proxy_config = os.environ[var]
+                        logger.info(f"  使用代理: {var} = {self._akshare_proxy_config}")
+                        break
+                if self._akshare_proxy_config:
+                    logger.info("✅ AKShare 代理已设置")
+                else:
+                    logger.info("⚠️ 未找到代理环境变量，将使用直连")
+
         except Exception as e:
             logger.warning(f"配置代理时出错: {e}，将使用默认设置")
 
-    def _fetch_from_external_api(self, symbol: str, start_date: pd.Timestamp, end_date: pd.Timestamp, period: str = 'daily') -> PriceData:
+    def _fetch_from_external_api(self, symbol: str, start_date: pd.Timestamp, end_date: pd.Timestamp,
+                                 period: str = 'daily') -> PriceData:
         """
         获取历史价格数据（适用于个股和指数）
 
@@ -216,7 +227,8 @@ class AKShareDataProvider(BaseDataProvider):
             # 1. 无限滚动到头了（before 早于数据源最早日期）
             # 2. 该股票/指数确实没有数据
             if df is None or df.empty:
-                logger.warning(f"⚠️ AKShare 返回空数据: {symbol} ({start_date} to {end_date})。可能原因：1.无限滚动到头 2.该股票没有数据")
+                logger.warning(
+                    f"⚠️ AKShare 返回空数据: {symbol} ({start_date} to {end_date})。可能原因：1.无限滚动到头 2.该股票没有数据")
                 # 返回空 PriceData 对象，使用查询的日期范围
                 return PriceData(
                     records=[],
@@ -244,34 +256,34 @@ class AKShareDataProvider(BaseDataProvider):
 
             # 🔧 关键修复：筛选后数据为空，返回空 PriceData（不是错误）
             if standardized_data.empty:
-                logger.warning(f"⚠️ 日期范围筛选后数据为空: {symbol} ({start_date} to {end_date})。可能原因：1.无限滚动到头 2.该时间段没有数据")
+                logger.warning(
+                    f"⚠️ 日期范围筛选后数据为空: {symbol} ({start_date} to {end_date})。可能原因：1.无限滚动到头 2.该时间段没有数据")
                 # 返回空 PriceData 对象，使用查询的日期范围
                 return PriceData(
                     records=[],
                     symbol=symbol,
                     start_date=start_dt,  # 已经转换为 pd.Timestamp
-                    end_date=end_dt,      # 已经转换为 pd.Timestamp
+                    end_date=end_dt,  # 已经转换为 pd.Timestamp
                     count=0
                 )
 
             logger.info(f"Successfully fetched {len(standardized_data)} rows for {symbol}")
             # 返回PriceData对象而不是原始DataFrame
             price_data = PriceData.from_dataframe(standardized_data, symbol)
-            
+
             # 🔧 AKShare 不支持直接查询周线/月线，需要从日线转换
             if period != 'daily':
                 logger.info(f"AKShare 不支持直接查询 {period}，从日线转换（{price_data.count} 条日线数据）")
                 # 推断市场代码（使用文件顶部的全局导入）
                 market_code = MarketUtils.infer_market_from_symbol(symbol)
                 price_data = self._convert_period(price_data, period, market_code)
-            
+
             return price_data
 
         except Exception as e:
             logger.error(f"AKShare failed for {symbol}: {e}")
             # 更详细的错误信息，帮助调试
             raise ValueError(f"Failed to fetch data for {symbol}: {str(e)}") from e
-
 
     def _map_to_akshare(self, symbol: str, with_market_prefix: bool = True) -> str:
         """
@@ -318,7 +330,10 @@ class AKShareDataProvider(BaseDataProvider):
         # 其他：直接返回（港股、其他市场）
         return symbol
 
-    def _fetch_by_market(self, symbol_id: str, start_date: pd.Timestamp = None, end_date: pd.Timestamp = None) -> pd.DataFrame:
+    def _fetch_by_market(self,
+                         symbol_id: str,
+                         start_date: pd.Timestamp = None,
+                         end_date: pd.Timestamp = None) -> pd.DataFrame:
         """
         根据原始代码格式判断市场，调用对应的AKShare API
 
@@ -334,7 +349,7 @@ class AKShareDataProvider(BaseDataProvider):
         - 职责单一：只负责根据市场调用对应API
         - 代码格式转换已在 _map_to_akshare 完成
         - 市场判断逻辑集中在此方法
-        
+
         🔧 优先使用支持日期范围的API（如index_zh_a_hist）
         """
         # 映射代码
@@ -344,22 +359,29 @@ class AKShareDataProvider(BaseDataProvider):
         # 使用领域层工具推断市场（使用文件顶部的全局导入）
         market = MarketUtils.infer_market_from_symbol(symbol_id)
 
+        # 检查 start_date 和 end_date 是否为 None，如果是，则抛出异常
+        if start_date is None or end_date is None:
+            raise ValueError(f"start_date 和 end_date 不能为 None: start_date={start_date}, end_date={end_date}")
+
+        original_get, original_post, requests = self._config_proxy()
+        df = pd.DataFrame()
         try:
             # 根据市场选择 API
             if market == MarketCode.CN:
                 # 🔧 A股指数：优先使用支持日期范围的 index_zh_a_hist API
                 # 移除市场前缀（index_zh_a_hist只需要纯数字代码）
                 pure_code = ak_symbol.replace('sh', '').replace('sz', '')
-                start_date_str=start_date.strftime('%Y%m%d')
-                end_date_str=end_date.strftime('%Y%m%d')
-                logger.debug(f"调用A股指数API: index_zh_a_hist({pure_code}, period='daily', start_date={start_date_str}, end_date={end_date_str})")
+                start_date_str = start_date.strftime('%Y%m%d')
+                end_date_str = end_date.strftime('%Y%m%d')
+                logger.debug(
+                    f"调用A股指数API: index_zh_a_hist({pure_code}, period='daily',"
+                    f" start_date={start_date_str}, end_date={end_date_str})")
                 df = self.ak.index_zh_a_hist(
                     symbol=pure_code,
                     period='daily',
                     start_date=start_date_str,
                     end_date=end_date_str,
                 )
-                
                 # 重命名列（index_zh_a_hist使用中文列名）
                 column_mapping = {
                     '日期': 'date',
@@ -375,24 +397,21 @@ class AKShareDataProvider(BaseDataProvider):
                     '换手率': 'turnover'
                 }
                 df = df.rename(columns=column_mapping)
-                return df
-
             elif market == MarketCode.HK:
                 # 港股指数API
                 logger.debug(f"调用港股指数API: stock_hk_index_daily_em({ak_symbol})")
-                return self.ak.stock_hk_index_daily_em(symbol=ak_symbol)
-
+                df = self.ak.stock_hk_index_daily_em(symbol=ak_symbol)
             elif market == MarketCode.US:
                 # 美股/全球指数API
                 logger.debug(f"调用全球指数API: index_global_hist_em({ak_symbol})")
-                return self.ak.index_global_hist_em(symbol=ak_symbol)
-
+                df = self.ak.index_global_hist_em(symbol=ak_symbol)
             else:
                 # 默认使用A股指数API
                 pure_code = ak_symbol.replace('sh', '').replace('sz', '')
-                start_date_str=start_date.strftime('%Y%m%d')
-                end_date_str=end_date.strftime('%Y%m%d')
-                logger.debug(f"默认调用A股指数API: index_zh_a_hist({pure_code})")
+                start_date_str = start_date.strftime('%Y%m%d')
+                end_date_str = end_date.strftime('%Y%m%d')
+                logger.debug(
+                    f"默认调用A股指数API: index_zh_a_hist({pure_code})")
                 df = self.ak.index_zh_a_hist(
                     symbol=pure_code,
                     period='daily',
@@ -404,7 +423,6 @@ class AKShareDataProvider(BaseDataProvider):
                     '最高': 'high', '最低': 'low', '成交量': 'volume'
                 }
                 df = df.rename(columns=column_mapping)
-                return df
         except Exception as e:
             logger.error(f"AKShare API调用失败 for {symbol_id} (market: {market.value}): {e}")
             # 提供更友好的错误信息
@@ -412,11 +430,40 @@ class AKShareDataProvider(BaseDataProvider):
                 raise ConnectionError(f"网络连接失败，请检查网络设置或代理配置: {str(e)}")
             # 重新抛出异常，让上层处理
             raise
+        finally:
+            _clear_proxy(original_get, original_post, requests)
+        # noinspection PyUnreachableCode
+        return df
+    def _config_proxy(self):
+        import requests
+        session = requests.Session()
+        # 根据代理配置创建自定义session
+        if self._akshare_proxy_config:
+            # 使用代理
+            session.proxies = {
+                'http': self._akshare_proxy_config,
+                'https': self._akshare_proxy_config
+            }
+            logger.info(f"🔧 使用代理: {self._akshare_proxy_config}")
+        else:
+            # 清除可能存在的代理设置
+            session.trust_env = False  # 不信任环境变量中的代理设置
+            logger.info("🔧 不使用代理（禁用环境代理）")
+
+        original_get = requests.get
+        original_post = requests.post
+
+        # 替换方法
+        requests.get = session.get
+        requests.post = session.post
+
+        return original_get, original_post, requests
 
     # _standardize_format method has been moved to MarketUtils.standardize_format
 
-    def get_intraday_data(self, symbol: str, tick_range: TickRange = None,
-                          market_local_time: pd.Timestamp = None) -> IntradayData:
+    def get_intraday_data(
+            self, symbol: str, tick_range: TickRange = None,
+            market_local_time: pd.Timestamp = None) -> IntradayData:
         """
         获取分时数据（日内Tick数据）
         
@@ -451,9 +498,9 @@ class AKShareDataProvider(BaseDataProvider):
         if market_local_time is None:
             market_local_time = MarketTimeUtils.get_market_time_now(symbol)
             logger.info(f"自动获取市场当前时间: {market_local_time}")
-        
+
         trade_date = market_local_time.normalize()
-        
+
         intraday_data = None
         trading_phase = MarketTimeUtils.determine_trading_phase(market_code, market_local_time)
         trading_hours = self.config_manager.get_trading_hours(market_code.value)
@@ -571,7 +618,7 @@ class AKShareDataProvider(BaseDataProvider):
             'timestamp': time.time()
         }
         logger.debug(f"✅ 写入内存缓存: {cache_key}")
-    
+
     def _get_from_memory_cache(self, cache_key: str) -> Any:
         """
         从内存缓存读取对象
@@ -589,7 +636,7 @@ class AKShareDataProvider(BaseDataProvider):
         if cached:
             logger.debug(f"✅ 内存缓存命中: {cache_key}")
             return cached.get('data')
-        
+
         return None
 
     def _build_intraday_data(self, df, symbol: str, trade_date: pd.Timestamp,
@@ -653,6 +700,9 @@ class AKShareDataProvider(BaseDataProvider):
         # 转换symbol为AKShare格式（分时数据API不需要市场前缀）
         ak_symbol = self._map_to_akshare(symbol, with_market_prefix=False)
 
+        # 为当前请求临时修改AKShare的网络请求行为
+        original_get, original_post, requests = self._config_proxy()
+
         # 构建查询时间范围
         if tick_range is not None:
             # 如果提供了 tick_range，使用其时间范围（增量获取或盘中首次加载）
@@ -678,7 +728,7 @@ class AKShareDataProvider(BaseDataProvider):
 
         # 🔧 判断是个股还是指数，使用不同的 API
         is_index = MarketUtils.is_index(symbol)
-        
+
         try:
             if is_index:
                 # 指数使用 index_zh_a_hist_min_em
@@ -723,6 +773,8 @@ class AKShareDataProvider(BaseDataProvider):
         except Exception as e:
             logger.error(f"AKShare API调用失败: {e}")
             raise
+        finally:
+            _clear_proxy(original_get, original_post, requests)
 
     def _fetch_realtime_order_book(self, symbol: str):
         """
@@ -740,6 +792,8 @@ class AKShareDataProvider(BaseDataProvider):
         """
         if not self.available or self.ak is None:
             return [], []
+
+        original_get, original_post, requests = self._config_proxy()
 
         try:
             # 转换symbol为AKShare格式（盘口API需要纯数字，不需要市场前缀）
@@ -801,6 +855,8 @@ class AKShareDataProvider(BaseDataProvider):
         except Exception as e:
             logger.warning(f"获取实时盘口失败: {e}")
             return [], []
+        finally:
+            _clear_proxy(original_get, original_post, requests)
 
     def _fetch_order_book_and_trades(self, symbol: str) -> tuple:
         """
@@ -864,6 +920,8 @@ class AKShareDataProvider(BaseDataProvider):
         if not self.available or self.ak is None:
             return []
 
+        original_get, original_post, requests = self._config_proxy()
+
         try:
             # 转换symbol为AKShare格式（成交明细API需要市场前缀sh/sz）
             ak_symbol = self._map_to_akshare(symbol, with_market_prefix=True)
@@ -883,18 +941,18 @@ class AKShareDataProvider(BaseDataProvider):
             # 解析成交明细
             # 🔧 AKShare 返回的字段名：成交时间, 成交价格, 价格变动, 成交量, 成交额, 性质
             trade_records = []
-            
+
             # 只取最近20条
             for _, row in df.head(20).iterrows():
                 # 成交时间
                 time_str = str(row.get('成交时间', ''))
-                
+
                 # 成交价格（注意是"成交价格"而不是"成交价"）
                 price = float(row.get('成交价格', 0))
-                
+
                 # 成交量（单位：手）
                 volume = int(row.get('成交量', 0))
-                
+
                 # 性质：买盘/卖盘/中性盘
                 nature = str(row.get('性质', ''))
 
@@ -903,9 +961,9 @@ class AKShareDataProvider(BaseDataProvider):
                     logger.warning(f"⚠️ 成交明细价格为0，原始数据: {row.to_dict()}")
 
                 # 性质: '买盘' -> 'buy', '卖盘' -> 'sell', '中性盘' -> 'neutral'
-                if '买' in nature:
+                if '买盘' in nature:
                     direction = 'buy'
-                elif '卖' in nature:
+                elif '卖盘' in nature:
                     direction = 'sell'
                 else:
                     direction = 'neutral'
@@ -923,6 +981,8 @@ class AKShareDataProvider(BaseDataProvider):
         except Exception as e:
             logger.warning(f"获取实时成交明细失败: {e}")
             return []
+        finally:
+            _clear_proxy(original_get, original_post, requests)
 
     def _generate_empty_data(self, symbol: str):
         """
@@ -1006,16 +1066,16 @@ class AKShareDataProvider(BaseDataProvider):
         }
 
         market_code = MarketUtils.infer_market_from_symbol(symbol)
-        
+
         # 使用传入的市场本地时间或当前系统UTC时间转换为本地时间
         if market_local_time is None:
             utc_now = pd.Timestamp.now(tz='UTC')
             market_tz = MarketTimeUtils._get_market_timezone(market_code)
             market_local_time = utc_now.astimezone(market_tz)
-        
+
         # market_local_time 已经是市场本地时间，直接使用
         trading_phase = MarketTimeUtils.determine_trading_phase(market_code, market_local_time)
-        
+
         # 获取市场本地日期作为交易日
         trade_date = market_local_time.normalize()
         cache_key = f"realtime_kline_{symbol}_{trade_date.strftime('%Y-%m-%d')}"

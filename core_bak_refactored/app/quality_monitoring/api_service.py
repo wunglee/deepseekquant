@@ -466,7 +466,7 @@ class DataQualityAPIService:
                 before = None
                 if before_str:
                     try:
-                        before = index_id, pd.Timestamp(before_str)  # 直接使用，不转换时区
+                        before = pd.Timestamp(before_str)  # 直接使用，不转换时区
                     except Exception as e:
                         return jsonify({
                             'status': 'error',

@@ -82,32 +82,45 @@ class YahooFinanceDataProvider(BaseDataProvider):
                 import os
                 proxy_vars = ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy']
                 if not use_proxy:
-                    logger.info("🚫 yahoo配置为不使用代理，清除环境变量中的代理设置")
-                    # 清除环境变量中的代理
-                    for var in proxy_vars:
-                        if var in os.environ:
-                            logger.info(f"  清除环境变量: {var} = {os.environ[var]}")
-                            del os.environ[var]
-                    # 设置 requests 会话不使用代理
-                    import requests
-                    requests.Session().trust_env = False
-
-                    logger.info("✅ 代理已禁用")
+                    logger.info("🚫 yahoo配置为不使用代理，将使用无代理的网络请求")
+                    # 不再清除环境变量，而是通过自定义会话控制代理
+                    self.proxy = None
+                    logger.info("✅ Yahoo 代理已禁用（通过自定义会话）")
                 else:
+                    # 查找可用的代理设置
                     for var in proxy_vars:
                         if var in os.environ:
                             self.proxy = os.environ[var]
+                            logger.info(f"✅ 使用代理: {var} = {self.proxy}")
                             break
-                    logger.info("🌐yahoo配置为使用代理")
+                    else:
+                        self.proxy= None
+                        logger.info("🌐 未找到代理环境变量，将使用直连")
+                    if self.proxy:
+                        logger.info("✅ Yahoo 代理已设置")
+                    else:
+                        logger.info("🌐 Yahoo 配置为使用直连")
             except Exception as e:
                 logger.warning(f"配置代理时出错: {e}，将使用默认设置")
             if self.proxy:
                 patch_yfinance(proxy_url=self.proxy)
                 # 如果提供了代理，也配置 yfinance 原生代理（双保险）
-                self.yf.set_config(proxy=self.proxy)
+                if hasattr(self.yf, 'set_config'):
+                    try:
+                        self.yf.set_config(proxy=self.proxy)
+                    except Exception:
+                        pass  # 如果 set_config 方法无法使用，跳过
+                else:
+                    pass  # 如果没有 set_config 方法，跳过
                 logger.info(f"YahooFinanceDataProvider initialized with proxy: {self.proxy}")
             else:
+                # 不设置全局代理，而是配置 yfinance 使用自定义会话
                 logger.info("YahooFinanceDataProvider initialized with custom session (anti-429)")
+                
+            # 重新创建 session 以应用代理配置
+            if hasattr(self, '_session'):
+                self._session.close()  # 关闭旧的 session
+            self._session = self._create_session()
         except ImportError:
             logger.error("yfinance not installed. Please run: pip install yfinance")
             self.yf = None
@@ -141,6 +154,14 @@ class YahooFinanceDataProvider(BaseDataProvider):
             'Connection': 'keep-alive',
             'Upgrade-Insecure-Requests': '1'
         })
+        
+        # 根据代理配置设置 session 的代理
+        if hasattr(self, 'proxy') and self.proxy:
+            session.proxies = {
+                'http': self.proxy,
+                'https': self.proxy
+            }
+            logger.info(f"🔧 Session 已配置代理: {self.proxy}")
         
         logger.info("Created custom session with browser-like headers (anti-429)")
         return session
