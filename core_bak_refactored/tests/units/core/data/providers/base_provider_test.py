@@ -408,7 +408,7 @@ class TestRealtimeKlineMerge(unittest.TestCase):
         }
         
         result = self.provider.merge_realtime_kline_to_period(
-            historical_data, realtime_kline, 'daily', pd.Timestamp('2024-01-03 14:00:00')
+            historical_data, realtime_kline, 'daily'
         )
         
         self.assertEqual(result.count, 2)
@@ -437,7 +437,7 @@ class TestRealtimeKlineMerge(unittest.TestCase):
         }
         
         result = self.provider.merge_realtime_kline_to_period(
-            historical_data, realtime_kline, 'weekly', pd.Timestamp('2024-01-03 14:00:00')
+            historical_data, realtime_kline, 'weekly'
         )
         
         self.assertEqual(result.count, 2, "周K柱数量应保持为2")
@@ -471,7 +471,7 @@ class TestRealtimeKlineMerge(unittest.TestCase):
         }
         
         result = self.provider.merge_realtime_kline_to_period(
-            historical_data, realtime_kline, 'weekly', pd.Timestamp('2024-01-08 14:00:00')
+            historical_data, realtime_kline, 'weekly'
         )
         
         self.assertEqual(result.count, 2, "应该有2个周K柱")
@@ -506,7 +506,7 @@ class TestRealtimeKlineMerge(unittest.TestCase):
         }
         
         result = self.provider.merge_realtime_kline_to_period(
-            historical_data, realtime_kline, 'monthly', pd.Timestamp('2024-01-15 14:00:00')
+            historical_data, realtime_kline, 'monthly'
         )
         
         self.assertEqual(result.count, 2, "月K柱数量应保持为2")
@@ -540,7 +540,7 @@ class TestRealtimeKlineMerge(unittest.TestCase):
         }
         
         result = self.provider.merge_realtime_kline_to_period(
-            historical_data, realtime_kline, 'monthly', pd.Timestamp('2024-02-01 14:00:00')
+            historical_data, realtime_kline, 'monthly'
         )
         
         self.assertEqual(result.count, 2, "应该有2个月K柱")
@@ -567,7 +567,7 @@ class TestRealtimeKlineMerge(unittest.TestCase):
         }
         
         result = self.provider.merge_realtime_kline_to_period(
-            empty_data, realtime_kline, 'weekly', pd.Timestamp('2024-01-15 14:00:00')
+            empty_data, realtime_kline, 'weekly'
         )
         
         self.assertEqual(result.count, 0)
@@ -588,7 +588,7 @@ class TestRealtimeKlineMerge(unittest.TestCase):
         invalid_realtime = {'open': 107, 'high': 110}
         
         result = self.provider.merge_realtime_kline_to_period(
-            historical_data, invalid_realtime, 'weekly', pd.Timestamp('2024-01-03 14:00:00')
+            historical_data, invalid_realtime, 'weekly'
         )
         
         self.assertEqual(result.count, 1)

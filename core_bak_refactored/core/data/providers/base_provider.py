@@ -167,8 +167,7 @@ class BaseDataProvider(HistoricalDataProvider):
     def merge_realtime_kline_to_period(self, 
                                        price_data: PriceData, 
                                        realtime_kline: dict, 
-                                       period: str,
-                                       current_time_utc: pd.Timestamp) -> PriceData:
+                                       period: str) -> PriceData:
         """将实时K线数据合并到周线/月线K线数据中
         
         逻辑：
@@ -184,7 +183,6 @@ class BaseDataProvider(HistoricalDataProvider):
             price_data: 历史K线数据（PriceData对象）
             realtime_kline: 实时K线数据字典 {'date', 'open', 'high', 'low', 'close', 'volume'}
             period: 数据粒度 ('daily'/'weekly'/'monthly')
-            current_time: 当前时间
         
         Returns:
             合并后的 PriceData 对象

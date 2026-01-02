@@ -203,7 +203,7 @@ class ChartDataAssembler:
                          period: str,
                          count: int,
                          before: Optional[pd.Timestamp],
-                         current_time_utc: pd.Timestamp) -> PriceData:
+                         market_local_time: pd.Timestamp) -> PriceData:
         """获取K线数据（DataProvider 已内置三层缓存）
         
         💚 DataProvider 自动处理:
@@ -268,7 +268,7 @@ class ChartDataAssembler:
             index_id,
             start_date,
             end_date,
-            current_time_utc,  # 传入UTC时间
+            market_local_time,
             period  # 传递周期参数给数据源
         )
         

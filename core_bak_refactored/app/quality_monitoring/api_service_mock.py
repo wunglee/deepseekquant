@@ -153,8 +153,7 @@ class DataQualityMockAPIService:
                     indicator_service=indicator_service
                 )
 
-                # 🔧 API层统一使用UTC时间
-                current_time_utc = pd.Timestamp.now(tz='UTC')
+                current_time = pd.Timestamp.now()
                 
                 # 调用组装器
                 chart_data = chart_assembler.assemble_chart_data(
@@ -163,7 +162,7 @@ class DataQualityMockAPIService:
                     count=count,
                     before=before,
                     indicators=indicators,
-                    current_time=current_time_utc
+                    market_local_time=current_time
                 )
 
                 return jsonify({
@@ -406,18 +405,18 @@ class DataQualityMockAPIService:
                 if before:
                     end_date = before
                 else:
-                    end_date = pd.Timestamp.now(tz='UTC')
+                    end_date = pd.Timestamp.now()
                     
                 start_date = end_date - pd.Timedelta(days=days_needed)
 
                 # 获取原始日线数据
                 # ✅ 直接传递 pd.Timestamp 对象，不转换为字符串
-                current_time_utc = pd.Timestamp.now(tz='UTC')
+                current_time = pd.Timestamp.now()
                 df = mock_provider.get_index_prices(
                     index_id, 
                     start_date,
                     end_date, 
-                    current_time_utc
+                    current_time
                 )
                 
                 if hasattr(df, 'empty') and df.empty:
