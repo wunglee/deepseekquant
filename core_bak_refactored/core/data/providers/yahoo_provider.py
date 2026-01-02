@@ -73,16 +73,16 @@ class YahooFinanceDataProvider(BaseDataProvider):
             try:
                 # 从 ConfigManager 读取 providers 配置
                 provider_config = self.config_manager.get_provider_config()
-                # 查找 akshare provider 的 use_proxy 配置
+                # 查找 yahoo provider 的 use_proxy 配置
                 use_proxy = False
                 for provider in provider_config.providers:
-                    if provider.get('id') == "akshare":
+                    if provider.get('id') == "yahoo":
                         use_proxy = provider.get('use_proxy', False)
                         break
                 import os
                 proxy_vars = ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy']
                 if not use_proxy:
-                    logger.info("🚫 akshare配置为不使用代理，清除环境变量中的代理设置")
+                    logger.info("🚫 yahoo配置为不使用代理，清除环境变量中的代理设置")
                     # 清除环境变量中的代理
                     for var in proxy_vars:
                         if var in os.environ:
