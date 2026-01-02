@@ -177,11 +177,7 @@ class MarketTimeUtils:
         market_time = utc_now.tz_convert(market_tz).replace(tzinfo=None)
         
         return market_time
-    
 
-    
-
-    
     @staticmethod
     def determine_trading_phase(market: MarketCode, market_local_time: pd.Timestamp) -> TradingPhase:
         """
