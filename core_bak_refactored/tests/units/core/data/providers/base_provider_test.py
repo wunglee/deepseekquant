@@ -295,7 +295,7 @@ class TestBaseProvider(unittest.TestCase):
         )
         
         # 模拟盘前时间（周一 9:00）
-        with patch('core_bak_refactored.core.share.market.MarketUtils.determine_trading_phase') as mock_phase:
+        with patch('core_bak_refactored.core.share.market.MarketTimeUtils.determine_trading_phase') as mock_phase:
             mock_phase.return_value = TradingPhase.BEFORE_OPEN
             
             self.provider.set_needs_realtime_kline(price_data, pd.Timestamp(2025, 1, 6, 9, 0))
@@ -314,7 +314,7 @@ class TestBaseProvider(unittest.TestCase):
         )
         
         # 模拟盘后时间（周一 16:00）
-        with patch('core_bak_refactored.core.share.market.MarketUtils.determine_trading_phase') as mock_phase:
+        with patch('core_bak_refactored.core.share.market.MarketTimeUtils.determine_trading_phase') as mock_phase:
             mock_phase.return_value = TradingPhase.AFTER_CLOSE
             
             self.provider.set_needs_realtime_kline(price_data, pd.Timestamp(2025, 1, 6, 16, 0))

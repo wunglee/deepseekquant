@@ -16,6 +16,7 @@
 import logging
 from datetime import time as dt_time
 import pandas as pd
+from numpy.f2py.auxfuncs import throw_error
 
 from core_bak_refactored.core.share.market.market_enums import MarketCode, TradingPhase
 
@@ -238,9 +239,6 @@ class MarketTimeUtils:
         # 集合竞价开始时间（开盘前30分钟）
         call_auction_start = (pd.Timestamp.combine(market_local_date, open_time) - pd.Timedelta(minutes=30)).time()
 
-        # 当前市场本地时间（只取时间部分）
-        current_time = market_local_time.time()
-
         # 判断交易时段（基于市场本地时间）
         if call_auction_start <= current_time < open_time:
             logger.debug(f"⏰ [{market.value}] 集合竞价时段")
@@ -303,14 +301,14 @@ class MarketTimeUtils:
         """
         from core_bak_refactored.core.share.market.trading_calendar_service import get_trading_calendar_service
         from core_bak_refactored.core.share.config_manager import ConfigManager
-        
+
         # 如果传入的是带时区的时间，移除时区信息
         if market_local_time.tzinfo is not None:
-            market_local_time = market_local_time.replace(tzinfo=None)
-        
+            throw_error("传入的时间必须为naive类型")
+
         # 提取本地日期
-        market_local_date = pd.Timestamp(market_local_time.date())
-        
+        market_local_date =pd.Timestamp(market_local_time.date())
+
         # 判断交易时段
         trading_phase = MarketTimeUtils.determine_trading_phase(market, market_local_time)
         

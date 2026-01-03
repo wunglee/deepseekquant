@@ -304,7 +304,21 @@ core_bak_refactored/core/exec/_fragments/
 ```
 
 **3. 测试文件处理**：
-   参见 [测试规范文档](.qoder/rules/TESTING_SPEC.md)
+```python
+# ✅ 正确：测试代码中可以使用Mock
+from unittest.mock import Mock, patch
+
+# Mock未完成模块或外部依赖
+with patch('core_bak_refactored.core.exec.order_manager.OrderManager') as MockOrderManager:
+    mock_instance = Mock()
+    mock_instance.create_order.return_value = Mock(order_id='test123')
+    MockOrderManager.return_value = mock_instance
+    
+    # 执行测试逻辑
+    result = processor.process(data)
+
+# 说明：Mock仅限测试代码，实现代码必须使用_fragments中的真实简单实现
+```
 
 **_fragments目录约定**：
 - ✅ **命名**：`<模块>/_fragments/`（如core/exec/_fragments/）
@@ -365,7 +379,39 @@ TODO:
 - ❌ 禁止未经测试的大规模修改
 
 **测试覆盖规范（强制）**:
-   参见 [测试规范文档](.qoder/rules/TESTING_SPEC.md)
+- ✅ **所有Bug修复必须新增对应的测试用例**：
+  - 确保修复的Bug逻辑被测试覆盖
+  - 测试用例必须能重现原始Bug（修复前失败）
+  - 测试用例必须在修复后通过
+  - 测试文件命名：`test_<模块名>_<bug描述>.py`
+  - 示例：修复 toggle 端点 404 错误，新增 `test_api_service_activate_provider.py`
+
+- ✅ **所有新增功能必须编写单元测试**：
+  - 覆盖正常流程（happy path）
+  - 覆盖异常边界（edge cases）
+  - 覆盖错误处理（error handling）
+  - 测试覆盖率目标：新增代码≥80%
+
+- ✅ **所有接口变更必须更新集成测试**：
+  - API端点增删改：更新对应的API测试
+  - 请求/响应格式变化：验证契约兼容性
+  - 错误码调整：验证错误处理逻辑
+
+- ✅ **测试必须在代码提交前通过**：
+  - 不允许提交未测试的代码
+  - 不允许提交测试失败的代码
+  - commit message 中必须包含测试验证结果
+
+- ✅ **测试代码与生产代码同步提交**：
+  - 测试文件路径遵循项目规范
+  - `tests/units/app/` 对应 `app/`
+  - `tests/units/core/` 对应 `core/`
+  - 一次 commit 同时包含生产代码和测试代码
+
+- ✅ **测试命名规范**：
+  - 单元测试：`test_<模块/类/函数名>.py`
+  - 集成测试：`test_integration_<功能名>.py`
+  - Bug修复测试：`test_<模块>_<bug描述>.py`
 
 **优化重构约束**（强制）:
 - ✅ **范围限定**：仅限内部技术性优化（性能、内存、稳定性、可读性、可维护性）
@@ -406,10 +452,169 @@ TODO:
 - 生成完整的优化报告
 
 **测试文件命名**:
-  参见 [测试规范文档](.qoder/rules/TESTING_SPEC.md)
+- ✅ **强制格式**：必须以 `*_test.py` 结尾（例如：`factor_model_test.py`）
+- ❌ **严禁**：使用 `test_*.py` 前缀格式
+- ✅ **一一对应原则**：一个源文件 `xxx.py` 必须且只能有一个对应测试文件 `xxx_test.py`
+- ✅ **目录镜像原则**：`core_bak_refactored/tests/{test_type}/**` 必须镜像 `core_bak_refactored/core/**` 或 `infrastructure/**` 的目录结构
+- ✅ **命名规则**：测试文件名 = 源文件名 + `_test`（不含扩展名）
 
-**测试与被测试文件强制一一对应规则**:
-  参见 [测试规范文档](.qoder/rules/TESTING_SPEC.md)
+**强制一一对应规则**:
+```
+源文件位置                                    测试文件位置（必须唯一）
+────────────────────────────────────────────────────────────────────
+core_bak_refactored/core/risk/
+  └── factor_model.py                      core_bak_refactored/tests/units/core/risk/
+                                            └── factor_model_test.py ✅（唯一）
+
+core_bak_refactored/infrastructure/
+  └── cache_service.py                     core_bak_refactored/tests/infrastructure/
+                                            └── cache_service_test.py ✅（唯一）
+
+core_bak_refactored/core/data/_fragments/
+  └── data_quality_checker.py              core_bak_refactored/tests/units/core/data/_fragments/
+                                            └── data_quality_checker_test.py ✅
+```
+
+**禁止的命名模式**:
+```
+❌ test_factor_model.py          # 禁止test_前缀
+❌ factor_model_unittest.py      # 禁止其他后缀
+❌ test_factor_model_test.py     # 禁止混合格式
+❌ factor_model_integration.py   # 集成测试应分离到专门目录
+❌ factor_model_perf_test.py     # 性能测试应分离到专门目录
+```
+
+**测试类型分离规范**:
+
+1. **单元测试** (与源文件一一对应)
+   - 位置：`tests/units/` 镜像 `core/` 或 `infrastructure/`
+   - 命名：`{source_name}_test.py`（必须唯一）
+   - 范围：测试单个模块的功能
+   - 示例：`tests/units/core/risk/factor_model_test.py`
+
+2. **集成测试** (独立目录)
+   - 位置：`tests/integration/`
+   - 命名：`{feature}_integration_test.py`
+   - 范围：测试多个模块协作
+   - 示例：`tests/integration/risk_calculator_integration_test.py`
+
+3. **性能测试** (独立目录)
+   - 位置：`tests/performance/` 或 `tests/benchmarks/`
+   - 命名：`{feature}_benchmark.py` 或 `{feature}_perf_test.py`
+   - 范围：性能基准测试
+   - 示例：`tests/performance/portfolio_risk_benchmark.py`
+
+4. **端到端测试** (独立目录)
+   - 位置：`tests/e2e/`
+   - 命名：`{scenario}_e2e_test.py`
+   - 范围：完整业务流程
+   - 示例：`tests/e2e/backtest_workflow_e2e_test.py`
+
+**多类型测试处理方案**:
+
+如果同一个源文件需要多种类型测试，有两种方案：
+
+**方案A：合并到单一测试文件（推荐用于测试数量较少）**
+```python
+# tests/units/core/risk/factor_model_test.py
+class FactorModelBasicTest(unittest.TestCase):
+    """基础功能单元测试"""
+    pass
+
+class FactorModelIntegrationTest(unittest.TestCase):
+    """集成测试（需要外部依赖）"""
+    pass
+
+class FactorModelPerformanceTest(unittest.TestCase):
+    """性能测试"""
+    pass
+```
+
+**方案B：分离到专门目录（用于大型测试套件）**
+```
+tests/
+├── units/core/risk/
+│   └── factor_model_test.py          # 单元测试（一一对应）
+├── integration/
+│   └── factor_model_integration_test.py  # 集成测试（独立）
+└── performance/
+    └── factor_model_benchmark.py     # 性能测试（独立）
+```
+
+**CI/CD自动检查**:
+
+在提交前自动验证测试文件命名规范：
+
+```python
+def check_test_file_naming():
+    """
+    检查测试文件命名是否符合规范
+    
+    规则：
+    1. 必须以 _test.py 结尾
+    2. 禁止 test_*.py 格式
+    3. 一个源文件只能有一个对应的单元测试文件
+    4. 目录结构必须镜像源代码目录
+    """
+    errors = []
+    
+    # 检查所有源文件
+    for src_file in find_source_files('core_bak_refactored/core', 'core_bak_refactored/infrastructure'):
+        expected_test = get_expected_test_file(src_file)
+        
+        # 检查1：必须存在对应测试
+        if not expected_test.exists():
+            errors.append(f"❌ 缺少测试文件: {src_file} -> 需要 {expected_test}")
+        
+        # 检查2：不允许test_*.py格式
+        wrong_format = get_test_prefix_format(src_file)
+        if wrong_format.exists():
+            errors.append(f"❌ 错误格式: {wrong_format}，应改为 {expected_test}")
+        
+        # 检查3：不允许多个单元测试文件
+        related_tests = find_all_related_unit_tests(src_file)
+        if len(related_tests) > 1:
+            errors.append(f"❌ 重复测试: {src_file} 对应多个测试文件: {related_tests}")
+    
+    # 检查所有测试文件
+    for test_file in find_test_files('core_bak_refactored/tests'):
+        # 检查4：禁止test_*.py格式
+        if test_file.name.startswith('test_') and test_file.name.endswith('.py'):
+            if is_unit_test(test_file):  # 排除集成/性能测试目录
+                errors.append(f"❌ 禁止格式: {test_file}，应使用 *_test.py 格式")
+    
+    return errors
+```
+
+**违规处理流程**:
+
+发现违规测试文件时：
+
+1. **识别问题类型**
+   - test_*.py 格式 → 重命名为 *_test.py
+   - 多个单元测试文件 → 合并或分离到专门目录
+   - 缺少测试文件 → 创建对应的 *_test.py
+
+2. **执行修复**
+   ```bash
+   # 重命名违规文件
+   mv tests/units/core/risk/test_factor_model.py tests/units/core/risk/factor_model_test.py
+   
+   # 合并重复测试
+   # 将 factor_model_integration_test.py 中的测试类
+   # 合并到 factor_model_test.py 或移到 tests/integration/
+   ```
+
+3. **验证修复**
+   ```bash
+   # 重新运行检查
+   python scripts/check_test_naming.py
+   
+   # 确保测试通过
+   pytest tests/ -q
+   ```
+
+---
 
 ### 3️⃣ 评审准备
 
@@ -1152,7 +1357,7 @@ def calculate_metrics(self, data):
 **一致性检查**:
 - [ ] 模块设计文档与接口设计文档内容一致
 - [ ] 文档与实际代码实现一致
-- [ ] 文档与单元测试一致（参见 [测试规范文档](.qoder/rules/TESTING_SPEC.md)）
+- [ ] 文档与单元测试一致
 - [ ] 配置示例与实际配置文件一致
 
 ### 🔧 自动化工具（建议）
@@ -1213,6 +1418,8 @@ jobs:
 ## 📊 质量标准
 
 ### 代码质量
+- ✅ 测试覆盖率 ≥ 90%
+- ✅ 所有测试必须通过
 - ✅ 类型注解覆盖率 ≥ 95%
 - ✅ 方法复杂度 ≤ 10
 - ✅ **优化重构要求**：
@@ -1224,18 +1431,14 @@ jobs:
   - **AI自主决策**，不得要求用户介入
   - **报告体现**：优化细节、技术理由、性能对比
 
-**详细测试规范**：参见 [测试规范文档](.qoder/rules/TESTING_SPEC.md)
-
 ### 评审标准
 
 **通过条件**:
-- ✅ 功能正确、代码质量达标、文档完整、符合架构
+- ✅ 功能正确、测试通过、代码质量达标、文档完整、符合架构
 - ✅ **已完成代码优化重构**
 
 **阻塞条件**:
-- ❌ P0问题未修复、架构违反、安全问题
-
-**详细测试规范**：参见 [测试规范文档](.qoder/rules/TESTING_SPEC.md)
+- ❌ P0问题未修复、测试失败、架构违反、安全问题
 
 ---
 
@@ -1272,15 +1475,12 @@ jobs:
 - [ ] **代码变更后立即同步设计文档（强制）**
 - [ ] 添加必要TODO注释
 
-**详细测试规范**：参见 [测试规范文档](.qoder/rules/TESTING_SPEC.md)
-
 **提交评审前**:
+- [ ] 所有测试通过
 - [ ] TODO已更新
 - [ ] **设计文档已同步（检查变更历史+API签名+示例）**
 - [ ] ask.md已生成并确认
 - [ ] consultation.md已包含上一轮ask/answer（若缺失已补充）
-
-**详细测试规范**：参见 [测试规范文档](.qoder/rules/TESTING_SPEC.md)
 
 **评审通过后**:
 - [ ] 专家建议已理解消化（不直接照搬）
@@ -1288,8 +1488,6 @@ jobs:
 - [ ] 越界建议已识别并记录TODO，不影响当前任务
 - [ ] 高优先级问题已修复
 - [ ] 修复已测试并提交
-
-**详细测试规范**：参见 [测试规范文档](.qoder/rules/TESTING_SPEC.md)
 
 **迭代结束时**:
 - [ ] 本迭代所有任务已完成
@@ -1309,5 +1507,5 @@ jobs:
 ---
 
 **维护者**: DeepSeekQuant 开发团队  
-**版本**: v3.6 (2025-11-26) - 测试规范独立化，文档结构优化  
+**版本**: v3.6 (2025-11-26) - 完善测试文件一一对应规范，明确测试类型分离策略  
 **状态**: ✅ 生效中

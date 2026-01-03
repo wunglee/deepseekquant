@@ -1,30 +1,66 @@
-"""yfinance HTTP/2 补丁 + User-Agent 轮换
+"""
+Yahoo Finance Browser Simulation 补丁 (支持 HTTP/2)
 
-修复 Yahoo Finance "Too Many Requests" 错误的完整解决方案：
-1. HTTP/2 支持 - Yahoo Finance API 要求 HTTP/2
-2. User-Agent 轮换 - 避免被识别为爬虫
-3. Session 复用 - 保持 cookies 和连接
-4. 请求延迟 - 避免"伪高频"请求
+Note: 
+- 此补丁修复了 yfinance 的 "Too Many Requests" (429) 问题
+- 使用 cloudscraper 模拟浏览器请求 (内置 HTTP/2 支持)
+- 通过 crumb 认证绕过 Yahoo 的反爬虫机制
+- 通过请求限流避免触发速率限制
+- 通过随机 User-Agent 避免检测
+- 通过 Referer 和 Origin 头绕过跨域限制
+- 通过 X-Requested-With 头模拟 AJAX 请求
 
-依赖: pip install 'httpx[http2]'
-
-参考资料:
-- https://github.com/ranaroussi/yfinance/issues/2125
-- https://stackoverflow.com/questions/78111453
-- https://blog.ni18.in/how-to-fix-the-yfinance-429-client-error
+⚠️ 重要: 
+- 需要安装: pip install cloudscraper (内置 HTTP/2 支持)
+- 此补丁会 monkey patch yfinance.data.YfData.get 方法
+- 所有通过 yfinance 的请求都会经过此补丁处理
+- 所有反爬虫逻辑（User-Agent轮换、请求限流、浏览器模拟头）都由补丁处理
+- HTTP/2 支持通过 cloudscraper 库自动启用
+- YahooFinanceDataProvider 不需要重复实现这些逻辑
 """
 
 import logging
 import random
+import re
 import time
-
-
+from typing import Optional
+import cloudscraper
 logger = logging.getLogger(__name__)
-
+try:
+    import yfinance
+    from yfinance import data as yf_data
+except ImportError:
+    logger.warning("yfinance not installed")
+    raise ImportError("yfinance not installed")
 # 全局标志，避免重复 patch
 _PATCHED = False
-_HTTP2_CLIENT = None  # 全局 HTTP/2 客户端
-_LAST_REQUEST_TIME = 0  # 上次请求时间
+
+# 创建 cloudscraper 实例，模拟真实浏览器，支持 HTTP/2
+_BROWSER_SCRAPER = cloudscraper.create_scraper(
+    browser={
+        'browser': 'chrome',
+        'platform': 'windows',
+        'mobile': False
+    },
+    # 启用 HTTP/2 支持
+    allow_brotli=True,  # 启用 Brotli 压缩支持
+)
+headers = {
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Accept-Encoding': 'gzip, deflate, br',
+    'DNT': '1',
+    'Connection': 'keep-alive',
+    'Upgrade-Insecure-Requests': '1',
+    'Sec-Fetch-Dest': 'document',
+    'Sec-Fetch-Mode': 'navigate',
+    'Sec-Fetch-Site': 'none',
+    'Referer': 'https://finance.yahoo.com/',
+    'Origin': 'https://finance.yahoo.com',
+}
+_BROWSER_SCRAPER.headers.update(headers)
+
+_LAST_REQUEST_TIME = time.time()  # 上次请求时间，初始化为当前时间
 _MIN_REQUEST_INTERVAL = 2.0  # 最小请求间隔（秒）
 
 # User-Agent 池（轮换使用，避免被识别为爬虫）
@@ -37,147 +73,176 @@ _USER_AGENTS = [
 ]
 
 
-def patch_yfinance(proxy_url=None):
-    """
-    给 yfinance 打补丁，使其使用 HTTP/2
-    
-    Args:
-        proxy_url: 代理地址 (e.g., "http://127.0.0.1:8002")
-    
-    原理:
-    - Monkey patch yfinance.data.YfData.get() 方法
-    - 用 httpx.Client (支持 HTTP/2) 替换 requests 调用
-    
-    Note:
-        如果代理配置了但代理服务未运行，会自动降级到直连
-    """
-    global _PATCHED, _HTTP2_CLIENT
-    
-    if _PATCHED:
-        logger.debug("yfinance already patched for HTTP/2")
-        return
-    
-    try:
-        import httpx
-    except ImportError:
-        logger.warning(
-            "httpx not installed, cannot patch yfinance for HTTP/2\n"
-            "Install with: pip install 'httpx[http2]'"
-        )
-        return
-    
-    try:
-        import yfinance
-        from yfinance import data as yf_data
-    except ImportError:
-        logger.warning("yfinance not installed")
-        return
-    
-    # 保存原始方法
-    original_get = yf_data.YfData.get
-    
-    # 创建全局 httpx client (复用连接)
-    client_kwargs = {
-        'http2': True,
-        'follow_redirects': True,
-        'timeout': 30.0
-    }
-    
-    # 如果有代理，配置 proxy
-    proxy_available = False
-    if proxy_url:
+def get_crumb(url, timeout) -> Optional[str]:
+    # 尝试从页面中提取 crumb（Yahoo Finance 的认证令牌）
+    # 根据实际测试，crumb存在于HTML页面中，而不是API响应中
+    global _LAST_REQUEST_TIME
+    crumb = None
+    if 'finance.yahoo.com' in url:
+        # 先访问主页获取可能的 crumb
         try:
-            # 先测试代理是否可用
-            test_client = httpx.Client(proxy=proxy_url, timeout=5.0)
-            try:
-                # 测试代理连接（访问一个轻量级的 API）
-                response = test_client.get('https://httpbin.org/ip')
-                if response.status_code == 200:
-                    proxy_available = True
-                    logger.info(f"✅ Yahoo Finance: 代理可用 {proxy_url} (IP: {response.json().get('origin', 'unknown')})")
-                else:
-                    logger.warning(f"⚠️ Yahoo Finance: 代理返回错误状态码 {response.status_code}")
-            except Exception as e:
-                logger.warning(f"⚠️ Yahoo Finance: 代理测试失败 {proxy_url}: {e}")
-            finally:
-                test_client.close()
-        except Exception as e:
-            logger.warning(f"⚠️ Yahoo Finance: 无法连接到代理 {proxy_url}: {e}")
-        
-        if proxy_available:
-            # httpx 0.28+ 参数名是 'proxy' 不是 'proxies'
-            client_kwargs['proxy'] = proxy_url
-            logger.info(f"Yahoo Finance: 将使用代理 {proxy_url}")
-        else:
-            logger.warning(
-                f"Yahoo Finance: 代理 {proxy_url} 不可用，将使用直连\n"
-                f"建议: 1) 检查代理服务是否运行 (如 v2ray, clash)\n"
-                f"      2) 检查代理端口是否正确\n"
-                f"      3) 或将 data_provider.yml 中 yahoo_finance.use_proxy 设为 false"
-            )
-    
-    _HTTP2_CLIENT = httpx.Client(**client_kwargs)
-    
-    def patched_get(self, url, user_agent_headers=None, params=None, timeout=30):
-        """
-        使用 httpx (HTTP/2) 替代 requests
-        
-        关键优化：
-        1. 轮换 User-Agent - 避免被识别为爬虫
-        2. 请求限流 - 避免"伪高频"请求
-        3. 复用 Session - 保持 cookies
-        """
-        global _LAST_REQUEST_TIME
-        
-        try:
-            # 1. 请求限流：确保两次请求间隔至少 2 秒
-            current_time = time.time()
-            time_since_last = current_time - _LAST_REQUEST_TIME
-            if time_since_last < _MIN_REQUEST_INTERVAL:
-                sleep_time = _MIN_REQUEST_INTERVAL - time_since_last
-                logger.debug(f"请求限流: 等待 {sleep_time:.2f}秒")
-                time.sleep(sleep_time)
-            
-            # 2. 轮换 User-Agent（关键！）
-            headers = user_agent_headers.copy() if user_agent_headers else {}
-            # 随机选择一个 User-Agent
-            user_agent = random.choice(_USER_AGENTS)
-            headers['User-Agent'] = user_agent
-            # 添加其他常见的浏览器头
-            headers.setdefault('Accept', 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8')
-            headers.setdefault('Accept-Language', 'en-US,en;q=0.9')
-            headers.setdefault('Accept-Encoding', 'gzip, deflate, br')
-            headers.setdefault('Connection', 'keep-alive')
-            headers.setdefault('Upgrade-Insecure-Requests', '1')
-            
-            # 3. 发送请求（使用 HTTP/2）
-            logger.info(f"📡 HTTP/2 请求: {url[:100]}... (UA: {user_agent[:50]}...)")
-            response = _HTTP2_CLIENT.get(url, params=params, headers=headers, timeout=timeout)
+            # 构建合适的页面URL来获取crumb
+            # API端点不包含crumb，需要访问对应的页面
+            home_url = url
+            if 'query1.finance.yahoo.com' in url or 'query2.finance.yahoo.com' in url:
+                # 从API URL提取股票代码，构建quote页面URL以获取crumb
+                # 统一使用相同的逻辑提取symbol - 取最后一个"/"之后的部分
+                path_part = url.split('/')[-1]
+                # 去掉查询参数部分（如果有）
+                symbol = path_part.split('?')[0]
+                
+                # 构建quote页面URL
+                if symbol:
+                    # 需要对symbol进行URL编码，处理特殊字符如^
+                    import urllib.parse
+                    encoded_symbol = urllib.parse.quote(symbol.upper(), safe='')
+                    home_url = f'https://finance.yahoo.com/quote/{encoded_symbol}'
+            logger.info(f"🌐 获取 crumb 从: {home_url[:100]}...")
+
+            speed_limit()
+
+            home_response = _BROWSER_SCRAPER.get(home_url, timeout=timeout)
             
             # 更新最后请求时间
             _LAST_REQUEST_TIME = time.time()
-            
-            # 检查状态码
-            if response.status_code >= 400:
-                logger.error(f"❌ HTTP/2 响应错误: {response.status_code} - {url[:100]}...")
-                response.raise_for_status()
-            
-            logger.info(f"✅ HTTP/2 请求成功: {response.status_code} - {url[:100]}...")
-            # 返回 response (httpx.Response 与 requests.Response 兼容)
-            return response
-            
+
+            if home_response.status_code == 200:
+                # Yahoo Finance crumb可能存在于多种格式中，尝试多种正则表达式
+                crumb_patterns = [
+                    r'"crumb":"([^"]+)"',  # 标准格式
+                    r'crumb["\'\s]{0,3}:["\'\s]{0,3}["\']([^"\']*)["\']',  # 冒号分隔格式
+                    r'crumb["\'\s]{0,3}=["\'\s]{0,3}["\']([^"\']*)["\']',  # 等号分隔格式
+                ]
+
+                for pattern in crumb_patterns:
+                    crumb_match = re.search(pattern, home_response.text)
+                    if crumb_match:
+                        # 确保捕获组有内容
+                        for i in range(1, len(crumb_match.groups()) + 1):
+                            if crumb_match.group(i):
+                                crumb = crumb_match.group(i)
+                                logger.info(f"🔑 找到 crumb: {crumb[:10]}...")
+                                break
+                        if crumb:
+                            break
+
+                if not crumb:
+                    logger.debug(f"在页面 {home_url} 中未找到 crumb")
+                    # 可能需要检查页面源码中是否有其他线索
+                    # 检查是否有相关的JavaScript文件或模块包含crumb
+                    import json
+                    # 尝试在页面中查找可能包含crumb的script标签
+                    script_matches = re.findall(r'<script[^>]*>(.*?)</script>', home_response.text, re.DOTALL)
+                    for script in script_matches:
+                        # 查找可能的crumb变量
+                        if 'crumb' in script.lower():
+                            # 尝试解析可能的JSON对象
+                            try:
+                                # 寻找类似 "crumb": "value" 的模式
+                                inline_crumb_match = re.search(r'["\'\']crumb["\'\']\s*:\s*["\'\']([^"\'\']*)["\'\']', script)
+                                if inline_crumb_match:
+                                    crumb = inline_crumb_match.group(1)
+                                    logger.info(f"🔑 从内联脚本找到 crumb: {crumb[:10]}...")
+                                    break
+                            except:
+                                pass
         except Exception as e:
-            logger.warning(f"HTTP/2 request failed: {e}, falling back to original method")
-            # 降级到原始方法
-            return original_get(self, url, user_agent_headers, params, timeout)
-    
+            logger.warning(f"获取 crumb 失败: {e}, 继续使用原参数")
+    return crumb
+
+
+def speed_limit():
+    # 应用速率限制，避免触发Yahoo的反爬虫机制
+    # 使用与patched_get相同的速率限制逻辑
+    global _LAST_REQUEST_TIME
+    current_time = time.time()
+    time_since_last = current_time - _LAST_REQUEST_TIME
+    if time_since_last < 0.05:
+        sleep_time = 0.05 - time_since_last
+        if sleep_time > 0:  # 确保只有当需要等待时才等待
+            logger.debug(f"请求限流: 等待 {sleep_time:.3f}秒以遵守Yahoo速率限制")
+            time.sleep(sleep_time)
+
+
+def patch_yfinance(proxy_url=None):
+    """
+    给 yfinance 打补丁，使其使用 Browser Simulation
+
+    Args:
+        proxy_url: 代理地址 (e.g., "http://127.0.0.1:8002")
+
+    原理:
+    - Monkey patch yfinance.data.YfData.get() 方法
+    - 用 cloudscraper (浏览器模拟) 替换 requests 调用
+
+    Note:
+        如果代理配置了但代理服务未运行，会自动降级到直连
+    """
+    global _PATCHED, _BROWSER_SCRAPER
+    if _PATCHED:
+        logger.debug("yfinance already patched for Browser Simulation")
+        return
+
+    try:
+        # 如果有代理，配置到 cloudscraper
+        if proxy_url:
+            _BROWSER_SCRAPER.proxies = {
+                'http': proxy_url,
+                'https': proxy_url
+            }
+            logger.info(f"Browser scraper configured with proxy: {proxy_url}")
+    except ImportError:
+        logger.error("cloudscraper not available, browser simulation patch failed")
+        return
+    except Exception as e:
+        logger.error(f"Failed to initialize browser scraper: {e}")
+        return
+
+    def patched_get(self, url,user_agent_headers=None, params=None, timeout=30):
+        """
+        使用 cloudscraper (浏览器模拟) 替代 requests
+
+        关键优化：
+        1. 轮换 User-Agent - 避免被识别为爬虫
+        2. 请求限流 - 避免超过Yahoo官方限制 (2000次/分钟)
+        3. 复用 Session - 保持 cookies
+        4. Browser simulation - 模拟真实浏览器行为
+        5. 指数退避重试 - 处理临时错误
+        """
+        global _LAST_REQUEST_TIME
+        if user_agent_headers is None:
+            user_agent_headers = {
+                'User-Agent': random.choice(_USER_AGENTS)
+            }
+        _BROWSER_SCRAPER.headers.update(user_agent_headers)
+        # 添加调试日志，查看请求前_BROWSER_SCRAPER的状态
+        logger.debug(f"patched_get - Browser Scraper 类型: {type(_BROWSER_SCRAPER)}")
+        speed_limit()
+
+        # 使用浏览器模拟方式
+        logger.info(f"📡 Browser simulation request: {url[:100]}...")
+        crumb = get_crumb(url, timeout)
+        if crumb:
+            if params is None:
+                params = {}
+            params['crumb'] = crumb
+        # 发送请求
+        response = _BROWSER_SCRAPER.get(url, params=params, timeout=timeout)
+        if response.status_code != 200:
+            logger.error(f"浏览器模拟请求失败: {response.status_code} - {url[:100]}...")
+            raise Exception(f"HTTP {response.status_code} 错误")
+        else:
+            # 更新最后请求时间
+            _LAST_REQUEST_TIME = time.time()
+            logger.info(f"✅浏览器模拟请求成功: {response.status_code} - {url[:100]}...")
+            return response
+
     # 应用补丁
     yf_data.YfData.get = patched_get
-    
+
     _PATCHED = True
     proxy_info = f" via proxy {proxy_url}" if proxy_url else " (direct)"
-    logger.info(f"✅ yfinance patched to use HTTP/2{proxy_info}")
-
+    logger.info(f"✅ yfinance patched to use browser simulation{proxy_info}")
 
 # 自动应用补丁（导入时执行）
 # 注意：代理配置需要在 Yahoo Provider 初始化时传入

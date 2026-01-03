@@ -13,6 +13,7 @@ import pandas as pd
 # 导入被测试的类
 from core_bak_refactored.core.data.providers.akshare_provider import AKShareDataProvider
 from core_bak_refactored.core.data.providers.protocols import IntradayData
+from core_bak_refactored.core.share.market.market_time_utils import MarketTimeUtils
 
 
 class TestAKShareDataProvider(unittest.TestCase):
@@ -532,7 +533,7 @@ class TradingPhaseBugTest(unittest.TestCase):
         from core_bak_refactored.core.share.market.market_enums import MarketCode, TradingPhase
         # 周末
         sunday = pd.Timestamp(2025, 12, 14, 10, 0, 0)
-        result = MarketUtils.determine_trading_phase(MarketCode.CN, sunday)
+        result = MarketTimeUtils.determine_trading_phase(MarketCode.CN, sunday)
         
         self.assertIsInstance(
             result,
@@ -543,21 +544,21 @@ class TradingPhaseBugTest(unittest.TestCase):
         
         # 工作日集合竞价时段
         monday_call_auction = pd.Timestamp(2025, 12, 16, 9, 15, 0)  # 周一 09:15
-        result = MarketUtils.determine_trading_phase(MarketCode.CN, monday_call_auction)
+        result = MarketTimeUtils.determine_trading_phase(MarketCode.CN, monday_call_auction)
         
         self.assertIsInstance(result, TradingPhase)
         self.assertEqual(result, TradingPhase.BEFORE_OPEN)
         
         # 工作日交易时段
         monday_trading = pd.Timestamp(2025, 12, 16, 10, 30, 0)  # 周一 10:30
-        result = MarketUtils.determine_trading_phase(MarketCode.CN, monday_trading)
+        result = MarketTimeUtils.determine_trading_phase(MarketCode.CN, monday_trading)
         
         self.assertIsInstance(result, TradingPhase)
         self.assertEqual(result, TradingPhase.TRADING)
         
         # 工作日盘后
         monday_after_close = pd.Timestamp(2025, 12, 16, 16, 0, 0)  # 周一 16:00
-        result = MarketUtils.determine_trading_phase(MarketCode.CN, monday_after_close)
+        result = MarketTimeUtils.determine_trading_phase(MarketCode.CN, monday_after_close)
         
         self.assertIsInstance(result, TradingPhase)
         self.assertEqual(result, TradingPhase.AFTER_CLOSE)
@@ -604,7 +605,7 @@ class TestCacheStrategy(unittest.TestCase):
         self.provider = AKShareDataProvider()
         self.provider._enable_memory_cache = True
         
-    @patch('core_bak_refactored.core.share.market.market_utils.MarketUtils.determine_trading_phase')
+    @patch('core_bak_refactored.core.share.market.market_utils.MarketTimeUtils.determine_trading_phase')
     @patch.object(AKShareDataProvider, '_fetch_order_book_and_trades')
     @patch.object(AKShareDataProvider, '_fetch_real_intraday_from_akshare')
     def test_trading_phase_no_cache_on_read(self, mock_fetch, mock_fetch_order_book, mock_phase):
@@ -639,7 +640,7 @@ class TestCacheStrategy(unittest.TestCase):
         result2 = self.provider.get_intraday_data('000001.SZ', market_local_time=test_time)
         self.assertEqual(mock_fetch.call_count, 2)  # 应该调用2次
         
-    @patch('core_bak_refactored.core.share.market.market_utils.MarketUtils.determine_trading_phase')
+    @patch('core_bak_refactored.core.share.market.market_utils.MarketTimeUtils.determine_trading_phase')
     @patch.object(AKShareDataProvider, '_fetch_order_book_and_trades')
     @patch.object(AKShareDataProvider, '_fetch_real_intraday_from_akshare')
     def test_trading_phase_writes_cache(self, mock_fetch, mock_fetch_order_book, mock_phase):
@@ -677,7 +678,7 @@ class TestCacheStrategy(unittest.TestCase):
         self.assertIsNone(cached)  # 盘中不缓存
         self.assertIsNotNone(result)  # 但返回的数据是有效的
         
-    @patch('core_bak_refactored.core.share.market.market_utils.MarketUtils.determine_trading_phase')
+    @patch('core_bak_refactored.core.share.market.market_utils.MarketTimeUtils.determine_trading_phase')
     @patch('core_bak_refactored.core.share.market.market_utils.MarketUtils.get_last_trade_date')
     @patch.object(AKShareDataProvider, '_fetch_order_book_and_trades')
     @patch.object(AKShareDataProvider, '_fetch_real_intraday_from_akshare')
@@ -717,7 +718,7 @@ class TestCacheStrategy(unittest.TestCase):
         self.assertEqual(mock_fetch.call_count, 0)
         self.assertEqual(result.current_price, 10.0)
         
-    @patch('core_bak_refactored.core.share.market.market_utils.MarketUtils.determine_trading_phase')
+    @patch('core_bak_refactored.core.share.market.market_utils.MarketTimeUtils.determine_trading_phase')
     @patch.object(AKShareDataProvider, '_fetch_order_book_and_trades')
     @patch.object(AKShareDataProvider, '_fetch_real_intraday_from_akshare')
     def test_before_open_no_cache(self, mock_fetch, mock_fetch_order_book, mock_phase):
@@ -741,7 +742,7 @@ class TestCacheStrategy(unittest.TestCase):
         result2 = self.provider.get_intraday_data('000001.SZ', current_time=test_time)
         self.assertEqual(mock_fetch.call_count, 0)  # 集合竞价时段不调用API
         
-    @patch('core_bak_refactored.core.share.market.market_utils.MarketUtils.determine_trading_phase')
+    @patch('core_bak_refactored.core.share.market.market_utils.MarketTimeUtils.determine_trading_phase')
     @patch('core_bak_refactored.core.share.market.market_utils.MarketUtils.get_last_trade_date')
     @patch.object(AKShareDataProvider, '_fetch_order_book_and_trades')
     @patch.object(AKShareDataProvider, '_fetch_real_intraday_from_akshare')
@@ -793,7 +794,7 @@ class TestNonTradingPeriodBehavior(unittest.TestCase):
         self.provider.available = True
         self.provider.ak = Mock()
     
-    @patch('core_bak_refactored.core.share.market.market_utils.MarketUtils.determine_trading_phase')
+    @patch('core_bak_refactored.core.share.market.market_utils.MarketTimeUtils.determine_trading_phase')
     @patch('core_bak_refactored.core.share.market.market_utils.MarketUtils.get_last_trade_date')
     def test_after_close_should_use_cache(self, mock_get_last_date, mock_phase):
         """测试：盘后时段应使用缓存数据"""
@@ -828,7 +829,7 @@ class TestNonTradingPeriodBehavior(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertEqual(result.current_price, 10.8)
     
-    @patch('core_bak_refactored.core.share.market.market_utils.MarketUtils.determine_trading_phase')
+    @patch('core_bak_refactored.core.share.market.market_utils.MarketTimeUtils.determine_trading_phase')
     @patch.object(AKShareDataProvider, '_fetch_order_book_and_trades')
     def test_before_open_clears_chart(self, mock_fetch_order_book, mock_phase):
         """测试：集合竞价时段清空分时图"""

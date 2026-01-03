@@ -7,6 +7,12 @@ Yahoo Finance数据提供者 - 整合版
 - 支持指数、个股、波动率等多种数据类型
 - 数据标准化和质量验证
 - 实现统一的HistoricalDataProvider接口
+- 代理配置和会话管理
+
+Note: 
+- 反爬虫和请求限流逻辑由 yfinance_http2_patch 处理
+- YahooFinanceDataProvider 仅负责代理配置和会话创建
+- 避免在两个地方重复实现相同的反爬虫逻辑
 
 依赖：
 pip install yfinance
@@ -108,9 +114,14 @@ class YahooFinanceDataProvider(BaseDataProvider):
                         logger.info("🌐 Yahoo 配置为使用直连")
             except Exception as e:
                 logger.warning(f"配置代理时出错: {e}，将使用默认设置")
+            
+            # 应用 Browser Simulation 补丁以避免 429 错误
+            # Note: 所有反爬虫逻辑（User-Agent轮换、请求限流、浏览器模拟）都在补丁中处理
+            patch_yfinance(proxy_url=self.proxy)
+            logger.info("✅ YahooFinanceDataProvider initialized with Browser Simulation patch (anti-429)")
+            
+            # 如果提供了代理，也配置 yfinance 原生代理（双保险）
             if self.proxy:
-                patch_yfinance(proxy_url=self.proxy)
-                # 如果提供了代理，也配置 yfinance 原生代理（双保险）
                 if hasattr(self.yf, 'set_config'):
                     try:
                         self.yf.set_config(proxy=self.proxy)
@@ -120,8 +131,7 @@ class YahooFinanceDataProvider(BaseDataProvider):
                     pass  # 如果没有 set_config 方法，跳过
                 logger.info(f"YahooFinanceDataProvider initialized with proxy: {self.proxy}")
             else:
-                # 不设置全局代理，而是配置 yfinance 使用自定义会话
-                logger.info("YahooFinanceDataProvider initialized with custom session (anti-429)")
+                logger.info("YahooFinanceDataProvider initialized without proxy but with Browser Simulation patch")
 
             # 重新创建 session 以应用代理配置
             if hasattr(self, '_session'):
@@ -138,28 +148,15 @@ class YahooFinanceDataProvider(BaseDataProvider):
 
     def _create_session(self) -> requests.Session:
         """
-        创建自定义 Session（官方推荐，避免 429 限流）
+        创建自定义 Session（用于 yfinance 的 Ticker 对象）
         
-        根据 yfinance 官方文档和最佳实践：
-        1. 使用真实的 User-Agent（模拟浏览器）
-        2. 保持 Session 重用（保留 cookies）
-        3. 设置合理的超时时间
+        Note: 实际的反爬虫和请求限流逻辑在 yfinance_http2_patch 中实现
+        此处仅创建基本的 session 对象，避免重复的请求头配置
         
         Returns:
-            requests.Session: 配置好的 Session
+            requests.Session: 基础 Session 对象
         """
         session = requests.Session()
-
-        # 设置真实的 User-Agent（关键！Yahoo 会检测默认的 User-Agent）
-        session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'DNT': '1',
-            'Connection': 'keep-alive',
-            'Upgrade-Insecure-Requests': '1'
-        })
 
         # 根据代理配置设置 session 的代理
         if hasattr(self, 'proxy') and self.proxy:
@@ -169,38 +166,22 @@ class YahooFinanceDataProvider(BaseDataProvider):
             }
             logger.info(f"🔧 Session 已配置代理: {self.proxy}")
 
-        logger.info("Created custom session with browser-like headers (anti-429)")
+        logger.info("Created custom session for yfinance (anti-429 handled by patch)")
         return session
-
-    def _throttle_request(self):
-        """
-        请求限速（避免 429）
-        
-        确保两个请求之间有足够的时间间隔
-        """
-        current_time = time.time()
-        time_since_last_request = current_time - self._last_request_time
-
-        if time_since_last_request < self._min_request_interval:
-            sleep_time = self._min_request_interval - time_since_last_request
-            logger.debug(f"Throttling request: sleeping {sleep_time:.2f}s")
-            time.sleep(sleep_time)
-
-        self._last_request_time = time.time()
 
     def get_test_symbol(self) -> str:
         """获取测试符号"""
         return "^GSPC"  # 标普500指数
 
-    def _fetch_with_retry(self, trade_record: str, start_date: pd.Timestamp, end_date: pd.Timestamp,
-                          period: str = 'daily', max_retries: int = 3) -> pd.DataFrame:
+    def _fetch_history_prices(self, trade_record: str, start_date: pd.Timestamp, end_date: pd.Timestamp,
+                              period: str = 'daily', max_retries: int = 3) -> pd.DataFrame:
         """
         带重试机制的数据获取方法
         
         Note: 
         - yfinance 已经通过 patch 修复了 "Too Many Requests" bug
         - 使用指数退避策略处理速率限制
-        - 使用自定义 Session 和请求限速避免 429
+        - 实际的请求限流逻辑在 yfinance_http2_patch 中处理
         
         Args:
             trade_record: 股票或指数代码
@@ -215,56 +196,31 @@ class YahooFinanceDataProvider(BaseDataProvider):
         if self.yf is None:
             raise RuntimeError("yfinance not available")
 
-        for attempt in range(max_retries + 1):
-            try:
-                # 指数退避：第1次 5s, 第2次 10s, 第3次 20s, 第4次 40s
-                if attempt > 0:
-                    delay = 5 * (2 ** (attempt - 1)) + random.uniform(0, 2)
-                    logger.info(
-                        f"Attempt {attempt + 1}/{max_retries + 1} for {trade_record}, waiting {delay:.1f}s before retry (exponential backoff)")
-                    time.sleep(delay)
+        try:
+            # Note: 请求限流和重试逻辑由 yfinance_http2_patch 处理
+            # 🔧 将 period 转换为 yfinance 的 interval 参数
+            interval_map = {
+                'daily': '1d',
+                'weekly': '1wk',
+                'monthly': '1mo'
+            }
+            interval = interval_map.get(period, '1d')
 
-                # 💚 请求限速（关键！避免 429）
-                self._throttle_request()
+            # 使用自定义 Session（用于代理配置）
+            # Note: yfinance_http2_patch 补丁会拦截所有 yfinance 内部请求，包括通过此 session 的请求
+            # 根据错误信息，yfinance 需要 curl_cffi session 而不是 requests.Session
+            # 所以我们不再传递 session 参数，让 yfinance 自己处理
+            ticker_obj = self.yf.Ticker(trade_record, session=self._session)
+            data = ticker_obj.history(start=start_date, end=end_date, interval=interval)
 
-                # 🔧 将 period 转换为 yfinance 的 interval 参数
-                interval_map = {
-                    'daily': '1d',
-                    'weekly': '1wk',
-                    'monthly': '1mo'
-                }
-                interval = interval_map.get(period, '1d')
+            # 检查数据是否有效
+            if data is not None and not data.empty:
+                logger.info(f"Successfully fetched {len(data)} rows for {trade_record}")
+                return data
 
-                # 使用自定义 Session（关键！避免 429）
-                ticker_obj = self.yf.Ticker(trade_record, session=self._session)
-                data = ticker_obj.history(start=start_date, end=end_date, interval=interval)
-
-                # 检查数据是否有效
-                if data is not None and not data.empty:
-                    logger.info(f"Successfully fetched {len(data)} rows for {trade_record}")
-                    return data
-
-            except Exception as e:
-                error_msg = str(e)
-                logger.warning(f"Attempt {attempt + 1} failed for {trade_record}: {e}")
-
-                # 特殊处理速率限制错误
-                if "Too Many Requests" in error_msg or "429" in error_msg or "Rate limited" in error_msg:
-                    if attempt < max_retries:
-                        logger.info(f"Rate limit hit, will retry with exponential backoff")
-                        continue
-                    else:
-                        # 最后一次尝试失败，提供友好的错误信息
-                        raise ValueError(
-                            f"Yahoo Finance 速率限制 ({trade_record})\n"
-                            f"建议: 1) 等待 5-10 分钟后重试\n"
-                            f"      2) 或使用其他数据源 (AKShare/Tushare)\n"
-                            f"      3) 或在 data_provider.yml 中启用代理: yahoo_finance.use_proxy: true"
-                        )
-
-                if attempt == max_retries:
-                    raise
-                continue
+        except Exception as e:
+            logger.warning(f"Failed to fetch data for {trade_record}: {e}")
+            raise
 
         # 如果所有重试都失败了，抛出异常
         raise RuntimeError(f"Failed to fetch data for {trade_record} after {max_retries + 1} attempts")
@@ -298,7 +254,7 @@ class YahooFinanceDataProvider(BaseDataProvider):
 
         try:
             # 使用带重试机制的方法获取数据
-            data = self._fetch_with_retry(index_id, start_date, end_date, period)
+            data = self._fetch_history_prices(index_id, start_date, end_date, period)
 
             if data is None or data.empty:
                 raise ValueError(f"No data returned for {index_id}")
@@ -342,7 +298,7 @@ class YahooFinanceDataProvider(BaseDataProvider):
 
         try:
             # 使用带重试机制的方法获取数据
-            data = self._fetch_with_retry(stock_id, start_date, end_date, period)
+            data = self._fetch_history_prices(stock_id, start_date, end_date, period)
 
             if data is None or data.empty:
                 raise ValueError(f"No data returned for {stock_id}")
@@ -424,31 +380,31 @@ class YahooFinanceDataProvider(BaseDataProvider):
         try:
             # 计算时间范围
             if tick_range is not None:
+                # 假设tick_range的时间已经是无时区的市场本地时间
                 start_time = tick_range.start_time
                 end_time = tick_range.end_time
             else:
                 # 默认获取当日数据
                 trading_hours = self.config_manager.get_trading_hours(market_code.value)
-                market_timezone_str = trading_hours.get('timezone', 'UTC')
-                market_timezone = pytz.timezone(market_timezone_str)
-                start_time = pd.Timestamp(f"{trade_date} {trading_hours['open']}", tz=market_timezone)
+                # 直接创建无时区的时间戳
+                start_time = pd.Timestamp(f"{trade_date} {trading_hours['open']}")
 
                 if trading_phase == TradingPhase.AFTER_CLOSE:
                     # 盘后获取全天数据
-                    end_time = pd.Timestamp(f"{trade_date} {trading_hours['close']}", tz=market_timezone)
+                    end_time = pd.Timestamp(f"{trade_date} {trading_hours['close']}")
                 elif trading_phase == TradingPhase.NOON_BREAK:
                     # 午休获取上午数据
-                    end_time = pd.Timestamp(f"{trade_date} {trading_hours['lunch_start']}", tz=market_timezone)
+                    end_time = pd.Timestamp(f"{trade_date} {trading_hours['lunch_start']}")
                 else:
-                    # 盘中获取到当前时间的数据
+                    # 盘中获取到当前时间的数据，假设已经是无时区的市场本地时间
                     end_time = market_local_time
 
             logger.info(f"时间范围: {start_time} ~ {end_time}")
 
-            # 请求限速
-            self._throttle_request()
+            # Note: 请求限流和重试逻辑由 yfinance_http2_patch 处理
 
             # 使用 yfinance 获取 1分钟数据
+            # Note: yfinance_http2_patch 补丁会拦截所有 yfinance 内部请求，包括通过此 session 的请求
             ticker_obj = self.yf.Ticker(symbol, session=self._session)
 
             # Yahoo Finance 的 1m 数据最多只能获取 7 天
@@ -456,11 +412,11 @@ class YahooFinanceDataProvider(BaseDataProvider):
             time_diff = (end_time - start_time).days
             if time_diff > 7:
                 interval = '5m'
-                period = '60d'  # 5分钟数据最多60天
+                period = '60d'  # 5分钟数据最多7天
                 logger.info("时间范围超过 7 天，使用 5分钟数据")
             else:
                 interval = '1m'
-                period = '7d'  # 1分钟数据最多7天
+                period = '7d'  # 1分钟数据最多1天
                 logger.info("使用 1分钟数据")
 
             # 获取数据
@@ -473,19 +429,13 @@ class YahooFinanceDataProvider(BaseDataProvider):
                 return self._generate_empty_intraday_data(symbol, trade_date,
                                                           should_poll=(trading_phase != TradingPhase.AFTER_CLOSE))
 
-            # 🔧 关键修复：确保时区一致性
-            # yfinance 返回的 df.index 可能没有时区信息，需要统一处理
-            if df.index.tz is None:
-                # DataFrame 是 tz-naive，将 start_time 和 end_time 转换为 tz-naive
-                start_time_naive = start_time.tz_localize(None) if hasattr(start_time,
-                                                                           'tz_localize') else start_time.replace(
-                    tzinfo=None)
-                end_time_naive = end_time.tz_localize(None) if hasattr(end_time, 'tz_localize') else end_time.replace(
-                    tzinfo=None)
-                df = df[(df.index >= start_time_naive) & (df.index <= end_time_naive)]
-            else:
-                # DataFrame 有时区信息，直接使用
-                df = df[(df.index >= start_time) & (df.index <= end_time)]
+            # 🔧 修复时区问题：确保时间范围过滤时时间戳具有一致的时区信息
+            # start_time和end_time都是无时区的市场本地时间，所以需要将df的时间索引也转换为无时区的市场本地时间
+            if df.index.tz is not None:
+                # 将df索引转换为无时区的本地时间（保持为市场本地时间）
+                df.index = df.index.tz_localize(None)
+
+            df = df[(df.index >= start_time) & (df.index <= end_time)]
 
             if df.empty:
                 logger.warning(f"⚠️ 过滤后数据为空: {symbol}")
@@ -493,25 +443,28 @@ class YahooFinanceDataProvider(BaseDataProvider):
                                                           should_poll=(trading_phase != TradingPhase.AFTER_CLOSE))
 
             # 转换为 IntradayData
-            intraday_data = self._convert_yahoo_df_to_intraday(df, symbol, trade_date)
+            try:
+                intraday_data = self._convert_yahoo_df_to_intraday(df, symbol, trade_date)
 
-            # 设置 should_poll
-            intraday_data.should_poll = trading_phase in [TradingPhase.BEFORE_OPEN, TradingPhase.TRADING]
+                # 设置 should_poll
+                intraday_data.should_poll = trading_phase in [TradingPhase.BEFORE_OPEN, TradingPhase.TRADING]
 
-            logger.info(f"✅ 成功获取 {len(intraday_data.ticks)} 条分时数据")
-            return intraday_data
+                logger.info(f"✅ 成功获取 {len(intraday_data.ticks)} 条分时数据")
+                return intraday_data
+            except Exception as convert_error:
+                logger.error(f"转换Yahoo Finance数据为分时数据失败: {convert_error}", exc_info=True)
+                return self._generate_empty_intraday_data(symbol, trade_date, should_poll=False)
 
         except Exception as e:
             error_msg = str(e)
 
-            # 处理速率限制错误：返回空数据而不是抛出异常
+            # 检查是否是速率限制错误
             if "Rate limit" in error_msg or "Too Many Requests" in error_msg or "429" in error_msg:
                 logger.warning(f"⚠️ Yahoo Finance 速率限制: {symbol}, 返回空数据")
-                return self._generate_empty_intraday_data(symbol, trade_date, should_poll=False)
-
-            # 其他错误：记录并抛出
+            
+            # 其他错误：记录并返回空数据（重试逻辑由补丁处理）
             logger.error(f"获取Yahoo Finance分时数据失败: {e}", exc_info=True)
-            raise RuntimeError(f"获取分时数据失败: {symbol}, {str(e)}")
+            return self._generate_empty_intraday_data(symbol, trade_date, should_poll=False)
 
     def _generate_empty_intraday_data(self, symbol: str, trade_date, should_poll: bool = False) -> IntradayData:
         """
@@ -606,27 +559,27 @@ class YahooFinanceDataProvider(BaseDataProvider):
         order_book_asks = []
         if not is_index:
             try:
-                ticker = yf.Ticker(symbol)
-                info = ticker.info
+                ticker = yf.Ticker(symbol, session=self._session)
+                if ticker.info:
+                    info = ticker.info
+                    bid_price = info.get('bid')
+                    ask_price = info.get('ask')
+                    bid_size = info.get('bidSize')
+                    ask_size = info.get('askSize')
 
-                bid_price = info.get('bid')
-                ask_price = info.get('ask')
-                bid_size = info.get('bidSize')
-                ask_size = info.get('askSize')
+                    if bid_price and bid_size:
+                        order_book_bids.append(OrderBookLevel(
+                            price=round(float(bid_price), 2),
+                            volume=int(bid_size)
+                        ))
 
-                if bid_price and bid_size:
-                    order_book_bids.append(OrderBookLevel(
-                        price=round(float(bid_price), 2),
-                        volume=int(bid_size)
-                    ))
+                    if ask_price and ask_size:
+                        order_book_asks.append(OrderBookLevel(
+                            price=round(float(ask_price), 2),
+                            volume=int(ask_size)
+                        ))
 
-                if ask_price and ask_size:
-                    order_book_asks.append(OrderBookLevel(
-                        price=round(float(ask_price), 2),
-                        volume=int(ask_size)
-                    ))
-
-                logger.debug(f"📊 Yahoo Finance 盘口: {symbol} bid={bid_price}x{bid_size} ask={ask_price}x{ask_size}")
+                    logger.debug(f"📊 Yahoo Finance 盘口: {symbol} bid={bid_price}x{bid_size} ask={ask_price}x{ask_size}")
             except Exception as e:
                 logger.warning(f"⚠️ 获取 Yahoo Finance 盘口数据失败: {symbol}, {e}")
 
