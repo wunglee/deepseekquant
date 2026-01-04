@@ -40,7 +40,6 @@ from core_bak_refactored.core.data.providers.protocols import (PriceData, TickRa
 from core_bak_refactored.core.data.providers.yfinance_http2_patch import patch_yfinance
 from core_bak_refactored.core.share.market.market_time_utils import MarketTimeUtils
 from core_bak_refactored.core.share.market.market_enums import TradingPhase
-import pytz
 from core_bak_refactored.core.share.market.market_utils import MarketUtils
 import yfinance as yf
 
@@ -67,7 +66,6 @@ class YahooFinanceDataProvider(BaseDataProvider):
         """
         # 创建自定义 Session（官方推荐，避免 429 限流）
         super().__init__()
-        self._session = self._create_session()
 
         # 代理配置（初始化为None）
         self.proxy = None
@@ -115,28 +113,8 @@ class YahooFinanceDataProvider(BaseDataProvider):
             except Exception as e:
                 logger.warning(f"配置代理时出错: {e}，将使用默认设置")
             
-            # 应用 Browser Simulation 补丁以避免 429 错误
-            # Note: 所有反爬虫逻辑（User-Agent轮换、请求限流、浏览器模拟）都在补丁中处理
             patch_yfinance(proxy_url=self.proxy)
             logger.info("✅ YahooFinanceDataProvider initialized with Browser Simulation patch (anti-429)")
-            
-            # 如果提供了代理，也配置 yfinance 原生代理（双保险）
-            if self.proxy:
-                if hasattr(self.yf, 'set_config'):
-                    try:
-                        self.yf.set_config(proxy=self.proxy)
-                    except Exception:
-                        pass  # 如果 set_config 方法无法使用，跳过
-                else:
-                    pass  # 如果没有 set_config 方法，跳过
-                logger.info(f"YahooFinanceDataProvider initialized with proxy: {self.proxy}")
-            else:
-                logger.info("YahooFinanceDataProvider initialized without proxy but with Browser Simulation patch")
-
-            # 重新创建 session 以应用代理配置
-            if hasattr(self, '_session'):
-                self._session.close()  # 关闭旧的 session
-            self._session = self._create_session()
         except ImportError:
             logger.error("yfinance not installed. Please run: pip install yfinance")
             self.yf = None
@@ -145,29 +123,6 @@ class YahooFinanceDataProvider(BaseDataProvider):
             logger.error(f"Failed to initialize yfinance: {e}")
             self.yf = None
             self.available = False
-
-    def _create_session(self) -> requests.Session:
-        """
-        创建自定义 Session（用于 yfinance 的 Ticker 对象）
-        
-        Note: 实际的反爬虫和请求限流逻辑在 yfinance_http2_patch 中实现
-        此处仅创建基本的 session 对象，避免重复的请求头配置
-        
-        Returns:
-            requests.Session: 基础 Session 对象
-        """
-        session = requests.Session()
-
-        # 根据代理配置设置 session 的代理
-        if hasattr(self, 'proxy') and self.proxy:
-            session.proxies = {
-                'http': self.proxy,
-                'https': self.proxy
-            }
-            logger.info(f"🔧 Session 已配置代理: {self.proxy}")
-
-        logger.info("Created custom session for yfinance (anti-429 handled by patch)")
-        return session
 
     def get_test_symbol(self) -> str:
         """获取测试符号"""
@@ -206,11 +161,8 @@ class YahooFinanceDataProvider(BaseDataProvider):
             }
             interval = interval_map.get(period, '1d')
 
-            # 使用自定义 Session（用于代理配置）
-            # Note: yfinance_http2_patch 补丁会拦截所有 yfinance 内部请求，包括通过此 session 的请求
-            # 根据错误信息，yfinance 需要 curl_cffi session 而不是 requests.Session
-            # 所以我们不再传递 session 参数，让 yfinance 自己处理
-            ticker_obj = self.yf.Ticker(trade_record, session=self._session)
+            # Note: yfinance_http2_patch 补丁会拦截所有 yfinance 内部请求
+            ticker_obj = self.yf.Ticker(trade_record)
             data = ticker_obj.history(start=start_date, end=end_date, interval=interval)
 
             # 检查数据是否有效
@@ -404,19 +356,19 @@ class YahooFinanceDataProvider(BaseDataProvider):
             # Note: 请求限流和重试逻辑由 yfinance_http2_patch 处理
 
             # 使用 yfinance 获取 1分钟数据
-            # Note: yfinance_http2_patch 补丁会拦截所有 yfinance 内部请求，包括通过此 session 的请求
-            ticker_obj = self.yf.Ticker(symbol, session=self._session)
+            # Note: yfinance_http2_patch 补丁会拦截所有 yfinance 内部请求
+            ticker_obj = self.yf.Ticker(symbol)
 
             # Yahoo Finance 的 1m 数据最多只能获取 7 天
             # 如果时间范围超过 7 天，使用 5m 数据
             time_diff = (end_time - start_time).days
             if time_diff > 7:
                 interval = '5m'
-                period = '60d'  # 5分钟数据最多7天
-                logger.info("时间范围超过 7 天，使用 5分钟数据")
+                period = '7d'  # 5分钟数据最多7天
+                logger.info("时间范围超过 1 天，使用 5分钟数据")
             else:
                 interval = '1m'
-                period = '7d'  # 1分钟数据最多1天
+                period = '1d'  # 1分钟数据最多1天
                 logger.info("使用 1分钟数据")
 
             # 获取数据
@@ -559,7 +511,7 @@ class YahooFinanceDataProvider(BaseDataProvider):
         order_book_asks = []
         if not is_index:
             try:
-                ticker = yf.Ticker(symbol, session=self._session)
+                ticker = yf.Ticker(symbol)
                 if ticker.info:
                     info = ticker.info
                     bid_price = info.get('bid')

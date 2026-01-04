@@ -369,5 +369,63 @@ class YahooFinanceDataProviderPatchTest(unittest.TestCase):
             )
 
 
+class YahooFinanceProviderIntegrationTest(unittest.TestCase):
+    """测试YahooFinanceDataProvider集成"""
+    
+    @patch.object(YahooFinanceDataProvider, '_inter_get_index_prices')
+    def test_yfinance_provider_integration(self, mock_get_index_prices):
+        """测试YahooFinanceDataProvider集成成功"""
+        logger.info("🔍 测试YahooFinanceDataProvider")
+
+        provider = YahooFinanceDataProvider()
+        test_symbol = provider.get_test_symbol()
+
+        # 模拟返回数据
+        mock_data = MagicMock()
+        mock_data.records = [MagicMock(), MagicMock(), MagicMock()]  # 3条记录
+        mock_get_index_prices.return_value = mock_data
+
+        # 获取最近30天的数据
+        import pandas as pd
+        from datetime import datetime, timedelta
+
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=30)
+
+        # 转换为pandas Timestamp
+        start_ts = pd.Timestamp(start_date)
+        end_ts = pd.Timestamp(end_date)
+
+        # 获取数据
+        data = provider._inter_get_index_prices(test_symbol, start_ts, end_ts, 'daily')
+
+        self.assertIsNotNone(data, "YahooFinanceDataProvider返回None")
+        self.assertGreater(len(data.records), 0, "YahooFinanceDataProvider返回空数据")
+
+        logger.info(f"✅ YahooFinanceDataProvider测试成功，获取到 {len(data.records)} 条记录")
+
+
+class YahooPatchVerificationTest(unittest.TestCase):
+    """验证yfinance补丁是否正确应用于Ticker对象"""
+    
+    def test_patch_applied_to_ticker(self):
+        """验证补丁已正确应用于Ticker对象"""
+        # 先应用补丁
+        from core_bak_refactored.core.data.providers.yfinance_http2_patch import patch_yfinance
+        patch_yfinance()
+        
+        # 然后导入yfinance
+        import yfinance as yf
+        
+        # 创建Ticker对象
+        ticker = yf.Ticker("AAPL")
+        
+        # 检查YfData.get方法是否已被补丁替换
+        if hasattr(ticker, '_data'):
+            self.assertEqual(ticker._data.get.__name__, 'patched_get')
+        else:
+            self.fail("Ticker对象没有_data属性")
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -75,6 +75,7 @@ dependencies:
     - slack-sdk>=3.39.0
     - twilio>=9.8.8
     - cloudscraper>=1.2.71
+    - curl-cffi>=0.14.0
 variables:
   DEEPSEEKQUANT_ENV: "development"
   PYTHONPATH: "."

@@ -3,7 +3,7 @@ Yahoo Finance Browser Simulation 补丁 (支持 HTTP/2)
 
 Note: 
 - 此补丁修复了 yfinance 的 "Too Many Requests" (429) 问题
-- 使用 cloudscraper 模拟浏览器请求 (内置 HTTP/2 支持)
+- 使用 curl_cffi 模拟浏览器请求 (内置 HTTP/2 支持)
 - 通过 crumb 认证绕过 Yahoo 的反爬虫机制
 - 通过请求限流避免触发速率限制
 - 通过随机 User-Agent 避免检测
@@ -11,11 +11,11 @@ Note:
 - 通过 X-Requested-With 头模拟 AJAX 请求
 
 ⚠️ 重要: 
-- 需要安装: pip install cloudscraper (内置 HTTP/2 支持)
+- 需要安装: pip install curl_cffi
 - 此补丁会 monkey patch yfinance.data.YfData.get 方法
 - 所有通过 yfinance 的请求都会经过此补丁处理
 - 所有反爬虫逻辑（User-Agent轮换、请求限流、浏览器模拟头）都由补丁处理
-- HTTP/2 支持通过 cloudscraper 库自动启用
+- HTTP/2 支持通过 curl_cffi 库自动启用
 - YahooFinanceDataProvider 不需要重复实现这些逻辑
 """
 
@@ -24,29 +24,27 @@ import random
 import re
 import time
 from typing import Optional
-import cloudscraper
+import urllib.parse
+
+# 导入curl_cffi，假设总是存在
+from curl_cffi import requests as curl_requests
+
 logger = logging.getLogger(__name__)
+
 try:
     import yfinance
     from yfinance import data as yf_data
 except ImportError:
     logger.warning("yfinance not installed")
     raise ImportError("yfinance not installed")
+
 # 全局标志，避免重复 patch
 _PATCHED = False
 
-# 创建 cloudscraper 实例，模拟真实浏览器，支持 HTTP/2
-_BROWSER_SCRAPER = cloudscraper.create_scraper(
-    browser={
-        'browser': 'chrome',
-        'platform': 'windows',
-        'mobile': False
-    },
-    # 启用 HTTP/2 支持
-    allow_brotli=True,  # 启用 Brotli 压缩支持
-)
+# curl_cffi session实例，用于模拟真实浏览器
+_CURL_SESSION = curl_requests.Session()
+# 设置浏览器模拟头
 headers = {
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
     'Accept-Language': 'en-US,en;q=0.9',
     'Accept-Encoding': 'gzip, deflate, br',
     'DNT': '1',
@@ -58,7 +56,7 @@ headers = {
     'Referer': 'https://finance.yahoo.com/',
     'Origin': 'https://finance.yahoo.com',
 }
-_BROWSER_SCRAPER.headers.update(headers)
+_CURL_SESSION.headers.update(headers)
 
 _LAST_REQUEST_TIME = time.time()  # 上次请求时间，初始化为当前时间
 _MIN_REQUEST_INTERVAL = 2.0  # 最小请求间隔（秒）
@@ -71,7 +69,6 @@ _USER_AGENTS = [
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15',
     'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
 ]
-
 
 def get_crumb(url, timeout) -> Optional[str]:
     # 尝试从页面中提取 crumb（Yahoo Finance 的认证令牌）
@@ -94,14 +91,16 @@ def get_crumb(url, timeout) -> Optional[str]:
                 # 构建quote页面URL
                 if symbol:
                     # 需要对symbol进行URL编码，处理特殊字符如^
-                    import urllib.parse
                     encoded_symbol = urllib.parse.quote(symbol.upper(), safe='')
                     home_url = f'https://finance.yahoo.com/quote/{encoded_symbol}'
             logger.info(f"🌐 获取 crumb 从: {home_url[:100]}...")
 
             speed_limit()
-
-            home_response = _BROWSER_SCRAPER.get(home_url, timeout=timeout)
+            _CURL_SESSION.headers.update({
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.9',
+            })
+            # 使用curl_cffi session
+            home_response = _CURL_SESSION.get(home_url, timeout=timeout, impersonate="chrome110")
             
             # 更新最后请求时间
             _LAST_REQUEST_TIME = time.time()
@@ -114,8 +113,10 @@ def get_crumb(url, timeout) -> Optional[str]:
                     r'crumb["\'\s]{0,3}=["\'\s]{0,3}["\']([^"\']*)["\']',  # 等号分隔格式
                 ]
 
+                response_text = home_response.text
+
                 for pattern in crumb_patterns:
-                    crumb_match = re.search(pattern, home_response.text)
+                    crumb_match = re.search(pattern, response_text)
                     if crumb_match:
                         # 确保捕获组有内容
                         for i in range(1, len(crumb_match.groups()) + 1):
@@ -132,7 +133,7 @@ def get_crumb(url, timeout) -> Optional[str]:
                     # 检查是否有相关的JavaScript文件或模块包含crumb
                     import json
                     # 尝试在页面中查找可能包含crumb的script标签
-                    script_matches = re.findall(r'<script[^>]*>(.*?)</script>', home_response.text, re.DOTALL)
+                    script_matches = re.findall(r'<script[^>]*>(.*?)</script>', response_text, re.DOTALL)
                     for script in script_matches:
                         # 查找可能的crumb变量
                         if 'crumb' in script.lower():
@@ -166,41 +167,34 @@ def speed_limit():
 
 def patch_yfinance(proxy_url=None):
     """
-    给 yfinance 打补丁，使其使用 Browser Simulation
+    给 yfinance 打补丁，使其使用 curl_cffi Browser Simulation
 
     Args:
         proxy_url: 代理地址 (e.g., "http://127.0.0.1:8002")
 
     原理:
     - Monkey patch yfinance.data.YfData.get() 方法
-    - 用 cloudscraper (浏览器模拟) 替换 requests 调用
+    - 用 curl_cffi (浏览器模拟) 替换 requests 调用
 
     Note:
         如果代理配置了但代理服务未运行，会自动降级到直连
     """
-    global _PATCHED, _BROWSER_SCRAPER
+    global _PATCHED, _CURL_SESSION
     if _PATCHED:
         logger.debug("yfinance already patched for Browser Simulation")
         return
 
-    try:
-        # 如果有代理，配置到 cloudscraper
-        if proxy_url:
-            _BROWSER_SCRAPER.proxies = {
-                'http': proxy_url,
-                'https': proxy_url
-            }
-            logger.info(f"Browser scraper configured with proxy: {proxy_url}")
-    except ImportError:
-        logger.error("cloudscraper not available, browser simulation patch failed")
-        return
-    except Exception as e:
-        logger.error(f"Failed to initialize browser scraper: {e}")
-        return
+    # 如果有代理，配置到 curl_cffi session
+    if proxy_url:
+        _CURL_SESSION.proxies = {
+            'http': proxy_url,
+            'https': proxy_url
+        }
+        logger.info(f"curl_cffi session configured with proxy: {proxy_url}")
 
     def patched_get(self, url,user_agent_headers=None, params=None, timeout=30):
         """
-        使用 cloudscraper (浏览器模拟) 替代 requests
+        使用 curl_cffi (浏览器模拟) 替代 requests
 
         关键优化：
         1. 轮换 User-Agent - 避免被识别为爬虫
@@ -214,9 +208,12 @@ def patch_yfinance(proxy_url=None):
             user_agent_headers = {
                 'User-Agent': random.choice(_USER_AGENTS)
             }
-        _BROWSER_SCRAPER.headers.update(user_agent_headers)
-        # 添加调试日志，查看请求前_BROWSER_SCRAPER的状态
-        logger.debug(f"patched_get - Browser Scraper 类型: {type(_BROWSER_SCRAPER)}")
+        
+        # 更新session headers
+        _CURL_SESSION.headers.update({
+            **user_agent_headers,
+            'Accept': 'application/json, text/plain, */*',
+        })
         speed_limit()
 
         # 使用浏览器模拟方式
@@ -226,23 +223,25 @@ def patch_yfinance(proxy_url=None):
             if params is None:
                 params = {}
             params['crumb'] = crumb
+        
         # 发送请求
-        response = _BROWSER_SCRAPER.get(url, params=params, timeout=timeout)
-        if response.status_code != 200:
-            logger.error(f"浏览器模拟请求失败: {response.status_code} - {url[:100]}...")
-            raise Exception(f"HTTP {response.status_code} 错误")
-        else:
+        response = _CURL_SESSION.get(url, params=params, timeout=timeout, impersonate="chrome110")
+        
+        if response.status_code == 200:
             # 更新最后请求时间
             _LAST_REQUEST_TIME = time.time()
             logger.info(f"✅浏览器模拟请求成功: {response.status_code} - {url[:100]}...")
             return response
+        else:
+            logger.error(f"浏览器模拟请求失败: {response.status_code} - {url[:100]}...")
+            raise Exception(f"HTTP {response.status_code} 错误")
 
     # 应用补丁
     yf_data.YfData.get = patched_get
 
     _PATCHED = True
     proxy_info = f" via proxy {proxy_url}" if proxy_url else " (direct)"
-    logger.info(f"✅ yfinance patched to use browser simulation{proxy_info}")
+    logger.info(f"✅ yfinance patched to use curl_cffi browser simulation{proxy_info}")
 
 # 自动应用补丁（导入时执行）
 # 注意：代理配置需要在 Yahoo Provider 初始化时传入
