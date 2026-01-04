@@ -24,13 +24,10 @@ pip install yfinance
 """
 
 import logging
-import random
-import time
 from dataclasses import dataclass
-from typing import Dict, Any
 
 import pandas as pd
-import requests
+import yfinance as yf
 
 from core_bak_refactored.core.data.providers.base_provider import BaseDataProvider
 # 导入新的数据结构
@@ -38,12 +35,11 @@ from core_bak_refactored.core.data.providers.protocols import (PriceData, TickRa
                                                                OrderBookLevel)
 # 导入 HTTP/2 补丁
 from core_bak_refactored.core.data.providers.yfinance_http2_patch import patch_yfinance
-from core_bak_refactored.core.share.market.market_time_utils import MarketTimeUtils
 from core_bak_refactored.core.share.market.market_enums import TradingPhase
+from core_bak_refactored.core.share.market.market_time_utils import MarketTimeUtils
 from core_bak_refactored.core.share.market.market_utils import MarketUtils
-import yfinance as yf
 
-logger = logging.getLogger('DeepSeekQuant.YahooFinance')
+logger = logging.getLogger('DeepSeekQuant.YahooFinanceDataProvider')
 
 
 @dataclass
@@ -64,18 +60,10 @@ class YahooFinanceDataProvider(BaseDataProvider):
         Note:
             proxy 从配置文件读取，不通过参数传递
         """
-        # 创建自定义 Session（官方推荐，避免 429 限流）
         super().__init__()
+        self.initialize()
 
-        # 代理配置（初始化为None）
-        self.proxy = None
-
-        # 请求限速器（避免 429）
-        self._last_request_time = 0
-        self._min_request_interval = 0.5  # 每个请求之间至少间隔 0.5 秒
-        self.init_yfinance()
-
-    def init_yfinance(self):
+    def initialize(self, **kwargs):
         # 延迟导入yfinance（避免环境依赖问题）
         try:
             import yfinance as yf
@@ -126,9 +114,9 @@ class YahooFinanceDataProvider(BaseDataProvider):
 
     def get_test_symbol(self) -> str:
         """获取测试符号"""
-        return "^GSPC"  # 标普500指数
+        return "^GSPC.US"  # 标普500指数
 
-    def _fetch_history_prices(self, trade_record: str, start_date: pd.Timestamp, end_date: pd.Timestamp,
+    def _fetch_history_prices(self, symbol: str, start_date: pd.Timestamp, end_date: pd.Timestamp,
                               period: str = 'daily', max_retries: int = 3) -> pd.DataFrame:
         """
         带重试机制的数据获取方法
@@ -139,7 +127,7 @@ class YahooFinanceDataProvider(BaseDataProvider):
         - 实际的请求限流逻辑在 yfinance_http2_patch 中处理
         
         Args:
-            trade_record: 股票或指数代码
+            symbol: 股票或指数代码
             start_date: 开始日期
             end_date: 结束日期
             period: 周期 ('daily', 'weekly', 'monthly')
@@ -162,20 +150,20 @@ class YahooFinanceDataProvider(BaseDataProvider):
             interval = interval_map.get(period, '1d')
 
             # Note: yfinance_http2_patch 补丁会拦截所有 yfinance 内部请求
-            ticker_obj = self.yf.Ticker(trade_record)
+            ticker_obj = self.yf.Ticker(self._map_to_yahoo(symbol))
             data = ticker_obj.history(start=start_date, end=end_date, interval=interval)
 
             # 检查数据是否有效
             if data is not None and not data.empty:
-                logger.info(f"Successfully fetched {len(data)} rows for {trade_record}")
+                logger.info(f"Successfully fetched {len(data)} rows for {symbol}")
                 return data
 
         except Exception as e:
-            logger.warning(f"Failed to fetch data for {trade_record}: {e}")
+            logger.warning(f"Failed to fetch data for {symbol}: {e}")
             raise
 
         # 如果所有重试都失败了，抛出异常
-        raise RuntimeError(f"Failed to fetch data for {trade_record} after {max_retries + 1} attempts")
+        raise RuntimeError(f"Failed to fetch data for {symbol} after {max_retries + 1} attempts")
 
     def _inter_get_index_prices(
             self,
@@ -357,7 +345,7 @@ class YahooFinanceDataProvider(BaseDataProvider):
 
             # 使用 yfinance 获取 1分钟数据
             # Note: yfinance_http2_patch 补丁会拦截所有 yfinance 内部请求
-            ticker_obj = self.yf.Ticker(symbol)
+            ticker_obj = self.yf.Ticker(self._map_to_yahoo(symbol))
 
             # Yahoo Finance 的 1m 数据最多只能获取 7 天
             # 如果时间范围超过 7 天，使用 5m 数据
@@ -417,6 +405,11 @@ class YahooFinanceDataProvider(BaseDataProvider):
             # 其他错误：记录并返回空数据（重试逻辑由补丁处理）
             logger.error(f"获取Yahoo Finance分时数据失败: {e}", exc_info=True)
             return self._generate_empty_intraday_data(symbol, trade_date, should_poll=False)
+
+    def _map_to_yahoo(self, symbol: str) -> str:
+        if symbol.endswith(".US"):
+            return symbol[:-3]
+        return symbol
 
     def _generate_empty_intraday_data(self, symbol: str, trade_date, should_poll: bool = False) -> IntradayData:
         """
@@ -511,7 +504,7 @@ class YahooFinanceDataProvider(BaseDataProvider):
         order_book_asks = []
         if not is_index:
             try:
-                ticker = yf.Ticker(symbol)
+                ticker = yf.Ticker(self._map_to_yahoo(symbol))
                 if ticker.info:
                     info = ticker.info
                     bid_price = info.get('bid')

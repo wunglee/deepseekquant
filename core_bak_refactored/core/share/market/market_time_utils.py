@@ -160,7 +160,7 @@ class MarketTimeUtils:
             Timestamp('2024-01-15 14:30:00')
             
             >>> # 获取美股市场当前时间
-            >>> MarketTimeUtils.get_market_time_now('AAPL')
+            >>> MarketTimeUtils.get_market_time_now('AAPL.US')
             Timestamp('2024-01-15 10:30:00')
         """
         from core_bak_refactored.core.share.market.market_utils import MarketUtils

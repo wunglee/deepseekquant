@@ -29,6 +29,7 @@ from core_bak_refactored.core.share.config_manager import ConfigManager
 from core_bak_refactored.core.share.market import MarketUtils
 from core_bak_refactored.core.share.market.data_types import OHLCVRecord
 from core_bak_refactored.core.share.market.market_enums import TradingPhase, MarketCode
+from core_bak_refactored.core.share.market.market_time_utils import MarketTimeUtils
 
 logger = logging.getLogger('DeepSeekQuant.DataProviders')
 
@@ -646,13 +647,12 @@ class BaseDataProvider(HistoricalDataProvider):
                 if hasattr(test_instance, 'get_test_symbol'):
                     test_symbol = test_instance.get_test_symbol()
                 else:
-                    test_symbol = '^GSPC'
+                    test_symbol = '^GSPC.US'
                 
                 # 🔧 统一使用 pd.Timestamp 类型
-                end_date = pd.Timestamp.now()
-                start_date = pd.Timestamp.now() - pd.Timedelta(days=30)
-                current_time = pd.Timestamp.now()
-                
+                current_time = MarketTimeUtils.get_market_time_now(test_symbol)
+                start_date = current_time - pd.Timedelta(days=30)
+                end_date = current_time
                 start_time = time.time()
                 
                 # 执行测试查询

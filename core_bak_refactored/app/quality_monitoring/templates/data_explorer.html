@@ -818,10 +818,10 @@ function init() {
                     id: 'cn_stock',
                     name: cnMarket.name,
                     default_indices: [
-                        {id: '000001.SH', name: '上证指数', type: 'index'},
-                        {id: '000300.SH', name: '沪深300', type: 'index'},
-                        {id: '399001.SZ', name: '深证成指', type: 'index'},
-                        {id: '399006.SZ', name: '创业板指', type: 'index'},
+                        {id: '^000001.SH', name: '上证指数', type: 'index'},
+                        {id: '^000300.SH', name: '沪深300', type: 'index'},
+                        {id: '^399001.SZ', name: '深证成指', type: 'index'},
+                        {id: '^399006.SZ', name: '创业板指', type: 'index'},
                         {id: '600036.SH', name: '招商银行', type: 'stock'}
                     ]
                 })
@@ -834,9 +834,9 @@ function init() {
                     id: 'hk_stock',
                     name: hkMarket.name,
                     default_indices: [
-                        {id: 'HSI', name: '恒生指数', type: 'index'},
-                        {id: 'HSCEI', name: '国企指数', type: 'index'},
-                        {id: 'HSTECH', name: '恒生科技', type: 'index'},
+                        {id: '^HSI.HK', name: '恒生指数', type: 'index'},
+                        {id: '^HSCEI.HK', name: '国企指数', type: 'index'},
+                        {id: '^HSTECH.HK', name: '恒生科技', type: 'index'},
                         {id: '0700.HK', name: '腾讯控股', type: 'stock'},
                         {id: '0939.HK', name: '建设银行', type: 'stock'}
                     ]
@@ -850,11 +850,11 @@ function init() {
                     id: 'us_stock',
                     name: usMarket.name,
                     default_indices: [
-                        {id: '^GSPC', name: 'S&P 500', type: 'index'},
-                        {id: '^DJI', name: '道琼斯', type: 'index'},
-                        {id: '^IXIC', name: '纳斯达克', type: 'index'},
-                        {id: '^AAPL', name: 'Apple', type: 'stock'},
-                        {id: '^MSFT', name: 'Microsoft', type: 'stock'}
+                        {id: '^GSPC.US', name: 'S&P 500', type: 'index'},
+                        {id: '^DJI.US', name: '道琼斯', type: 'index'},
+                        {id: '^IXIC.US', name: '纳斯达克', type: 'index'},
+                        {id: 'AAPL.US', name: 'Apple', type: 'stock'},
+                        {id: 'MSFT.US', name: 'Microsoft', type: 'stock'}
                     ]
                 })
             }
@@ -866,11 +866,11 @@ function init() {
                     id: 'eu_stock',
                     name: euMarket.name,
                     default_indices: [
-                        {id: '^STOXX50E', name: '欧洲斯托克50', type: 'index'},
-                        {id: '^GDAXI', name: '德国DAX', type: 'index'},
-                        {id: '^FTSE', name: '英国富时100', type: 'index'},
-                        {id: '^FCHI', name: '法国CAC40', type: 'index'},
-                        {id: 'SAP.DE', name: 'SAP', type: 'stock'}
+                        {id: '^STOXX50E.UE', name: '欧洲斯托克50', type: 'index'},
+                        {id: '^GDAXI.UE', name: '德国DAX', type: 'index'},
+                        {id: '^FTSE.UE', name: '英国富时100', type: 'index'},
+                        {id: '^FCHI.UE', name: '法国CAC40', type: 'index'},
+                        {id: 'SAP.UE', name: 'SAP', type: 'stock'}
                     ]
                 })
             }
@@ -882,11 +882,11 @@ function init() {
                     id: 'jp_stock',
                     name: jpMarket.name,
                     default_indices: [
-                        {id: '^N225', name: '日经225', type: 'index'},
-                        {id: '^N300', name: '日经300', type: 'index'},
-                        {id: '7203.T', name: '丰田汽车', type: 'stock'},
-                        {id: '9984.T', name: '软银集团', type: 'stock'},
-                        {id: '6758.T', name: '索尼集团', type: 'stock'}
+                        {id: '^N225.JP', name: '日经225', type: 'index'},
+                        {id: '^N300.JP', name: '日经300', type: 'index'},
+                        {id: '7203.JP', name: '丰田汽车', type: 'stock'},
+                        {id: '9984.JP', name: '软银集团', type: 'stock'},
+                        {id: '6758.JP', name: '索尼集团', type: 'stock'}
                     ]
                 })
             }
@@ -898,11 +898,11 @@ function init() {
                     id: 'sg_stock',
                     name: sgMarket.name,
                     default_indices: [
-                        {id: '^STI', name: '新加坡海峡时报指数', type: 'index'},
-                        {id: 'D05.SI', name: '星展银行', type: 'stock'},
-                        {id: 'O39.SI', name: '华侨银行', type: 'stock'},
-                        {id: 'U11.SI', name: '大华银行', type: 'stock'},
-                        {id: 'C31.SI', name: '凯德集团', type: 'stock'}
+                        {id: '^STI.SG', name: '新加坡海峡时报指数', type: 'index'},
+                        {id: 'D05.SG', name: '星展银行', type: 'stock'},
+                        {id: 'O39.SG', name: '华侨银行', type: 'stock'},
+                        {id: 'U11.SG', name: '大华银行', type: 'stock'},
+                        {id: 'C31.SG', name: '凯德集团', type: 'stock'}
                     ]
                 })
             }
