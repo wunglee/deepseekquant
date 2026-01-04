@@ -208,14 +208,6 @@ def patch_yfinance(proxy_url=None):
             user_agent_headers = {
                 'User-Agent': random.choice(_USER_AGENTS)
             }
-        
-        # 更新session headers
-        _CURL_SESSION.headers.update({
-            **user_agent_headers,
-            'Accept': 'application/json, text/plain, */*',
-        })
-        speed_limit()
-
         # 使用浏览器模拟方式
         logger.info(f"📡 Browser simulation request: {url[:100]}...")
         crumb = get_crumb(url, timeout)
@@ -223,7 +215,12 @@ def patch_yfinance(proxy_url=None):
             if params is None:
                 params = {}
             params['crumb'] = crumb
-        
+        # 更新session headers
+        _CURL_SESSION.headers.update({
+            **user_agent_headers,
+            'Accept': 'application/json, text/plain, */*',
+        })
+        speed_limit()
         # 发送请求
         response = _CURL_SESSION.get(url, params=params, timeout=timeout, impersonate="chrome110")
         
