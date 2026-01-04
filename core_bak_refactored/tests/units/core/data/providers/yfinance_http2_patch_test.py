@@ -87,35 +87,23 @@ class YahooPatchedGetTest(unittest.TestCase):
         self.assertEqual(yf_data.YfData.get.__name__, 'patched_get')
 
         yf_data_instance = yf_data.YfData()
+        test_cases = [
+            "https://query2.finance.yahoo.com/v8/finance/chart/^GSPC",
+            "https://query2.finance.yahoo.com/v10/finance/quoteSummary/^GSPC",
+            "https://query1.finance.yahoo.com/v7/finance/quote?",
+            "https://query1.finance.yahoo.com/ws/fundamentals-timeseries/v1/finance/timeseries/^GSPC?symbol=^GSPC&type=trailingPegRatio&period1=1751760000&period2=1767571200",
+        ]
+        
         step_error_record = []
-        try:
-            url = "https://query2.finance.yahoo.com/v8/finance/chart/^GSPC"
-            response = yf_data_instance.get(url, timeout=15)
-            self.assertIsNotNone(response)
-            self.assertTrue(response.status_code == 200, f"patched_get返回非200状态码: {response.status_code}")
-        except Exception as e:
-            step_error_record.append(f"没有正确获取指数v8数据：{e}")
-        try:
-            url = "https://query2.finance.yahoo.com/v10/finance/quoteSummary/^GSPC"
-            response = yf_data_instance.get(url, timeout=15)
-            self.assertIsNotNone(response)
-            self.assertTrue(response.status_code == 200, f"patched_get返回非200状态码: {response.status_code}")
-        except Exception as e:
-            step_error_record.append(f"没有正确获取指数v10数据(但应用程序中可以)：{e}")
-        try:
-            url = "https://query1.finance.yahoo.com/v7/finance/quote?"
-            response = yf_data_instance.get(url, timeout=15)
-            self.assertIsNotNone(response)
-            self.assertTrue(response.status_code == 200, f"patched_get返回非200状态码: {response.status_code}")
-        except Exception as e:
-            step_error_record.append(f"没有正确获取指数v7数据(但应用程序中可以)：{e}")
-        try:
-            url = "https://query1.finance.yahoo.com/ws/fundamentals-timeseries/v1/finance/timeseries/^GSPC?symbol=^GSPC&type=trailingPegRatio&period1=1751760000&period2=1767571200"
-            response = yf_data_instance.get(url, timeout=15)
-            self.assertIsNotNone(response)
-            self.assertTrue(response.status_code == 200, f"patched_get返回非200状态码: {response.status_code}")
-        except Exception as e:
-            step_error_record.append(f"没有正确获取指数v1数据：{e}")
+        step = 0
+        for url in test_cases:
+            step += 1
+            try:
+                response = yf_data_instance.get(url, timeout=15)
+                self.assertIsNotNone(response)
+                self.assertTrue(response.status_code == 200, f"patched_get返回非200状态码: {response.status_code}")
+            except Exception as e:
+                step_error_record.append(f"第{step}步没有正确获取数据：{e}")
         if len(step_error_record) > 0:
             self.fail(f"失败：{step_error_record}")
 
@@ -129,23 +117,21 @@ class YahooPatchedGetTest(unittest.TestCase):
 
         yf_data_instance = yf_data.YfData()
         step_error_record = []
-        try:
-            url = "'https://query2.finance.yahoo.com/v8/finance/chart/^AAPL'"
-            response = yf_data_instance.get(url, timeout=15)
-            self.assertIsNotNone(response)
-            self.assertTrue(response.status_code == 200, f"patched_get返回非200状态码: {response.status_code}")
-        except Exception as e:
-            step_error_record.append(f"没有正确获取股票v8数据：{e}")
-
-        try:
-            url = "https://query2.finance.yahoo.com/v10/finance/quoteSummary/^AAPL"
-            response = yf_data_instance.get(url, timeout=15)
-            self.assertIsNotNone(response)
-            self.assertTrue(response.status_code == 200, f"patched_get返回非200状态码: {response.status_code}")
-        except Exception as e:
-            step_error_record.append(f"没有正确获取股票v10数据：{e}")
+        test_cases = [
+            "https://query2.finance.yahoo.com/v8/finance/chart/^AAPL",
+            "https://query2.finance.yahoo.com/v10/finance/quoteSummary/^AAPL",
+        ]
+        step = 0
+        for url in test_cases:
+            try:
+                response = yf_data_instance.get(url, timeout=15)
+                self.assertIsNotNone(response)
+                self.assertTrue(response.status_code == 200, f"patched_get返回非200状态码: {response.status_code}")
+            except Exception as e:
+                step_error_record.append(f"没有正确获取股票v8数据：{e}")
         if len(step_error_record) > 0:
             self.fail(f"失败：{step_error_record}")
+
 
 class YahooCrumbTest(unittest.TestCase):
     """测试Yahoo Finance的crumb获取功能，使用真实访问验证"""
