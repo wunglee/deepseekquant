@@ -123,12 +123,13 @@ class YahooPatchedGetTest(unittest.TestCase):
         ]
         step = 0
         for url in test_cases:
+            step += 1
             try:
                 response = yf_data_instance.get(url, timeout=15)
                 self.assertIsNotNone(response)
                 self.assertTrue(response.status_code == 200, f"patched_get返回非200状态码: {response.status_code}")
             except Exception as e:
-                step_error_record.append(f"没有正确获取股票v8数据：{e}")
+                step_error_record.append(f"第{step}步没有正确获取数据：{e}")
         if len(step_error_record) > 0:
             self.fail(f"失败：{step_error_record}")
 
