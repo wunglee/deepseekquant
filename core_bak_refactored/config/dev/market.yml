@@ -1,17 +1,14 @@
-# 市场数据源映射：{market_code: provider_id}
 market_sources:
   CN: akshare
-  US: yahoo
+  EU: yahoo
   HK: akshare
   JP: yahoo
   SG: yahoo
-  EU: yahoo
-
-# 市场基础信息（包含UI展示配置）
+  US: yahoo
 market_registry:
   CN:
     name: 中国A股
-    display_name: 中国 A股  # UI展示名称
+    display_name: 中国 A股
     icon: 🇨🇳
     currency: CNY
     timezone: Asia/Shanghai
@@ -22,7 +19,7 @@ market_registry:
     default_trading_days: 245
   US:
     name: 美国股市
-    display_name: 美国  # UI展示名称
+    display_name: 美国
     icon: 🇺🇸
     currency: USD
     timezone: America/New_York
@@ -35,7 +32,7 @@ market_registry:
     default_trading_days: 252
   HK:
     name: 香港股市
-    display_name: 香港  # UI展示名称
+    display_name: 香港
     icon: 🇭🇰
     currency: HKD
     timezone: Asia/Hong_Kong
@@ -47,7 +44,7 @@ market_registry:
     default_trading_days: 247
   JP:
     name: 日本股市
-    display_name: 日本  # UI展示名称
+    display_name: 日本
     icon: 🇯🇵
     currency: JPY
     timezone: Asia/Tokyo
@@ -58,7 +55,7 @@ market_registry:
     default_trading_days: 245
   EU:
     name: 欧洲股市
-    display_name: 欧洲  # UI展示名称
+    display_name: 欧洲
     icon: 🇪🇺
     currency: EUR
     timezone: Europe/Paris
@@ -69,7 +66,7 @@ market_registry:
     default_trading_days: 255
   SG:
     name: 新加坡股市
-    display_name: 新加坡  # UI展示名称
+    display_name: 新加坡
     icon: 🇸🇬
     currency: SGD
     timezone: Asia/Singapore
@@ -178,30 +175,31 @@ trading_hours:
     lunch_start: '12:00'
     lunch_end: '13:00'
     has_lunch_break: true
-
-# 市场特定机制配置
 market_mechanisms:
   CN:
     has_limit_up_down: true
     limit_thresholds:
-      main_board: 0.10  # 主板±10%
-      gem: 0.20         # 创业板±20%
-      st: 0.05          # ST股票±5%
-      kcb: 0.20         # 科创板±20%
-    price_limit: 0.10
+      main_board: 0.1
+      gem: 0.2
+      st: 0.05
+      kcb: 0.2
+    price_limit: 0.1
     halt_risk_factor: 0.15
     consecutive_limit_days_p95: 3
   US:
     has_limit_up_down: false
-    circuit_breaker_levels: [0.07, 0.13, 0.20]  # 美股熔断：7%、13%、20%
-    luld_threshold: 0.05  # 涨跌幅限制（LULD）
-    luld_window: 5        # LULD时间窗口（分钟）
+    circuit_breaker_levels:
+    - 0.07
+    - 0.13
+    - 0.2
+    luld_threshold: 0.05
+    luld_window: 5
     price_limit: null
     halt_risk_factor: 0.05
   HK:
-    has_limit_up_down: false  # 港股无涨跌停
+    has_limit_up_down: false
     price_limit: null
-    halt_risk_factor: 0.10
+    halt_risk_factor: 0.1
   JP:
     has_limit_up_down: false
     price_limit: null

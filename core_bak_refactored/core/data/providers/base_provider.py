@@ -31,7 +31,7 @@ from core_bak_refactored.core.share.market.data_types import OHLCVRecord
 from core_bak_refactored.core.share.market.market_enums import TradingPhase, MarketCode
 from core_bak_refactored.core.share.market.market_time_utils import MarketTimeUtils
 
-logger = logging.getLogger('DeepSeekQuant.DataProviders')
+logger = logging.getLogger('DeepSeekQuant.BaseDataProvider')
 
 
 class BaseDataProvider(HistoricalDataProvider):

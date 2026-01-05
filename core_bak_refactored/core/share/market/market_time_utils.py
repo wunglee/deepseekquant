@@ -276,7 +276,31 @@ class MarketTimeUtils:
         else:
             logger.debug(f"⏰ [{market.value}] 收盘后")
             return TradingPhase.AFTER_CLOSE
-    
+
+    @staticmethod
+    def get_market_timezone(market_code:MarketCode) -> str:
+        """获取市场时区"""
+        if market_code==MarketCode.CN:
+            return 'Asia/Shanghai'
+        elif market_code==MarketCode.US:
+            return 'America/New_York'
+        elif market_code==MarketCode.HK:
+            return 'Asia/Hong_Kong'
+        elif market_code==MarketCode.JP:
+            return 'Asia/Tokyo'
+        elif market_code==MarketCode.SG:
+            return 'Asia/Singapore'
+        elif market_code==MarketCode.EU:
+            return 'Europe/London'
+        else:
+            raise ValueError(f"Invalid market code: {market_code}")
+
+    @staticmethod
+    def tz_localize(date: pd.Timestamp, market_code:MarketCode) -> pd.Timestamp:
+        """将日期转换为UTC时间"""
+        tz = MarketTimeUtils.get_market_timezone(market_code)
+        return date.tz_localize(tz)
+
     @staticmethod
     def get_last_trade_date(market: MarketCode, market_local_time: pd.Timestamp) -> pd.Timestamp:
         """

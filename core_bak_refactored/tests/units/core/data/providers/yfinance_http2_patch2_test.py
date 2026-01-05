@@ -9,15 +9,9 @@ Yahoo Finance代理单元测试
 - YahooFinanceDataProvider集成
 """
 
-import unittest
 import logging
 import os
-import time
-import re
-from unittest.mock import patch, MagicMock, Mock
-import requests
-
-from core_bak_refactored.core.data.providers.yahoo_provider import YahooFinanceDataProvider
+import unittest
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +28,7 @@ class YahooApiProxyTest(unittest.TestCase):
 
         # 检查补丁是否支持代理配置
         try:
-            from core_bak_refactored.core.data.providers.yfinance_http2_patch import _BROWSER_SCRAPER
+            from core_bak_refactored.core.data.providers.yfinance_http2_patch2 import _BROWSER_SCRAPER
             if proxy_url and _BROWSER_SCRAPER:
                 # 如果有代理配置，检查是否已设置
                 self.assertIsNotNone(_BROWSER_SCRAPER.proxies, "代理未正确配置到_BROWSER_SCRAPER")
@@ -55,7 +49,7 @@ class YahooAdvancedApiTest(unittest.TestCase):
         # 检查是否安装了yfinance
         try:
             import yfinance as yf
-            from core_bak_refactored.core.data.providers.yfinance_http2_patch import _PATCHED
+            from core_bak_refactored.core.data.providers.yfinance_http2_patch2 import _PATCHED
 
             # 确保补丁已应用
             self.assertTrue(_PATCHED, "yfinance补丁未正确应用")
@@ -80,7 +74,7 @@ class YahooPatchedGetTest(unittest.TestCase):
 
     def test_patched_get_with_index_symbol(self):
         """测试patched_get方法处理指数和股票符号"""
-        from core_bak_refactored.core.data.providers.yfinance_http2_patch import patch_yfinance
+        from core_bak_refactored.core.data.providers.yfinance_http2_patch2 import patch_yfinance
         patch_yfinance()
 
         import yfinance.data as yf_data
@@ -107,7 +101,7 @@ class YahooPatchedGetTest(unittest.TestCase):
 
     def test_patched_get_with_stock_symbol(self):
         """测试patched_get方法处理指数和股票符号"""
-        from core_bak_refactored.core.data.providers.yfinance_http2_patch import patch_yfinance
+        from core_bak_refactored.core.data.providers.yfinance_http2_patch2 import patch_yfinance
         patch_yfinance()
 
         import yfinance.data as yf_data
@@ -138,10 +132,10 @@ class YahooCrumbTest(unittest.TestCase):
 
     def test_get_crumb_with_valid_response(self):
         """测试真实访问时获取crumb"""
-        import core_bak_refactored.core.data.providers.yfinance_http2_patch as patch_module
+        import core_bak_refactored.core.data.providers.yfinance_http2_patch2 as patch_module
 
         # 应用补丁以确保_BROWSER_SCRAPER已初始化
-        from core_bak_refactored.core.data.providers.yfinance_http2_patch import patch_yfinance
+        from core_bak_refactored.core.data.providers.yfinance_http2_patch2 import patch_yfinance
         patch_yfinance()
 
         url = "https://query1.finance.yahoo.com/v8/finance/chart/AAPL"
@@ -154,10 +148,10 @@ class YahooCrumbTest(unittest.TestCase):
 
     def test_get_crumb_with_symbol_extraction(self):
         """测试从不同URL格式中提取股票代码并获取crumb"""
-        import core_bak_refactored.core.data.providers.yfinance_http2_patch as patch_module
+        import core_bak_refactored.core.data.providers.yfinance_http2_patch2 as patch_module
 
         # 应用补丁以确保_BROWSER_SCRAPER已初始化
-        from core_bak_refactored.core.data.providers.yfinance_http2_patch import patch_yfinance
+        from core_bak_refactored.core.data.providers.yfinance_http2_patch2 import patch_yfinance
         patch_yfinance()
 
         test_cases = [
@@ -177,10 +171,10 @@ class YahooCrumbTest(unittest.TestCase):
 
     def test_get_crumb_with_symbol_GSPC(self):
         """测试从不同URL格式中提取股票代码并获取crumb"""
-        import core_bak_refactored.core.data.providers.yfinance_http2_patch as patch_module
+        import core_bak_refactored.core.data.providers.yfinance_http2_patch2 as patch_module
 
         # 应用补丁以确保_BROWSER_SCRAPER已初始化
-        from core_bak_refactored.core.data.providers.yfinance_http2_patch import patch_yfinance
+        from core_bak_refactored.core.data.providers.yfinance_http2_patch2 import patch_yfinance
         patch_yfinance()
         url = "https://finance.yahoo.com/quote/^GSPC"
         result = patch_module.get_crumb(url, timeout=15)
@@ -191,10 +185,10 @@ class YahooCrumbTest(unittest.TestCase):
 
     def test_get_crumb_fallback_to_general_page(self):
         """测试当无法提取特定股票代码时回退到通用页面"""
-        import core_bak_refactored.core.data.providers.yfinance_http2_patch as patch_module
+        import core_bak_refactored.core.data.providers.yfinance_http2_patch2 as patch_module
 
         # 应用补丁以确保_BROWSER_SCRAPER已初始化
-        from core_bak_refactored.core.data.providers.yfinance_http2_patch import patch_yfinance
+        from core_bak_refactored.core.data.providers.yfinance_http2_patch2 import patch_yfinance
         patch_yfinance()
 
         # 使用一个可能导致符号提取失败的URL
@@ -204,7 +198,6 @@ class YahooCrumbTest(unittest.TestCase):
         # 即使符号无效，也应能从通用页面获取crumb
         self.assertIsNotNone(result, "即使符号无效，也应该能从通用页面获取crumb")
         self.assertIsInstance(result, str, "crumb应该是一个字符串")
-
 
 if __name__ == '__main__':
     unittest.main()

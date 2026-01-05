@@ -61,8 +61,19 @@ class TestWindowsCacheBasic(unittest.TestCase):
         self.assertIsInstance(window_key, str)
         # 月窗口键格式：YYYY-MM_YYYY-MM
         self.assertRegex(window_key, r'^\d{4}-\d{2}_\d{4}-\d{2}$')
-
     def test_generate_window_keys_no_overlap(self):
+        """测试生成的窗口首尾时间正好衔接不重叠"""
+        start = pd.Timestamp('2023-12-30')
+        end = pd.Timestamp('2024-01-10')  # 恢复原始的测试范围
+
+        keys = self.window_cache._generate_window_keys(start, end, 'daily', self.market_code)
+        next_start=None
+        for key in keys:
+            start, end = self.window_cache._window_key_to_date_range(key, 'daily')
+            if next_start:
+                self.assertEqual(start, next_start)
+            next_start = end + pd.Timedelta(days=1)
+    def test_generate_window_keys_no_overlap2(self):
         """测试生成的窗口首尾时间正好衔接不重叠"""
         start = pd.Timestamp('2025-01-01')
         end = pd.Timestamp('2026-01-01')  # 恢复原始的测试范围

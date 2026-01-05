@@ -28,13 +28,12 @@ from dataclasses import dataclass
 
 import pandas as pd
 import yfinance as yf
-
 from core_bak_refactored.core.data.providers.base_provider import BaseDataProvider
 # 导入新的数据结构
 from core_bak_refactored.core.data.providers.protocols import (PriceData, TickRange, IntradayData, IntradayTickRecord,
                                                                OrderBookLevel)
 # 导入 HTTP/2 补丁
-from core_bak_refactored.core.data.providers.yfinance_http2_patch import patch_yfinance
+from core_bak_refactored.core.data.providers.yfinance_http2_patch import patch_yfinance, _CURL_SESSION
 from core_bak_refactored.core.share.market.market_enums import TradingPhase
 from core_bak_refactored.core.share.market.market_time_utils import MarketTimeUtils
 from core_bak_refactored.core.share.market.market_utils import MarketUtils
@@ -117,13 +116,9 @@ class YahooFinanceDataProvider(BaseDataProvider):
         return "^GSPC.US"  # 标普500指数
 
     def _fetch_history_prices(self, symbol: str, start_date: pd.Timestamp, end_date: pd.Timestamp,
-                              period: str = 'daily', max_retries: int = 3) -> pd.DataFrame:
+                              period: str = 'daily') -> pd.DataFrame:
         """
-        带重试机制的数据获取方法
-        
-        Note: 
-        - yfinance 已经通过 patch 修复了 "Too Many Requests" bug
-        - 使用指数退避策略处理速率限制
+        Note:
         - 实际的请求限流逻辑在 yfinance_http2_patch 中处理
         
         Args:
@@ -131,7 +126,6 @@ class YahooFinanceDataProvider(BaseDataProvider):
             start_date: 开始日期
             end_date: 结束日期
             period: 周期 ('daily', 'weekly', 'monthly')
-            max_retries: 最大重试次数
             
         Returns:
             DataFrame: 获取到的数据
@@ -148,9 +142,13 @@ class YahooFinanceDataProvider(BaseDataProvider):
                 'monthly': '1mo'
             }
             interval = interval_map.get(period, '1d')
-
             # Note: yfinance_http2_patch 补丁会拦截所有 yfinance 内部请求
-            ticker_obj = self.yf.Ticker(self._map_to_yahoo(symbol))
+            ticker_obj = self.yf.Ticker(self._map_to_yahoo(symbol),session=_CURL_SESSION)
+            # history假设传入的时间是UTC时间，并将它转换为目标市场的时间，而我们实际
+            # 传入的就是目标市场时间，所以会被错误地做了二次转换，因此要先转回UTC时间。
+            market_code = MarketUtils.infer_market_from_symbol(symbol)
+            start_date = MarketTimeUtils.tz_localize(start_date,market_code).tz_convert('UTC')
+            end_date = MarketTimeUtils.tz_localize(end_date,market_code).tz_convert('UTC')
             data = ticker_obj.history(start=start_date, end=end_date, interval=interval)
 
             # 检查数据是否有效
@@ -163,7 +161,7 @@ class YahooFinanceDataProvider(BaseDataProvider):
             raise
 
         # 如果所有重试都失败了，抛出异常
-        raise RuntimeError(f"Failed to fetch data for {symbol} after {max_retries + 1} attempts")
+        raise RuntimeError(f"Failed to fetch data for {symbol}")
 
     def _inter_get_index_prices(
             self,
@@ -193,7 +191,6 @@ class YahooFinanceDataProvider(BaseDataProvider):
         logger.info(f"Fetching index data for {index_id} from {start_date} to {end_date}, period={period}")
 
         try:
-            # 使用带重试机制的方法获取数据
             data = self._fetch_history_prices(index_id, start_date, end_date, period)
 
             if data is None or data.empty:
@@ -272,7 +269,7 @@ class YahooFinanceDataProvider(BaseDataProvider):
             PriceData: 标准化的价格数据
         """
         # 判断是指数还是个股（以 ^ 开头的是指数）
-        if symbol.startswith('^'):
+        if MarketUtils.is_index(symbol):
             return self._inter_get_index_prices(symbol, start_date, end_date, period)
         else:
             return self._inter_get_stock_prices(symbol, start_date, end_date, period)
@@ -345,7 +342,7 @@ class YahooFinanceDataProvider(BaseDataProvider):
 
             # 使用 yfinance 获取 1分钟数据
             # Note: yfinance_http2_patch 补丁会拦截所有 yfinance 内部请求
-            ticker_obj = self.yf.Ticker(self._map_to_yahoo(symbol))
+            ticker_obj = self.yf.Ticker(self._map_to_yahoo(symbol),session=_CURL_SESSION)
 
             # Yahoo Finance 的 1m 数据最多只能获取 7 天
             # 如果时间范围超过 7 天，使用 5m 数据
@@ -504,7 +501,7 @@ class YahooFinanceDataProvider(BaseDataProvider):
         order_book_asks = []
         if not is_index:
             try:
-                ticker = yf.Ticker(self._map_to_yahoo(symbol))
+                ticker = yf.Ticker(self._map_to_yahoo(symbol),session=_CURL_SESSION)
                 if ticker.info:
                     info = ticker.info
                     bid_price = info.get('bid')

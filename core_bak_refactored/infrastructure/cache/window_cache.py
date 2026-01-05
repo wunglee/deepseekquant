@@ -39,6 +39,9 @@ class WindowsCache:
 
     def __init__(self, redis_client=None):
         """初始化窗口管理器"""
+        # 添加内部缓存用于存储窗口键计算结果
+        self._window_key_cache = {}
+        
         # 从配置文件加载缓存配置
         from core_bak_refactored.core.share.config_manager import ConfigManager
         config_manager = ConfigManager()
@@ -93,27 +96,26 @@ class WindowsCache:
         if market_code is None:
             market_code = MarketCode.CN
 
+        # 创建缓存键：(日期, 周期, 市场代码)
+        cache_key = (date.strftime('%Y-%m-%d'), period, market_code)
+        if cache_key in self._window_key_cache:
+            return self._window_key_cache[cache_key]
+
+        result = None
         if period == 'daily':
             window_size = self._window_size.get('daily')
             # Daily窗口：按window_size天一个窗口
             # 窗口边界按固定周期长度对齐，不考虑交易日历
-            year_start = pd.Timestamp(f'{date.year}-01-01')
-            days_from_year_start = (date - year_start).days
-            window_index = days_from_year_start // window_size
+            # 修复：使用一个固定基准日期（如公元1年1月1日）来计算天数，避免跨年问题
+            base_date = pd.Timestamp('1970-01-01')  # 使用Unix纪元作为基准
+            days_from_base = (date - base_date).days
+            window_index = days_from_base // window_size
 
-            # 计算窗口边界（按固定长度）
-            window_start = year_start + pd.Timedelta(days=window_index * window_size)
+            # 计算窗口边界（从基准日期开始）
+            window_start = base_date + pd.Timedelta(days=window_index * window_size)
             window_end = window_start + pd.Timedelta(days=window_size - 1)
 
-            # 不再进行交易日历调整 - 窗口是固定长度的数据容器
-            # 检查窗口是否在有效范围内
-            if window_start > date:
-                # 如果计算出的窗口在给定日期之后，需要向前调整一个窗口
-                window_index = (days_from_year_start // window_size) - 1
-                window_start = year_start + pd.Timedelta(days=window_index * window_size)
-                window_end = window_start + pd.Timedelta(days=window_size - 1)
-
-            return f"{window_start.strftime('%Y%m%d')}_{window_end.strftime('%Y%m%d')}"
+            result = f"{window_start.strftime('%Y%m%d')}_{window_end.strftime('%Y%m%d')}"
 
         elif period == 'weekly':
             window_size = self._window_size.get('weekly')
@@ -134,31 +136,31 @@ class WindowsCache:
             end_year, end_week, _ = end_date.isocalendar()
 
             # 始终包含结束年份，保持格式一致
-            return f"{iso_year}-W{start_week:02d}_{end_year}-W{end_week:02d}"
+            result = f"{iso_year}-W{start_week:02d}_{end_year}-W{end_week:02d}"
 
         elif period == 'monthly':
             window_size = self._window_size.get('monthly')
             # Monthly窗口：基于月份，window_size月一个窗口
             # 计算窗口索引（从1月开始，每window_size月一个窗口）
-            window_index = (date.month - 1) // window_size
-            start_month = window_index * window_size + 1
-            end_month = start_month + window_size - 1
-
-            # 处理跨年情况
-            start_year = date.year
-            if end_month > 12:
-                # 跨年情况：结束月份在下一年
-                end_year = start_year + (end_month - 1) // 12
-                end_month = ((end_month - 1) % 12) + 1
-            else:
-                # 同年情况
-                end_year = start_year
+            # 修复：使用年份和月份的组合来计算窗口索引
+            total_months = (date.year - 1970) * 12 + date.month - 1  # 从基准年1970年开始计算月数
+            window_index = total_months // window_size
+            start_month_offset = window_index * window_size
+            start_year = 1970 + start_month_offset // 12
+            start_month = (start_month_offset % 12) + 1
+            end_month_offset = start_month_offset + window_size - 1
+            end_year = 1970 + end_month_offset // 12
+            end_month = (end_month_offset % 12) + 1
 
             # 始终包含结束年份，保持格式一致
-            return f"{start_year}-{start_month:02d}_{end_year}-{end_month:02d}"
+            result = f"{start_year}-{start_month:02d}_{end_year}-{end_month:02d}"
 
         else:
             raise ValueError(f"不支持的 period: {period}，必须是 'daily', 'weekly' 或 'monthly'")
+
+        # 缓存结果
+        self._window_key_cache[cache_key] = result
+        return result
 
     def _generate_window_keys(self, start: pd.Timestamp, end: pd.Timestamp, period: str,
                               market_code: Optional[MarketCode] = None) -> List[str]:
@@ -192,7 +194,7 @@ class WindowsCache:
             return []
 
         # 生成连续的窗口键，确保窗口之间连续且不重叠
-        window_keys = set()
+        window_keys = []
         
         # 从起始日期开始生成第一个窗口
         current_date = start
@@ -205,31 +207,22 @@ class WindowsCache:
                 continue
             
             # 检查窗口是否已经在结果中（防止重复）
-            if window_key in window_keys:
-                # 如果窗口已存在，前进一天避免无限循环
-                current_date += pd.Timedelta(days=1)
-                continue
-            
-            # 添加窗口键
-            window_keys.add(window_key)
+            if window_key not in window_keys:
+                # 添加窗口键
+                window_keys.append(window_key)
             
             # 获取当前窗口的结束日期
             _, window_end = self._window_key_to_date_range(window_key, period)
             
             # 如果当前窗口的结束日期已经超过了总的结束日期，则结束循环
-            if window_end > end:
+            if window_end >= end:
                 break
             
-            # 计算下一个窗口的开始日期
-            # 如果当前窗口结束日期小于当前处理的日期，说明需要前进一天
-            # 否则从当前窗口的结束日期的下一天开始
-            if window_end >= current_date:
-                current_date = window_end + pd.Timedelta(days=1)
-            else:
-                current_date += pd.Timedelta(days=1)
+            # 从当前窗口的结束日期的下一天开始
+            current_date = window_end + pd.Timedelta(days=1)
 
         logger.info(f"📦 需要 {len(window_keys)} 个窗口 (period={period}, window_size={self._window_size.get(period)})")
-        return sorted(list(window_keys))
+        return sorted(list(set(window_keys)))  # 去重并排序
 
     @staticmethod
     def _window_key_to_date_range(window_key: str, period: str) -> Tuple[pd.Timestamp, pd.Timestamp]:
