@@ -71,6 +71,49 @@ _USER_AGENTS = [
 ]
 
 
+def extract_crumb_from_html(response_text: str) -> str:
+    """从HTML中提取crumb"""
+    crumb_patterns = [
+        r'"crumb":"([^"]+)"',  # 标准格式
+        r'crumb["\'\s]{0,3}:["\'\s]{0,3}["\']([^"\']*)["\']',  # 冒号分隔格式
+        r'crumb["\'\s]{0,3}=["\'\s]{0,3}["\']([^"\']*)["\']',  # 等号分隔格式
+    ]
+
+    for pattern in crumb_patterns:
+        crumb_match = re.search(pattern, response_text)
+        if crumb_match:
+            # 确保捕获组有内容
+            for i in range(1, len(crumb_match.groups()) + 1):
+                if crumb_match.group(i):
+                    crumb = crumb_match.group(i)
+                    logger.info(f"🔑 找到 crumb: {crumb[:10]}...")
+                    break
+            if crumb:
+                break
+
+    if not crumb:
+        # 可能需要检查页面源码中是否有其他线索
+        # 检查是否有相关的JavaScript文件或模块包含crumb
+        import json
+        # 尝试在页面中查找可能包含crumb的script标签
+        script_matches = re.findall(r'<script[^>]*>(.*?)</script>', response_text, re.DOTALL)
+        for script in script_matches:
+            # 查找可能的crumb变量
+            if 'crumb' in script.lower():
+                # 尝试解析可能的JSON对象
+                try:
+                    # 寻找类似 "crumb": "value" 的模式
+                    inline_crumb_match = re.search(r'["\'\']crumb["\'\']\s*:\s*["\'\']([^"\'\']*)["\'\']',
+                                                   script)
+                    if inline_crumb_match:
+                        crumb = inline_crumb_match.group(1)
+                        logger.info(f"🔑 从内联脚本找到 crumb: {crumb[:10]}...")
+                        break
+                except:
+                    pass
+    return crumb
+
+
 def get_crumb(url, timeout) -> Optional[str]:
     # 尝试从页面中提取 crumb（Yahoo Finance 的认证令牌）
     # 根据实际测试，crumb存在于HTML页面中，而不是API响应中
@@ -108,47 +151,7 @@ def get_crumb(url, timeout) -> Optional[str]:
 
             if home_response.status_code == 200:
                 # Yahoo Finance crumb可能存在于多种格式中，尝试多种正则表达式
-                crumb_patterns = [
-                    r'"crumb":"([^"]+)"',  # 标准格式
-                    r'crumb["\'\s]{0,3}:["\'\s]{0,3}["\']([^"\']*)["\']',  # 冒号分隔格式
-                    r'crumb["\'\s]{0,3}=["\'\s]{0,3}["\']([^"\']*)["\']',  # 等号分隔格式
-                ]
-
-                response_text = home_response.text
-
-                for pattern in crumb_patterns:
-                    crumb_match = re.search(pattern, response_text)
-                    if crumb_match:
-                        # 确保捕获组有内容
-                        for i in range(1, len(crumb_match.groups()) + 1):
-                            if crumb_match.group(i):
-                                crumb = crumb_match.group(i)
-                                logger.info(f"🔑 找到 crumb: {crumb[:10]}...")
-                                break
-                        if crumb:
-                            break
-
-                if not crumb:
-                    logger.debug(f"在页面 {home_url} 中未找到 crumb")
-                    # 可能需要检查页面源码中是否有其他线索
-                    # 检查是否有相关的JavaScript文件或模块包含crumb
-                    import json
-                    # 尝试在页面中查找可能包含crumb的script标签
-                    script_matches = re.findall(r'<script[^>]*>(.*?)</script>', response_text, re.DOTALL)
-                    for script in script_matches:
-                        # 查找可能的crumb变量
-                        if 'crumb' in script.lower():
-                            # 尝试解析可能的JSON对象
-                            try:
-                                # 寻找类似 "crumb": "value" 的模式
-                                inline_crumb_match = re.search(r'["\'\']crumb["\'\']\s*:\s*["\'\']([^"\'\']*)["\'\']',
-                                                               script)
-                                if inline_crumb_match:
-                                    crumb = inline_crumb_match.group(1)
-                                    logger.info(f"🔑 从内联脚本找到 crumb: {crumb[:10]}...")
-                                    break
-                            except:
-                                pass
+                crumb = extract_crumb_from_html(home_response.text)
         except Exception as e:
             logger.warning(f"获取 crumb 失败: {e}, 继续使用原参数")
     return crumb

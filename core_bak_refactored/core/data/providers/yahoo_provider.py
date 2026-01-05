@@ -10,7 +10,7 @@ Yahoo Finance数据提供者 - 整合版
 - 代理配置和会话管理
 
 Note: 
-- 反爬虫和请求限流逻辑由 yfinance_http2_patch 处理
+- 反爬虫和请求限流逻辑由 yfinance_patch 处理
 - YahooFinanceDataProvider 仅负责代理配置和会话创建
 - 避免在两个地方重复实现相同的反爬虫逻辑
 
@@ -33,7 +33,7 @@ from core_bak_refactored.core.data.providers.base_provider import BaseDataProvid
 from core_bak_refactored.core.data.providers.protocols import (PriceData, TickRange, IntradayData, IntradayTickRecord,
                                                                OrderBookLevel)
 # 导入 HTTP/2 补丁
-from core_bak_refactored.core.data.providers.yfinance_http2_patch import patch_yfinance, _CURL_SESSION
+from core_bak_refactored.core.data.providers.yfinance_patch import patch_yfinance, _CURL_SESSION
 from core_bak_refactored.core.share.market.market_enums import TradingPhase
 from core_bak_refactored.core.share.market.market_time_utils import MarketTimeUtils
 from core_bak_refactored.core.share.market.market_utils import MarketUtils
@@ -119,7 +119,7 @@ class YahooFinanceDataProvider(BaseDataProvider):
                               period: str = 'daily') -> pd.DataFrame:
         """
         Note:
-        - 实际的请求限流逻辑在 yfinance_http2_patch 中处理
+        - 实际的请求限流逻辑在 yfinance_patch 中处理
         
         Args:
             symbol: 股票或指数代码
@@ -134,7 +134,7 @@ class YahooFinanceDataProvider(BaseDataProvider):
             raise RuntimeError("yfinance not available")
 
         try:
-            # Note: 请求限流和重试逻辑由 yfinance_http2_patch 处理
+            # Note: 请求限流和重试逻辑由 yfinance_patch 处理
             # 🔧 将 period 转换为 yfinance 的 interval 参数
             interval_map = {
                 'daily': '1d',
@@ -142,7 +142,7 @@ class YahooFinanceDataProvider(BaseDataProvider):
                 'monthly': '1mo'
             }
             interval = interval_map.get(period, '1d')
-            # Note: yfinance_http2_patch 补丁会拦截所有 yfinance 内部请求
+            # Note: yfinance_patch 补丁会拦截所有 yfinance 内部请求
             ticker_obj = self.yf.Ticker(self._map_to_yahoo(symbol),session=_CURL_SESSION)
             # history假设传入的时间是UTC时间，并将它转换为目标市场的时间，而我们实际
             # 传入的就是目标市场时间，所以会被错误地做了二次转换，因此要先转回UTC时间。
@@ -338,10 +338,10 @@ class YahooFinanceDataProvider(BaseDataProvider):
 
             logger.info(f"时间范围: {start_time} ~ {end_time}")
 
-            # Note: 请求限流和重试逻辑由 yfinance_http2_patch 处理
+            # Note: 请求限流和重试逻辑由 yfinance_patch 处理
 
             # 使用 yfinance 获取 1分钟数据
-            # Note: yfinance_http2_patch 补丁会拦截所有 yfinance 内部请求
+            # Note: yfinance_patch 补丁会拦截所有 yfinance 内部请求
             ticker_obj = self.yf.Ticker(self._map_to_yahoo(symbol),session=_CURL_SESSION)
 
             # Yahoo Finance 的 1m 数据最多只能获取 7 天
