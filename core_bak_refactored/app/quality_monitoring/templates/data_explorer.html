@@ -770,7 +770,7 @@ function updateChartData(data, events) {
                 // 使用 parseToMarketDateTime 正确解析时间字符串为市场时区Date对象
                 const marketDate = parseToMarketDateTime(dateStr)
                 // 使用 formatToMarketDateTime 格式化为标准日期字符串
-                dateStr = formatToMarketDateTime(marketDate)
+                dateStr = extractDateStr(formatToMarketDateTime(marketDate))
             }
             return { ...d, date: dateStr }
         })
@@ -1663,7 +1663,7 @@ function renderIndicator(data, klineZoom) {
             // 使用 parseToMarketDateTime 正确解析时间字符串为市场时区Date对象
             const marketDate = parseToMarketDateTime(dateStr)
             // 使用 formatToMarketDateTime 格式化为标准日期字符串
-            dateStr = formatToMarketDateTime(marketDate)
+            dateStr = extractDateStr(formatToMarketDateTime(marketDate))
         }
         return { ...d, date: dateStr }
     })
@@ -2359,7 +2359,7 @@ function renderKline(data, events) {
             // 使用 parseToMarketDateTime 正确解析时间字符串为市场时区Date对象
             const marketDate = parseToMarketDateTime(dateStr)
             // 使用 formatToMarketDateTime 格式化为标准日期字符串
-            dateStr = formatToMarketDateTime(marketDate)
+            dateStr = extractDateStr(formatToMarketDateTime(marketDate))
         }
         return { ...d, date: dateStr }
     })
@@ -3006,12 +3006,13 @@ function loadIntradayData(symbol, isInitial = true) {
             if (mode === 'mock') {
                 // 模拟模式：使用虚拟时间
                 newStartTime = lastRequestTime  // 从上次结束时间开始
-                newEndTime = currentTime  // 到当前虚拟时间
+                newEndTime = currentTime  
             } else {
-                // 🔧 真实模式：使用系统时间戳转换为格式化时间
-                const now = new Date()
-                const dateStr = now.toISOString().split('T')[0]  // YYYY-MM-DD
-                const timeStr = now.toTimeString().split(' ')[0]  // HH:MM:SS
+                // 🔧 真实模式：使用市场时间，而不是浏览器时间
+                // 应该从后端API获取准确的市场时间，暂时使用服务器时间
+                const marketDateTimeStr = formatToMarketDateTime(new Date())
+                const dateStr = extractDateStr(marketDateTimeStr)  // YYYY-MM-DD
+                const timeStr = extractTimeStr(marketDateTimeStr) // HH:MM:SS
                 newEndTime = `${dateStr} ${timeStr}`
 
                 // 如果有lastRequestTime，使用它；否则使用开盘时间
@@ -3078,8 +3079,8 @@ function loadIntradayData(symbol, isInitial = true) {
                     const lastTime = res.data.times[res.data.times.length - 1]
                     if (mode === 'real') {
                         // 真实模式：记录完整时间戳（日期+时间）
-                        const now = new Date()
-                        const dateStr = now.toISOString().split('T')[0]
+                        const marketDateTimeStr = formatToMarketDateTime(new Date())
+                        const dateStr = extractDateStr(marketDateTimeStr)  // YYYY-MM-DD
                         const lastRequestTime = `${dateStr} ${lastTime}`
                         IntradayChart.setRequestTime(lastRequestTime)
                     }
