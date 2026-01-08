@@ -29,7 +29,7 @@ class MockProvider(BaseDataProvider):
     def get_test_symbol(self) -> str:
         return "000300.SH"
     
-    def _fetch_from_external_api(self, symbol: str, start_date: pd.Timestamp, end_date: pd.Timestamp, period: str = 'daily'):
+    def _fetch_history_kline_from_external_api(self, symbol: str, start_date: pd.Timestamp, end_date: pd.Timestamp, period: str = 'daily'):
         """模拟外部API调用"""
         self.api_calls.append({
             'symbol': symbol,
@@ -327,7 +327,7 @@ class TestBaseProvider(unittest.TestCase):
         start = pd.Timestamp('2025-01-01')
         end = pd.Timestamp('2025-01-05')
         
-        result = self.provider._fetch_from_api(self.test_symbol, start, end, 'daily')
+        result = self.provider._fetch_from_external_api(self.test_symbol, start, end, 'daily')
         
         # 验证调用记录
         self.assertEqual(len(self.provider.api_calls), 1)

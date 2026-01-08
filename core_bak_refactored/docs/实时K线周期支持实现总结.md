@@ -74,6 +74,7 @@ GET   get_chart  Chart    Data
 **文件**：`app/quality_monitoring/api_service.py`
 
 **关键改动**：
+
 ```python
 @self.app.route('/api/v1/data/kline/realtime', methods=['GET'])
 def get_realtime_kline():
@@ -90,15 +91,15 @@ def get_realtime_kline():
     """
     index_id = request.args.get('index_id', type=str)
     period = request.args.get('period', default='daily', type=str)  # 🆕 新增
-    
+
     # 步骤1: 获取实时K线数据（日线维度）
-    realtime_kline = provider.get_realtime_kline(symbol=index_id)
-    
+    realtime_kline = provider._get_today_k_column(symbol=index_id)
+
     # 步骤2: 如果是周线/月线，需要合并到历史数据
     if period in ['weekly', 'monthly']:
         # 2.1 获取最后一个周期的历史数据
         price_data = provider.get_index_prices(index_id, start_date, end_date, current_time, period)
-        
+
         # 2.2 调用合并逻辑
         merged_price_data = provider.merge_realtime_kline_to_period(
             price_data=price_data,
@@ -106,7 +107,7 @@ def get_realtime_kline():
             period=period,
             current_time=current_time
         )
-        
+
         # 2.3 提取最后一个K柱返回给前端
         last_record = merged_price_data.records[-1]
         result = {
@@ -121,7 +122,7 @@ def get_realtime_kline():
     else:
         # 日线：直接返回实时K线
         result = realtime_kline
-    
+
     return jsonify({'status': 'success', 'data': result})
 ```
 

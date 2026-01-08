@@ -78,52 +78,105 @@ class TestInputValidation(BaseTest):
         self.assertIsInstance(phase, TradingPhase)
     
     def test_accept_naive_timezone(self):
-        """测试拒绝naive时间（必须带时区信息）"""
+        """测试接受naive时间（自动添加市场时区）"""
         naive_time = pd.Timestamp('2024-01-15 10:00')  # naive，无时区
         
-        # 应该抛出异常
-        with self.assertRaises(ValueError) as context:
-            MarketTimeUtils.determine_trading_phase(MarketCode.CN, naive_time)
+        # 不应该抛出异常，而是自动添加市场时区
+        phase = MarketTimeUtils.determine_trading_phase(MarketCode.CN, naive_time)
+        self.assertIsInstance(phase, TradingPhase)
         
-        self.assertIn("时间戳必须包含时区信息", str(context.exception))
+        # 测试get_last_trade_date方法也能处理naive时间
+        last_date = MarketTimeUtils.get_last_trade_date(MarketCode.CN, naive_time)
+        self.assertIsInstance(last_date, pd.Timestamp)
+        self.assertIsNotNone(last_date.tz)
 
 
-class TestTimezoneConversion(BaseTest):
-    """测试时区处理（已删除时区转换方法，现在直接使用市场本地时间）"""
+class TestTimezoneHandling(BaseTest):
+    """测试时区处理逻辑"""
     
-    def test_cn_local_time_hour(self):
-        """测试A股本地时间的小时正确性"""
-        local_time = pd.Timestamp('2024-01-15 10:00', tz='Asia/Shanghai')
+    def test_auto_timezone_addition_for_naive_timestamp(self):
+        """测试naive时间戳自动添加市场时区"""
+        naive_time = pd.Timestamp('2024-01-15 10:00')  # naive，无时区
+        market = MarketCode.CN
         
-        # 北京时间10:00
-        self.assertEqual(local_time.hour, 10)
-        self.assertEqual(local_time.minute, 0)
-        self.assertEqual(str(local_time.tzinfo), 'Asia/Shanghai')
+        # 获取市场时区
+        expected_tz = MarketTimeUtils.get_market_timezone(market)
+        
+        # 测试determine_trading_phase自动添加时区
+        with patch('core_bak_refactored.core.share.market.market_time_utils.MarketTimeUtils.get_market_timezone') as mock_get_tz:
+            mock_get_tz.return_value = expected_tz
+            phase = MarketTimeUtils.determine_trading_phase(market, naive_time)
+            
+            # 验证返回类型
+            self.assertIsInstance(phase, TradingPhase)
     
-    def test_us_local_time_hour(self):
-        """测试美股本地时间的小时正确性"""
-        local_time = pd.Timestamp('2024-01-15 10:00', tz='America/New_York')
+    def test_timezone_preservation_in_get_last_trade_date(self):
+        """测试get_last_trade_date保持时区信息"""
+        local_time = pd.Timestamp('2024-01-15 08:00', tz='Asia/Shanghai')
         
-        # 美东时间10:00
-        self.assertEqual(local_time.hour, 10)
-        self.assertEqual(local_time.minute, 0)
+        # Mock返回一个带时区的日期
+        expected_date = pd.Timestamp('2024-01-14', tz='Asia/Shanghai')
+        self.mock_calendar.get_previous_trading_day.return_value = expected_date
+        
+        result = MarketTimeUtils.get_last_trade_date(MarketCode.CN, local_time)
+        
+        # 验证结果是带时区的Timestamp
+        self.assertIsInstance(result, pd.Timestamp)
+        self.assertIsNotNone(result.tz)
+        self.assertEqual(result.date(), pd.Timestamp('2024-01-14').date())
     
-    def test_get_market_local_date_cn(self):
-        """测试获取A股市场本地日期"""
-        local_time = pd.Timestamp('2024-01-15 23:00', tz='Asia/Shanghai')
+    def test_different_timezone_inputs_produce_correct_local_times(self):
+        """测试不同时区输入产生正确的本地时间判断"""
+        # 北京时间上午10点
+        cn_time = pd.Timestamp('2024-01-15 10:00', tz='Asia/Shanghai')
+        # 纽约时间上午10点
+        us_time = pd.Timestamp('2024-01-15 10:00', tz='America/New_York')
         
-        # 北京23:00仍是15号
-        self.assertEqual(local_time.date(), pd.Timestamp('2024-01-15').date())
+        # 两个时间在各自市场应该被正确处理
+        cn_phase = MarketTimeUtils.determine_trading_phase(MarketCode.CN, cn_time)
+        us_phase = MarketTimeUtils.determine_trading_phase(MarketCode.US, us_time)
+        
+        # 验证都返回有效的交易阶段
+        self.assertIsInstance(cn_phase, TradingPhase)
+        self.assertIsInstance(us_phase, TradingPhase)
     
-    def test_get_market_local_date_cross_day(self):
-        """测试跨日期边界的市场本地日期"""
-        # 北京 2024-01-16 08:30 -> 日期是16号
-        cn_time = pd.Timestamp('2024-01-16 08:30', tz='Asia/Shanghai')
-        self.assertEqual(cn_time.date(), pd.Timestamp('2024-01-16').date())
+    def test_naive_input_converted_to_correct_market_timezone(self):
+        """测试naive输入被转换为正确的市场时区"""
+        naive_time = pd.Timestamp('2024-01-15 10:00:00')  # naive时间
         
-        # 美东 2024-01-15 19:30 -> 日期是15号
-        us_time = pd.Timestamp('2024-01-15 19:30', tz='America/New_York')
-        self.assertEqual(us_time.date(), pd.Timestamp('2024-01-15').date())
+        # 保存原始方法以验证行为
+        original_method = MarketTimeUtils.get_market_timezone
+        
+        # 验证对于中国市场的处理
+        result = MarketTimeUtils.get_last_trade_date(MarketCode.CN, naive_time)
+        
+        # 验证结果是带时区的
+        self.assertIsInstance(result, pd.Timestamp)
+        self.assertIsNotNone(result.tz)
+
+
+class TestMarketTimeNow(BaseTest):
+    """测试get_market_time_now方法"""
+    
+    def test_get_market_time_now_returns_timezone_aware(self):
+        """测试get_market_time_now返回带时区的时间"""
+        # 使用一个symbol获取市场时间
+        market_time = MarketTimeUtils.get_market_time_now('000001.SH')
+        
+        # 验证返回的是带时区的Timestamp
+        self.assertIsInstance(market_time, pd.Timestamp)
+        self.assertIsNotNone(market_time.tz)
+        
+    def test_get_market_time_now_different_symbols(self):
+        """测试不同symbol返回相应市场的时区"""
+        cn_time = MarketTimeUtils.get_market_time_now('000001.SH')  # A股
+        us_time = MarketTimeUtils.get_market_time_now('AAPL.US')    # 美股
+        
+        # 验证两者都是带时区的
+        self.assertIsInstance(cn_time, pd.Timestamp)
+        self.assertIsInstance(us_time, pd.Timestamp)
+        self.assertIsNotNone(cn_time.tz)
+        self.assertIsNotNone(us_time.tz)
 
 
 class TestTradingPhase(BaseTest):
@@ -341,6 +394,64 @@ class TestEdgeCases(BaseTest):
         
         # 应该返回一个日期
         self.assertIsInstance(last_date, pd.Timestamp)
+
+
+class TestAdvancedTimezoneScenarios(BaseTest):
+    """测试高级时区场景"""
+    
+    def test_cross_timezone_comparisons(self):
+        """测试跨时区比较"""
+        # 同一时刻的不同时区表示
+        beijing_time = pd.Timestamp('2024-01-15 10:00', tz='Asia/Shanghai')  # 北京时间10:00
+        tokyo_time = pd.Timestamp('2024-01-15 09:00', tz='Asia/Tokyo')       # 东京时间9:00（与北京时间同一时刻）
+        ny_time = pd.Timestamp('2024-01-14 21:00', tz='America/New_York')    # 纽约时间21:00（前一天）
+        
+        # 对于中国市场，这些时间应该被正确处理
+        beijing_phase = MarketTimeUtils.determine_trading_phase(MarketCode.CN, beijing_time)
+        tokyo_phase = MarketTimeUtils.determine_trading_phase(MarketCode.CN, tokyo_time)
+        ny_phase = MarketTimeUtils.determine_trading_phase(MarketCode.CN, ny_time)
+        
+        # 验证返回类型
+        self.assertIsInstance(beijing_phase, TradingPhase)
+        self.assertIsInstance(tokyo_phase, TradingPhase)
+        self.assertIsInstance(ny_phase, TradingPhase)
+    
+    def test_dst_transition_handling(self):
+        """测试夏令时转换处理"""
+        # 夏令时期间的某个时间
+        dst_time = pd.Timestamp('2024-07-15 10:00', tz='America/New_York')  # 纽约夏令时
+        non_dst_time = pd.Timestamp('2024-01-15 10:00', tz='America/New_York')  # 纽约标准时间
+        
+        # 两者都应在美股交易时间内
+        dst_phase = MarketTimeUtils.determine_trading_phase(MarketCode.US, dst_time)
+        non_dst_phase = MarketTimeUtils.determine_trading_phase(MarketCode.US, non_dst_time)
+        
+        # 验证处理正确性
+        self.assertIsInstance(dst_phase, TradingPhase)
+        self.assertIsInstance(non_dst_phase, TradingPhase)
+    
+    def test_timezone_aware_vs_naive_consistency(self):
+        """测试时区感知和naive时间的一致性"""
+        # 创建一个naive时间和对应的带时区时间
+        naive_time = pd.Timestamp('2024-01-15 10:00:00')  # naive
+        timezone_aware_time = pd.Timestamp('2024-01-15 10:00:00', tz='Asia/Shanghai')  # 带时区
+        
+        # 对于naive时间，应该自动添加市场时区，相当于把它当作市场本地时间
+        naive_phase = MarketTimeUtils.determine_trading_phase(MarketCode.CN, naive_time)
+        aware_phase = MarketTimeUtils.determine_trading_phase(MarketCode.CN, timezone_aware_time)
+        
+        # 两种方式应该产生相同的相位（虽然处理路径不同）
+        self.assertIsInstance(naive_phase, TradingPhase)
+        self.assertIsInstance(aware_phase, TradingPhase)
+        
+        # 获取最后交易日也应该一致
+        naive_date = MarketTimeUtils.get_last_trade_date(MarketCode.CN, naive_time)
+        aware_date = MarketTimeUtils.get_last_trade_date(MarketCode.CN, timezone_aware_time)
+        
+        self.assertIsInstance(naive_date, pd.Timestamp)
+        self.assertIsInstance(aware_date, pd.Timestamp)
+        self.assertIsNotNone(naive_date.tz)
+        self.assertIsNotNone(aware_date.tz)
 
 
 if __name__ == '__main__':

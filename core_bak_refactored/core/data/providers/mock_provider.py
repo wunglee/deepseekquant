@@ -91,7 +91,7 @@ class MockDataProvider(BaseDataProvider):
             price_data.needs_realtime_kline = False
             logger.warning("🎭 Mock模式未设置trading_phase，默认needs_realtime_kline=False")
 
-    def _fetch_from_external_api(self, symbol: str, start_date: pd.Timestamp, end_date: pd.Timestamp, period: str = 'daily'):
+    def _fetch_history_kline_from_external_api(self, symbol: str, start_date: pd.Timestamp, end_date: pd.Timestamp, period: str = 'daily'):
         """
         生成模拟历史K线数据
 

@@ -92,6 +92,9 @@ class ChartDataAssembler:
             if market_local_time is None:
                 market_local_time = MarketTimeUtils.get_market_time_now(index_id)
             
+            # 确保 market_local_time 带有正确的市场时区
+            market_local_time = MarketTimeUtils.to_market_time_by_symbol(market_local_time, index_id)
+            
             logger.info(f"开始组装图表数据: index_id={index_id}, period={period}, count={count}, before={before}")
             
             # 1. 获取K线数据（🔧 额外获取预热数据用于指标计算，返回 PriceData）
@@ -103,7 +106,7 @@ class ChartDataAssembler:
                 warmup_count = 10  # 周线：10周预热（约2.5个月）
             else:
                 warmup_count = 30  # 日线：30天预热（约1个月）
-            price_data_full = self._fetch_kline_data(index_id, period, count + warmup_count, before,market_local_time)
+            price_data_full = self._fetch_kline_data(index_id, period, count + warmup_count, before, market_local_time)
             
             # 🔧 关键修复：数据为空时直接返回空结果（无限滚动到头）
             if price_data_full is None or price_data_full.count == 0:
@@ -222,6 +225,9 @@ class ChartDataAssembler:
         """
         # 🔧 无限滚动处理：根据周期调整 end_date
         if before:
+            # 确保 before 带有正确的市场时区
+            before = MarketTimeUtils.to_market_time_by_symbol(before, index_id)
+            
             # before 已经是 pd.Timestamp 类型
             if period == 'monthly':
                 # 月线：往前推1个月（避免重复返回同一个月的数据）
@@ -237,10 +243,12 @@ class ChartDataAssembler:
             else:
                 # 日线：往前推1天
                 end_date = before - pd.Timedelta(days=1)
-            logger.info(f"🔄 无限滚动：before={before.strftime('%Y-%m-%d')}, period={period}, end_date={end_date.strftime('%Y-%m-%d')}")
+            logger.info(f"🔄 无限滚动：before={self._format_timestamp_safe(before)}, period={period}, end_date={self._format_timestamp_safe(end_date)}")
         else:
             # 初次加载：end_date = 今天（目标市场本地时间）
             end_date = MarketTimeUtils.get_market_time_now(index_id)
+            # 确保 end_date 带有正确的市场时区
+            end_date = MarketTimeUtils.to_market_time_by_symbol(end_date, index_id)
         
         # 🔧 根据周期调整查询范围，确保获取足够的数据点
         # 💡 关键：akshare等数据源可能限制历史数据范围，需要足够的冗余
@@ -261,6 +269,9 @@ class ChartDataAssembler:
             days_needed = count * 2
             start_date = end_date - pd.Timedelta(days=days_needed)
         
+        # 确保 start_date 带有正确的市场时区
+        start_date = MarketTimeUtils.to_market_time_by_symbol(start_date, index_id)
+        
         # 💚 直接调用 DataProvider，三层缓存已封装在内
         # 🔧 对于不支持直接查询的数据源（如 AKShare），会返回日线数据
         # 🔧 关键修复：传入 pd.Timestamp 类型（UTC时间）
@@ -278,6 +289,8 @@ class ChartDataAssembler:
             # 返回空 PriceData 对象，而非抛异常
             # 🔧 使用目标市场时间
             market_now = MarketTimeUtils.get_market_time_now(index_id)
+            # 确保 market_now 带有正确的市场时区
+            market_now = MarketTimeUtils.to_market_time_by_symbol(market_now, index_id)
             
             return price_data if price_data else PriceData(
                 records=[],
@@ -348,7 +361,7 @@ class ChartDataAssembler:
         # 组装K线数据（包含MA）
         for i, record in enumerate(price_data.records):
             kline_record = {
-                'date': record.date.strftime('%Y-%m-%d') if hasattr(record.date, 'strftime') else str(record.date),
+                'date': self._format_timestamp_safe(record.date),
                 'open': self._safe_float(record.open),
                 'high': self._safe_float(record.high),
                 'low': self._safe_float(record.low),
@@ -382,7 +395,7 @@ class ChartDataAssembler:
         """计算成交量指标（使用强类型 PriceData）"""
         return [
             {
-                'date': record.date.strftime('%Y-%m-%d') if hasattr(record.date, 'strftime') else str(record.date),
+                'date': self._format_timestamp_safe(record.date),
                 'value': self._safe_float(record.volume)
             }
             for record in price_data.records
@@ -413,7 +426,7 @@ class ChartDataAssembler:
             for i, record in enumerate(price_data.records):
                 # ⚠️ 关键：保留NaN转为null，让前端正确处理数据连续性
                 results.append({
-                    'date': record.date.strftime('%Y-%m-%d') if hasattr(record.date, 'strftime') else str(record.date),
+                    'date': self._format_timestamp_safe(record.date),
                     'macd': self._safe_float(macd.iloc[i] if hasattr(macd, 'iloc') else macd[i]),
                     'signal': self._safe_float(signal.iloc[i] if hasattr(signal, 'iloc') else signal[i]),
                     'histogram': self._safe_float(hist.iloc[i] if hasattr(hist, 'iloc') else hist[i])
@@ -443,7 +456,7 @@ class ChartDataAssembler:
             
             results = [
                 {
-                    'date': record.date.strftime('%Y-%m-%d') if hasattr(record.date, 'strftime') else str(record.date),
+                    'date': self._format_timestamp_safe(record.date),
                     'value': self._safe_float(rsi.iloc[i] if hasattr(rsi, 'iloc') else rsi[i])
                 }
                 for i, record in enumerate(price_data.records)
@@ -481,15 +494,13 @@ class ChartDataAssembler:
             
             results = [
                 {
-                    'date': record.date.strftime('%Y-%m-%d') if hasattr(record.date, 'strftime') else str(record.date),
+                    'date': self._format_timestamp_safe(record.date),
                     'k': self._safe_float(k.iloc[i] if hasattr(k, 'iloc') else k[i]),
                     'd': self._safe_float(d.iloc[i] if hasattr(d, 'iloc') else d[i]),
                     'j': self._safe_float(j.iloc[i] if hasattr(j, 'iloc') else j[i])
                 }
                 for i, record in enumerate(price_data.records)
             ]
-            
-            logger.debug(f"KDJ计算完成：{len(results)}条数据，前{self._count_leading_nulls(results, 'k')}条为null（正常）")
             return results
         except Exception as e:
             logger.warning(f"KDJ计算失败，返回空数据: {e}")
@@ -512,7 +523,7 @@ class ChartDataAssembler:
             
             results = [
                 {
-                    'date': record.date.strftime('%Y-%m-%d') if hasattr(record.date, 'strftime') else str(record.date),
+                    'date': self._format_timestamp_safe(record.date),
                     'value': self._safe_float(obv.iloc[i] if hasattr(obv, 'iloc') else obv[i])
                 }
                 for i, record in enumerate(price_data.records)
@@ -556,7 +567,7 @@ class ChartDataAssembler:
                 if pct_change <= -5.0:
                     severity = 'critical' if pct_change < -7 else 'high'
                     events.append({
-                        'date': record.date.strftime('%Y-%m-%d') if hasattr(record.date, 'strftime') else str(record.date),
+                        'date': self._format_timestamp_safe(record.date),
                         'type': 'market_crash',
                         'title': f'暴跌 {abs(pct_change):.2f}%',
                         'decline_pct': pct_change,
@@ -566,7 +577,7 @@ class ChartDataAssembler:
                     })
                 elif pct_change >= 5.0:
                     events.append({
-                        'date': record.date.strftime('%Y-%m-%d') if hasattr(record.date, 'strftime') else str(record.date),
+                        'date': self._format_timestamp_safe(record.date),
                         'type': 'rally',
                         'title': f'暴涨 {pct_change:.2f}%',
                         'rise_pct': pct_change,
@@ -591,6 +602,14 @@ class ChartDataAssembler:
             return float(value)
         except (ValueError, TypeError):
             return None
+    
+    @staticmethod
+    def _format_timestamp_safe(timestamp) -> str:
+        """安全格式化时间戳，避免NaT错误"""
+        if timestamp is not pd.NaT and timestamp is not None and hasattr(timestamp, 'strftime'):
+            return timestamp.strftime('%Y-%m-%d')
+        else:
+            return str(timestamp)
     
     @staticmethod
     def _count_leading_nulls(data: List[Dict], key: str) -> int:
@@ -639,7 +658,6 @@ class ChartDataAssembler:
             # - 首次加载（tick_range=None）：返回开盘到当前的全部数据
             # - 增量更新（tick_range有值）：只返回指定时间范围的增量数据
             intraday_data = self._data_provider.get_intraday_data(symbol, tick_range=tick_range)
-
             times = [tick.time for tick in intraday_data.ticks]
             prices = [tick.price for tick in intraday_data.ticks]
             volumes = [tick.volume for tick in intraday_data.ticks]

@@ -13,8 +13,8 @@ from typing import Optional
 import pandas as pd
 
 from core_bak_refactored.core.share.market.data_types import OHLCVRecord
-from core_bak_refactored.core.share.market.market_enums import MarketCode, TradingPhase
-from core_bak_refactored.core.share.market.market_time_utils import MarketTimeUtils
+from core_bak_refactored.core.share.market.market_enums import MarketCode
+
 
 logger = logging.getLogger(__name__)
 
@@ -285,7 +285,7 @@ class MarketUtils:
         """
         # 局部导入避免循环依赖
         from core_bak_refactored.core.data.providers.protocols import PriceData
-
+        from core_bak_refactored.core.share.market.market_time_utils import MarketTimeUtils
         if df is None or df.empty:
             # 空数据返回空的PriceData
             return PriceData(
@@ -327,6 +327,7 @@ class MarketUtils:
             end_date=end_date,
             count=len(records)
         )
+
 
     @staticmethod
     def is_index(symbol: str) -> bool:

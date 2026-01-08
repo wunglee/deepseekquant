@@ -32,7 +32,7 @@ class MockProviderTest(unittest.TestCase):
         start_date = '2024-01-02'
         end_date = '2024-01-05'
         
-        result = self.provider._fetch_from_external_api(symbol, start_date, end_date)
+        result = self.provider._fetch_history_kline_from_external_api(symbol, start_date, end_date)
         df = result.to_dataframe()
         
         # 验证数据条数和列名
@@ -51,7 +51,7 @@ class MockProviderTest(unittest.TestCase):
         start_date = '2024-01-05'  # 周五
         end_date = '2024-01-10'    # 周三
         
-        result = self.provider._fetch_from_external_api(symbol, start_date, end_date)
+        result = self.provider._fetch_history_kline_from_external_api(symbol, start_date, end_date)
         df = result.to_dataframe()
         
         # 验证跳过周末
@@ -68,7 +68,7 @@ class MockProviderTest(unittest.TestCase):
         start_date = '2024-01-02'
         end_date = '2024-01-10'
         
-        result = self.provider._fetch_from_external_api(symbol, start_date, end_date)
+        result = self.provider._fetch_history_kline_from_external_api(symbol, start_date, end_date)
         df = result.to_dataframe()
         
         for _, row in df.iterrows():
@@ -89,8 +89,8 @@ class MockProviderTest(unittest.TestCase):
         start_date = '2024-01-02'
         end_date = '2024-01-05'
         
-        result1 = self.provider._fetch_from_external_api(symbol, start_date, end_date)
-        result2 = self.provider._fetch_from_external_api(symbol, start_date, end_date)
+        result1 = self.provider._fetch_history_kline_from_external_api(symbol, start_date, end_date)
+        result2 = self.provider._fetch_history_kline_from_external_api(symbol, start_date, end_date)
         
         df1 = result1.to_dataframe()
         df2 = result2.to_dataframe()
@@ -224,7 +224,7 @@ class MockProviderTest(unittest.TestCase):
         today_str = today.strftime('%Y-%m-%d')
         start_date = (today - pd.Timedelta(days=10)).strftime('%Y-%m-%d')
         
-        price_data = self.provider._fetch_from_external_api(
+        price_data = self.provider._fetch_history_kline_from_external_api(
             '000300.SH', start_date, today_str, 'daily'
         )
         
@@ -243,7 +243,7 @@ class MockProviderTest(unittest.TestCase):
         today_str = today.strftime('%Y-%m-%d')
         start_date = (today - pd.Timedelta(days=10)).strftime('%Y-%m-%d')
         
-        price_data = self.provider._fetch_from_external_api(
+        price_data = self.provider._fetch_history_kline_from_external_api(
             '000300.SH', start_date, today_str, 'daily'
         )
         
@@ -262,7 +262,7 @@ class MockProviderTest(unittest.TestCase):
         today_str = today.strftime('%Y-%m-%d')
         start_date = (today - pd.Timedelta(days=10)).strftime('%Y-%m-%d')
         
-        price_data = self.provider._fetch_from_external_api(
+        price_data = self.provider._fetch_history_kline_from_external_api(
             '000300.SH', start_date, today_str, 'daily'
         )
         

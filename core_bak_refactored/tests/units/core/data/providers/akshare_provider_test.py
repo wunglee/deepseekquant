@@ -258,7 +258,7 @@ class TestAKShareIntradayHelperMethods(unittest.TestCase):
         self.provider.ak.stock_zh_a_hist_min_em = mock_ak_api
         
         # 调用方法（tick_range 参数为 None）
-        result = self.provider._fetch_real_intraday_from_akshare('000300.SH', pd.Timestamp('2023-01-01'), tick_range=None)
+        result = self.provider._fetch_real_intraday_from_external_api('000300.SH', pd.Timestamp('2023-01-01'), tick_range=None)
         
         # 验证结果：现在返回 DataFrame
         self.assertIsInstance(result, pd.DataFrame)
@@ -273,7 +273,7 @@ class TestAKShareIntradayHelperMethods(unittest.TestCase):
         # 调用方法（tick_range 参数为 None）
         # 新架构：空数据会抛出ValueError（数据不完整）
         with self.assertRaises(ValueError) as context:
-            result = self.provider._fetch_real_intraday_from_akshare('000300.SH', pd.Timestamp('2023-01-01'), tick_range=None)
+            result = self.provider._fetch_real_intraday_from_external_api('000300.SH', pd.Timestamp('2023-01-01'), tick_range=None)
         
         # 验证异常消息
         self.assertIn('数据不完整', str(context.exception))
@@ -572,7 +572,7 @@ class TradingPhaseBugTest(unittest.TestCase):
         trade_date = pd.Timestamp('2025-12-14')
         
         # 测试 AFTER_CLOSE
-        result = self.provider._generate_empty_data(
+        result = self.provider._generate_empty_pd_data(
             symbol
         )
         self.assertIsInstance(result, pd.DataFrame)
@@ -582,14 +582,14 @@ class TradingPhaseBugTest(unittest.TestCase):
         self.assertEqual(result.attrs['_init_info']['is_index'], True)
         
         # 测试 BEFORE_OPEN
-        result = self.provider._generate_empty_data(
+        result = self.provider._generate_empty_pd_data(
             symbol
         )
         self.assertIsInstance(result, pd.DataFrame)
         self.assertEqual(result.attrs['_init_info']['name'], '上证指数')
         
         # 测试 TRADING
-        result = self.provider._generate_empty_data(
+        result = self.provider._generate_empty_pd_data(
             symbol
         )
         self.assertIsInstance(result, pd.DataFrame)

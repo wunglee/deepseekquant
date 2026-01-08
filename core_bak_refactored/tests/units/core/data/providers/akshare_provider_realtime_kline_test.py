@@ -89,7 +89,7 @@ class AKShareProviderRealtimeKlineTest(unittest.TestCase):
                     with patch.object(self.provider, '_map_to_akshare', return_value='000001'):
                         with patch.object(self.provider.ak, 'stock_zh_a_hist_min_em', return_value=mock_minute_df):
                             # 执行方法
-                            result = self.provider.get_realtime_kline(symbol, test_time)
+                            result = self.provider._get_today_k_column(symbol, test_time)
 
         # 验证结果
         self.assertEqual(result['date'], '2025-12-16')
@@ -135,7 +135,7 @@ class AKShareProviderRealtimeKlineTest(unittest.TestCase):
             with patch.object(self.provider, '_set_to_memory_cache_obj') as mock_update_cache:
                 with patch.object(self.provider, '_map_to_akshare', return_value='000001'):
                     with patch.object(self.provider.ak, 'stock_zh_a_hist_min_em', return_value=mock_minute_df):
-                        result = self.provider.get_realtime_kline(symbol, test_time)
+                        result = self.provider._get_today_k_column(symbol, test_time)
 
         # 验证结果
         self.assertEqual(result['date'], '2025-12-16')
@@ -163,7 +163,7 @@ class AKShareProviderRealtimeKlineTest(unittest.TestCase):
         ]
 
         with patch.object(self.provider, '_fetch_realtime_order_book', return_value=(mock_bids, mock_asks)):
-            result = self.provider.get_realtime_kline(symbol, test_time)
+            result = self.provider._get_today_k_column(symbol, test_time)
 
         # 验证结果
         self.assertEqual(result['date'], '2025-12-16')
@@ -179,7 +179,7 @@ class AKShareProviderRealtimeKlineTest(unittest.TestCase):
         symbol = '000001.SZ'
         test_time = pd.Timestamp(2025, 12, 16, 16, 0, 0)  # 盘后时间
 
-        result = self.provider.get_realtime_kline(symbol, test_time)
+        result = self.provider._get_today_k_column(symbol, test_time)
 
         # 验证结果：盘后返回空数据，不轮询
         self.assertIsNone(result['date'])  # 盘后返回None
@@ -216,7 +216,7 @@ class AKShareProviderRealtimeKlineTest(unittest.TestCase):
 
         with patch.object(self.provider, 'get_intraday_data', return_value=mock_intraday):
             with patch.object(self.provider, '_get_from_memory_cache', return_value=None):
-                result = self.provider.get_realtime_kline(symbol, test_time)
+                result = self.provider._get_today_k_column(symbol, test_time)
 
         # 验证结果
         self.assertEqual(result['date'], '2025-12-16')
@@ -265,7 +265,7 @@ class AKShareProviderRealtimeKlineTest(unittest.TestCase):
                 with patch.object(self.provider, '_map_to_akshare', return_value='000001'):
                     # Mock akshare返回None（API失败）
                     with patch.object(self.provider.ak, 'stock_zh_a_hist_min_em', return_value=None):
-                        result = self.provider.get_realtime_kline(symbol, test_time)
+                        result = self.provider._get_today_k_column(symbol, test_time)
 
         # 验证结果：应该返回缓存数据
         self.assertEqual(result['date'], '2025-12-16')
@@ -303,7 +303,7 @@ class AKShareProviderRealtimeKlineTest(unittest.TestCase):
                                                        '最低': [99.5], '成交量': [1000], '成交额': [100000],
                                                        '振幅': [1.0], '涨跌幅': [1.01], '涨跌额': [1.0], '换手率': [0.5]})
                                 with patch.object(self.provider.ak, 'stock_zh_a_hist_min_em', return_value=mock_df):
-                                    result = self.provider.get_realtime_kline(symbol, test_time)
+                                    result = self.provider._get_today_k_column(symbol, test_time)
 
                 # 验证基本结构
                 self.assertIn('date', result)

@@ -461,12 +461,12 @@ class DataQualityAPIService:
                 period = request.args.get('period', 'daily')
                 count = request.args.get('count', 120, type=int)
                 before_str = request.args.get('before')  # K线日期（市场本地时间）
-                
+
                 # 🔧 before 是已获取的K线日期，本身就是市场本地时间，无需时区转换
                 before = None
                 if before_str:
                     try:
-                        before = pd.Timestamp(before_str)  # 直接使用，不转换时区
+                        before=MarketTimeUtils.to_market_time_by_symbol(pd.Timestamp(before_str), index_id)
                     except Exception as e:
                         return jsonify({
                             'status': 'error',
@@ -508,6 +508,8 @@ class DataQualityAPIService:
                     market_local_time=market_local_time
                 )
 
+                # 使用目标市场时区的时间戳
+                timestamp_with_tz = MarketTimeUtils.get_market_time_now(index_id)
                 return jsonify({
                     'status': 'success',
                     'data': chart_data,
@@ -518,7 +520,7 @@ class DataQualityAPIService:
                         'indicators': list(chart_data.get('indicators', {}).keys()),
                         'events_count': len(chart_data.get('events', []))
                     },
-                    'timestamp': pd.Timestamp.now().isoformat()
+                    'timestamp': timestamp_with_tz.isoformat()
                 })
 
             except ValueError as e:
@@ -608,8 +610,8 @@ class DataQualityAPIService:
 
                         # 转换为 TickRange 对象
                         tick_range = TickRange(
-                            start_time=pd.Timestamp(tick_range_dict['start_time']),
-                            end_time=pd.Timestamp(tick_range_dict['end_time']),
+                            start_time=MarketTimeUtils.to_market_time_by_symbol(pd.Timestamp(tick_range_dict['start_time']), symbol),
+                            end_time=MarketTimeUtils.to_market_time_by_symbol(pd.Timestamp(tick_range_dict['end_time']), symbol),
                             period_seconds=int(tick_range_dict['period_seconds'])
                         )
                     except (json.JSONDecodeError, ValueError) as e:
@@ -628,10 +630,12 @@ class DataQualityAPIService:
                     tick_range=tick_range
                 )
 
+                # 使用目标市场时区的时间戳
+                timestamp_with_tz = MarketTimeUtils.get_market_time_now(symbol)
                 return jsonify({
                     'status': 'success',
                     'data': intraday_data,
-                    'timestamp': pd.Timestamp.now().isoformat()
+                    'timestamp': timestamp_with_tz.isoformat()
                 })
 
             except ValueError as e:
@@ -1007,7 +1011,10 @@ class DataQualityAPIService:
                     {
                         'code': code,
                         'name': info.get('display_name', info.get('name', code)),  # 优先使用 display_name
-                        'icon': info.get('icon', '')
+                        'icon': info.get('icon', ''),
+                        'timezone': info.get('timezone', ''),  # 添加时区信息
+                        'currency': info.get('currency', ''),   # 添加货币信息
+                        'trading_hours': info.get('trading_hours', '')  # 添加交易时间信息
                     }
                     for code, info in market_registry.items()
                 ]
@@ -1213,6 +1220,8 @@ class DataQualityAPIService:
                 success = BaseDataProvider.delete_credentials(provider_id)
 
                 if success:
+                    # 使用中国市场时区的时间戳
+                    timestamp_with_tz = MarketTimeUtils.get_market_time_now('000001.SH')
                     return jsonify({
                         'status': 'success',
                         'message': f'{provider_id} 凭证已删除',
@@ -1518,10 +1527,12 @@ class DataQualityAPIService:
                 request_data = request.get_json() or {}
                 temp_credentials = request_data.get('credentials', {})
                 proxy_config = request_data.get('proxy', {})
-                test_symbol = request_data.get('test_symbol', 'AAPL')
+                test_symbol = request_data.get('test_symbol', 'AAPL.US')
                 # 🔧 统一使用 pd.Timestamp，不使用字符串日期
                 start_date = pd.to_datetime(request_data.get('start_date', '2023-01-01'))
+                start_date=MarketTimeUtils.to_market_time_by_symbol(start_date,test_symbol)
                 end_date = pd.to_datetime(request_data.get('end_date', '2023-12-31'))
+                end_date=MarketTimeUtils.to_market_time_by_symbol(end_date, test_symbol)
 
                 # 如果没有传入代理配置，则从系统配置中获取
                 if not proxy_config:
@@ -1545,14 +1556,14 @@ class DataQualityAPIService:
                 credentials = test_instance.credentials
 
                 # 执行测试
-                start_time = pd.Timestamp.now()
+                start_time = MarketTimeUtils.get_market_time_now(test_symbol)
                 test_data = test_instance.test_connection(
                     test_symbol=test_symbol,
                     start_date=start_date,
                     end_date=end_date
                 )
                 # 计算延迟（毫秒）
-                end_time = pd.Timestamp.now()
+                end_time = MarketTimeUtils.get_market_time_now(test_symbol)
                 latency_ms = round((end_time - start_time).total_seconds() * 1000, 2)
 
                 # 检查测试数据
@@ -1598,7 +1609,7 @@ class DataQualityAPIService:
                             'date_range': f'{start_date} to {end_date}',
                             'latency_ms': latency_ms
                         },
-                        'timestamp': pd.Timestamp.now().isoformat()
+                        'timestamp': MarketTimeUtils.get_market_time_now(test_symbol).isoformat()
                     }
 
                     # 测试成功后，保存凭证到文件
@@ -1919,9 +1930,8 @@ class DataQualityAPIService:
                 end_date_str = request.args.get('end_date', type=str)
                 if not all([index_id, start_date_str, end_date_str]):
                     return jsonify({'status': 'error', 'message': '缺少必要参数', 'error_code': 'MISSING_PARAMS'}), 400
-                # 🔧 统一使用 pd.Timestamp，不使用字符串日期
-                start_date = pd.to_datetime(start_date_str)
-                end_date = pd.to_datetime(end_date_str)
+                start_date =MarketTimeUtils.to_market_time_by_symbol(pd.to_datetime(start_date_str),index_id)
+                end_date = MarketTimeUtils.to_market_time_by_symbol(pd.to_datetime(end_date_str),index_id)
                 provider = getattr(self.quality_monitor, 'data_provider_config', None)
                 if not provider or not hasattr(provider, 'get_index_returns'):
                     return jsonify({'status': 'error', 'message': '数据提供者不可用',
@@ -1929,8 +1939,10 @@ class DataQualityAPIService:
                 series = provider.get_index_returns(index_id, start_date, end_date)
                 data = [{'date': str(idx), 'return': float(val)} for idx, val in
                         (series.items() if hasattr(series, 'items') else [])]
+                # 使用目标市场时区的时间戳
+                timestamp_with_tz = MarketTimeUtils.get_market_time_now(index_id)
                 return jsonify(
-                    {'status': 'success', 'data': data, 'count': len(data), 'timestamp': pd.Timestamp.now().isoformat()})
+                    {'status': 'success', 'data': data, 'count': len(data), 'timestamp': timestamp_with_tz.isoformat()})
             except Exception as e:
                 logger.error(f"获取指数收益率失败: {e}")
                 return jsonify({'status': 'error', 'message': str(e), 'error_code': 'INDEX_RETURNS_FETCH_FAILED'}), 500
@@ -1986,6 +1998,8 @@ class DataQualityAPIService:
                                                                                           'to_dict') else []
                 baseline_data = baseline_records.head(200).to_dict(orient='records') if hasattr(baseline_records,
                                                                                                 'to_dict') else []
+                # 使用目标市场时区的时间戳
+                timestamp_with_tz = MarketTimeUtils.get_market_time_now(index_id)
                 return jsonify({
                     'status': 'success',
                     'event_window': {'count': len(event_records) if hasattr(event_records, '__len__') else 0,
@@ -1993,7 +2007,7 @@ class DataQualityAPIService:
                     'baseline': {'count': len(baseline_records) if hasattr(baseline_records, '__len__') else 0,
                                  'samples': baseline_data},
                     'config': result.get('config', {}),
-                    'timestamp': pd.Timestamp.now().isoformat()
+                    'timestamp': timestamp_with_tz.isoformat()
                 })
             except Exception as e:
                 logger.error(f"获取事件窗口数据失败: {e}")
@@ -2026,6 +2040,7 @@ class DataQualityAPIService:
                 before = None
                 if before_str:
                     before = pd.Timestamp(before_str)
+                    before = MarketTimeUtils.to_market_time_by_symbol(before,index_id)
                     
                 if not index_id:
                     return jsonify({'status': 'error', 'message': '缺少index_id', 'error_code': 'MISSING_PARAMS'}), 400
@@ -2054,16 +2069,17 @@ class DataQualityAPIService:
                     market_local_time = MarketTimeUtils.get_market_time_now(index_id)
                     df = provider.get_index_prices(index_id, start_date, end_date, market_local_time)
                     if hasattr(df, 'empty') and df.empty:
-                        # 生产环境：真实数据为空时返回错误，不降级为Mock
+                        # 生产环境：真实数据为空时返回错误
                         return jsonify({'status': 'error', 'message': '无数据', 'error_code': 'NO_DATA'}), 404
                 except Exception as e:
                     logger.error(f"获取真实数据失败: {e}")
-                    # 生产环境：获取数据失败时返回错误，不降级为Mock
+                    # 生产环境：获取数据失败时返回错误
                     return jsonify({'status': 'error', 'message': f'数据获取失败: {str(e)}',
                                     'error_code': 'DATA_FETCH_FAILED'}), 500
 
                 # 处理真实数据：补齐OHLC、周期转换、事件检测
                 # 补齐OHLC
+                # TODO：待清理
                 if 'open' not in df.columns or 'high' not in df.columns or 'low' not in df.columns:
                     df = df.copy()
                     df['open'] = df['close'].shift(1).fillna(df['close'])
@@ -2071,6 +2087,7 @@ class DataQualityAPIService:
                     df['low'] = df['close'] * 0.995
 
                 # 周期转换
+                # TODO：待清理
                 df2 = df.copy()
                 df2['date'] = pd.to_datetime(df2['date'])
                 df2 = df2.set_index('date')
@@ -2087,6 +2104,7 @@ class DataQualityAPIService:
                 df2 = df2.tail(count)
 
                 # 事件检测（最小规则）
+                # TODO：待清理
                 try:
                     df2['pct_change'] = df2['close'].pct_change() * 100
                     events = []
@@ -2115,9 +2133,11 @@ class DataQualityAPIService:
                             record[key] = None
                         elif key == 'date' and hasattr(value, 'strftime'):
                             record[key] = value.strftime('%Y-%m-%d')
+                # 使用目标市场时区的时间戳
+                timestamp_with_tz = MarketTimeUtils.get_market_time_now(index_id)
                 return jsonify(
                     {'status': 'success', 'data': data, 'period': period, 'count': len(data), 'events': events,
-                     'timestamp': pd.Timestamp.now().isoformat()})
+                     'timestamp': timestamp_with_tz.isoformat()})
             except Exception as e:
                 logger.error(f"获取K线数据失败: {e}")
                 return jsonify({'status': 'error', 'message': str(e), 'error_code': 'KLINE_FETCH_FAILED'}), 500
@@ -2167,104 +2187,13 @@ class DataQualityAPIService:
                                     'error_code': 'DATA_PROVIDER_UNAVAILABLE'}), 503
 
                 try:
-                    # 🆕 步骤1: 获取实时K线数据（日线维度）
-                    realtime_kline = provider.get_realtime_kline(symbol=index_id)
-                    
-                    # 🆕 步骤2: 如果是周线/月线，需要合并到历史数据
-                    if period in ['weekly', 'monthly']:
-                        # 2.1 从缓存读取最后一个周期K柱（由第一个接口缓存）
-                        cache_key = f"last_period_bar_{index_id}_{period}"
-                        last_period_bar = provider._get_from_memory_cache(cache_key)
-                        
-                        if last_period_bar:
-                            # 2.2 使用缓存的最后一个K柱进行合并
-                            logger.info(f"💾 从缓存读取最后一个{period}K柱: date={last_period_bar['date']}")
-                            
-                            # 构造PriceData对象（只包含最后一个K柱）
-                            last_record = OHLCVRecord(
-                                date=pd.Timestamp(last_period_bar['date']),
-                                open=last_period_bar['open'],
-                                high=last_period_bar['high'],
-                                low=last_period_bar['low'],
-                                close=last_period_bar['close'],
-                                volume=last_period_bar['volume']
-                            )
-                            
-                            price_data = PriceData(
-                                records=[last_record],
-                                symbol=index_id,
-                                start_date=last_record.date,
-                                end_date=last_record.date,
-                                count=1
-                            )
-                            
-                            # 2.3 调用合并逻辑
-                            market_local_time = MarketTimeUtils.get_market_time_now(index_id)
-                            merged_price_data = provider.merge_realtime_kline_to_period(
-                                price_data=price_data,
-                                realtime_kline=realtime_kline,
-                                period=period,
-                                market_local_time=market_local_time
-                            )
-                            
-                            # 2.4 提取最后一个K柱返回给前端
-                            last_record = merged_price_data.records[-1]
-                            result = {
-                                'date': last_record.date.strftime('%Y-%m-%d'),
-                                'open': float(last_record.open),
-                                'high': float(last_record.high),
-                                'low': float(last_record.low),
-                                'close': float(last_record.close),
-                                'volume': int(last_record.volume),
-                                'should_poll': realtime_kline.get('should_poll', False)
-                            }
-                            logger.info(f"🔄 {period}线 - 使用缓存合并后返回: date={result['date']}, open={result['open']:.2f}, close={result['close']:.2f}")
-                        else:
-                            # 缓存中没有，需要查询历史数据（fallback机制）
-                            logger.warning(f"⚠️ {period}线 - 缓存未命中，需要查询历史数据")
-                            market_local_time = MarketTimeUtils.get_market_time_now(index_id)
-                            end_date = market_local_time
-                            start_date = end_date - pd.Timedelta(days=90)
-                            
-                            price_data: PriceData = provider.get_index_prices(
-                                index_id,
-                                start_date,
-                                end_date,
-                                market_local_time,
-                                period
-                            )
-                            
-                            if price_data and price_data.count > 0:
-                                merged_price_data = provider.merge_realtime_kline_to_period(
-                                    price_data=price_data,
-                                    realtime_kline=realtime_kline,
-                                    period=period,
-                                    market_local_time=market_local_time
-                                )
-                                
-                                last_record = merged_price_data.records[-1]
-                                result = {
-                                    'date': last_record.date.strftime('%Y-%m-%d'),
-                                    'open': float(last_record.open),
-                                    'high': float(last_record.high),
-                                    'low': float(last_record.low),
-                                    'close': float(last_record.close),
-                                    'volume': int(last_record.volume),
-                                    'should_poll': realtime_kline.get('should_poll', False)
-                                }
-                                logger.info(f"🔄 {period}线 - fallback合并后返回: date={result['date']}, open={result['open']:.2f}, close={result['close']:.2f}")
-                            else:
-                                # 没有历史数据时，返回原始实时数据
-                                result = realtime_kline
-                                logger.warning(f"⚠️ {period}线 - 无历史数据，返回原始实时K线")
-                    else:
-                        # 日线：直接返回实时K线
-                        result = realtime_kline
-
+                    result = provider.get_realtime_kline(index_id, period, provider)
+                    # 使用目标市场时区的时间戳
+                    timestamp_with_tz = MarketTimeUtils.get_market_time_now(index_id)
                     return jsonify({
                         'status': 'success',
                         'data': result,
-                        'timestamp': pd.Timestamp.now().isoformat()
+                        'timestamp': timestamp_with_tz.isoformat()
                     })
 
                 except Exception as e:
@@ -2276,6 +2205,7 @@ class DataQualityAPIService:
                 logger.error(f"处理实时K线请求失败: {e}", exc_info=True)
                 return jsonify(
                     {'status': 'error', 'message': str(e), 'error_code': 'REALTIME_KLINE_REQUEST_FAILED'}), 500
+
 
         # ============================================================
         # 错误处理中间件

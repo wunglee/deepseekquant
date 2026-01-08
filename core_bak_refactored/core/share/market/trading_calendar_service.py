@@ -22,6 +22,7 @@ from typing import Optional, List
 import pandas as pd
 
 from core_bak_refactored.core.share.market.market_enums import MarketCode
+from core_bak_refactored.core.share.market.market_time_utils import MarketTimeUtils
 
 logger = logging.getLogger(__name__)
 
@@ -126,14 +127,20 @@ class TradingCalendarService:
         if not isinstance(date, pd.Timestamp):
             raise TypeError("date must be pd.Timestamp")
 
-        # 缓存键
-        cache_key = f"{market_code}_{date.strftime('%Y-%m-%d')}"
+        # 确保日期包含市场时区，这将基于市场时区确定日期
+        date_with_market_tz = MarketTimeUtils.to_market_time(date, market_code)
+        
+        # 获取市场时区下的日期部分，保留时区信息
+        market_date = date_with_market_tz.normalize()
+
+        # 缓存键 - 使用市场时区下的日期
+        cache_key = f"{market_code}_{market_date.strftime('%Y-%m-%d')}"
         if cache_key in self._cache:
             return self._cache[cache_key]
 
         # 降级模式：仅判断周末
         if not self._available:
-            result = date.weekday() < 5  # 周一到周五
+            result = market_date.weekday() < 5  # 周一到周五
             self._cache[cache_key] = result
             return result
 
@@ -141,28 +148,29 @@ class TradingCalendarService:
         calendar = self._get_calendar(market_code)
         if calendar is None:
             # 回退到周末判断
-            result = date.weekday() < 5
+            result = market_date.weekday() < 5
             self._cache[cache_key] = result
             return result
 
         try:
             # 获取该日期所在月份的交易日
-            year = date.year
-            month = date.month
+            year = market_date.year
+            month = market_date.month
             schedule = calendar.schedule(
                 start_date=f'{year}-{month:02d}-01',
                 end_date=f'{year}-{month:02d}-{pd.Timestamp(year, month, 1).days_in_month}'
             )
 
-            # 检查日期是否在交易日列表中
-            date_str = date.normalize()
-            result = date_str in schedule.index
+            # 将日历返回的naive日期转换为带市场时区的日期进行比较
+            market_tz = MarketTimeUtils.get_market_timezone(market_code)
+            market_date_naive = market_date.tz_localize(None)
+            result = market_date_naive in schedule.index
 
             self._cache[cache_key] = result
             return result
         except Exception as e:
             logger.warning(f"交易日判断失败 ({market_code}, {date}): {e}，回退到周末判断")
-            result = date.weekday() < 5
+            result = market_date.weekday() < 5
             self._cache[cache_key] = result
             return result
 
@@ -193,15 +201,25 @@ class TradingCalendarService:
             raise TypeError("end_date must be pd.Timestamp")
         if not isinstance(start_date, pd.Timestamp):
             raise TypeError("start_date must be pd.Timestamp")
+        
+        # 确保日期包含市场时区，获取市场时区下的日期
+        start_date_with_tz = MarketTimeUtils.to_market_time(start_date, market_code)
+        end_date_with_tz = MarketTimeUtils.to_market_time(end_date, market_code)
+        
+        start_market_date = start_date_with_tz.normalize()
+        end_market_date = end_date_with_tz.normalize()
 
         # 降级模式：仅排除周末
         if not self._available:
             trading_days = []
-            current = start_date
-            while current <= end_date:
+            current = start_market_date
+            while current <= end_market_date:
                 if current.weekday() < 5:
-                    trading_days.append(current)
-                current += pd.Timedelta(days=1)
+                    # 添加市场时区
+                    timezone = MarketTimeUtils.get_market_timezone(market_code)
+                    trading_day = current.tz_localize(timezone)
+                    trading_days.append(trading_day)
+                current = current + pd.Timedelta(days=1)
             return trading_days
 
         # 使用交易日历
@@ -209,30 +227,41 @@ class TradingCalendarService:
         if calendar is None:
             # 回退到周末判断
             trading_days = []
-            current = start_date
-            while current <= end_date:
+            current = start_market_date
+            while current <= end_market_date:
                 if current.weekday() < 5:
-                    trading_days.append(current)
-                current += pd.Timedelta(days=1)
+                    # 添加市场时区
+                    timezone = MarketTimeUtils.get_market_timezone(market_code)
+                    trading_day = current.tz_localize(timezone)
+                    trading_days.append(trading_day)
+                current = current + pd.Timedelta(days=1)
             return trading_days
 
         try:
+            # 将带时区的日期转换为naive日期以与日历库交互
+            start_date_naive = start_market_date.tz_localize(None)
+            end_date_naive = end_market_date.tz_localize(None)
+            
             schedule = calendar.schedule(
-                start_date=start_date.strftime('%Y-%m-%d'),
-                end_date=end_date.strftime('%Y-%m-%d')
+                start_date=start_date_naive.strftime('%Y-%m-%d'),
+                end_date=end_date_naive.strftime('%Y-%m-%d')
             )
 
-            # 转换为 pd.Timestamp 列表
-            trading_days = [dt for dt in schedule.index]
+            # 转换为带时区的 pd.Timestamp 列表
+            timezone = MarketTimeUtils.get_market_timezone(market_code)
+            trading_days = [dt.tz_localize(timezone) for dt in schedule.index]
             return trading_days
         except Exception as e:
             logger.warning(f"获取交易日列表失败 ({market_code}): {e}，回退到周末判断")
             trading_days = []
-            current = start_date
-            while current <= end_date:
+            current = start_market_date
+            while current <= end_market_date:
                 if current.weekday() < 5:
-                    trading_days.append(current)
-                current += pd.Timedelta(days=1)
+                    # 添加市场时区
+                    timezone = MarketTimeUtils.get_market_timezone(market_code)
+                    trading_day = current.tz_localize(timezone)
+                    trading_days.append(trading_day)
+                current = current + pd.Timedelta(days=1)
             return trading_days
 
     def is_consecutive_trading_days(self, market_code: MarketCode,
@@ -267,15 +296,34 @@ class TradingCalendarService:
         if not isinstance(date2, pd.Timestamp):
             raise TypeError("date2 must be pd.Timestamp")
 
-        if date1 >= date2:
+        # 确保日期包含市场时区，获取市场时区下的日期
+        date1_with_tz = MarketTimeUtils.to_market_time(date1, market_code)
+        date2_with_tz = MarketTimeUtils.to_market_time(date2, market_code)
+        
+        date1_market_date = date1_with_tz.normalize()
+        date2_market_date = date2_with_tz.normalize()
+
+        if date1_market_date >= date2_market_date:
             return False
 
         # 获取两个日期之间的所有交易日
         trading_days = self.get_trading_days_between(market_code, date1, date2)
 
-        # 连续交易日：只有date1和date2两个交易日
-        if len(trading_days) == 2 and trading_days[0].date() == date1.date() and trading_days[1].date() == date2.date():
-            return True
+        # 连续交易日：只有date1和date2两个交易日，并且它们是实际的交易日
+        if len(trading_days) == 2:
+            # 将输入日期转换为日期部分进行比较，确保它们是实际的交易日
+            # 使用带时区日期的日期部分进行比较
+            date1_date_part = date1_market_date.tz_localize(None).date()
+            date2_date_part = date2_market_date.tz_localize(None).date()
+            day1_date_part = trading_days[0].normalize().tz_localize(None).date()
+            day2_date_part = trading_days[1].normalize().tz_localize(None).date()
+            
+            # 检查这两个交易日是否对应于输入的日期（按日期部分匹配）
+            # 并确保顺序正确（第一个交易日对应date1，第二个对应date2）
+            if (day1_date_part == date1_date_part and 
+                day2_date_part == date2_date_part and
+                day1_date_part <= day2_date_part):
+                return True
 
         return False
 
@@ -297,11 +345,25 @@ class TradingCalendarService:
         if not isinstance(date, pd.Timestamp):
             raise TypeError("date must be pd.Timestamp")
 
-        # 搜索未来30天
-        end_date = date + pd.Timedelta(days=30)
-        trading_days = self.get_trading_days_between(market_code, date + pd.Timedelta(days=1), end_date)
+        # 确保日期包含市场时区
+        date_with_tz = MarketTimeUtils.to_market_time(date, market_code)
 
-        return trading_days[0] if trading_days else None
+        # 搜索未来30天，基于市场时区的日期
+        search_date_with_tz = (date_with_tz + pd.Timedelta(days=1)).tz_convert(MarketTimeUtils.get_market_timezone(market_code))
+        end_date_with_tz = (date_with_tz + pd.Timedelta(days=30)).tz_convert(MarketTimeUtils.get_market_timezone(market_code))
+        
+        trading_days = self.get_trading_days_between(market_code, search_date_with_tz, end_date_with_tz)
+
+        if trading_days:
+            # 返回的第一个交易日应该带有市场时区
+            next_day = trading_days[0]
+            timezone = MarketTimeUtils.get_market_timezone(market_code)
+            if next_day.tzinfo is None:
+                next_day = next_day.tz_localize(timezone)
+            else:
+                next_day = next_day.tz_convert(timezone)
+            return next_day
+        return None
 
     def get_previous_trading_day(self, market_code: MarketCode,
                                  date: pd.Timestamp) -> Optional[pd.Timestamp]:
@@ -321,11 +383,25 @@ class TradingCalendarService:
         if not isinstance(date, pd.Timestamp):
             raise TypeError("date must be pd.Timestamp")
 
-        # 搜索过去30天
-        start_date = date - pd.Timedelta(days=30)
-        trading_days = self.get_trading_days_between(market_code, start_date, date - pd.Timedelta(days=1))
+        # 确保日期包含市场时区
+        date_with_tz = MarketTimeUtils.to_market_time(date, market_code)
 
-        return trading_days[-1] if trading_days else None
+        # 搜索过去30天，基于市场时区的日期
+        start_date_with_tz = (date_with_tz - pd.Timedelta(days=30)).tz_convert(MarketTimeUtils.get_market_timezone(market_code))
+        search_date_with_tz = (date_with_tz - pd.Timedelta(days=1)).tz_convert(MarketTimeUtils.get_market_timezone(market_code))
+        
+        trading_days = self.get_trading_days_between(market_code, start_date_with_tz, search_date_with_tz)
+
+        if trading_days:
+            # 返回的最后一个交易日应该带有市场时区
+            prev_day = trading_days[-1]
+            timezone = MarketTimeUtils.get_market_timezone(market_code)
+            if prev_day.tzinfo is None:
+                prev_day = prev_day.tz_localize(timezone)
+            else:
+                prev_day = prev_day.tz_convert(timezone)
+            return prev_day
+        return None
 
     def clear_cache(self):
         """清空缓存"""

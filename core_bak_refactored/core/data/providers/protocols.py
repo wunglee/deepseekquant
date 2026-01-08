@@ -148,114 +148,6 @@ class IntradayData:
             logger.warning(f"不支持的数据类型转换为 IntradayData: {type(data)}")
             return None
 
-    @classmethod
-    def from_akshare_df(cls, df: pd.DataFrame, symbol: str, trade_date: pd.Timestamp,
-                        interpolate_func=None) -> 'IntradayData':
-        """
-        从 AKShare 返回的 DataFrame 构建 IntradayData 对象
-        
-        AKShare DataFrame 格式：时间,开盘,收盘,最高,最低,成交量,成交额,振幅,涨跌幅,涨跌额,换手率
-        
-        Args:
-            df: AKShare 返回的 DataFrame
-            symbol: 证券代码
-            trade_date: 交易日期
-            interpolate_func: 插值函数（可选，用于将1分钟数据插值为5秒数据）
-        
-        Returns:
-            IntradayData 对象（不包含盘口和成交明细）
-        
-        注意：
-        - 本方法仅负责 DataFrame 到 IntradayData 的数据转换
-        - 盘口和成交明细为空，由调用方设置
-        """
-        from core_bak_refactored.core.share.market.market_utils import MarketUtils
-        import logging
-        logger = logging.getLogger(__name__)
-
-        # 获取股票名称
-        name_map = {
-            '000001.SH': '上证指数',
-            '000300.SH': '沪深300',
-            '399001.SZ': '深证成指',
-            '399006.SZ': '创业板指'
-        }
-        name = name_map.get(symbol, symbol)
-
-        # 处理空DataFrame（集合竞价时段等）
-        if df.empty:
-            yesterday_close = 0.0
-            ticks = []
-            current_price = 0.0
-            change = 0.0
-            change_percent = 0.0
-        else:
-            # 获取昨收价（从第一条数据推算）
-            if '涨跌额' in df.columns and '收盘' in df.columns:
-                first_close = float(df.iloc[0]['收盘'])
-                first_change = float(df.iloc[0].get('涨跌额', 0))
-                yesterday_close = first_close - first_change
-            else:
-                yesterday_close = float(df.iloc[0].get('收盘', 0)) * 0.99  # 估算
-
-            # 构建 ticks
-            ticks = []
-            total_volume = 0
-            total_amount = 0
-
-            for _, row in df.iterrows():
-                time_str = str(row['时间']).split(' ')[-1]  # 提取时间部分 HH:MM:SS
-                # 确保时间格式为 HH:MM:SS
-                if len(time_str) == 5:  # HH:MM
-                    time_str += ':00'
-                elif len(time_str) > 8:  # 可能包含毫秒，截断到秒
-                    time_str = time_str[:8]
-
-                price = float(row.get('收盘', row.get('最新价', 0)))
-                volume = int(row.get('成交量', 0))
-
-                total_volume += volume
-                total_amount += price * volume
-                avg_price = total_amount / total_volume if total_volume > 0 else price
-
-                ticks.append(IntradayTickRecord(
-                    time=time_str,
-                    price=round(price, 2),
-                    volume=volume,
-                    avg_price=round(avg_price, 2)
-                ))
-
-            # 插值：将1分钟数据插值为5秒数据（如果提供了插值函数）
-            if interpolate_func and ticks:
-                ticks = interpolate_func(ticks)
-                logger.info(f"📊 插值完成: {len(ticks)}个5秒粒度数据点")
-
-            # 当前价格
-            current_price = ticks[-1].price if ticks else yesterday_close
-            change = current_price - yesterday_close
-            change_percent = (change / yesterday_close * 100) if yesterday_close > 0 else 0
-
-        # 判断是否为指数
-        is_index = MarketUtils.is_index(symbol)
-
-        return cls(
-            symbol=symbol,
-            name=name,
-            current_price=round(current_price, 2),
-            yesterday_close=round(yesterday_close, 2),
-            change=round(change, 2),
-            change_percent=round(change_percent, 2),
-            ticks=ticks,
-            order_book_bids=[],  # 由调用方设置
-            order_book_asks=[],  # 由调用方设置
-            trade_records=[],  # 由调用方设置
-            trade_date=trade_date,
-            order_book_message='',  # 由调用方设置
-            trade_records_message='',  # 由调用方设置
-            is_index=is_index,
-            should_poll=False
-        )
-
 
 @dataclass
 class TickRange:
@@ -291,7 +183,7 @@ class TickRange:
 
     @classmethod
     def from_trading_phase(cls, trading_phase: 'TradingPhase', trade_date: pd.Timestamp,
-                          current_time: Optional[pd.Timestamp] = None) -> 'TickRange':
+                           current_time: Optional[pd.Timestamp] = None) -> 'TickRange':
         """
         根据交易时段创建 TickRange
         
@@ -433,6 +325,26 @@ class HistoricalDataProvider(ABC):
                 - count: int - 记录数量
             
         数据标准：与 get_index_prices 相同
+        """
+        pass
+
+    def get_realtime_kline(self, index_id, period, provider):
+        """
+        获取实时K线数据（指数）
+
+        Args:
+            index_id: 指数代码
+            period: K线周期
+            provider: 数据提供者实例
+
+        Returns:
+            DataFrame: 包含实时K线数据，列包括：
+                - date: pd.Timestamp 类型，交易日期时间
+                - open: float，开盘价
+                - high: float，最高价
+                - low: float，最低价
+                - close: float，收盘价
+                - volume: float，成交量
         """
         pass
 

@@ -234,7 +234,7 @@ class TushareDataProvider(BaseDataProvider):
         # 💚 由基类自动处理缓存
         return super().get_stock_prices(stock_id, start_date, end_date, market_local_time, period)
     
-    def _fetch_from_external_api(self, symbol: str, start_date: pd.Timestamp, end_date: pd.Timestamp, period: str = 'daily') -> PriceData:
+    def _fetch_history_kline_from_external_api(self, symbol: str, start_date: pd.Timestamp, end_date: pd.Timestamp, period: str = 'daily') -> PriceData:
         """
         从 Tushare API 获取数据（实现基类抽象方法）
         

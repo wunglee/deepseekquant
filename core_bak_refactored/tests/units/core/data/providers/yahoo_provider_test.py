@@ -131,7 +131,7 @@ class YahooFinanceDataProviderIntradayTest(unittest.TestCase):
     def test_generate_empty_intraday_data(self):
         """测试生成空分时数据对象"""
         trade_date = "2025-01-01"
-        result = self.provider._generate_empty_intraday_data(
+        result = self.provider._generate_empty_pd_data(
             symbol=self.test_symbol,
             trade_date=trade_date,
             should_poll=True
@@ -149,7 +149,7 @@ class YahooFinanceDataProviderIntradayTest(unittest.TestCase):
         
     def test_convert_yahoo_df_to_intraday(self):
         """测试将 Yahoo DataFrame 转换为 IntradayData"""
-        trade_date = "2025-01-01"
+        trade_date = pd.Timestamp("2025-01-01")
         
         # 创建测试数据
         mock_df = pd.DataFrame({
@@ -164,10 +164,11 @@ class YahooFinanceDataProviderIntradayTest(unittest.TestCase):
             pd.Timestamp("2025-01-01 09:40:00")
         ]))
         
-        result = self.provider._convert_yahoo_df_to_intraday(
+        result = self.provider._to_IntradayData(
             df=mock_df,
             symbol=self.test_symbol,
-            trade_date=trade_date
+            trade_date=trade_date,
+            interpolate_func=None
         )
         
         self.assertIsInstance(result, IntradayData)
@@ -223,7 +224,7 @@ class YahooFinanceDataProviderFetchHistoryTest(unittest.TestCase):
         start_date = pd.Timestamp('2023-01-01')
         end_date = pd.Timestamp('2023-01-31')
         with self.assertRaises(Exception):
-            self.provider._fetch_history_prices("INVALID_SYMBOL_12345", start_date, end_date)
+            self.provider._fetch_history_kline_form_external_api("INVALID_SYMBOL_12345", start_date, end_date)
             
     def test_fetch_history_prices_uses_yf_ticker(self):
         """验证_fetch_history_prices方法使用yf.Ticker"""
@@ -233,7 +234,7 @@ class YahooFinanceDataProviderFetchHistoryTest(unittest.TestCase):
         
         # 使用统一的补丁验证模式
         self._test_with_patch_verification(
-            self.provider._fetch_history_prices, 
+            self.provider._fetch_history_kline_form_external_api,
             "AAPL", start_date, end_date
         )
         
@@ -245,7 +246,7 @@ class YahooFinanceDataProviderFetchHistoryTest(unittest.TestCase):
         
         # 使用统一的补丁验证模式
         self._test_with_patch_verification(
-            self.provider._fetch_history_prices, 
+            self.provider._fetch_history_kline_form_external_api,
             "AAPL", start_date, end_date
         )
         
@@ -263,7 +264,7 @@ class YahooFinanceDataProviderFetchHistoryTest(unittest.TestCase):
         
         # 使用统一的补丁验证模式
         self._test_with_patch_verification(
-            self.provider._fetch_history_prices, 
+            self.provider._fetch_history_kline_form_external_api,
             "AAPL", start_date, end_date
         )
         
@@ -319,7 +320,7 @@ class YahooFinanceDataProviderPatchTest(unittest.TestCase):
         
         # 使用统一的补丁验证模式
         self._test_with_patch_verification(
-            self.provider._fetch_history_prices, 
+            self.provider._fetch_history_kline_form_external_api,
             "AAPL", start_date, end_date
         )
         
@@ -336,7 +337,7 @@ class YahooFinanceDataProviderPatchTest(unittest.TestCase):
             
             # 使用统一的补丁验证模式
             self._test_with_patch_verification(
-                provider._fetch_history_prices, 
+                provider._fetch_history_kline_form_external_api,
                 "AAPL", start_date, end_date
             )
             
@@ -348,7 +349,7 @@ class YahooFinanceDataProviderPatchTest(unittest.TestCase):
         
         # 使用统一的补丁验证模式
         self._test_with_patch_verification(
-            self.provider._fetch_history_prices, 
+            self.provider._fetch_history_kline_form_external_api,
             "INVALID_SYMBOL", start_date, end_date
         )
             
@@ -364,7 +365,7 @@ class YahooFinanceDataProviderPatchTest(unittest.TestCase):
         for period in periods:
             # 使用统一的补丁验证模式
             self._test_with_patch_verification(
-                self.provider._fetch_history_prices, 
+                self.provider._fetch_history_kline_form_external_api,
                 "AAPL", start_date, end_date, period=period
             )
 
