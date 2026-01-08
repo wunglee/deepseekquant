@@ -16,9 +16,7 @@
 import logging
 from datetime import time as dt_time
 import pandas as pd
-from numpy.f2py.auxfuncs import throw_error
 
-from core_bak_refactored.core.share.market import MarketUtils
 from core_bak_refactored.core.share.market.market_enums import MarketCode, TradingPhase
 
 logger = logging.getLogger(__name__)
@@ -97,8 +95,6 @@ class MarketTimeUtils:
             >>> MarketTimeUtils.get_market_time_now('AAPL.US')
             Timestamp('2024-01-15 10:30:00-05:00')
         """
-        from core_bak_refactored.core.share.market.market_utils import MarketUtils
-
         market_code = MarketTimeUtils.get_market_timezone_from_symbol(symbol)
         market_now = pd.Timestamp.now(tz=market_code)
         return market_now
@@ -375,5 +371,6 @@ class MarketTimeUtils:
         Returns:
             带有正确市场时区的时间戳
         """
+        from core_bak_refactored.core.share.market import MarketUtils
         market_code = MarketUtils.infer_market_from_symbol(symbol)
         return MarketTimeUtils.to_market_time(date_time, market_code)
