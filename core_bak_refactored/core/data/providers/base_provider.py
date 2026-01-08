@@ -411,9 +411,9 @@ class BaseDataProvider(HistoricalDataProvider):
                 # 🔧 尝试从外部获取last_trade_date的分时数据
                 logger.info(f"尝试直接从外部获取最后交易日的数据: {last_trade_date}")
                 try:
-                    start_time, end_time = self._get_range_start_end_string(symbol, tick_range, trade_date)
+                    start_time_str, end_time_str = self._get_range_start_end_string(symbol, tick_range, last_trade_date)
                     # 获取原始DataFrame
-                    df = self._fetch_real_intraday_from_external_api(symbol, start_time, end_time)
+                    df = self._fetch_real_intraday_from_external_api(symbol, start_time_str, end_time_str)
                     if df is not None:
                         # 构建 IntradayData（盘后不获取实时盘口）
                         intraday_data = self._build_intraday_data(
@@ -465,9 +465,9 @@ class BaseDataProvider(HistoricalDataProvider):
             logger.info(f"📊 真实数据模式 - 从 AKShare 获取 (phase={trading_phase.value})")
             try:
                 # 为当前请求临时修改AKShare的网络请求行为
-                start_time, end_time = self._get_range_start_end_string(symbol, tick_range, trade_date)
+                start_time_str, end_time_str = self._get_range_start_end_string(symbol, tick_range, trade_date)
                 # 获取原始DataFrame（传入current_time用于判断时间范围）
-                df = self._fetch_real_intraday_from_external_api(symbol, start_time, end_time)
+                df = self._fetch_real_intraday_from_external_api(symbol, start_time_str, end_time_str)
                 if df is not None:
                     if tick_range is None:
                         # 一个完整交易日应该有270分钟的数据（09:30-12:00 = 150分钟，13:00-15:00 = 120分钟）

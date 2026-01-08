@@ -23,7 +23,7 @@
 import logging
 from typing import List, Tuple, Optional, Dict
 import pandas as pd
-from pandas.tseries.offsets import DateOffset
+from pytz import tzinfo
 
 from core_bak_refactored.core.share.market.market_enums import MarketCode
 from core_bak_refactored.core.share.market.market_time_utils import MarketTimeUtils
@@ -107,7 +107,7 @@ class WindowsCache:
             # Daily窗口：按window_size天一个窗口
             # 窗口边界按固定周期长度对齐，不考虑交易日历
             # 修复：使用一个固定基准日期（如公元1年1月1日）来计算天数，避免跨年问题
-            base_date = pd.Timestamp('1970-01-01')  # 使用Unix纪元作为基准
+            base_date = MarketTimeUtils.to_market_time(pd.Timestamp('1970-01-01'),market_code)  # 使用Unix纪元作为基准
             days_from_base = (date - base_date).days
             window_index = days_from_base // window_size
 
@@ -128,7 +128,7 @@ class WindowsCache:
             
             # 计算窗口起始日期（该年第start_week周的周一）
             start_date = pd.to_datetime(f'{iso_year}-W{start_week:02d}-1', format='%G-W%V-%u')
-            
+            start_date=MarketTimeUtils.to_market_time(start_date,market_code)
             # 计算窗口结束日期（再window_size周后的周日）
             end_date = start_date + pd.Timedelta(weeks=window_size) - pd.Timedelta(days=1)
             
@@ -210,9 +210,9 @@ class WindowsCache:
             if window_key not in window_keys:
                 # 添加窗口键
                 window_keys.append(window_key)
-            
+            time_zone=MarketTimeUtils.get_market_timezone(market_code)
             # 获取当前窗口的结束日期
-            _, window_end = self._window_key_to_date_range(window_key, period)
+            _, window_end = self._window_key_to_date_range(window_key, period,time_zone)
             
             # 如果当前窗口的结束日期已经超过了总的结束日期，则结束循环
             if window_end >= end:
@@ -225,7 +225,7 @@ class WindowsCache:
         return sorted(list(set(window_keys)))  # 去重并排序
 
     @staticmethod
-    def _window_key_to_date_range(window_key: str, period: str) -> Tuple[pd.Timestamp, pd.Timestamp]:
+    def _window_key_to_date_range(window_key: str, period: str, time_zone: tzinfo) -> Tuple[pd.Timestamp, pd.Timestamp]:
         """
         将窗口键转换为日期范围
         
@@ -251,7 +251,6 @@ class WindowsCache:
             start_str, end_str = window_key.split('_')
             start_date = pd.to_datetime(start_str, format='%Y%m%d')
             end_date = pd.to_datetime(end_str, format='%Y%m%d')
-            return start_date, end_date
 
         elif period == 'weekly':
             # Weekly窗口格式: YYYY-Www_YYYY-Www (始终包含结束年份)
@@ -274,8 +273,6 @@ class WindowsCache:
 
             # 计算结束周的周日
             end_date = pd.to_datetime(f'{year_end}-W{week_end:02d}-7', format='%G-W%V-%u')
-
-            return start_date, end_date
 
         elif period == 'monthly':
             # Monthly窗口格式: YYYY-MM_YYYY-MM (始终包含结束年份)
@@ -301,11 +298,11 @@ class WindowsCache:
                 end_date = pd.Timestamp(year=year_end + 1, month=1, day=1) - pd.Timedelta(days=1)
             else:
                 end_date = pd.Timestamp(year=year_end, month=end_month + 1, day=1) - pd.Timedelta(days=1)
-
-            return start_date, end_date
-
         else:
             raise ValueError(f"不支持的 period: {period}")
+        start_date = start_date.tz_localize(time_zone)
+        end_date = end_date.tz_localize(time_zone)
+        return start_date, end_date
 
     @staticmethod
     def is_date_in_window(window_key: str, period: str, date: pd.Timestamp) -> bool:
@@ -320,21 +317,21 @@ class WindowsCache:
         Returns:
             True 如果是当前未完成窗口
         """
-        start_str, end_str = WindowsCache._window_key_to_date_range(window_key, period)
+        start_str, end_str = WindowsCache._window_key_to_date_range(window_key, period,date.tz)
         start_date = pd.to_datetime(start_str)
         end_date = pd.to_datetime(end_str)
 
         # 当前日期在窗口范围内，且窗口尚未结束
         return start_date <= date <= end_date
 
-    def merge_continuous_windows(self, window_keys: list, period: str, market_code: MarketCode) -> list:
+    def merge_continuous_windows(self, window_keys: list, period: str, time_zone: tzinfo) -> list:
         """
         合并连续的窗口键，减少网络请求次数
 
         Args:
             window_keys: 缺失窗口键列表 (已排序)
             period: 数据粒度
-            market_code: 市场代码，用于交易日历判断
+            time_zone: 市场时区
 
         Returns:
             合并后的连续范围列表，每个元素包含:
@@ -363,13 +360,13 @@ class WindowsCache:
             curr_key = sorted_keys[i]
 
             # 检查是否连续：下一个窗口紧跟上一个窗口
-            if self.is_consecutive_windows(prev_key, curr_key, period):
+            if self.is_consecutive_windows(prev_key, curr_key, period, time_zone):
                 # 连续，加入当前范围
                 current_range_windows.append(curr_key)
             else:
                 # 不连续，保存当前范围，开始新范围
-                range_start, _ = self._window_key_to_date_range(current_range_windows[0], period)
-                _, range_end = self._window_key_to_date_range(current_range_windows[-1], period)
+                range_start, _ = self._window_key_to_date_range(current_range_windows[0], period,time_zone)
+                _, range_end = self._window_key_to_date_range(current_range_windows[-1], period,time_zone)
                 merged_ranges.append({
                     'start': range_start,  # 已经是 pd.Timestamp 类型
                     'end': range_end,  # 已经是 pd.Timestamp 类型
@@ -378,8 +375,8 @@ class WindowsCache:
                 current_range_windows = [curr_key]
 
         # 添加最后一个范围
-        range_start, _ = self._window_key_to_date_range(current_range_windows[0], period)
-        _, range_end = self._window_key_to_date_range(current_range_windows[-1], period)
+        range_start, _ = self._window_key_to_date_range(current_range_windows[0], period,time_zone)
+        _, range_end = self._window_key_to_date_range(current_range_windows[-1], period,time_zone)
         merged_ranges.append({
             'start': range_start,  # 已经是 pd.Timestamp 类型，无需再次包装
             'end': range_end,      # 已经是 pd.Timestamp 类型，无需再次包装
@@ -388,7 +385,7 @@ class WindowsCache:
 
         return merged_ranges
 
-    def is_consecutive_windows(self, key1: str, key2: str, period: str) -> bool:
+    def is_consecutive_windows(self, key1: str, key2: str, period: str, time_zone: tzinfo) -> bool:
         """
         判断两个窗口是否连续（基于不同周期的判断逻辑）
 
@@ -409,8 +406,8 @@ class WindowsCache:
         if period == 'daily':
             # Daily周期：判断日期范围是否连续
             # 获取两个窗口的日期范围
-            _, end1 = self._window_key_to_date_range(key1, period)
-            start2, _ = self._window_key_to_date_range(key2, period)
+            _, end1 = self._window_key_to_date_range(key1, period,time_zone)
+            start2, _ = self._window_key_to_date_range(key2, period,time_zone)
 
             # 转换为pd.Timestamp对象
             end1_dt = pd.to_datetime(end1)
@@ -721,13 +718,13 @@ class WindowsCache:
         
         # 🔧 关键修复：actual_earliest_date 应该是整个数据集的最早日期，而不是窗口内的最早日期
         global_earliest_date = data['date'].min()
-        
+        time_zone = MarketTimeUtils.get_market_timezone(market_code)
         if len(reversed_window_keys) > 0:
             # range总是以周期为单位，所以range_start可能会早于from_data，例如range_start是周一，
             # 但from_data是周三，那么周一、周二的数据可能为空，不能因此判断周三之前是没有数据，
             # 以此判定符合“上市时间”的条件，因此，判定条件必须以from_data为准
             rang_from_date, _ = self._window_key_to_date_range(reversed_window_keys[len(reversed_window_keys) - 1],
-                                                               period)
+                                                               period,time_zone)
             if rang_from_date < from_date:
                 search_from_date = from_date
             else:
@@ -735,8 +732,8 @@ class WindowsCache:
             for idx, window_key in enumerate(reversed_window_keys):
                 if found_first_window:
                     break
-
-                window_start, window_end = self._window_key_to_date_range(window_key, period)
+                # 🔧 关键修复：添加时区信息
+                window_start, window_end = self._window_key_to_date_range(window_key, period,time_zone)
 
                 # 筛选该窗口的数据
                 window_data = data[(data['date'] >= window_start) & (data['date'] <= window_end)].copy()
