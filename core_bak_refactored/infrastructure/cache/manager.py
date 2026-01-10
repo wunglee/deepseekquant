@@ -122,8 +122,7 @@ class ThreeLayerCacheManager:
             logger.info(f"🔍 缺失 {len(missing_windows)} 个窗口，开始三层查询")
 
             # 🔧 关键优化：合并连续未命中窗口，减少网络请求次数
-            time_zone=MarketTimeUtils.get_market_timezone(market_code)
-            merged_ranges = self._window_cache.merge_continuous_windows(missing_windows, period, time_zone)
+            merged_ranges = self._window_cache.merge_continuous_windows(missing_windows, period)
             logger.info(f"🔧 合并后: {len(merged_ranges)} 个连续范围 (原 {len(missing_windows)} 个窗口)")
 
             # ⚠️ 工作区：for 循环自然结束时会触发 pandas/numpy 段错误，必须使用 break 显式退出

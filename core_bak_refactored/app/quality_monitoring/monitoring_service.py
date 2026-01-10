@@ -455,7 +455,7 @@ class QualityMonitoringService:
                     data = price_data  # 如果已经是 DataFrame
             except Exception as e:
                 # 如果真实数据获取失败，使用示例数据演示功能
-                logger.warning(f"真实数据获取失败，使用示例数据: {e}")
+                logger.warning(f"真实数据获取失败，{e}")
                 # 生成示例数据
                 import numpy as np
                 dates = pd.date_range(end=pd.Timestamp.now(), periods=100, freq='D')

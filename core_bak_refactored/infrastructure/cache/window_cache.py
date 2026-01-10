@@ -64,15 +64,13 @@ class WindowsCache:
         logger.info(
             f"✅ WindowsCache 初始化完成: cache_mode={cache_config.cache_mode}, window_size={self._window_size}[从配置加载]")
 
-    def _make_window_key(self, date: pd.Timestamp, period: str, market_code: Optional[MarketCode] = MarketCode.CN) -> \
-            Optional[str]:
+    def _make_window_key(self, date: pd.Timestamp, period: str) -> Optional[str]:
         """
         生成时间窗口键
         
         Args:
             date: 日期
             period: 数据粒度 (daily/weekly/monthly)
-            market_code: 市场代码
         
         Returns:
             窗口键字符串，如果窗口无效（调整后window_start > window_end）则返回None
@@ -87,17 +85,12 @@ class WindowsCache:
             >>> self._make_window_key(pd.Timestamp('2025-02-15'), 'monthly')
             '2025-01_03'  # 1月到3月 (3个月窗口)
         """
-        if not isinstance(market_code, MarketCode):
-            raise TypeError("market_code must be MarketCode")
-        if not isinstance(date, pd.Timestamp):
+        date_no_tz = date.tz_localize(None)
+        if not isinstance(date_no_tz, pd.Timestamp):
             raise TypeError("date must be pd.Timestamp")
 
-        # 默认为中国市场
-        if market_code is None:
-            market_code = MarketCode.CN
-
         # 创建缓存键：(日期, 周期, 市场代码)
-        cache_key = (date.strftime('%Y-%m-%d'), period, market_code)
+        cache_key = (date_no_tz.strftime('%Y-%m-%d'), period)
         if cache_key in self._window_key_cache:
             return self._window_key_cache[cache_key]
 
@@ -107,20 +100,21 @@ class WindowsCache:
             # Daily窗口：按window_size天一个窗口
             # 窗口边界按固定周期长度对齐，不考虑交易日历
             # 修复：使用一个固定基准日期（如公元1年1月1日）来计算天数，避免跨年问题
-            base_date = MarketTimeUtils.to_market_time(pd.Timestamp('1970-01-01'),market_code)  # 使用Unix纪元作为基准
-            days_from_base = (date - base_date).days
+            base_date = pd.Timestamp('1970-01-01')# 使用Unix纪元作为基准
+            current_date = date_no_tz
+            days_from_base = (current_date - base_date).days
             window_index = days_from_base // window_size
 
             # 计算窗口边界（从基准日期开始）
             window_start = base_date + pd.Timedelta(days=window_index * window_size)
-            window_end = window_start + pd.Timedelta(days=window_size - 1)
+            window_end = window_start + pd.Timedelta(days=window_size-1)
 
             result = f"{window_start.strftime('%Y%m%d')}_{window_end.strftime('%Y%m%d')}"
 
         elif period == 'weekly':
             window_size = self._window_size.get('weekly')
             # Weekly窗口：基于ISO周，window_size周一个窗口
-            iso_year, iso_week, _ = date.isocalendar()
+            iso_year, iso_week, _ = date_no_tz.isocalendar()
 
             # 计算窗口索引（从第1周开始，每window_size周一个窗口）
             window_index = (iso_week - 1) // window_size
@@ -128,7 +122,6 @@ class WindowsCache:
             
             # 计算窗口起始日期（该年第start_week周的周一）
             start_date = pd.to_datetime(f'{iso_year}-W{start_week:02d}-1', format='%G-W%V-%u')
-            start_date=MarketTimeUtils.to_market_time(start_date,market_code)
             # 计算窗口结束日期（再window_size周后的周日）
             end_date = start_date + pd.Timedelta(weeks=window_size) - pd.Timedelta(days=1)
             
@@ -143,7 +136,7 @@ class WindowsCache:
             # Monthly窗口：基于月份，window_size月一个窗口
             # 计算窗口索引（从1月开始，每window_size月一个窗口）
             # 修复：使用年份和月份的组合来计算窗口索引
-            total_months = (date.year - 1970) * 12 + date.month - 1  # 从基准年1970年开始计算月数
+            total_months = (date_no_tz.year - 1970) * 12 + date_no_tz.month - 1  # 从基准年1970年开始计算月数
             window_index = total_months // window_size
             start_month_offset = window_index * window_size
             start_year = 1970 + start_month_offset // 12
@@ -189,18 +182,19 @@ class WindowsCache:
             raise TypeError("start must be pd.Timestamp")
         if not isinstance(end, pd.Timestamp):
             raise TypeError("end must be pd.Timestamp")
-
-        if start > end:
+        start_no_tz=start.tz_localize(None)
+        end_no_tz=end.tz_localize(None)
+        if start_no_tz > end_no_tz:
             return []
 
         # 生成连续的窗口键，确保窗口之间连续且不重叠
         window_keys = []
         
         # 从起始日期开始生成第一个窗口
-        current_date = start
-        while current_date <= end:
+        current_date = start_no_tz
+        while current_date <= end_no_tz:
             # 为当前日期生成窗口
-            window_key = self._make_window_key(current_date, period, market_code)
+            window_key = self._make_window_key(current_date, period)
             if window_key is None:
                 # 如果无法生成窗口，跳到下一天继续尝试
                 current_date += pd.Timedelta(days=1)
@@ -210,12 +204,11 @@ class WindowsCache:
             if window_key not in window_keys:
                 # 添加窗口键
                 window_keys.append(window_key)
-            time_zone=MarketTimeUtils.get_market_timezone(market_code)
             # 获取当前窗口的结束日期
-            _, window_end = self._window_key_to_date_range(window_key, period,time_zone)
+            _, window_end = self._window_key_to_date_range(window_key, period)
             
             # 如果当前窗口的结束日期已经超过了总的结束日期，则结束循环
-            if window_end >= end:
+            if window_end >= end_no_tz:
                 break
             
             # 从当前窗口的结束日期的下一天开始
@@ -225,7 +218,7 @@ class WindowsCache:
         return sorted(list(set(window_keys)))  # 去重并排序
 
     @staticmethod
-    def _window_key_to_date_range(window_key: str, period: str, time_zone: tzinfo) -> Tuple[pd.Timestamp, pd.Timestamp]:
+    def _window_key_to_date_range(window_key: str, period: str) -> Tuple[pd.Timestamp, pd.Timestamp]:
         """
         将窗口键转换为日期范围
         
@@ -300,8 +293,6 @@ class WindowsCache:
                 end_date = pd.Timestamp(year=year_end, month=end_month + 1, day=1) - pd.Timedelta(days=1)
         else:
             raise ValueError(f"不支持的 period: {period}")
-        start_date = start_date.tz_localize(time_zone)
-        end_date = end_date.tz_localize(time_zone)
         return start_date, end_date
 
     @staticmethod
@@ -317,21 +308,20 @@ class WindowsCache:
         Returns:
             True 如果是当前未完成窗口
         """
-        start_str, end_str = WindowsCache._window_key_to_date_range(window_key, period,date.tz)
+        start_str, end_str = WindowsCache._window_key_to_date_range(window_key, period)
         start_date = pd.to_datetime(start_str)
         end_date = pd.to_datetime(end_str)
-
+        date_no_tz= date.tz_localize(None)
         # 当前日期在窗口范围内，且窗口尚未结束
-        return start_date <= date <= end_date
+        return start_date <= date_no_tz <= end_date
 
-    def merge_continuous_windows(self, window_keys: list, period: str, time_zone: tzinfo) -> list:
+    def merge_continuous_windows(self, window_keys: list, period: str) -> list:
         """
         合并连续的窗口键，减少网络请求次数
 
         Args:
             window_keys: 缺失窗口键列表 (已排序)
             period: 数据粒度
-            time_zone: 市场时区
 
         Returns:
             合并后的连续范围列表，每个元素包含:
@@ -360,13 +350,13 @@ class WindowsCache:
             curr_key = sorted_keys[i]
 
             # 检查是否连续：下一个窗口紧跟上一个窗口
-            if self.is_consecutive_windows(prev_key, curr_key, period, time_zone):
+            if self.is_consecutive_windows(prev_key, curr_key, period):
                 # 连续，加入当前范围
                 current_range_windows.append(curr_key)
             else:
                 # 不连续，保存当前范围，开始新范围
-                range_start, _ = self._window_key_to_date_range(current_range_windows[0], period,time_zone)
-                _, range_end = self._window_key_to_date_range(current_range_windows[-1], period,time_zone)
+                range_start, _ = self._window_key_to_date_range(current_range_windows[0], period)
+                _, range_end = self._window_key_to_date_range(current_range_windows[-1], period)
                 merged_ranges.append({
                     'start': range_start,  # 已经是 pd.Timestamp 类型
                     'end': range_end,  # 已经是 pd.Timestamp 类型
@@ -375,8 +365,8 @@ class WindowsCache:
                 current_range_windows = [curr_key]
 
         # 添加最后一个范围
-        range_start, _ = self._window_key_to_date_range(current_range_windows[0], period,time_zone)
-        _, range_end = self._window_key_to_date_range(current_range_windows[-1], period,time_zone)
+        range_start, _ = self._window_key_to_date_range(current_range_windows[0], period)
+        _, range_end = self._window_key_to_date_range(current_range_windows[-1], period)
         merged_ranges.append({
             'start': range_start,  # 已经是 pd.Timestamp 类型，无需再次包装
             'end': range_end,      # 已经是 pd.Timestamp 类型，无需再次包装
@@ -385,7 +375,7 @@ class WindowsCache:
 
         return merged_ranges
 
-    def is_consecutive_windows(self, key1: str, key2: str, period: str, time_zone: tzinfo) -> bool:
+    def is_consecutive_windows(self, key1: str, key2: str, period: str) -> bool:
         """
         判断两个窗口是否连续（基于不同周期的判断逻辑）
 
@@ -406,8 +396,8 @@ class WindowsCache:
         if period == 'daily':
             # Daily周期：判断日期范围是否连续
             # 获取两个窗口的日期范围
-            _, end1 = self._window_key_to_date_range(key1, period,time_zone)
-            start2, _ = self._window_key_to_date_range(key2, period,time_zone)
+            _, end1 = self._window_key_to_date_range(key1, period)
+            start2, _ = self._window_key_to_date_range(key2, period)
 
             # 转换为pd.Timestamp对象
             end1_dt = pd.to_datetime(end1)
@@ -522,26 +512,28 @@ class WindowsCache:
         Returns:
             bool: True表示是起始窗口
         """
+        search_from_date_no_tz=search_from_date.tz_localize(None)
+        actual_earliest_date_no_tz=actual_earliest_date.tz_localize(None)
         if period == 'daily':
             # 日周期：精确到交易日判断
             is_first = self._is_first_window_daily(window_start,
                                                    window_end,
-                                                   search_from_date,
-                                                   actual_earliest_date,
+                                                   search_from_date_no_tz,
+                                                   actual_earliest_date_no_tz,
                                                    market_code)
         elif period == 'weekly':
             # 周周期：精确到周判断
             is_first = self._is_first_window_weekly(window_start,
                                                     window_end,
-                                                    search_from_date,
-                                                    actual_earliest_date,
+                                                    search_from_date_no_tz,
+                                                    actual_earliest_date_no_tz,
                                                     market_code)
         elif period == 'monthly':
             # 月周期：精确到月判断
             is_first = self._is_first_window_monthly(window_start,
                                                      window_end,
-                                                     search_from_date,
-                                                     actual_earliest_date,
+                                                     search_from_date_no_tz,
+                                                     actual_earliest_date_no_tz,
                                                      market_code)
         else:
             # 未知周期，使用保守判断
@@ -563,17 +555,19 @@ class WindowsCache:
         2. 如果起始日期不是交易日，往前推到第一个交易日（更早）
         3. 判断：从起始交易日到最早数据日之间是否有数据
         """
-        from_trading_day = search_from_date
-        if window_start > search_from_date:
+        actual_earliest_date_no_tz=actual_earliest_date.tz_localize(None)
+        search_from_date_no_tz=search_from_date.tz_localize(None)
+        from_trading_day = search_from_date_no_tz
+        if window_start > search_from_date_no_tz:
             from_trading_day = window_start
         
         # 🔧 关键修复：如果不是交易日，往前推到第一个交易日（更早）
         if not self._calendar_service.is_trading_day(market_code, from_trading_day):
             prev_trading_day = self._calendar_service.get_previous_trading_day(market_code, from_trading_day)
             if prev_trading_day:
-                from_trading_day = prev_trading_day
+                from_trading_day = prev_trading_day.tz_localize(None)
 
-        is_first_window = from_trading_day < actual_earliest_date < window_end
+        is_first_window = from_trading_day < actual_earliest_date_no_tz < window_end
 
         if is_first_window:
             # found_first_window = True
@@ -599,9 +593,10 @@ class WindowsCache:
         - base_provider 已经过滤了"非交易周"的空数据
         - 保留的空数据周K线都是"有交易但无数据的周"（上市前）
         """
-
-        from_trading_day = search_from_date
-        if window_start > search_from_date:
+        actual_earliest_date_no_tz=actual_earliest_date.tz_localize(None)
+        search_from_date_no_tz=search_from_date.tz_localize(None)
+        from_trading_day = search_from_date_no_tz
+        if window_start > search_from_date_no_tz:
             from_trading_day = window_start
         
         # 🔧 关键修复：如果不是交易日，往前推到第一个交易日（更早）
@@ -616,7 +611,7 @@ class WindowsCache:
         from_year_week = (from_year, from_week)
         
         # 获取最早数据日期的 ISO 周号
-        actual_year, actual_week, _ = actual_earliest_date.isocalendar()
+        actual_year, actual_week, _ = actual_earliest_date_no_tz.isocalendar()
         actual_year_week = (actual_year, actual_week)
         
         # 获取当前窗口结束日期的 ISO 周号
@@ -634,7 +629,7 @@ class WindowsCache:
             logger.info(
                 f"🅰️ 检测到起始窗口（周线）: 查询从第 {from_week} 周开始，但数据从第 {actual_week} 周才有，中间存在有交易但无数据的周")
             logger.info(
-                f"   查询条件从 {search_from_date.strftime('%Y-%m-%d')}，数据源最早从 {actual_earliest_date.strftime('%Y-%m-%d')} 开始")
+                f"   查询条件从 {search_from_date_no_tz.strftime('%Y-%m-%d')}，数据源最早从 {actual_earliest_date_no_tz.strftime('%Y-%m-%d')} 开始")
         return is_first_window
 
     def _is_first_window_monthly(self, window_start: pd.Timestamp,
@@ -650,8 +645,10 @@ class WindowsCache:
         2. 如果起始日期不是交易日，往前推到第一个交易日（更早）
         3. 判断：查询开始月 < 最早数据月 <= 当前窗口
         """
-        from_trading_day = search_from_date
-        if window_start > search_from_date:
+        actual_earliest_date_no_tz=actual_earliest_date.tz_localize(None)
+        search_from_date_no_tz=search_from_date.tz_localize(None)
+        from_trading_day = search_from_date_no_tz
+        if window_start > search_from_date_no_tz:
             from_trading_day = window_start
         
         # 🔧 关键修复：如果不是交易日，往前推到第一个交易日（更早）
@@ -662,7 +659,7 @@ class WindowsCache:
         
         # 只比较年月，不比较具体日期
         from_year_month = (from_trading_day.year, from_trading_day.month)
-        actual_earliest_start_month = (actual_earliest_date.year, actual_earliest_date.month)
+        actual_earliest_start_month = (actual_earliest_date_no_tz.year, actual_earliest_date_no_tz.month)
         window_end_year_month = (window_end.year, window_end.month)
 
         is_first_window = from_year_month < actual_earliest_start_month <= window_end_year_month
@@ -670,7 +667,7 @@ class WindowsCache:
         if is_first_window:
             found_first_window = True
             logger.info(
-                f"🅰️ 检测到起始窗口: 月线，查询条件从 {search_from_date.strftime('%Y-%m-%d')}，但数据源最早从 {actual_earliest_date.strftime('%Y-%m-%d')} 开始")
+                f"🅰️ 检测到起始窗口: 月线，查询条件从 {search_from_date_no_tz.strftime('%Y-%m-%d')}，但数据源最早从 {actual_earliest_date_no_tz.strftime('%Y-%m-%d')} 开始")
         return is_first_window
 
     def distribute_data_to_windows(self, symbol: str, period: str, data: pd.DataFrame,
@@ -693,7 +690,7 @@ class WindowsCache:
             raise TypeError(f"from_date 必须是 pd.Timestamp 类型，当前类型: {type(from_date).__name__}")
         if not isinstance(market_code, MarketCode):
             raise TypeError(f"market_code 必须是 MarketCode 枚举，当前类型: {type(market_code).__name__}")
-        
+        from_date_no_tz = from_date.tz_localize(None)
         if data.empty:
             return
 
@@ -717,23 +714,22 @@ class WindowsCache:
         found_first_window = False
         
         # 🔧 关键修复：actual_earliest_date 应该是整个数据集的最早日期，而不是窗口内的最早日期
-        global_earliest_date = MarketTimeUtils.to_market_time_by_symbol(data['date'].min(),symbol)
-        time_zone = MarketTimeUtils.get_market_timezone(market_code)
+        global_earliest_date = data['date'].min()
         if len(reversed_window_keys) > 0:
             # range总是以周期为单位，所以range_start可能会早于from_data，例如range_start是周一，
             # 但from_data是周三，那么周一、周二的数据可能为空，不能因此判断周三之前是没有数据，
             # 以此判定符合“上市时间”的条件，因此，判定条件必须以from_data为准
             rang_from_date, _ = self._window_key_to_date_range(reversed_window_keys[len(reversed_window_keys) - 1],
-                                                               period,time_zone)
-            if rang_from_date < from_date:
-                search_from_date = from_date
+                                                               period)
+            if rang_from_date < from_date_no_tz:
+                search_from_date = from_date_no_tz
             else:
                 search_from_date = rang_from_date
             for idx, window_key in enumerate(reversed_window_keys):
                 if found_first_window:
                     break
                 # 🔧 关键修复：添加时区信息
-                window_start, window_end = self._window_key_to_date_range(window_key, period,time_zone)
+                window_start, window_end = self._window_key_to_date_range(window_key, period)
 
                 # 筛选该窗口的数据
                 window_data = data[(data['date'].values >= window_start.to_datetime64()) & (data['date'].values  <= window_end.to_datetime64())].copy()
@@ -773,7 +769,8 @@ class WindowsCache:
             current_window_keys: 当前查询涉及的窗口键列表（避免重复更新）
         """
         # 生成包含 actual_earliest_start 的窗口键
-        first_data_window_key = self._make_window_key(actual_earliest_start, period, market_code)
+        actual_earliest_start_no_tz=actual_earliest_start.tz_localize(None)
+        first_data_window_key = self._make_window_key(actual_earliest_start_no_tz, period)
 
         # 如果当前查询已经处理过这个窗口，无需回溯
         if first_data_window_key in current_window_keys:
@@ -796,14 +793,16 @@ class WindowsCache:
                                        period: str = "daily",
                                        current_time: pd.Timestamp = None):
         # ========== 第1步：生成所需的所有窗口键 ==========
-        window_keys = self._generate_window_keys(start_date, end_date, period, market_code)
+        start_date_no_tz=start_date.tz_localize(None)
+        end_date_no_tz=end_date.tz_localize(None)
+        window_keys = self._generate_window_keys(start_date_no_tz, end_date_no_tz, period, market_code)
         # ========== 第2步：从快速缓存获取已有窗口 ==========
         cached_windows = {}
         missing_windows = []
         first_window_key = None  # 记录起始窗口（最早数据）
         if current_time is None:
             current_time = MarketTimeUtils.get_market_time_now(symbol)
-        current_window_key = self._make_window_key(current_time, period, market_code)
+        current_window_key = self._make_window_key(current_time, period)
         for window_key in window_keys:
             cached_value = self._fast_cache.get(symbol, period, window_key)
             if cached_value is not None:
