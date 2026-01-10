@@ -31,11 +31,10 @@ import pandas as pd
 import yfinance as yf
 from core_bak_refactored.core.data.providers.base_provider import BaseDataProvider
 # 导入新的数据结构
-from core_bak_refactored.core.data.providers.protocols import (PriceData, TickRange, IntradayData, IntradayTickRecord,
+from core_bak_refactored.core.data.providers.protocols import (PriceData, IntradayData, IntradayTickRecord,
                                                                OrderBookLevel)
 # 导入 HTTP/2 补丁
 from core_bak_refactored.core.data.providers.yfinance_patch import patch_yfinance, _CURL_SESSION
-from core_bak_refactored.core.share.market.market_enums import TradingPhase
 from core_bak_refactored.core.share.market.market_time_utils import MarketTimeUtils
 from core_bak_refactored.core.share.market.market_utils import MarketUtils
 
@@ -156,10 +155,10 @@ class YahooFinanceDataProvider(BaseDataProvider):
             end_date = MarketTimeUtils.to_market_time_by_symbol(end_date, symbol)
             data = ticker_obj.history(start=start_date, end=end_date, interval=interval)
             # 检查数据是否有效
-            if data is not None and not data.empty:
-                logger.info(f"Successfully fetched {len(data)} rows for {symbol}")
+            if data is None or data.empty:
+                logger.info(f"⚠️ Yahoo 返回空数据{symbol}")
         except Exception as e:
-            logger.warning(f"Failed to fetch data for {symbol}: {e}")
+            logger.warning(f"Yahoo API调用失败 {symbol}: {e}")
             raise
         if data is None or data.empty:
             # 如果所有重试都失败了，抛出异常

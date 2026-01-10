@@ -502,7 +502,7 @@ class AKShareDataProvider(BaseDataProvider):
             return df
 
         except Exception as e:
-            logger.error(f"AKShare API调用失败: {e}")
+            logger.error(f"AKShare API调用失败{symbol}:{e}")
             raise
         finally:
             _clear_proxy(original_get, original_post, requests)
