@@ -154,24 +154,22 @@ class YahooFinanceDataProvider(BaseDataProvider):
             start_date = MarketTimeUtils.to_market_time_by_symbol(start_date, symbol)
             end_date = MarketTimeUtils.to_market_time_by_symbol(end_date, symbol)
             data = ticker_obj.history(start=start_date, end=end_date, interval=interval)
-            # 检查数据是否有效
-            if data is None or data.empty:
-                logger.info(f"⚠️ Yahoo 返回空数据{symbol}")
         except Exception as e:
             logger.warning(f"Yahoo API调用失败 {symbol}: {e}")
             raise
+        # 检查数据是否有效
         if data is None or data.empty:
-            # 如果所有重试都失败了，抛出异常
-            raise RuntimeError(f"Failed to fetch data for {symbol}")
-        try:
-            # 标准化数据格式
-            from core_bak_refactored.core.share.market.market_utils import MarketUtils
             standardized_data = MarketUtils.standardize_format_to_price_data(data, symbol)
-            logger.info(f"Successfully fetched {len(standardized_data.records)} records for {symbol}")
+            logger.info(f"Yahoo 返回空数据：{symbol}")
             return standardized_data
-        except Exception as e:
-            logger.error(f"Failed to standardized data for {symbol}: {e}")
-            raise ValueError(f"Failed to standardized data for {symbol}: {str(e)}")
+        else:
+            try:
+                standardized_data = MarketUtils.standardize_format_to_price_data(data, symbol)
+                logger.info(f"Successfully fetched {len(standardized_data.records)} records for {symbol}")
+                return standardized_data
+            except Exception as e:
+                logger.error(f"Failed to standardized data for {symbol}: {e}")
+                raise ValueError(f"Failed to standardized data for {symbol}: {str(e)}")
 
     def _fetch_real_intraday_from_external_api(self, symbol: str, start_time_str: str,
                                                end_time_str: str) -> pd.DataFrame:
@@ -213,8 +211,6 @@ class YahooFinanceDataProvider(BaseDataProvider):
 
         if df is None or df.empty:
             logger.warning(f"⚠️ Yahoo Finance 返回空数据: {symbol}")
-            # 返回空数据
-            logger.info(f"返回空数据对象（可能是盘后或节假日）")
             return df
 
         df = df[(df.index >= start_time) & (df.index <= end_time)]
@@ -319,7 +315,9 @@ class YahooFinanceDataProvider(BaseDataProvider):
         if not is_index:
             try:
                 ticker = yf.Ticker(self._map_to_yahoo(symbol), session=_CURL_SESSION)
-                if ticker.info:
+                if not ticker.info:
+                    logger.info(f"⚠️ Yahoo 返回空的盘口数据：{symbol}")
+                else:
                     info = ticker.info
                     bid_price = info.get('bid')
                     ask_price = info.get('ask')

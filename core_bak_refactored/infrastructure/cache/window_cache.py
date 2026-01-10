@@ -23,7 +23,6 @@
 import logging
 from typing import List, Tuple, Optional, Dict
 import pandas as pd
-from pytz import tzinfo
 
 from core_bak_refactored.core.share.market.market_enums import MarketCode
 from core_bak_refactored.core.share.market.market_time_utils import MarketTimeUtils
@@ -39,8 +38,6 @@ class WindowsCache:
 
     def __init__(self, redis_client=None):
         """初始化窗口管理器"""
-        # 添加内部缓存用于存储窗口键计算结果
-        self._window_key_cache = {}
         
         # 从配置文件加载缓存配置
         from core_bak_refactored.core.share.config_manager import ConfigManager
@@ -89,11 +86,6 @@ class WindowsCache:
         if not isinstance(date_no_tz, pd.Timestamp):
             raise TypeError("date must be pd.Timestamp")
 
-        # 创建缓存键：(日期, 周期, 市场代码)
-        cache_key = (date_no_tz.strftime('%Y-%m-%d'), period)
-        if cache_key in self._window_key_cache:
-            return self._window_key_cache[cache_key]
-
         result = None
         if period == 'daily':
             window_size = self._window_size.get('daily')
@@ -101,8 +93,7 @@ class WindowsCache:
             # 窗口边界按固定周期长度对齐，不考虑交易日历
             # 修复：使用一个固定基准日期（如公元1年1月1日）来计算天数，避免跨年问题
             base_date = pd.Timestamp('1970-01-01')# 使用Unix纪元作为基准
-            current_date = date_no_tz
-            days_from_base = (current_date - base_date).days
+            days_from_base = (date_no_tz - base_date).days
             window_index = days_from_base // window_size
 
             # 计算窗口边界（从基准日期开始）
@@ -150,9 +141,6 @@ class WindowsCache:
 
         else:
             raise ValueError(f"不支持的 period: {period}，必须是 'daily', 'weekly' 或 'monthly'")
-
-        # 缓存结果
-        self._window_key_cache[cache_key] = result
         return result
 
     def _generate_window_keys(self, start: pd.Timestamp, end: pd.Timestamp, period: str,
@@ -567,7 +555,7 @@ class WindowsCache:
             if prev_trading_day:
                 from_trading_day = prev_trading_day.tz_localize(None)
 
-        is_first_window = from_trading_day < actual_earliest_date_no_tz < window_end
+        is_first_window = from_trading_day < actual_earliest_date_no_tz <= window_end
 
         if is_first_window:
             # found_first_window = True
@@ -728,7 +716,6 @@ class WindowsCache:
             for idx, window_key in enumerate(reversed_window_keys):
                 if found_first_window:
                     break
-                # 🔧 关键修复：添加时区信息
                 window_start, window_end = self._window_key_to_date_range(window_key, period)
 
                 # 筛选该窗口的数据
@@ -806,7 +793,7 @@ class WindowsCache:
         for window_key in window_keys:
             cached_value = self._fast_cache.get(symbol, period, window_key)
             if cached_value is not None:
-                # 两种缓存现在都返回dict：{'data': df, 'is_first_window': bool, 'timestamp': float}
+                # 缓存返回dict：{'data': df, 'is_first_window': bool, 'timestamp': float}
                 cached_df = cached_value.get('data')
                 is_first = cached_value.get('is_first_window', False)
 
