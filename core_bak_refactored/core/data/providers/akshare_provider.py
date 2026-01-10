@@ -241,8 +241,8 @@ class AKShareDataProvider(BaseDataProvider):
             start_dt = pd.to_datetime(start_date)
             end_dt = pd.to_datetime(end_date)
             standardized_data = standardized_data[
-                (standardized_data['date'] >= start_dt) & (standardized_data['date'] <= end_dt)
-                ]
+                (standardized_data['date'].values >= start_dt.to_datetime64()) & (standardized_data['date'].values
+                                                                                  <= end_dt.to_datetime64())]
 
             # 🔧 关键修复：筛选后数据为空，返回空 PriceData（不是错误）
             if standardized_data.empty:
@@ -361,6 +361,9 @@ class AKShareDataProvider(BaseDataProvider):
                 # 🔧 A股指数：优先使用支持日期范围的 index_zh_a_hist API
                 # 移除市场前缀（index_zh_a_hist只需要纯数字代码）
                 pure_code = ak_symbol.replace('sh', '').replace('sz', '')
+                is_index = MarketUtils.is_index(pure_code)
+                if is_index:
+                    pure_code = pure_code[1:]
                 start_date_str = start_date.strftime('%Y%m%d')
                 end_date_str = end_date.strftime('%Y%m%d')
                 logger.debug(
@@ -396,23 +399,7 @@ class AKShareDataProvider(BaseDataProvider):
                 logger.debug(f"调用全球指数API: index_global_hist_em({ak_symbol})")
                 df = self.ak.index_global_hist_em(symbol=ak_symbol)
             else:
-                # 默认使用A股指数API
-                pure_code = ak_symbol.replace('sh', '').replace('sz', '')
-                start_date_str = start_date.strftime('%Y%m%d')
-                end_date_str = end_date.strftime('%Y%m%d')
-                logger.debug(
-                    f"默认调用A股指数API: index_zh_a_hist({pure_code})")
-                df = self.ak.index_zh_a_hist(
-                    symbol=pure_code,
-                    period='daily',
-                    start_date=start_date_str,
-                    end_date=end_date_str
-                )
-                column_mapping = {
-                    '日期': 'date', '开盘': 'open', '收盘': 'close',
-                    '最高': 'high', '最低': 'low', '成交量': 'volume'
-                }
-                df = df.rename(columns=column_mapping)
+                raise Exception(f"不支持的市场类型{market}")
         except Exception as e:
             logger.error(f"AKShare API调用失败 for {symbol_id} (market: {market.value}): {e}")
             # 提供更友好的错误信息

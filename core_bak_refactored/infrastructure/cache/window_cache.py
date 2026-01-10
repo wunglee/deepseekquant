@@ -576,7 +576,7 @@ class WindowsCache:
         is_first_window = from_trading_day < actual_earliest_date < window_end
 
         if is_first_window:
-            found_first_window = True
+            # found_first_window = True
             logger.info(
                 f"🅰️ 检测到起始窗口: 日线，查询条件从 {search_from_date.strftime('%Y-%m-%d')}，但数据源最早从 {actual_earliest_date.strftime('%Y-%m-%d')} 开始")
         return is_first_window
@@ -717,7 +717,7 @@ class WindowsCache:
         found_first_window = False
         
         # 🔧 关键修复：actual_earliest_date 应该是整个数据集的最早日期，而不是窗口内的最早日期
-        global_earliest_date = data['date'].min()
+        global_earliest_date = MarketTimeUtils.to_market_time_by_symbol(data['date'].min(),symbol)
         time_zone = MarketTimeUtils.get_market_timezone(market_code)
         if len(reversed_window_keys) > 0:
             # range总是以周期为单位，所以range_start可能会早于from_data，例如range_start是周一，
@@ -736,7 +736,7 @@ class WindowsCache:
                 window_start, window_end = self._window_key_to_date_range(window_key, period,time_zone)
 
                 # 筛选该窗口的数据
-                window_data = data[(data['date'] >= window_start) & (data['date'] <= window_end)].copy()
+                window_data = data[(data['date'].values >= window_start.to_datetime64()) & (data['date'].values  <= window_end.to_datetime64())].copy()
                 
                 if not window_data.empty:
                     # 使用全局最早日期，而不是窗口内的最早日期

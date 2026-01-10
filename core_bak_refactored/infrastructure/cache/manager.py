@@ -24,6 +24,7 @@ from core_bak_refactored.core.share.market.market_utils import MarketUtils
 from core_bak_refactored.core.share.market.trading_calendar_service import get_trading_calendar_service
 from .db import DBCache
 from .window_cache import WindowsCache
+from ...core.share.market.market_time_utils import MarketTimeUtils
 
 logger = logging.getLogger('DeepSeekQuant.ThreeLayerCacheManager')
 
@@ -121,7 +122,8 @@ class ThreeLayerCacheManager:
             logger.info(f"🔍 缺失 {len(missing_windows)} 个窗口，开始三层查询")
 
             # 🔧 关键优化：合并连续未命中窗口，减少网络请求次数
-            merged_ranges = self._window_cache.merge_continuous_windows(missing_windows, period, market_code)
+            time_zone=MarketTimeUtils.get_market_timezone(market_code)
+            merged_ranges = self._window_cache.merge_continuous_windows(missing_windows, period, time_zone)
             logger.info(f"🔧 合并后: {len(merged_ranges)} 个连续范围 (原 {len(missing_windows)} 个窗口)")
 
             # ⚠️ 工作区：for 循环自然结束时会触发 pandas/numpy 段错误，必须使用 break 显式退出
@@ -201,7 +203,8 @@ class ThreeLayerCacheManager:
                 result_df['date'] = pd.to_datetime(result_df['date'])
                 start_dt = pd.to_datetime(from_date)
                 end_dt = pd.to_datetime(to_date)
-                result_df = result_df[(result_df['date'] >= start_dt) & (result_df['date'] <= end_dt)]
+                result_df = result_df[(result_df['date'].values >= start_dt.to_datetime64()) & (result_df['date'].values
+                                                                                            <= end_dt.to_datetime64())]
         except Exception as e:
             logger.error(f"❌ 日期筛选失败: {e}", exc_info=True)
             raise
