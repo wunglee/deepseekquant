@@ -216,9 +216,7 @@ class YahooFinanceDataProvider(BaseDataProvider):
         return df
 
     def _map_to_yahoo(self, symbol: str) -> str:
-        if symbol.endswith(".US"):
-            return symbol[:-3]
-        return symbol
+        return symbol[:-3]
 
     def _to_IntradayData(self, df: pd.DataFrame, symbol: str, trade_date: pd.Timestamp,
                          interpolate_func=None) -> IntradayData:
