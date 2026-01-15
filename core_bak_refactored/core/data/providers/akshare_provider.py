@@ -23,10 +23,8 @@ pip install akshare
 - 支持更多市场和数据类型
 """
 
-import json
 import logging
-import os
-from typing import Any, Optional
+from typing import Optional
 
 import akshare as ak
 import pandas as pd
@@ -35,11 +33,9 @@ from core_bak_refactored.core.data.providers.base_provider import BaseDataProvid
 from core_bak_refactored.core.data.providers.protocols import (PriceData,
                                                                IntradayData,
                                                                OrderBookLevel, TradeDetailRecord, IntradayTickRecord)
-from core_bak_refactored.core.data.providers.protocols import TickRange
 from core_bak_refactored.core.share.config_manager import ConfigManager
 from core_bak_refactored.core.share.market import MarketUtils
-from core_bak_refactored.core.share.market.market_time_utils import MarketTimeUtils
-from core_bak_refactored.core.share.market.market_enums import MarketCode, TradingPhase
+from core_bak_refactored.core.share.market.market_enums import MarketCode
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +78,6 @@ class AKShareDataProvider(BaseDataProvider):
 
         self.ak = None
         self.available = False
-        self._load_us_symbol_mapping()
         self._initialize()
         self.config_manager = ConfigManager()
 
@@ -92,43 +87,6 @@ class AKShareDataProvider(BaseDataProvider):
     def get_test_symbol(self) -> str:
         """获取测试符号"""
         return '000300.SH'  # 沪深300指数
-
-    def _load_us_symbol_mapping(self):
-        """加载美股符号映射配置"""
-        try:
-            config_path = os.path.join(
-                os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))),
-                'config',
-                'us_symbol_mapping.json')
-            with open(config_path, 'r', encoding='utf-8') as f:
-                config = json.load(f)
-                self.us_symbol_mapping = config.get('us_symbol_mapping', {})
-            logger.info(f"Loaded US symbol mapping with {len(self.us_symbol_mapping)} entries")
-        except Exception as e:
-            logger.warning(f"Failed to load US symbol mapping: {e}, using empty mapping")
-            self.us_symbol_mapping = {}
-
-    def _us_symbol_to_chinese(self, us_symbol: str) -> str:
-        """
-        将美股代码转换为AKShare全球指数API所需的中文名称
-
-        Args:
-            us_symbol: 美股代码（如 '^GSPC'）
-
-        Returns:
-            中文指数名称（如 '标普500'）或去掉前缀'^'的原始字符
-        """
-        # 从配置文件读取映射表
-        chinese_name = self.us_symbol_mapping.get(us_symbol)
-        if chinese_name:
-            return chinese_name
-
-        # 如果配置文件中没有找到映射，返回去掉前缀'^'的原始字符
-        if us_symbol.startswith('^'):
-            return us_symbol[1:]
-
-        # 其他情况直接返回原始字符
-        return us_symbol
 
     def _initialize(self):
         """初始化AKShare模块"""
@@ -275,9 +233,9 @@ class AKShareDataProvider(BaseDataProvider):
             # 更详细的错误信息，帮助调试
             raise ValueError(f"Failed to fetch data for {symbol}: {str(e)}") from e
 
-    def _map_to_akshare(self, symbol: str, with_market_prefix: bool = True) -> str:
+    def _map_to_akshare_for_china_A(self, symbol: str, with_market_prefix: bool = False) -> str:
         """
-        映射代码到AKShare格式（基于规则自动转换）
+        中国A股映射代码到AKShare格式（基于规则自动转换）
 
         Args:
             symbol: 统一代码
@@ -287,16 +245,8 @@ class AKShareDataProvider(BaseDataProvider):
             AKShare API所需的代码格式
 
         转换规则：
-        1. A股指数/个股：
-           - with_market_prefix=True: '000300.SH' → 'sh000300'，'399001.SZ' → 'sz399001'
-           - with_market_prefix=False: '000300.SH' → '000300'，'399001.SZ' → '399001'
-        2. 港股指数：'HSI' → 'HSI'（保持原样）
-        3. 美股指数：'^GSPC' → '标普500'（AKShare全球指数API需要中文名）
-
-        设计原则：
-        - 不维护写死的股票代码映射表
-        - 基于代码格式规则进行自动转换
-        - 快捷映射表仅为性能优化，非必需
+       - with_market_prefix=True: '000300.SH' → 'sh000300'，'399001.SZ' → 'sz399001'
+       - with_market_prefix=False: '000300.SH' → '000300'，'399001.SZ' → '399001'
 
         不同API的格式要求：
         - stock_zh_a_hist_min_em（分时数据）：需要纯数字，with_market_prefix=False
@@ -312,12 +262,6 @@ class AKShareDataProvider(BaseDataProvider):
         if symbol.endswith('.SZ'):
             code = symbol[:-3]  # 移除 .SZ 后缀
             return ('sz' + code) if with_market_prefix else code
-
-        # 美股指数：自动转换 ^开头 → 中文名称
-        if symbol.endswith('.US') and symbol.startswith('^'):
-            return self._us_symbol_to_chinese(symbol)
-
-        # 其他：直接返回（港股、其他市场）
         return symbol
 
     def _fetch_history_df_from_external_api(self,
@@ -342,10 +286,6 @@ class AKShareDataProvider(BaseDataProvider):
 
         🔧 优先使用支持日期范围的API（如index_zh_a_hist）
         """
-        # 映射代码
-        ak_symbol = self._map_to_akshare(symbol_id)
-        logger.info(f"Fetching data for {symbol_id} (mapped to {ak_symbol})")
-
         # 使用领域层工具推断市场（使用文件顶部的全局导入）
         market = MarketUtils.infer_market_from_symbol(symbol_id)
 
@@ -360,6 +300,9 @@ class AKShareDataProvider(BaseDataProvider):
             if market == MarketCode.CN:
                 # 🔧 A股指数：优先使用支持日期范围的 index_zh_a_hist API
                 # 移除市场前缀（index_zh_a_hist只需要纯数字代码）
+                ak_symbol = self._map_to_akshare_for_china_A(symbol_id, with_market_prefix=True)
+                # 映射代码
+                logger.info(f"Fetching data for {symbol_id} (mapped to {ak_symbol})")
                 pure_code = ak_symbol.replace('sh', '').replace('sz', '')
                 is_index = MarketUtils.is_index(pure_code)
                 if is_index:
@@ -390,14 +333,6 @@ class AKShareDataProvider(BaseDataProvider):
                     '换手率': 'turnover'
                 }
                 df = df.rename(columns=column_mapping)
-            elif market == MarketCode.HK:
-                # 港股指数API
-                logger.debug(f"调用港股指数API: stock_hk_index_daily_em({ak_symbol})")
-                df = self.ak.stock_hk_index_daily_em(symbol=ak_symbol)
-            elif market == MarketCode.US:
-                # 美股/全球指数API
-                logger.debug(f"调用全球指数API: index_global_hist_em({ak_symbol})")
-                df = self.ak.index_global_hist_em(symbol=ak_symbol)
             else:
                 raise Exception(f"不支持的市场类型{market}")
         except Exception as e:
@@ -410,7 +345,6 @@ class AKShareDataProvider(BaseDataProvider):
         finally:
             _clear_proxy(original_get, original_post, requests)
             return df
-
 
     def _config_proxy(self):
         import requests
@@ -440,7 +374,7 @@ class AKShareDataProvider(BaseDataProvider):
     # _standardize_format method has been moved to MarketUtils.standardize_format
 
     def _fetch_today_k_column_from_external_api(self, market_local_time, symbol):
-        ak_symbol = self._map_to_akshare(symbol, with_market_prefix=False)
+        ak_symbol = self._map_to_akshare_for_china_A(symbol)
         current_time_str = market_local_time.strftime('%Y-%m-%d %H:%M:%S')
         df = self.ak.stock_zh_a_hist_min_em(
             symbol=ak_symbol,
@@ -467,33 +401,14 @@ class AKShareDataProvider(BaseDataProvider):
         original_get, original_post, requests = self._config_proxy()
         if not self.available or self.ak is None:
             raise RuntimeError("AKShare不可用")
-        # 转换symbol为AKShare格式（分时数据API不需要市场前缀）
-        ak_symbol = self._map_to_akshare(symbol, with_market_prefix=False)
-        logger.info(f"调用AKShare API: symbol={ak_symbol}, 时间范围: {start_time_str} ~ {end_time_str}")
-
         # 🔧 判断是个股还是指数，使用不同的 API
-        is_index = MarketUtils.is_index(symbol)
 
         try:
-            if is_index:
-                # 指数使用 index_zh_a_hist_min_em
-                logger.info(f"调用指数分时API: index_zh_a_hist_min_em({ak_symbol})")
-                df = self.ak.index_zh_a_hist_min_em(
-                    symbol=ak_symbol[1:],
-                    start_date=start_time_str,
-                    end_date=end_time_str,
-                    period='1'
-                )
+            market_code = MarketUtils.infer_market_from_symbol(symbol)
+            if market_code == MarketCode.CN:
+                df = self._fetch_real_intraday_for_china_A(symbol, start_time_str, end_time_str)
             else:
-                # 个股使用 stock_zh_a_hist_min_em
-                logger.info(f"调用个股分时API: stock_zh_a_hist_min_em({ak_symbol})")
-                df = self.ak.stock_zh_a_hist_min_em(
-                    symbol=ak_symbol,
-                    start_date=start_time_str,
-                    end_date=end_time_str,
-                    period='1',
-                    adjust=''
-                )
+                raise Exception(f"不支持的市场类型{market_code}")
 
             if df is None or df.empty:
                 logger.warning(f"⚠️ AKShare 返回空数据: {symbol}")
@@ -506,6 +421,38 @@ class AKShareDataProvider(BaseDataProvider):
             raise
         finally:
             _clear_proxy(original_get, original_post, requests)
+
+    def _fetch_real_intraday_for_china_A(self, symbol, start_time_str, end_time_str):
+        """
+        利用akshare的api获取中国大陆A股市场的股票分时数据
+        :param symbol:股票代码
+        :param start_time_str:开始时间
+        :param end_time_str:结束时间
+        :return:股票分时数据
+        """
+        is_index = MarketUtils.is_index(symbol)
+        ak_symbol = self._map_to_akshare_for_china_A(symbol)
+        logger.info(f"调用AKShare API: symbol={ak_symbol}, 时间范围: {start_time_str} ~ {end_time_str}")
+        if is_index:
+            # 指数使用 index_zh_a_hist_min_em
+            logger.info(f"调用指数分时API: index_zh_a_hist_min_em({ak_symbol})")
+            df = self.ak.index_zh_a_hist_min_em(
+                symbol=ak_symbol[1:],
+                start_date=start_time_str,
+                end_date=end_time_str,
+                period='1'
+            )
+        else:
+            # 个股使用 stock_zh_a_hist_min_em
+            logger.info(f"调用个股分时API: stock_zh_a_hist_min_em({ak_symbol})")
+            df = self.ak.stock_zh_a_hist_min_em(
+                symbol=ak_symbol,
+                start_date=start_time_str,
+                end_date=end_time_str,
+                period='1',
+                adjust=''
+            )
+        return df
 
     def _fetch_realtime_order_book_from_external_api(self, symbol: str) -> Optional[tuple[list, list]]:
         """
@@ -528,7 +475,7 @@ class AKShareDataProvider(BaseDataProvider):
 
         try:
             # 转换symbol为AKShare格式（盘口API需要纯数字，不需要市场前缀）
-            ak_symbol = self._map_to_akshare(symbol, with_market_prefix=False)
+            ak_symbol = self._map_to_akshare_for_china_A(symbol)
 
             # 调用AKShare API获取实时盘口
             df = self.ak.stock_bid_ask_em(symbol=ak_symbol)
@@ -589,7 +536,7 @@ class AKShareDataProvider(BaseDataProvider):
         finally:
             _clear_proxy(original_get, original_post, requests)
 
-    def _fetch_realtime_trade_records_from_external_api(self, symbol: str)-> list[TradeDetailRecord]:
+    def _fetch_realtime_trade_records_from_external_api(self, symbol: str) -> list[TradeDetailRecord]:
         """
         获取实时成交明细（逐笔成交）
 
@@ -609,7 +556,7 @@ class AKShareDataProvider(BaseDataProvider):
         original_get, original_post, requests = self._config_proxy()
         try:
             # 转换symbol为AKShare格式（成交明细API需要市场前缀sh/sz）
-            ak_symbol = self._map_to_akshare(symbol, with_market_prefix=True)
+            ak_symbol = self._map_to_akshare_for_china_A(symbol)
 
             # 调用AKShare API获取逐笔成交
             df = self.ak.stock_zh_a_tick_tx_js(symbol=ak_symbol)
@@ -666,7 +613,6 @@ class AKShareDataProvider(BaseDataProvider):
         finally:
             _clear_proxy(original_get, original_post, requests)
             return trade_records
-
 
     def _to_IntradayData(self, df: pd.DataFrame, symbol: str, trade_date: pd.Timestamp,
                          interpolate_func=None) -> IntradayData:
