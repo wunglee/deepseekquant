@@ -210,13 +210,106 @@ class YahooFinanceDataProvider(BaseDataProvider):
         if df is None or df.empty:
             logger.warning(f"⚠️ Yahoo Finance 返回空数据: {symbol}")
             return df
-        start_time = MarketTimeUtils.to_market_time_by_symbol(start_time,symbol)
-        end_time = MarketTimeUtils.to_market_time_by_symbol(end_time,symbol)
+        start_time = MarketTimeUtils.to_market_time_by_symbol(start_time, symbol)
+        end_time = MarketTimeUtils.to_market_time_by_symbol(end_time, symbol)
         df = df[(df.index >= start_time) & (df.index <= end_time)]
         return df
 
     def _map_to_yahoo(self, symbol: str) -> str:
-        return symbol[:-3]
+        """
+        将应用内部代码映射到 Yahoo Finance 格式
+        
+        规则：
+        - 后缀：.SH（上海）、.SZ（深圳）、.HK（香港）、.US（美国）、.JP（日本）、.SG（新加坡）
+        - 前缀：^ 表示指数，否则为股票
+        
+        映射逻辑：
+        1. 移除市场后缀（.SH、.SZ、.HK、.US、.JP、.SG）
+        2. 对于指数（^前缀），转换为 Yahoo Finance 格式
+        3. 对于股票，根据市场添加对应后缀
+        
+        示例：
+        - A股指数：^000001.SH → ^000001.SS, ^399001.SZ → ^399001.SZ
+        - A股个股：600000.SH → 600000.SS, 000001.SZ → 000001.SZ
+        - 港股指数：^HSI.HK → ^HSI
+        - 港股个股：00700.HK → 0700.HK
+        - 美股指数：^GSPC.US → ^GSPC
+        - 美股个股：AAPL.US → AAPL
+        - 日股指数：^N225.JP → ^N225
+        - 日股个股：9984.JP → 9984.T
+        - 新加股指数：^STI.SG → ^STI
+        - 新加股个股：D05.SG → D05.SI
+        
+        Args:
+            symbol: 应用内部代码格式
+            
+        Returns:
+            str: Yahoo Finance 格式的代码
+        """
+        # 检查是否为指数（^前缀）
+        is_index = symbol.startswith('^')
+
+        # 提取基础代码（移除^前缀和市场后缀）
+        base_symbol = symbol
+        if is_index:
+            base_symbol = base_symbol[1:]  # 移除^前缀
+
+        # 移除市场后缀
+        market_suffixes = ['.SH', '.SZ', '.HK', '.US', '.JP', '.SG']
+        for suffix in market_suffixes:
+            if base_symbol.endswith(suffix):
+                base_symbol = base_symbol[:-len(suffix)]
+                break
+
+        # 根据市场和指数类型进行映射
+        if symbol.endswith('.SH'):
+            # 上海市场：指数和股票都添加.SS后缀
+            if is_index:
+                return f'{base_symbol}.SS'
+            else:
+                return f'{base_symbol}.SS'
+
+        elif symbol.endswith('.SZ'):
+            # 深圳市场：指数和股票都添加.SZ后缀
+            if is_index:
+                return f'{base_symbol}.SZ'
+            else:
+                return f'{base_symbol}.SZ'
+
+        elif symbol.endswith('.HK'):
+            # 香港市场：指数保持^前缀，股票添加.HK后缀
+            if is_index:
+                return f'^{base_symbol}'
+            else:
+                # 港股代码需要移除前导0（如00700 → 0700）
+                if base_symbol.startswith('00') and len(base_symbol) > 1:
+                    base_symbol = base_symbol.lstrip('0')
+                return f'{base_symbol}.HK'
+
+        elif symbol.endswith('.US'):
+            # 美国市场：指数保持^前缀，股票直接使用
+            if is_index:
+                return f'^{base_symbol}'
+            else:
+                return base_symbol
+
+        elif symbol.endswith('.JP'):
+            # 日本市场：指数保持^前缀，股票添加.T后缀
+            if is_index:
+                return f'^{base_symbol}'
+            else:
+                return f'{base_symbol}.T'
+
+        elif symbol.endswith('.SG'):
+            # 新加坡市场：指数保持^前缀，股票添加.SI后缀
+            if is_index:
+                return f'^{base_symbol}'
+            else:
+                return f'{base_symbol}.SI'
+
+        else:
+            # 默认情况：直接返回原代码（可能是已经符合Yahoo格式的代码）
+            return symbol
 
     def _to_IntradayData(self, df: pd.DataFrame, symbol: str, trade_date: pd.Timestamp,
                          interpolate_func=None) -> IntradayData:
