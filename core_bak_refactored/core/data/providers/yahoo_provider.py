@@ -185,8 +185,6 @@ class YahooFinanceDataProvider(BaseDataProvider):
             pd.DataFrame: 分时数据 DataFrame
         """
         logger.info(f"时间范围: {start_time_str} ~ {end_time_str}")
-        market_local_time = MarketTimeUtils.get_market_time_now(symbol)
-        # Note: 请求限流和重试逻辑由 yfinance_patch 处理
 
         # 使用 yfinance 获取 1分钟数据
         # Note: yfinance_patch 补丁会拦截所有 yfinance 内部请求
@@ -194,8 +192,8 @@ class YahooFinanceDataProvider(BaseDataProvider):
 
         # Yahoo Finance 的 1m 数据最多只能获取 7 天
         # 如果时间范围超过 7 天，使用 5m 数据
-        start_time = pd.Timestamp(f"{market_local_time.date()} {start_time_str}")
-        end_time = pd.Timestamp(f"{market_local_time.date()} {end_time_str}")
+        start_time = pd.Timestamp(start_time_str)
+        end_time = pd.Timestamp(end_time_str)
         time_diff = (start_time - end_time).days
         if time_diff > 7:
             interval = '5m'
@@ -212,9 +210,9 @@ class YahooFinanceDataProvider(BaseDataProvider):
         if df is None or df.empty:
             logger.warning(f"⚠️ Yahoo Finance 返回空数据: {symbol}")
             return df
-
+        start_time = MarketTimeUtils.to_market_time_by_symbol(start_time,symbol)
+        end_time = MarketTimeUtils.to_market_time_by_symbol(end_time,symbol)
         df = df[(df.index >= start_time) & (df.index <= end_time)]
-
         return df
 
     def _map_to_yahoo(self, symbol: str) -> str:

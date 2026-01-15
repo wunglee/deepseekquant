@@ -199,7 +199,7 @@ def patch_yfinance(proxy_url=None):
 
     def patched_get(self, url, user_agent_headers=None, params=None, timeout=30):
         """
-        使用 curl_cffi (浏览器模拟) 替代 requests
+        使用 curl_cffi (模拟浏览器) 替代 requests
 
         关键优化：
         1. 轮换 User-Agent - 避免被识别为爬虫
@@ -232,10 +232,10 @@ def patch_yfinance(proxy_url=None):
         if response.status_code == 200:
             # 更新最后请求时间
             _LAST_REQUEST_TIME = time.time()
-            logger.info(f"✅浏览器模拟请求成功: {response.status_code} - {url[:100]}...")
+            logger.info(f"✅模拟浏览器请求成功: {response.status_code} - {url[:100]}...")
             return response
         else:
-            logger.error(f"浏览器模拟请求失败: {response.status_code} - {url[:100]}...")
+            logger.error(f"模拟浏览器请求失败: {response.status_code} - {url[:100]}...")
             raise Exception(f"HTTP {response.status_code} 错误")
 
     # 应用补丁
