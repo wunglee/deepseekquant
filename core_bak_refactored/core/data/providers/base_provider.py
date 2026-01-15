@@ -465,10 +465,9 @@ class BaseDataProvider(HistoricalDataProvider):
                 )
                 logger.info(f"📅 自动创建 TickRange（盘中首次加载）: {tick_range.start_time} ~ {tick_range.end_time}")
 
-            # 🔧 尝试从 AKShare 获取真实数据（盘中不使用缓存，实时获取）
-            logger.info(f"📊 真实数据模式 - 从 AKShare 获取 (phase={trading_phase.value})")
+            # 🔧 尝试获取真实数据（盘中不使用缓存，实时获取）
+            logger.info(f"📊 真实数据模式 - 从外部数据源获取 (phase={trading_phase.value})")
             try:
-                # 为当前请求临时修改AKShare的网络请求行为
                 start_time_str, end_time_str = self._get_range_start_end_string(symbol, tick_range, trade_date)
                 # 获取原始DataFrame（传入current_time用于判断时间范围）
                 df = self._fetch_real_intraday_from_external_api(symbol, start_time_str, end_time_str)
@@ -483,7 +482,7 @@ class BaseDataProvider(HistoricalDataProvider):
                         # 🔧 严格模式：如果是盘后且数据不完整（少于80%），抛出异常
                         # 盘后应该返回完整的交易日数据，如果不完整说明数据源有问题
                         if actual_ticks < expected_ticks * 0.8:
-                            error_msg = f"盘后数据不完整：期望{expected_ticks}条，实际仅获取{actual_ticks}条。可能原因：AKShare API限制或数据源问题。"
+                            error_msg = f"盘后数据不完整：期望{expected_ticks}条，实际仅获取{actual_ticks}条。可能原因：API限制或数据源问题。"
                             logger.error(f"❌ {error_msg}")
                             raise ValueError(error_msg)
                     else:
@@ -513,7 +512,7 @@ class BaseDataProvider(HistoricalDataProvider):
         构建 IntradayData 对象（统一处理盘口获取和数据转换）
 
         Args:
-            df: AKShare 返回的 DataFrame
+            df: 返回的 DataFrame
             symbol: 证券代码
             trade_date: 交易日期
             fetch_trade_records: 是否获取盘口数据
@@ -682,7 +681,7 @@ class BaseDataProvider(HistoricalDataProvider):
         📝 注: 内部使用 pandas.resample()，但仅作为实现细节，对外仍是强类型
         
         使用场景：
-        - 子类 API 不支持直接查询周线/月线时（如 AKShare、Finnhub）
+        - 子类 API 不支持直接查询周线/月线时
         - 子类获取日线数据后，在 _fetch_from_external_api 中调用此方法转换
         
         Args:
