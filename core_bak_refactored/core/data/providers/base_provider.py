@@ -414,12 +414,16 @@ class BaseDataProvider(HistoricalDataProvider):
                     start_time_str, end_time_str = self._get_range_start_end_string(symbol, tick_range, last_trade_date)
                     # 获取原始DataFrame
                     df = self._fetch_real_intraday_from_external_api(symbol, start_time_str, end_time_str)
-                    if df is not None:
+                    if df is not None and not df.empty:
                         # 构建 IntradayData（盘后不获取实时盘口）
                         intraday_data = self._build_intraday_data(
                             df, symbol, last_trade_date,
-                            fetch_trade_records=False, should_poll=False, enable_cache=True
+                            fetch_trade_records=False, should_poll=False
                         )
+                        # 缓存数据（如果需要）
+                        if self._enable_memory_cache:
+                            self._set_to_memory_cache_obj(last_trade_date_cache_key, intraday_data)
+                            logger.info(f"✅ 数据已缓存: {last_trade_date_cache_key}")
                 except Exception as e:
                     # 其他异常（如网络错误、API错误），记录警告并fallback
                     logger.warning(f"获取最后交易日的真实分时数据失败: {e}")
@@ -444,7 +448,7 @@ class BaseDataProvider(HistoricalDataProvider):
             # 构建 IntradayData（午休时段获取上午收盘时的盘口）
             intraday_data = self._build_intraday_data(
                 df, symbol, trade_date,
-                fetch_trade_records=True, should_poll=False, enable_cache=False
+                fetch_trade_records=True, should_poll=False
             )
 
         elif trading_phase == TradingPhase.TRADING:
@@ -474,7 +478,7 @@ class BaseDataProvider(HistoricalDataProvider):
                         expected_ticks = 270
                         actual_ticks = len(df)
 
-                        logger.info(f"✅ AKShare返回 {actual_ticks} 条分时数据（期望 {expected_ticks} 条）")
+                        logger.info(f"✅ 返回 {actual_ticks} 条分时数据（期望 {expected_ticks} 条）")
 
                         # 🔧 严格模式：如果是盘后且数据不完整（少于80%），抛出异常
                         # 盘后应该返回完整的交易日数据，如果不完整说明数据源有问题
@@ -483,10 +487,10 @@ class BaseDataProvider(HistoricalDataProvider):
                             logger.error(f"❌ {error_msg}")
                             raise ValueError(error_msg)
                     else:
-                        # 构建 IntradayData（交易时段获取实时盘口并缓存）
+                        # 构建 IntradayData（交易时段获取实时盘口）
                         intraday_data = self._build_intraday_data(
                             df, symbol, trade_date,
-                            fetch_trade_records=True, should_poll=True, enable_cache=False
+                            fetch_trade_records=True, should_poll=True
                         )
                 else:
                     intraday_data = None
@@ -504,8 +508,7 @@ class BaseDataProvider(HistoricalDataProvider):
         return intraday_data
 
     def _build_intraday_data(self, df, symbol: str, trade_date: pd.Timestamp,
-                             fetch_trade_records: bool = True, should_poll: bool = True,
-                             enable_cache: bool = False) -> IntradayData:
+                             fetch_trade_records: bool = True, should_poll: bool = True) -> IntradayData:
         """
         构建 IntradayData 对象（统一处理盘口获取和数据转换）
 
@@ -514,7 +517,6 @@ class BaseDataProvider(HistoricalDataProvider):
             symbol: 证券代码
             trade_date: 交易日期
             fetch_trade_records: 是否获取盘口数据
-            enable_cache: 是否缓存结果
 
 
         Returns:
@@ -537,12 +539,6 @@ class BaseDataProvider(HistoricalDataProvider):
             intraday_data.order_book_message = order_book_message
             intraday_data.trade_records_message = trade_records_message
         intraday_data.should_poll = should_poll
-        # 缓存数据（如果需要）
-        if enable_cache:
-            cache_key = f"intraday_{symbol}_{trade_date}_TRADING"
-            self._set_to_memory_cache_obj(cache_key, intraday_data)
-            logger.info(f"✅ 数据已缓存: {cache_key}")
-
         return intraday_data
 
     def _build_empty_intraday_data(self, market_local_time, symbol, trading_phase):
@@ -555,8 +551,7 @@ class BaseDataProvider(HistoricalDataProvider):
         # 构建 IntradayData（集合竞价时段也要尝试获取盘口）
         intraday_data = self._build_intraday_data(
             empty_df, symbol, trade_date=market_local_time,
-            fetch_trade_records=True, should_poll=(trading_phase != TradingPhase.AFTER_CLOSE),
-            enable_cache=False
+            fetch_trade_records=True, should_poll=(trading_phase != TradingPhase.AFTER_CLOSE)
         )
         return intraday_data
 
@@ -948,7 +943,7 @@ class BaseDataProvider(HistoricalDataProvider):
                         kline_data['should_poll'] = True
                         return kline_data
 
-                # 3. 使用akshare获取最新分钟数据更新K线
+                # 3. 获取最新分钟数据更新K线
                 try:
                     df = self._fetch_today_k_column_from_external_api(market_local_time, symbol)
 
@@ -973,13 +968,13 @@ class BaseDataProvider(HistoricalDataProvider):
                         # 更新缓存
                         self._set_to_memory_cache_obj(cache_key, kline_data)
                     else:
-                        # akshare无数据时使用缓存
+                        # 无数据时使用缓存
                         kline_data = cached.copy()
                         kline_data['trading_phase'] = trading_phase.name
                         kline_data['should_poll'] = True
 
                 except Exception as e:
-                    logger.warning(f"获取akshare分钟数据失败: {e}，使用缓存数据")
+                    logger.warning(f"获取分钟数据失败: {e}，使用缓存数据")
                     # API失败时使用缓存
                     kline_data = cached.copy()
                     kline_data['trading_phase'] = trading_phase.name
