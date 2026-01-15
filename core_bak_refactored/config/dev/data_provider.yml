@@ -14,8 +14,6 @@ providers:
   adapter_class: AKShareDataProvider
   markets:
   - CN
-  - HK
-  - US
   requires_auth: false
   use_proxy: false  # 代理配置
   rate_limit: 无限制
@@ -35,6 +33,7 @@ providers:
   adapter_module: core_bak_refactored.core.data.providers.yahoo_provider
   adapter_class: YahooFinanceDataProvider
   markets:
+  - HK
   - US
   - EU
   - JP

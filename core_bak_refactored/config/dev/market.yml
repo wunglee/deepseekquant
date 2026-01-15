@@ -1,7 +1,7 @@
 market_sources:
   CN: akshare
   EU: yahoo
-  HK: akshare
+  HK: yahoo
   JP: yahoo
   SG: yahoo
   US: yahoo
