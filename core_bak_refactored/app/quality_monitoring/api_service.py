@@ -69,7 +69,6 @@ from core_bak_refactored.core.data.providers.factory import get_global_factory
 from core_bak_refactored.core.data.providers.protocols import TickRange
 from core_bak_refactored.core.data.providers.provider_selector import ProviderSelector
 from core_bak_refactored.core.share.config_manager import ConfigManager
-from core_bak_refactored.core.share.market.data_types import OHLCVRecord, PriceData
 from core_bak_refactored.core.share.market.market_time_utils import MarketTimeUtils
 from core_bak_refactored.core.share.market.market_utils import MarketUtils
 from core_bak_refactored.core.signal.indicator_service import TechnicalIndicators
