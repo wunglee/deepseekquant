@@ -216,10 +216,20 @@ def patch_yfinance(proxy_url=None):
         # 使用浏览器模拟方式
         logger.info(f"📡 Browser simulation request: {url[:100]}...")
         crumb = get_crumb(url, timeout)
+        
+        # 安全处理 params 参数（避免 frozendict 问题）
+        safe_params = {}
+        if params is not None:
+            # 如果 params 是 frozendict 或其他不可变类型，转换为普通字典
+            try:
+                safe_params = dict(params)  # 安全转换为可变字典
+            except (TypeError, ValueError):
+                logger.warning("无法转换 params 为字典，使用空参数")
+                safe_params = {}
+
         if crumb:
-            if params is None:
-                params = {}
-            params['crumb'] = crumb
+            safe_params['crumb'] = crumb
+            
         # 更新session headers
         _CURL_SESSION.headers.update({
             **user_agent_headers,
@@ -227,7 +237,7 @@ def patch_yfinance(proxy_url=None):
         })
         speed_limit()
         # 发送请求
-        response = _CURL_SESSION.get(url, params=params, timeout=timeout, impersonate="chrome110")
+        response = _CURL_SESSION.get(url, params=safe_params, timeout=timeout, impersonate="chrome110")
 
         if response.status_code == 200:
             # 更新最后请求时间
