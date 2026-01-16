@@ -138,20 +138,27 @@ def get_crumb(url, timeout) -> Optional[str]:
                     encoded_symbol = urllib.parse.quote(symbol.upper(), safe='')
                     home_url = f'https://finance.yahoo.com/quote/{encoded_symbol}'
             logger.info(f"🌐 获取 crumb 从: {home_url[:100]}...")
-
-            speed_limit()
             _CURL_SESSION.headers.update({
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.9',
             })
-            # 使用curl_cffi session
-            home_response = _CURL_SESSION.get(home_url, timeout=timeout, impersonate="chrome110")
-
-            # 更新最后请求时间
-            _LAST_REQUEST_TIME = time.time()
-
-            if home_response.status_code == 200:
-                # Yahoo Finance crumb可能存在于多种格式中，尝试多种正则表达式
-                crumb = extract_crumb_from_html(home_response.text)
+            # 最多重试3次
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    speed_limit()
+                    # 使用curl_cffi session
+                    home_response = _CURL_SESSION.get(home_url, timeout=timeout, impersonate="chrome110")
+                    # 更新最后请求时间
+                    _LAST_REQUEST_TIME = time.time()
+                    if home_response.status_code == 200:
+                        # Yahoo Finance crumb可能存在于多种格式中，尝试多种正则表达式
+                        crumb = extract_crumb_from_html(home_response.text)
+                        if crumb:  # 如果成功提取到crumb，跳出重试循环
+                            break
+                except Exception as e:
+                    logger.warning(f"获取crumb失败 (尝试 {attempt + 1}/{max_retries}): {e}")
+                    if attempt == max_retries - 1:  # 如果是最后一次尝试
+                        raise  # 重新抛出异常
         except Exception as e:
             logger.warning(f"获取 crumb 失败: {e}, 继续使用原参数")
     return crumb
@@ -215,8 +222,6 @@ def patch_yfinance(proxy_url=None):
             }
         # 使用浏览器模拟方式
         logger.info(f"📡 Browser simulation request: {url[:100]}...")
-        crumb = get_crumb(url, timeout)
-        
         # 安全处理 params 参数（避免 frozendict 问题）
         safe_params = {}
         if params is not None:
@@ -226,10 +231,9 @@ def patch_yfinance(proxy_url=None):
             except (TypeError, ValueError):
                 logger.warning("无法转换 params 为字典，使用空参数")
                 safe_params = {}
-
+        crumb = get_crumb(url, timeout)
         if crumb:
             safe_params['crumb'] = crumb
-            
         # 更新session headers
         _CURL_SESSION.headers.update({
             **user_agent_headers,
