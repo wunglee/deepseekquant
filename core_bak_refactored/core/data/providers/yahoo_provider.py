@@ -255,7 +255,7 @@ class YahooFinanceDataProvider(BaseDataProvider):
             base_symbol = base_symbol[1:]  # 移除^前缀
 
         # 移除市场后缀
-        market_suffixes = ['.SH', '.SZ', '.HK', '.US', '.JP', '.SG']
+        market_suffixes = ['.SH', '.SZ', '.HK', '.US','.EU', '.JP', '.SG']
         for suffix in market_suffixes:
             if base_symbol.endswith(suffix):
                 base_symbol = base_symbol[:-len(suffix)]
@@ -285,7 +285,12 @@ class YahooFinanceDataProvider(BaseDataProvider):
                 if base_symbol.startswith('00') and len(base_symbol) > 1:
                     base_symbol = base_symbol.lstrip('0')
                 return f'{base_symbol}.HK'
-
+        elif symbol.endswith('.EU'):
+            # 欧洲市场：指数保持^前缀，股票直接使用
+            if is_index:
+                return f'^{base_symbol}'
+            else:
+                return base_symbol
         elif symbol.endswith('.US'):
             # 美国市场：指数保持^前缀，股票直接使用
             if is_index:

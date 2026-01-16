@@ -158,9 +158,9 @@ def get_crumb(url, timeout) -> Optional[str]:
                 except Exception as e:
                     logger.warning(f"获取crumb失败 (尝试 {attempt + 1}/{max_retries}): {e}")
                     if attempt == max_retries - 1:  # 如果是最后一次尝试
-                        raise  # 重新抛出异常
+                        raise e # 重新抛出异常
         except Exception as e:
-            logger.warning(f"获取 crumb 失败: {e}, 继续使用原参数")
+            logger.warning(f"无法获取crumb: {e}")
     return crumb
 
 

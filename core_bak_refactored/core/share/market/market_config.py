@@ -44,6 +44,7 @@ class MarketConfig:
         self.market_limit = self._market_config.get('market_limit', {})
         self.trading_hours = self._market_config.get('trading_hours', {})
         self.market_mechanisms = self._market_config.get('market_mechanisms', {})
+        self.default_indices = self._market_config.get('default_indices', {})
     
     def _get_config_dir(self) -> str:
         """获取配置文件目录"""
@@ -135,6 +136,20 @@ class MarketConfig:
     def get_market_info(self, market_code: str) -> Dict[str, Any]:
         """获取市场基本信息"""
         return self.market_registry.get(market_code, {})
+    
+    def get_default_indices(self, market_code: str = None) -> Dict[str, Any]:
+        """获取默认指数配置
+        
+        Args:
+            market_code: 市场代码，如果为None则返回所有市场的默认指数
+            
+        Returns:
+            默认指数配置字典
+        """
+        if market_code:
+            return self.default_indices.get(market_code, {})
+        else:
+            return self.default_indices
     
     def validate_market_config(self, config: Dict) -> List[str]:
         """验证市场配置有效性（使用枚举）"""
@@ -236,4 +251,3 @@ class MarketConfig:
                 )
         
         return config
-

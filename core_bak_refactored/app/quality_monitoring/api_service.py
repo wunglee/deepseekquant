@@ -1163,6 +1163,41 @@ class DataQualityAPIService:
                     'error_code': 'MARKETS_CONFIG_UPDATE_FAILED'
                 }), 500
 
+        @self.app.route('/api/v1/markets/default-indices', methods=['GET'])
+        def get_default_indices():
+            """获取各市场的默认指数/股票列表"""
+            try:
+                # 从配置文件读取市场配置
+                market_config = self.config_manager.get_market_config()
+                
+                # 获取默认指数配置
+                default_indices = getattr(market_config, 'default_indices', {})
+                
+                # 转换为前端需要的格式（将code字段映射为id字段）
+                result = {}
+                for market_code, indices in default_indices.items():
+                    result[market_code] = []
+                    for index in indices:
+                        # 将配置文件中的code字段映射为前端需要的id字段
+                        result[market_code].append({
+                            'id': index.get('code', ''),
+                            'name': index.get('name', ''),
+                            'type': index.get('type', 'index')
+                        })
+                
+                return jsonify({
+                    'status': 'success',
+                    'data': result,
+                    'timestamp': pd.Timestamp.now().isoformat()
+                })
+            except Exception as e:
+                logger.error(f"获取默认指数列表失败: {e}")
+                return jsonify({
+                    'status': 'error',
+                    'message': str(e),
+                    'error_code': 'DEFAULT_INDICES_FETCH_FAILED'
+                }), 500
+
         @self.app.route('/api/v1/providers/<provider_id>/credentials', methods=['POST'])
         def save_provider_credentials(provider_id):
             """保存数据源凭证（调用领域层 Provider 的保存方法）"""

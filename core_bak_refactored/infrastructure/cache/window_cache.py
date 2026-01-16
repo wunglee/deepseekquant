@@ -653,7 +653,6 @@ class WindowsCache:
         is_first_window = from_year_month < actual_earliest_start_month <= window_end_year_month
 
         if is_first_window:
-            found_first_window = True
             logger.info(
                 f"🅰️ 检测到起始窗口: 月线，查询条件从 {search_from_date_no_tz.strftime('%Y-%m-%d')}，但数据源最早从 {actual_earliest_date_no_tz.strftime('%Y-%m-%d')} 开始")
         return is_first_window

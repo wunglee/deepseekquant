@@ -190,6 +190,21 @@
 </header>
 
 <div class="container">
+    <!-- 市场标题和交易时间信息 -->
+    <div id="marketHeader" class="market-header" style="margin-bottom:16px; padding:16px; background:#f8f9fa; border-radius:8px; border:1px solid #e9ecef;">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div>
+                <h2 id="marketTitle" style="margin:0 0 8px 0; font-size:24px; color:#2c3e50;">选择市场</h2>
+                <div id="marketTradingInfo" style="font-size:14px; color:#6c757d;">
+                    <span id="tradingHours">交易时间：未选择</span>
+                    <span style="margin:0 8px;">|</span>
+                    <span id="preMarketHours">盘前交易：未选择</span>
+                </div>
+            </div>
+            <div id="marketIcon" style="font-size:32px;">🌐</div>
+        </div>
+    </div>
+    
     <!-- 市场单选（横向） -->
     <div id="marketSelector" class="segmented-control" style="margin-bottom:12px;">
         <!-- (●) A股  (○) 港股  (○) 美股  (○) 期货  (○) 基金 -->
@@ -998,142 +1013,47 @@ function showEmpty(chart, text) {
 }
 
 function init() {
-    fetch('/api/v1/markets/config')
-        .then(r => {
-            if (!r.ok) {
-                throw new Error(`HTTP ${r.status}: ${r.statusText}`);
-            }
-            return r.json();
-        })
-        .then(res => {
-            if (res.status !== 'success') {
-                showEmpty(klineChart, '加载失败: ' + (res.message || '未知错误'));
-                return
-            }
-            const markets = res.data.markets || []
-            const marketSources = res.data.market_sources || {}
+    // 同时获取市场配置和默认指数列表
+    Promise.all([
+        fetch('/api/v1/markets/config').then(r => r.json()),
+        fetch('/api/v1/markets/default-indices').then(r => r.json())
+    ])
+    .then(([configData, indicesData]) => {
+        if (configData.status !== 'success' || indicesData.status !== 'success') {
+            showEmpty(klineChart, '加载失败: ' + (configData.message || indicesData.message || '未知错误'));
+            return;
+        }
+        
+        const markets = configData.data.markets || [];
+        const marketSources = configData.data.market_sources || {};
+        const defaultIndices = indicesData.data || {};
 
-            // 保存markets配置为全局变量，作为时区映射的数据源
-            window.marketsConfig = markets;
-            console.log('✅ 加载市场配置:', markets.map(m => ({code: m.code, name: m.name})));
+        // 保存markets配置为全局变量，作为时区映射的数据源
+        window.marketsConfig = markets;
+        console.log('✅ 加载市场配置:', markets.map(m => ({code: m.code, name: m.name})));
+        console.log('✅ 加载默认指数列表:', defaultIndices);
 
-            // 为界面验证：构建完整的市场配置，包括默认指数
-            const completeMarkets = []
+        // 为界面验证：构建完整的市场配置，包括默认指数
+        const completeMarkets = [];
 
-            // 添加A股市场
-            const cnMarket = markets.find(m => m.code === 'CN')
-            if (cnMarket) {
-                completeMarkets.push({
-                    id: 'CN',
-                    name: cnMarket.name,
-                    default_indices: [
-                        {id: '^000001.SH', name: '上证指数', type: 'index'},
-                        {id: '^000300.SH', name: '沪深300', type: 'index'},
-                        {id: '^399001.SZ', name: '深证成指', type: 'index'},
-                        {id: '^399006.SZ', name: '创业板指', type: 'index'},
-                        {id: '600036.SH', name: '招商银行', type: 'stock'}
-                    ]
-                })
-            }
+        // 为每个市场构建完整配置
+        markets.forEach(market => {
+            const marketIndices = defaultIndices[market.code] || [];
+            completeMarkets.push({
+                id: market.code,
+                name: market.name,
+                default_indices: marketIndices
+            });
+        });
 
-            // 添加港股市场
-            const hkMarket = markets.find(m => m.code === 'HK')
-            if (hkMarket) {
-                completeMarkets.push({
-                    id: 'hk_stock',
-                    name: hkMarket.name,
-                    default_indices: [
-                        {id: '^HSI.HK', name: '恒生指数', type: 'index'},
-                        {id: '^HSCEI.HK', name: '国企指数', type: 'index'},
-                        {id: '^HSTECH.HK', name: '恒生科技', type: 'index'},
-                        {id: '0700.HK', name: '腾讯控股', type: 'stock'},
-                        {id: '0939.HK', name: '建设银行', type: 'stock'}
-                    ]
-                })
-            }
-
-            // 添加美股市场
-            const usMarket = markets.find(m => m.code === 'US')
-            if (usMarket) {
-                completeMarkets.push({
-                    id: 'US',
-                    name: usMarket.name,
-                    default_indices: [
-                        {id: '^GSPC.US', name: 'S&P 500', type: 'index'},
-                        {id: '^DJI.US', name: '道琼斯', type: 'index'},
-                        {id: '^IXIC.US', name: '纳斯达克', type: 'index'},
-                        {id: 'AAPL.US', name: 'Apple', type: 'stock'},
-                        {id: 'MSFT.US', name: 'Microsoft', type: 'stock'}
-                    ]
-                })
-            }
-
-            // 添加欧洲市场
-            const euMarket = markets.find(m => m.code === 'EU')
-            if (euMarket) {
-                completeMarkets.push({
-                    id: 'EU',
-                    name: euMarket.name,
-                    default_indices: [
-                        {id: '^STOXX50E.EU', name: '欧洲斯托克50', type: 'index'},
-                        {id: '^GDAXI.EU', name: '德国DAX', type: 'index'},
-                        {id: '^FTSE.EU', name: '英国富时100', type: 'index'},
-                        {id: '^FCHI.EU', name: '法国CAC40', type: 'index'},
-                        {id: 'SAP.EU', name: 'SAP', type: 'stock'}
-                    ]
-                })
-            }
-
-            // 添加日本市场
-            const jpMarket = markets.find(m => m.code === 'JP')
-            if (jpMarket) {
-                completeMarkets.push({
-                    id: 'JP',
-                    name: jpMarket.name,
-                    default_indices: [
-                        {id: '^N225.JP', name: '日经225', type: 'index'},
-                        {id: '^N300.JP', name: '日经300', type: 'index'},
-                        {id: '7203.JP', name: '丰田汽车', type: 'stock'},
-                        {id: '9984.JP', name: '软银集团', type: 'stock'},
-                        {id: '6758.JP', name: '索尼集团', type: 'stock'}
-                    ]
-                })
-            }
-
-            // 添加新加坡市场
-            const sgMarket = markets.find(m => m.code === 'SG')
-            if (sgMarket) {
-                completeMarkets.push({
-                    id: 'SG',
-                    name: sgMarket.name,
-                    default_indices: [
-                        {id: '^STI.SG', name: '新加坡海峡时报指数', type: 'index'},
-                        {id: 'D05.SG', name: '星展银行', type: 'stock'},
-                        {id: 'O39.SG', name: '华侨银行', type: 'stock'},
-                        {id: 'U11.SG', name: '大华银行', type: 'stock'},
-                        {id: 'C31.SG', name: '凯德集团', type: 'stock'}
-                    ]
-                })
-            }
-
-            // 添加其他市场（如果有）
-            const otherMarkets = markets.filter(m => !['CN', 'HK', 'US', 'EU', 'JP', 'SG'].includes(m.code))
-            otherMarkets.forEach(market => {
-                completeMarkets.push({
-                    id: market.code,
-                    name: market.name,
-                    default_indices: [] // 其他市场暂时不添加默认指数
-                })
-            })
-
-            buildMarketSelector(completeMarkets)
-            if (completeMarkets.length) {
-                selectMarket(completeMarkets[0]) // 默认选择第一个市场（A股）
-            }
-        }).catch(err => {
-            console.error('Init error:', err)
-            showEmpty(klineChart, '初始化失败: ' + err.message)
-        })
+        buildMarketSelector(completeMarkets);
+        if (completeMarkets.length) {
+            selectMarket(completeMarkets[0]); // 默认选择第一个市场（A股）
+        }
+    }).catch(err => {
+        console.error('Init error:', err);
+        showEmpty(klineChart, '初始化失败: ' + err.message);
+    });
     buildChartTypeSelector()
     buildIntradayModeSelector()  // 🔧 添加分时图数据模式选择器
     buildIntradayPhaseSelector()  // 🔧 添加分时图交易时段选择器
@@ -1192,6 +1112,63 @@ function buildMarketSelector(markets) {
     })
 }
 
+/**
+ * 更新市场标题和交易时间信息
+ * @param {string} marketCode - 市场代码（CN、US、HK等）
+ */
+function updateMarketHeader(marketCode) {
+    if (!window.marketsConfig || !Array.isArray(window.marketsConfig)) {
+        console.warn('markets配置未加载，无法更新市场标题')
+        return
+    }
+    
+    // 从markets配置中查找对应市场信息
+    const market = window.marketsConfig.find(m => m.code === marketCode)
+    if (!market) {
+        console.warn(`未找到市场代码 ${marketCode} 的配置`)
+        return
+    }
+    
+    // 更新市场标题
+    const marketTitle = document.getElementById('marketTitle')
+    if (marketTitle) {
+        marketTitle.textContent = market.name
+    }
+    
+    // 更新市场图标
+    const marketIcon = document.getElementById('marketIcon')
+    if (marketIcon) {
+        // 使用市场配置中的图标，如果没有则使用默认图标
+        marketIcon.textContent = market.icon || '🌐'
+    }
+    
+    // 更新交易时间信息
+    const tradingHoursSpan = document.getElementById('tradingHours')
+    const preMarketHoursSpan = document.getElementById('preMarketHours')
+    
+    if (tradingHoursSpan) {
+        if (market.trading_hours) {
+            tradingHoursSpan.textContent = `交易时间：${market.trading_hours}`
+        } else {
+            tradingHoursSpan.textContent = '交易时间：未配置'
+        }
+    }
+    
+    if (preMarketHoursSpan) {
+        if (market.pre_market) {
+            preMarketHoursSpan.textContent = `盘前交易：${market.pre_market}`
+        } else {
+            preMarketHoursSpan.textContent = '盘前交易：无'
+        }
+    }
+    
+    console.log('✅ 更新市场标题信息:', {
+        name: market.name,
+        trading_hours: market.trading_hours,
+        pre_market: market.pre_market
+    })
+}
+
 function selectMarket(market) {
     currentMarket = market.id
 
@@ -1200,6 +1177,9 @@ function selectMarket(market) {
     const marketCode = market.id
     window.currentMarketCode = marketCode
     console.log('✅ 设置当前市场代码:', window.currentMarketCode, '来源:', market.id)
+
+    // 更新市场标题和交易时间信息
+    updateMarketHeader(marketCode)
 
     const indices = (market.default_indices || [])
     buildIndexList(indices)
