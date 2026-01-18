@@ -53,7 +53,7 @@ class TradingCalendarService:
         MarketCode.HK: 'HKEX',  # 香港交易所 (Hong Kong Stock Exchange)
         MarketCode.JP: 'JPX',  # 日本交易所集团 (Japan Exchange Group)
         MarketCode.EU: 'LSE',  # 伦敦证券交易所 (London Stock Exchange) 代表欧洲
-        MarketCode.SG: 'SGX',  # 新加坡交易所 (Singapore Exchange)
+        MarketCode.SG: 'XSES',  # 新加坡交易所 (Singapore Exchange)
     }
 
     def __init__(self):
@@ -230,10 +230,7 @@ class TradingCalendarService:
             current = start_market_date
             while current <= end_market_date:
                 if current.weekday() < 5:
-                    # 添加市场时区
-                    timezone = MarketTimeUtils.get_market_timezone(market_code)
-                    trading_day = current.tz_localize(timezone)
-                    trading_days.append(trading_day)
+                    trading_days.append(current)
                 current = current + pd.Timedelta(days=1)
             return trading_days
 
