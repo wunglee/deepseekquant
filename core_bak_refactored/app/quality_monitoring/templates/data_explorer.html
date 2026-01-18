@@ -482,6 +482,42 @@ function getTimezoneOffset(timezone) {
     return (utcDate.getTime() - tzDate.getTime()) / 60000;
 }
 
+/**
+ * 统一解析交易时间字符串
+ * @param {string} tradingHoursStr - 交易时间字符串，格式如 "09:30-11:30,13:00-15:00" 或 "09:30-15:00"
+ * @returns {Object} 包含open, close, lunch_start, lunch_end的对象
+ */
+function parseTradingHoursString(tradingHoursStr) {
+    if (!tradingHoursStr || typeof tradingHoursStr !== 'string') {
+        return {};
+    }
+
+    // 检查是否包含午休时段（逗号分隔）
+    if (tradingHoursStr.includes(',')) {
+        const segments = tradingHoursStr.split(',');
+        const morning = segments[0].trim();
+        const afternoon = segments[1].trim();
+
+        const morningParts = morning.split('-');
+        const afternoonParts = afternoon.split('-');
+
+        return {
+            open: morningParts[0]?.trim(),
+            close: afternoonParts[1]?.trim(),
+            lunch_start: morningParts[1]?.trim(),
+            lunch_end: afternoonParts[0]?.trim()
+        };
+    } else {
+        // 没有午休时段的格式，如 "09:30-15:00"
+        const parts = tradingHoursStr.split('-');
+        return {
+            open: parts[0]?.trim(),
+            close: parts[1]?.trim(),
+            lunch_start: null,
+            lunch_end: null
+        };
+    }
+}
 
 // ==================== K线图相关（不受分时图影响） ====================
 const klineChart = echarts.init(document.getElementById('klineChart'))
@@ -1051,16 +1087,24 @@ function init() {
             selectMarket(completeMarkets[0]); // 默认选择第一个市场（A股）
         }
     }).catch(err => {
-        console.error('Init error:', err);
-        showEmpty(klineChart, '初始化失败: ' + err.message);
-    });
-    buildChartTypeSelector()
-    buildIntradayModeSelector()  // 🔧 添加分时图数据模式选择器
-    buildIntradayPhaseSelector()  // 🔧 添加分时图交易时段选择器
-    buildKlineModeSelector()  // 🔧 添加K线图数据模式选择器
-    buildKlinePhaseSelector()  // 🔧 添加K线图交易时段选择器
-    buildPeriodSelector()
-    buildIndicatorSelector()
+    console.error('Init error:', err);
+    showEmpty(klineChart, '初始化失败: ' + err.message);
+});
+
+// 🔧 确保加载市场配置用于分时图功能
+loadMarketConfig().then(() => {
+    console.log('✅ 分时图市场配置加载完成');
+}).catch(err => {
+    console.error('分时图市场配置加载失败:', err);
+});
+
+buildChartTypeSelector()
+buildIntradayModeSelector()  // 🔧 添加分时图数据模式选择器
+buildIntradayPhaseSelector()  // 🔧 添加分时图交易时段选择器
+buildKlineModeSelector()  // 🔧 添加K线图数据模式选择器
+buildKlinePhaseSelector()  // 🔧 添加K线图交易时段选择器
+buildPeriodSelector()
+buildIndicatorSelector()
 
     // 🔧 关键修复：初始化时根据currentChartType设置容器显示/隐藏状态
     if (currentChartType === 'intraday') {
@@ -3138,6 +3182,144 @@ function loadIntradayData(symbol, isInitial = true) {
         })
 }
 
+// 存储市场配置的全局变量
+let marketConfig = {}
+
+/**
+ * 从后端获取市场配置信息
+ */
+async function loadMarketConfig() {
+    try {
+        const response = await fetch('/api/v1/markets/config')
+        if (!response.ok) {
+            throw new Error(`获取市场配置失败: ${response.status} ${response.statusText}`)
+        }
+        const config = await response.json()
+        if (config.status === 'success') {
+            // 转换新的API响应格式为兼容现有代码的格式
+            window.marketConfig = {}; // 使用全局变量而不是局部变量
+            // API返回格式为 { status: 'success', data: { markets: [...], providers: [...], ... } }
+            if (config.data && Array.isArray(config.data.markets)) {
+                config.data.markets.forEach(market => {
+                    window.marketConfig[market.code.toUpperCase()] = {
+                        detailed_trading_hours: market.detailed_trading_hours || parseTradingHoursString(market.trading_hours),
+                        trading_hours: market.trading_hours,
+                        timezone: market.timezone,
+                        currency: market.currency
+                    };
+                });
+                
+                // 同时更新 window.marketsConfig 以保持兼容性（如果不存在）
+                if (!window.marketsConfig) {
+                    window.marketsConfig = config.data.markets;
+                }
+            }
+            console.log('✅ 市场配置加载成功:', Object.keys(window.marketConfig))
+            console.log('📊 CN市场配置详情:', window.marketConfig['CN'])
+        } else {
+            console.error('❌ 获取市场配置失败:', config.message)
+        }
+    } catch (error) {
+        console.error('❌ 加载市场配置时发生错误:', error)
+    }
+}
+
+/**
+ * 根据市场配置生成完整交易时段的时间轴
+ * @param {string} marketCode - 市场代码
+ * @returns {Array} 完整的交易时间数组
+ */
+function generateFullTradingTimes(marketCode) {
+    if (!marketCode) {
+        console.warn('⚠️ 市场代码为空，无法生成时间轴')
+        return [] // 返回空数组而不是默认A股时间轴
+    }
+
+    return generateTradingTimesForMarket(marketCode)
+}
+
+/**
+ * 生成特定市场的交易时间轴
+ * @param {string} marketCode - 市场代码
+ * @returns {Array} 完整的交易时间数组
+ */
+function generateTradingTimesForMarket(marketCode) {
+    // 优先使用统一的全局配置对象
+    const market = window.marketConfig?.[marketCode.toUpperCase()] || 
+                   window.marketsConfig?.find(m => m.code.toUpperCase() === marketCode.toUpperCase()) ||
+                   (window.marketsConfig && typeof window.marketsConfig === 'object' ? 
+                    window.marketsConfig[marketCode.toUpperCase()] : null);
+    
+    if (!market) {
+        console.warn(`⚠️ 未找到市场 ${marketCode} 的配置，无法生成时间轴`)
+        return [] // 返回空数组而不是默认A股时间轴
+    }
+
+    let tradingTimes = []
+    
+    // 解构市场配置 - 根据配置格式处理
+    const tradingHours = market.detailed_trading_hours ||
+                    (market.trading_hours ? parseTradingHoursString(market.trading_hours) : {});
+
+    const { open, close, lunch_start, lunch_end } = tradingHours;
+    
+    if (!open || !close) {
+        console.warn(`⚠️ 市场 ${marketCode} 缺少交易时间配置，无法生成时间轴`)
+        return [] // 返回空数组而不是默认A股时间轴
+    }
+    // 解析开始和结束时间
+    const start= open.split(':').map(Number)
+    const end= close.split(':').map(Number)
+    if (lunch_start && lunch_end) {
+        const firstEnd= lunch_start.split(':').map(Number)
+        const secondStart= lunch_end.split(':').map(Number)
+        tradingTimes=generateTradingTimes(tradingTimes,start,firstEnd)
+        tradingTimes=generateTradingTimes(tradingTimes,secondStart, end)
+    }else{
+        tradingTimes=generateTradingTimes(tradingTimes,start, end)
+    }
+    return tradingTimes
+}
+function generateTradingTimes(tradingTimes,start,end) {
+    const startHour = start[0]
+    const startMinute = start[1]
+    const endHour = end[0]
+    const endMinute = end[1]
+    for (let hourValue = startHour; hourValue <= endHour; hourValue++) {
+        const startMin = hourValue === startHour ? startMinute : 0
+        const endMin = hourValue === endHour ? endMinute : 59
+
+        for (let minuteValue = startMin; minuteValue <= endMin; minuteValue++) {
+            for (let secondValue = 0; secondValue < 60; secondValue += 5) {
+                // 避免超出结束时间
+                if (hourValue === endHour && minuteValue === endMinute && secondValue > 0) continue
+                const timeStr = `${String(hourValue).padStart(2, '0')}:${String(minuteValue).padStart(2, '0')}:${String(secondValue).padStart(2, '0')}`
+                tradingTimes.push(timeStr)
+            }
+        }
+    }
+    return tradingTimes
+}
+/**
+ * 初始化分时图时间轴（在切换市场时调用一次）
+ */
+function initializeIntradayTimeAxis() {
+    if (!window.currentMarketCode) {
+        console.warn('⚠️ 当前市场代码未设置，无法初始化时间轴')
+        return
+    }
+    
+    // 生成当前市场的完整交易时间轴
+    window.fullTradingTimes = generateFullTradingTimes(window.currentMarketCode)
+    
+    // 初始化数据数组
+    window.priceData = new Array(window.fullTradingTimes.length).fill(null)
+    window.avgPriceData = new Array(window.fullTradingTimes.length).fill(null)
+    window.volumeData = new Array(window.fullTradingTimes.length).fill(null)
+    
+    console.log(`✅ 分时图时间轴初始化完成，共 ${window.fullTradingTimes.length} 个时间点`)
+}
+
 /**
  * 渲染分时图表
  */
@@ -3158,38 +3340,21 @@ function renderIntradayCharts(data) {
     const change = parseFloat(data.change)
     const changePercent = parseFloat(data.change_percent)
 
-    // 🔧 生成完整交易时段的时间轴（固定周期，5秒级别，排除午休时间）
-    const fullTradingTimes = []
-    // 上午: 09:30:00-11:30:00，每5秒一个点
-    for (let h = 9; h <= 11; h++) {
-        const startMin = h === 9 ? 30 : 0
-        const endMin = h === 11 ? 30 : 59
-        for (let m = startMin; m <= endMin; m++) {
-            for (let s = 0; s < 60; s += 5) {
-                const timeStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
-                fullTradingTimes.push(timeStr)
-            }
-        }
+    // 🔧 使用已初始化的时间轴，而不是每次都重新生成
+    if (!window.fullTradingTimes || window.fullTradingTimes.length === 0) {
+        console.warn('⚠️ 时间轴未初始化，使用默认时间轴')
+        window.fullTradingTimes = generateFullTradingTimes(window.currentMarketCode)
     }
-    // 下午: 13:00:00-15:00:00，每5秒一个点
-    for (let h = 13; h <= 15; h++) {
-        const endMin = h === 15 ? 0 : 59
-        for (let m = 0; m <= endMin; m++) {
-            for (let s = 0; s < 60; s += 5) {
-                const timeStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
-                fullTradingTimes.push(timeStr)
-            }
-        }
-    }
-    console.log(`🕒 生成完整时间轴: ${fullTradingTimes.length}个点位`)
-    const priceData = new Array(fullTradingTimes.length).fill(null)
-    const avgPriceData = new Array(fullTradingTimes.length).fill(null)
-    const volumeData = new Array(fullTradingTimes.length).fill(null)
+
+    // 重新初始化数据数组长度以匹配时间轴
+    const priceData = new Array(window.fullTradingTimes.length).fill(null)
+    const avgPriceData = new Array(window.fullTradingTimes.length).fill(null)
+    const volumeData = new Array(window.fullTradingTimes.length).fill(null)
 
     // 🔧 关键修复：只有hasTicks为true时才映射数据（盘前为空）
     if (hasTicks) {
         data.times.forEach((time, idx) => {
-            const timeIndex = fullTradingTimes.indexOf(time)
+            const timeIndex = window.fullTradingTimes.indexOf(time)
             if (timeIndex !== -1) {
                 // 🔧 关键修复：强制转换为数字类型，并验证有效性
                 const price = parseFloat(data.prices[idx])
@@ -3224,6 +3389,72 @@ function renderIntradayCharts(data) {
     charts.price.clear()
     charts.volume.clear()
 
+    // 动态生成markLine配置，根据市场配置决定是否显示午休分割线
+    const market = marketConfig[window.currentMarketCode?.toUpperCase()] || {}
+    const { lunch_start, lunch_end } = market.trading_hours || {}
+
+    const markLineData = [
+        {
+            // 🔧 昨收横线
+            yAxis: yesterdayClose,
+            label: { 
+                show: true,
+                formatter: '昨收: {c}',
+                position: 'end',
+                color: '#6b7280',
+                fontSize: 11
+            },
+            lineStyle: { 
+                color: '#9ca3af', 
+                type: 'dashed', 
+                width: 2,  // 🔧 加粗昨收线
+                opacity: 0.9
+            }
+        }
+    ]
+
+    // 如果有午休时间，则添加午休分割线
+    if (lunch_start && lunch_end) {
+        markLineData.push(
+            {
+                // 🔧 午休开始分割线
+                xAxis: lunch_start + ':00',
+                label: { 
+                    show: true,
+                    formatter: '午休开始',
+                    position: 'insideEndTop',
+                    color: '#ef4444',
+                    fontWeight: 'bold',
+                    fontSize: 10
+                },
+                lineStyle: { 
+                    color: '#ef4444',  // 🔧 红色，更显眼
+                    type: 'dashed',  // 🔧 虚线样式
+                    width: 3,  // 🔧 更粗的线条
+                    opacity: 0.9  // 🔧 更高不透明度
+                }
+            },
+            {
+                // 🔧 午休结束分割线
+                xAxis: lunch_end + ':00',
+                label: { 
+                    show: true,
+                    formatter: '午休结束',
+                    position: 'insideEndTop',
+                    color: '#10b981',
+                    fontWeight: 'bold',
+                    fontSize: 10
+                },
+                lineStyle: { 
+                    color: '#10b981',  // 🔧 绿色，更显眼
+                    type: 'dashed',  // 🔧 虚线样式
+                    width: 3,  // 🔧 更粗的线条
+                    opacity: 0.9  // 🔧 更高不透明度
+                }
+            }
+        )
+    }
+
     charts.price.setOption({
         title: {
             text: (currentIndex ? currentIndex.name : '') + ' 分时图 (' + formatToMarketDateTime(new Date()) + ')',
@@ -3256,7 +3487,7 @@ function renderIntradayCharts(data) {
         grid: { left: '50px', right: '50px', top: '60px', bottom: '30px' },
         xAxis: {
             type: 'category',
-            data: fullTradingTimes,  // 🔧 使用完整交易时段
+            data: window.fullTradingTimes,  // 🔧 使用全局初始化的时间轴
             boundaryGap: false,
             axisLabel: {
                 interval: 'auto',  // 🔧 自动间隔，避免标签重叠
@@ -3317,51 +3548,7 @@ function renderIntradayCharts(data) {
                     symbol: 'none',
                     silent: false,
                     animation: false,
-                    data: [
-                        {
-                            // 🔧 昨收横线
-                            yAxis: yesterdayClose,
-                            label: { 
-                                show: true,
-                                formatter: '昨收: {c}',
-                                position: 'end',
-                                color: '#6b7280',
-                                fontSize: 11
-                            },
-                            lineStyle: { 
-                                color: '#9ca3af', 
-                                type: 'dashed', 
-                                width: 2,  // 🔧 加粗昨收线
-                                opacity: 0.9
-                            }
-                        },
-                        {
-                            // 🔧 11:30 午盘分割线（上午收盘）
-                            xAxis: '11:30:00',
-                            label: { 
-                                show: false
-                            },
-                            lineStyle: { 
-                                color: '#9ca3af',  // 🔧 加深颜色
-                                type: 'solid', 
-                                width: 2,  // 🔧 加粗
-                                opacity: 0.8  // 🔧 增加不透明度
-                            }
-                        },
-                        {
-                            // 🔧 13:00 午盘分割线（下午开盘）
-                            xAxis: '13:00:00',
-                            label: { 
-                                show: false
-                            },
-                            lineStyle: { 
-                                color: '#9ca3af',  // 🔧 加深颜色
-                                type: 'solid', 
-                                width: 2,  // 🔧 加粗
-                                opacity: 0.8  // 🔧 增加不透明度
-                            }
-                        }
-                    ]
+                    data: markLineData  // 🔧 使用动态生成的markLine配置
                 },
             },
             {
@@ -3395,7 +3582,7 @@ function renderIntradayCharts(data) {
         grid: { left: '50px', right: '50px', top: '40px', bottom: '20px' },
         xAxis: {
             type: 'category',
-            data: fullTradingTimes,  // 🔧 使用完整交易时段
+            data: window.fullTradingTimes,  // 🔧 使用全局初始化的时间轴
             show: false
         },
         yAxis: {
@@ -3414,7 +3601,13 @@ function renderIntradayCharts(data) {
                     return currentPrice >= prevPrice ? '#ef4444' : '#10b981'
                 }
             },
-            barWidth: '80%'
+            barWidth: '80%',
+            markLine: {
+                symbol: 'none',
+                silent: false,
+                animation: false,
+                data: markLineData  // 🔧 使用与价格图表相同的markLine配置，显示分割线
+            }
         }]
     }, true)  // 🔧 关键：使用true完全替换配置，清除graphic
     
@@ -3448,24 +3641,8 @@ function updateIntradayChartsIncremental(newData) {
     }
     
     // 🔧 生成完整交易时段（与 renderIntradayCharts 相同，5秒级别）
-    const fullTradingTimes = []
-    for (let h = 9; h <= 11; h++) {
-        const startMin = h === 9 ? 30 : 0
-        const endMin = h === 11 ? 30 : 59
-        for (let m = startMin; m <= endMin; m++) {
-            for (let s = 0; s < 60; s += 5) {
-                fullTradingTimes.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`)
-            }
-        }
-    }
-    for (let h = 13; h <= 15; h++) {
-        const endMin = h === 15 ? 0 : 59
-        for (let m = 0; m <= endMin; m++) {
-            for (let s = 0; s < 60; s += 5) {
-                fullTradingTimes.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`)
-            }
-        }
-    }
+    // 🔧 使用统一的 generateFullTradingTimes 函数，避免重复逻辑和时间计算错误
+    const fullTradingTimes = generateFullTradingTimes(window.currentMarketCode) || [];
     
     if (hasNewData) {
         newData.times.forEach((time, idx) => {

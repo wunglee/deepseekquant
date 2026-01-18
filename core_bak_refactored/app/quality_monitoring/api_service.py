@@ -1004,19 +1004,26 @@ class DataQualityAPIService:
                 # 从 market.yml 的 market_registry 读取市场列表（包含UI展示信息）
                 market_config = self.config_manager.get_market_config()
                 market_registry = market_config.market_registry or {}
+                trading_hours_config = market_config.trading_hours or {}
 
                 # 从 market_registry 生成 UI 展示数据
-                markets = [
-                    {
+                markets = []
+                for code, info in market_registry.items():
+                    # 获取详细的交易时间配置
+                    detailed_trading_hours = trading_hours_config.get(code, {})
+                    
+                    market_data = {
                         'code': code,
                         'name': info.get('display_name', info.get('name', code)),  # 优先使用 display_name
                         'icon': info.get('icon', ''),
                         'timezone': info.get('timezone', ''),  # 添加时区信息
                         'currency': info.get('currency', ''),   # 添加货币信息
-                        'trading_hours': info.get('trading_hours', '')  # 添加交易时间信息
+                        'trading_hours': info.get('trading_hours', ''),  # 添加交易时间信息
+                        'detailed_trading_hours': detailed_trading_hours  # 添加详细交易时间配置
                     }
-                    for code, info in market_registry.items()
-                ]
+                    
+                    # 不再传递 has_lunch_break 字段，前端将通过交易时段是否唯一判断
+                    markets.append(market_data)
 
                 # 从 data_provider_config.yml 读取 providers 配置
                 providers_raw = data_provider_config.providers or []
