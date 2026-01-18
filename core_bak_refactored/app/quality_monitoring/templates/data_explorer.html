@@ -297,7 +297,7 @@ function getMarketTimezone() {
     // 从markets配置中查找对应市场信息
     const market = window.marketsConfig.find(m => m.id === marketCode);
     if (!market) {
-        console.warn(`market ${marketCode} 的配置未加载，使用默认时区`);
+        console.warn(`未找到市场代码 ${marketCode} 的配置，使用默认时区`);
         return 'Asia/Shanghai';
     }
     
@@ -324,9 +324,9 @@ function getMarketTimezone() {
  * @param {Date} date - Date对象（必须传入）
  * @returns {string} 当前市场时区的格式化时间字符串
  */
-function formatFromMarketDateTime(date) {
+function formatToMarketDateTime(date) {
     if (!date || !(date instanceof Date)) {
-        console.error('formatFromMarketDateTime: 必须传入有效的Date对象');
+        console.error('formatToMarketDateTime: 必须传入有效的Date对象');
         return '';
     }
 
@@ -820,8 +820,8 @@ function updateChartData(data, events) {
             if (typeof dateStr === 'string') {
                 // 使用 parseToMarketDateTime 正确解析时间字符串为市场时区Date对象
                 const marketDate = parseToMarketDateTime(dateStr)
-                // 使用 formatFromMarketDateTime 格式化为标准日期字符串
-                dateStr = extractDateStr(formatFromMarketDateTime(marketDate))
+                // 使用 formatToMarketDateTime 格式化为标准日期字符串
+                dateStr = extractDateStr(formatToMarketDateTime(marketDate))
             }
             return { ...d, date: dateStr }
         })
@@ -1092,7 +1092,12 @@ function init() {
 });
 
 // 🔧 确保加载市场配置用于分时图功能
-loadMarketConfig()
+loadMarketConfig().then(() => {
+    console.log('✅ 分时图市场配置加载完成');
+}).catch(err => {
+    console.error('分时图市场配置加载失败:', err);
+});
+
 buildChartTypeSelector()
 buildIntradayModeSelector()  // 🔧 添加分时图数据模式选择器
 buildIntradayPhaseSelector()  // 🔧 添加分时图交易时段选择器
@@ -1681,8 +1686,8 @@ function renderIndicator(data, klineZoom) {
         if (typeof dateStr === 'string') {
             // 使用 parseToMarketDateTime 正确解析时间字符串为市场时区Date对象
             const marketDate = parseToMarketDateTime(dateStr)
-            // 使用 formatFromMarketDateTime 格式化为标准日期字符串
-            dateStr = extractDateStr(formatFromMarketDateTime(marketDate))
+            // 使用 formatToMarketDateTime 格式化为标准日期字符串
+            dateStr = extractDateStr(formatToMarketDateTime(marketDate))
         }
         return { ...d, date: dateStr }
     })
@@ -2377,8 +2382,8 @@ function renderKline(data, events) {
         if (typeof dateStr === 'string') {
             // 使用 parseToMarketDateTime 正确解析时间字符串为市场时区Date对象
             const marketDate = parseToMarketDateTime(dateStr)
-            // 使用 formatFromMarketDateTime 格式化为标准日期字符串
-            dateStr = extractDateStr(formatFromMarketDateTime(marketDate))
+            // 使用 formatToMarketDateTime 格式化为标准日期字符串
+            dateStr = extractDateStr(formatToMarketDateTime(marketDate))
         }
         return { ...d, date: dateStr }
     })
@@ -3029,7 +3034,7 @@ function loadIntradayData(symbol, isInitial = true) {
             } else {
                 // 🔧 真实模式：使用市场时间，而不是浏览器时间
                 // 应该从后端API获取准确的市场时间，暂时使用服务器时间
-                const marketDateTimeStr = formatFromMarketDateTime(new Date())
+                const marketDateTimeStr = formatToMarketDateTime(new Date())
                 const dateStr = extractDateStr(marketDateTimeStr)  // YYYY-MM-DD
                 const timeStr = extractTimeStr(marketDateTimeStr) // HH:MM:SS
                 newEndTime = `${dateStr} ${timeStr}`
@@ -3098,7 +3103,7 @@ function loadIntradayData(symbol, isInitial = true) {
                     const lastTime = res.data.times[res.data.times.length - 1]
                     if (mode === 'real') {
                         // 真实模式：记录完整时间戳（日期+时间）
-                        const marketDateTimeStr = formatFromMarketDateTime(new Date())
+                        const marketDateTimeStr = formatToMarketDateTime(new Date())
                         const dateStr = extractDateStr(marketDateTimeStr)  // YYYY-MM-DD
                         const lastRequestTime = `${dateStr} ${lastTime}`
                         IntradayChart.setRequestTime(lastRequestTime)
@@ -3177,6 +3182,9 @@ function loadIntradayData(symbol, isInitial = true) {
         })
 }
 
+// 存储市场配置的全局变量
+let marketConfig = {}
+
 /**
  * 从后端获取市场配置信息
  */
@@ -3217,6 +3225,20 @@ async function loadMarketConfig() {
 }
 
 /**
+ * 根据市场配置生成完整交易时段的时间轴
+ * @param {string} marketCode - 市场代码
+ * @returns {Array} 完整的交易时间数组
+ */
+function generateFullTradingTimes(marketCode) {
+    if (!marketCode) {
+        console.warn('⚠️ 市场代码为空，无法生成时间轴')
+        return [] // 返回空数组而不是默认A股时间轴
+    }
+
+    return generateTradingTimesForMarket(marketCode)
+}
+
+/**
  * 生成特定市场的交易时间轴
  * @param {string} marketCode - 市场代码
  * @returns {Array} 完整的交易时间数组
@@ -3232,64 +3254,110 @@ function generateTradingTimesForMarket(marketCode) {
         console.warn(`⚠️ 未找到市场 ${marketCode} 的配置，无法生成时间轴`)
         return [] // 返回空数组而不是默认A股时间轴
     }
-    // 检查 window.marketTradingTimes 是否已正确初始化
-    if (typeof window.marketTradingTimes === 'undefined') {
-        window.marketTradingTimes = {};
-    }
-    let tradingTimes = window.marketTradingTimes[marketCode];
-    if (tradingTimes) {
-        return tradingTimes
-    }else{
-        // 解构市场配置 - 根据配置格式处理
-        const tradingHours = market.detailed_trading_hours ||
-                        (market.trading_hours ? parseTradingHoursString(market.trading_hours) : {});
 
-        const { open, close, lunch_start, lunch_end } = tradingHours;
-
-        if (!open || !close) {
-            console.warn(`⚠️ 市场 ${marketCode} 缺少交易时间配置，无法生成时间轴`)
-            return [] // 返回空数组而不是默认A股时间轴
-        }
-        // 解析开始和结束时间
-        const start= open.split(':').map(Number)
-        const end= close.split(':').map(Number)
-        if (lunch_start && lunch_end) {
-            const firstEnd= lunch_start.split(':').map(Number)
-            const secondStart= lunch_end.split(':').map(Number)
-            tradingTimes=generateTradingTimes(tradingTimes,start,firstEnd)
-            tradingTimes=generateTradingTimes(tradingTimes,secondStart, end)
-        }else{
-            tradingTimes=generateTradingTimes(tradingTimes,start, end)
-        }
-        window.marketTradingTimes[marketCode]=tradingTimes
-        return tradingTimes
-    }
+    const tradingTimes = []
     
+    // 解构市场配置 - 根据配置格式处理
+const tradingHours = market.detailed_trading_hours || 
+                    (market.trading_hours ? parseTradingHoursString(market.trading_hours) : {});
 
-}
-function generateTradingTimes(tradingTimes,start,end) {
-    if (!tradingTimes) {
-        tradingTimes = []
+const { open, close, lunch_start, lunch_end } = tradingHours;
+    
+    if (!open || !close) {
+        console.warn(`⚠️ 市场 ${marketCode} 缺少交易时间配置，无法生成时间轴`)
+        return [] // 返回空数组而不是默认A股时间轴
     }
-    const startHour = start[0]
-    const startMinute = start[1]
-    const endHour = end[0]
-    const endMinute = end[1]
-    for (let hourValue = startHour; hourValue <= endHour; hourValue++) {
-        const startMin = hourValue === startHour ? startMinute : 0
-        const endMin = hourValue === endHour ? endMinute : 59
 
-        for (let minuteValue = startMin; minuteValue <= endMin; minuteValue++) {
-            for (let secondValue = 0; secondValue < 60; secondValue += 5) {
+    // 解析开始和结束时间
+    const [startHour, startMinute] = open.split(':').map(Number)
+    const [endHour, endMinute] = close.split(':').map(Number)
+    
+    // 解析午休时间（如果存在）
+    const hasLunchBreak = lunch_start && lunch_end
+    let lunchStartHour = 0, lunchStartMinute = 0, lunchEndHour = 0, lunchEndMinute = 0
+    
+    if (hasLunchBreak) {
+        [lunchStartHour, lunchStartMinute] = lunch_start.split(':').map(Number)
+        [lunchEndHour, lunchEndMinute] = lunch_end.split(':').map(Number)
+    }
+
+    // 生成第一段时间（从开盘到午休开始或收盘）
+    const firstSegmentEndHour = hasLunchBreak ? lunchStartHour : endHour
+    const firstSegmentEndMinute = hasLunchBreak ? lunchStartMinute : endMinute
+    
+    for (let h = startHour; h <= firstSegmentEndHour; h++) {
+        const startMin = h === startHour ? startMinute : 0
+        const endMin = h === firstSegmentEndHour ? firstSegmentEndMinute : 59
+        
+        for (let m = startMin; m <= endMin; m++) {
+            for (let s = 0; s < 60; s += 5) {
                 // 避免超出结束时间
-                if (hourValue === endHour && minuteValue === endMinute && secondValue > 0) continue
-                const timeStr = `${String(hourValue).padStart(2, '0')}:${String(minuteValue).padStart(2, '0')}:${String(secondValue).padStart(2, '0')}`
+                if (h === firstSegmentEndHour && m === firstSegmentEndMinute && s > 0) continue
+                
+                // 确保小时值始终是24小时制，即使在12点之后也正确显示
+                const hourValue = h;  // 使用原始小时值，不进行模运算
+                const timeStr = `${String(hourValue).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
                 tradingTimes.push(timeStr)
             }
         }
     }
+    
+    // 如果有午休，则处理午休时段和午休后时段
+    if (hasLunchBreak) {
+        // 在午休时段添加多个null值作为分隔标记，这将在图表中显示为间断区域
+        // 添加午休时段的null值来表示间断
+        // 注意：这里只是添加null值，不生成实际时间
+        for (let h = lunchStartHour; h <= lunchEndHour; h++) {
+            const startMin = h === lunchStartHour ? lunchStartMinute : 0
+            const endMin = h === lunchEndHour ? lunchEndMinute : 59
+            
+            for (let m = startMin; m <= endMin; m++) {
+                for (let s = 0; s < 60; s += 5) {
+                    // 避免超出午休结束时间
+                    if (h === lunchEndHour && m === lunchEndMinute && s > 0) continue
+                    
+                    // 添加null值表示午休时间
+                    tradingTimes.push(null);
+                }
+            }
+        }
+        
+        // 生成午休后到收盘的时间段
+        // 这里需要确保时间正确生成，不能出现上午时段被误认为是夜间时段的情况
+        // 关键修复：确保午休后的时段从正确的小时开始
+        for (let h = lunchEndHour; h <= endHour; h++) {
+            const startMin = h === lunchEndHour ? lunchEndMinute : 0
+            const endMin = h === endHour ? endMinute : 59
+            
+            for (let m = startMin; m <= endMin; m++) {
+                for (let s = 0; s < 60; s += 5) {
+                    // 避免超出结束时间
+                    if (h === endHour && m === endMinute && s > 0) continue
+                    
+                    // 确保小时值始终是24小时制，即使在12点之后也正确显示
+                    // 关键修复：确保小时值不会变成0点
+                    const hourValue = h;  // 使用原始小时值，不进行模运算
+                    const timeStr = `${String(hourValue).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+                    tradingTimes.push(timeStr)
+                }
+            }
+        }
+    }
+    
+    // 调试日志：打印生成的时间轴，特别关注12点附近的处理
+    console.log(`📊 时间轴生成调试: 从 ${startHour}:${startMinute} 到 ${endHour}:${endMinute}`);
+    if (hasLunchBreak) {
+        console.log(`📊 午休时段: ${lunchStartHour}:${lunchStartMinute} 到 ${lunchEndHour}:${lunchEndMinute}`);
+        // 查找12点附近的时间点
+        const aroundNoon = tradingTimes.filter(t => t && t.startsWith('11:') || t && t.startsWith('12:') || t && t.startsWith('13:'));
+        console.log(`📊 11-13点时间点:`, aroundNoon.slice(0, 20)); // 只显示前20个
+    }
+    
+    console.log(`🕒 为市场 ${marketCode} 生成完整时间轴: ${tradingTimes.length}个点位`)
+    console.log(`📊 时间轴详情: 开盘 ${startHour}:${startMinute}, 午休 ${hasLunchBreak ? `${lunchStartHour}:${lunchStartMinute}-${lunchEndHour}:${lunchEndMinute}` : '无'}, 收盘 ${endHour}:${endMinute}`)
     return tradingTimes
 }
+
 /**
  * 初始化分时图时间轴（在切换市场时调用一次）
  */
@@ -3300,7 +3368,7 @@ function initializeIntradayTimeAxis() {
     }
     
     // 生成当前市场的完整交易时间轴
-    window.fullTradingTimes = generateTradingTimesForMarket(window.currentMarketCode)
+    window.fullTradingTimes = generateFullTradingTimes(window.currentMarketCode)
     
     // 初始化数据数组
     window.priceData = new Array(window.fullTradingTimes.length).fill(null)
@@ -3314,19 +3382,6 @@ function initializeIntradayTimeAxis() {
  * 渲染分时图表
  */
 function renderIntradayCharts(data) {
-    // 动态生成markLine配置，根据市场配置决定是否显示午休分割线
-    if (!window.marketConfig) {
-        loadMarketConfig().then(() => {
-            generateIntradayCharts(data);
-        }).catch(err => {
-            console.error('分时图市场配置加载失败:', err);
-        });
-    } else {
-        generateIntradayCharts(data);
-    }
-}
-
-function generateIntradayCharts(data) {
     if (!data) {
         console.error('❌ renderIntradayCharts: 数据为null')
         return
@@ -3345,8 +3400,8 @@ function generateIntradayCharts(data) {
 
     // 🔧 使用已初始化的时间轴，而不是每次都重新生成
     if (!window.fullTradingTimes || window.fullTradingTimes.length === 0) {
-        console.warn('⚠️ 时间轴未初始化，开始初始化时间轴')
-        window.fullTradingTimes = generateTradingTimesForMarket(window.currentMarketCode)
+        console.warn('⚠️ 时间轴未初始化，使用默认时间轴')
+        window.fullTradingTimes = generateFullTradingTimes(window.currentMarketCode)
     }
 
     // 重新初始化数据数组长度以匹配时间轴
@@ -3392,35 +3447,82 @@ function generateIntradayCharts(data) {
     charts.price.clear()
     charts.volume.clear()
 
+    // 动态生成markLine配置，根据市场配置决定是否显示午休分割线
+    const market = marketConfig[window.currentMarketCode?.toUpperCase()] || {}
+    const { lunch_start, lunch_end } = market.trading_hours || {}
+    const hasLunchBreak = lunch_start && lunch_end
+
     const markLineData = [
         {
             // 🔧 昨收横线
             yAxis: yesterdayClose,
-            label: {
+            label: { 
                 show: true,
                 formatter: '昨收: {c}',
                 position: 'end',
                 color: '#6b7280',
                 fontSize: 11
             },
-            lineStyle: {
-                color: '#9ca3af',
-                type: 'dashed',
+            lineStyle: { 
+                color: '#9ca3af', 
+                type: 'dashed', 
                 width: 2,  // 🔧 加粗昨收线
                 opacity: 0.9
             }
         }
     ]
-    makeLunchBreakLine(markLineData)
+
+    // 如果有午休时间，则添加午休分割线
+    if (hasLunchBreak) {
+        markLineData.push(
+            {
+                // 🔧 午休开始分割线
+                xAxis: lunch_start + ':00',
+                label: { 
+                    show: true,
+                    formatter: '午休开始',
+                    position: 'insideEndTop',
+                    color: '#ef4444',
+                    fontWeight: 'bold',
+                    fontSize: 10
+                },
+                lineStyle: { 
+                    color: '#ef4444',  // 🔧 红色，更显眼
+                    type: 'dashed',  // 🔧 虚线样式
+                    width: 3,  // 🔧 更粗的线条
+                    opacity: 0.9  // 🔧 更高不透明度
+                }
+            },
+            {
+                // 🔧 午休结束分割线
+                xAxis: lunch_end + ':00',
+                label: { 
+                    show: true,
+                    formatter: '午休结束',
+                    position: 'insideEndTop',
+                    color: '#10b981',
+                    fontWeight: 'bold',
+                    fontSize: 10
+                },
+                lineStyle: { 
+                    color: '#10b981',  // 🔧 绿色，更显眼
+                    type: 'dashed',  // 🔧 虚线样式
+                    width: 3,  // 🔧 更粗的线条
+                    opacity: 0.9  // 🔧 更高不透明度
+                }
+            }
+        )
+    }
+
     charts.price.setOption({
         title: {
-            text: (currentIndex ? currentIndex.name : '') + ' 分时图 (' + formatFromMarketDateTime(new Date()) + ')',
+            text: (currentIndex ? currentIndex.name : '') + ' 分时图 (' + formatToMarketDateTime(new Date()) + ')',
             left: 'center',
             textStyle: { fontSize: 14 },
             subtext: `昨收: ${yesterdayClose.toFixed(2)}  现价: ${currentPrice.toFixed(2)}  涨跌: ${change >= 0 ? '+' : ''}${change.toFixed(2)} (${changePercent.toFixed(2)}%)`,
-            subtextStyle: {
-                fontSize: 11,
-                color: change >= 0 ? '#ef4444' : '#10b981'
+            subtextStyle: { 
+                fontSize: 11, 
+                color: change >= 0 ? '#ef4444' : '#10b981' 
             }
         },
         tooltip: {
@@ -3435,7 +3537,7 @@ function generateIntradayCharts(data) {
                     const value = parseFloat(item.value)
                     const change = value - yesterdayClose
                     const changePercent = (change / yesterdayClose * 100).toFixed(2)
-                    result += item.marker + item.seriesName + ': ' + value.toFixed(2) +
+                    result += item.marker + item.seriesName + ': ' + value.toFixed(2) + 
                              ` (${change >= 0 ? '+' : ''}${change.toFixed(2)}, ${changePercent}%)<br/>`
                 })
                 return result
@@ -3520,7 +3622,7 @@ function generateIntradayCharts(data) {
             }
         ]
     }, true)  // 🔧 关键：使用true完全替换配置，清除graphic
-
+    
     // 渲染成交量
     charts.volume.setOption({
         title: { text: '成交量', left: 'center', textStyle: { fontSize: 12 } },
@@ -3567,9 +3669,10 @@ function generateIntradayCharts(data) {
             }
         }]
     }, true)  // 🔧 关键：使用true完全替换配置，清除graphic
-
+    
     console.log('✅ 成交量图表setOption完成')
 }
+
 /**
  * 增量更新分时图表（不重新渲染，只更新数据）
  * @param {Object} newData - 最新的分时数据
@@ -3597,8 +3700,8 @@ function updateIntradayChartsIncremental(newData) {
     }
     
     // 🔧 生成完整交易时段（与 renderIntradayCharts 相同，5秒级别）
-    // 🔧 使用统一的 generateTradingTimesForMarket 函数，避免重复逻辑和时间计算错误
-    const fullTradingTimes = generateTradingTimesForMarket(window.currentMarketCode) || [];
+    // 🔧 使用统一的 generateFullTradingTimes 函数，避免重复逻辑和时间计算错误
+    const fullTradingTimes = generateFullTradingTimes(window.currentMarketCode) || [];
     
     if (hasNewData) {
         newData.times.forEach((time, idx) => {
@@ -3624,26 +3727,7 @@ function updateIntradayChartsIncremental(newData) {
             volumeData[timeIndex] = intradayData.volumes[idx]
         }
     })
-    const markLineData=[
-                    {
-                        // 🔧 昨收横线
-                        yAxis: yesterdayClose,
-                        label: {
-                            show: true,
-                            formatter: '昨收: {c}',
-                            position: 'end',
-                            color: '#6b7280',
-                            fontSize: 11
-                        },
-                        lineStyle: {
-                            color: '#9ca3af',
-                            type: 'dashed',
-                            width: 2,
-                            opacity: 0.9
-                        }
-                    }
-                 ]
-    makeLunchBreakLine(markLineData)
+    
     const priceOption = {
         title: {
             subtext: `昨收: ${yesterdayClose.toFixed(2)}  现价: ${currentPrice.toFixed(2)}  涨跌: ${change >= 0 ? '+' : ''}${change.toFixed(2)} (${changePercent.toFixed(2)}%)`,
@@ -3660,7 +3744,47 @@ function updateIntradayChartsIncremental(newData) {
                     symbol: 'none',
                     silent: false,
                     animation: false,
-                    data:markLineData,
+                    data: [
+                        {
+                            // 🔧 昨收横线
+                            yAxis: yesterdayClose,
+                            label: { 
+                                show: true,
+                                formatter: '昨收: {c}',
+                                position: 'end',
+                                color: '#6b7280',
+                                fontSize: 11
+                            },
+                            lineStyle: { 
+                                color: '#9ca3af', 
+                                type: 'dashed', 
+                                width: 2,
+                                opacity: 0.9
+                            }
+                        },
+                        {
+                            // 🔧 11:30 午盘分割线
+                            xAxis: '11:30:00',
+                            label: { show: false },
+                            lineStyle: { 
+                                color: '#9ca3af',  // 🔧 加深颜色
+                                type: 'solid', 
+                                width: 2,  // 🔧 加粗
+                                opacity: 0.8  // 🔧 增加不透明度
+                            }
+                        },
+                        {
+                            // 🔧 13:00 午盘分割线
+                            xAxis: '13:00:00',
+                            label: { show: false },
+                            lineStyle: { 
+                                color: '#9ca3af',  // 🔧 加深颜色
+                                type: 'solid', 
+                                width: 2,  // 🔧 加粗
+                                opacity: 0.8  // 🔧 增加不透明度
+                            }
+                        }
+                    ]
                 }
             },
             { data: avgPriceData }
@@ -3714,41 +3838,7 @@ function updateIntradayChartsIncremental(newData) {
         }
     })
 }
-function makeLunchBreakLine(markLineData) {
-    // 如果有午休时间，则添加午休分割线
-    const market = window.marketConfig[window.currentMarketCode?.toUpperCase()] || {}
-    const { lunch_start, lunch_end } = market.detailed_trading_hours || {}
-    if (lunch_start && lunch_end) {
-        markLineData.push(
-            {
-                // 🔧 午休开始分割线
-                xAxis: lunch_start + ':00',
-                label: {
-                    show: false,
-                },
-                lineStyle: {
-                    color: '#9ca3af',  // 🔧 加深颜色
-                    type: 'dashed',  // 🔧 虚线样式
-                    width: 3,  // 🔧 更粗的线条
-                    opacity: 0.9  // 🔧 更高不透明度
-                }
-            },
-            {
-                // 🔧 午休结束分割线
-                xAxis: lunch_end + ':00',
-                label: {
-                    show: false,
-                },
-                lineStyle: {
-                    color: '#9ca3af',  // 🔧 加深颜色
-                    type: 'dashed',// 🔧 虚线样式
-                    width: 3,  // 🔧 更粗的线条
-                    opacity: 0.8  // 🔧 增加不透明度
-                }
-            }
-        )
-    }
-}
+
 /**
  * 更新买卖盘口
  */
