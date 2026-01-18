@@ -3392,9 +3392,6 @@ function generateIntradayCharts(data) {
     charts.price.clear()
     charts.volume.clear()
 
-    const market = window.marketConfig[window.currentMarketCode?.toUpperCase()] || {}
-    const { lunch_start, lunch_end } = market.trading_hours || {}
-
     const markLineData = [
         {
             // 🔧 昨收横线
@@ -3414,7 +3411,7 @@ function generateIntradayCharts(data) {
             }
         }
     ]
-    makeLunchBreakLine(markLineData,lunch_start,lunch_end)
+    makeLunchBreakLine(markLineData)
     charts.price.setOption({
         title: {
             text: (currentIndex ? currentIndex.name : '') + ' 分时图 (' + formatFromMarketDateTime(new Date()) + ')',
@@ -3627,7 +3624,26 @@ function updateIntradayChartsIncremental(newData) {
             volumeData[timeIndex] = intradayData.volumes[idx]
         }
     })
-    
+    const markLineData=[
+                    {
+                        // 🔧 昨收横线
+                        yAxis: yesterdayClose,
+                        label: {
+                            show: true,
+                            formatter: '昨收: {c}',
+                            position: 'end',
+                            color: '#6b7280',
+                            fontSize: 11
+                        },
+                        lineStyle: {
+                            color: '#9ca3af',
+                            type: 'dashed',
+                            width: 2,
+                            opacity: 0.9
+                        }
+                    }
+                 ]
+    makeLunchBreakLine(markLineData)
     const priceOption = {
         title: {
             subtext: `昨收: ${yesterdayClose.toFixed(2)}  现价: ${currentPrice.toFixed(2)}  涨跌: ${change >= 0 ? '+' : ''}${change.toFixed(2)} (${changePercent.toFixed(2)}%)`,
@@ -3644,25 +3660,7 @@ function updateIntradayChartsIncremental(newData) {
                     symbol: 'none',
                     silent: false,
                     animation: false,
-                    data: [
-                        {
-                            // 🔧 昨收横线
-                            yAxis: yesterdayClose,
-                            label: { 
-                                show: true,
-                                formatter: '昨收: {c}',
-                                position: 'end',
-                                color: '#6b7280',
-                                fontSize: 11
-                            },
-                            lineStyle: { 
-                                color: '#9ca3af', 
-                                type: 'dashed', 
-                                width: 2,
-                                opacity: 0.9
-                            }
-                        }
-                    ]
+                    data:markLineData,
                 }
             },
             { data: avgPriceData }
@@ -3716,8 +3714,10 @@ function updateIntradayChartsIncremental(newData) {
         }
     })
 }
-function makeLunchBreakLine(markLineData,lunch_start,lunch_end) {
+function makeLunchBreakLine(markLineData) {
     // 如果有午休时间，则添加午休分割线
+    const market = window.marketConfig[window.currentMarketCode?.toUpperCase()] || {}
+    const { lunch_start, lunch_end } = market.detailed_trading_hours || {}
     if (lunch_start && lunch_end) {
         markLineData.push(
             {
