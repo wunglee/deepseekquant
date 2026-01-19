@@ -290,12 +290,12 @@ function getMarketTimezone() {
     const marketCode = window.currentMarketCode || 'CN';
     
     if (!window.marketsConfig || !Array.isArray(window.marketsConfig)) {
-        console.error('错误：markets配置未加载');
+        console.error('❌错误：markets配置未加载');
         throw new Error('markets配置未加载');
     }
     const market = window.marketsConfig.find(m => m.code === marketCode);
     if (!market) {
-        console.error(`未找到市场代码 ${marketCode} 的配置`);
+        console.error(`❌未找到市场代码 ${marketCode} 的配置`);
         throw new Error(`未找到市场代码 ${marketCode} 的配置`);
     }
     return market.timezone;
@@ -711,6 +711,7 @@ function loadMoreHistoryData(callback) {
         .then(r => {
             // 检查HTTP状态码
             if (!r.ok) {
+                console.error(`❌ HTTP ${r.status}: ${r.statusText}`);
                 throw new Error(`HTTP ${r.status}: ${r.statusText}`);
             }
             return r.json()
@@ -2661,6 +2662,7 @@ function loadKline(indexId) {
             console.log('Response received:', r.status)
             // 检查HTTP状态码
             if (!r.ok) {
+                console.error(`❌ HTTP ${r.status}: ${r.statusText}`);
                 throw new Error(`HTTP ${r.status}: ${r.statusText}`);
             }
             return r.json()
@@ -3034,10 +3036,12 @@ function getModeConfig(mode, isInitial) {
                                 newStartTime = `${dateStr} ${tradingHours.open}`;
                             } else {
                                 // 如果解析失败，抛出异常
+                                console.error(`❌解析市场 ${currentMarketCode} 交易时间失败，无法获取开盘时间`);
                                 throw new Error(`解析市场 ${currentMarketCode} 交易时间失败，无法获取开盘时间`);
                             }
                         } else {
                             // 如果没有市场配置，抛出异常
+                            console.error(`❌无法获取市场 ${currentMarketCode} 的配置信息`);
                             throw new Error(`无法获取市场 ${currentMarketCode} 的配置信息`);
                         }
                     }
@@ -3133,7 +3137,7 @@ function handleIntradayDataLoading(symbol, isInitial, modeConfig) {
             // 无论状态码如何，都尝试解析JSON
             return r.json().then(data => {
                 if (!r.ok) {
-                    // HTTP错误状态码（4xx, 5xx）
+                    console.error(`❌ HTTP ${r.status}: ${r.statusText}`);
                     throw new Error(data.message || `HTTP ${r.status}: ${r.statusText}`)
                 }
                 return data
@@ -3240,7 +3244,7 @@ function handleIntradayDataLoading(symbol, isInitial, modeConfig) {
  * @param {string} marketCode - 市场代码
  * @returns {Array} 完整的交易时间数组
  */
-function generateFullTradingTimes(marketCode) {
+function getFullTradingTimes(marketCode) {
    // 优先使用统一的全局配置对象
     const market = window.marketConfig?.[marketCode.toUpperCase()] || 
                    window.marketsConfig?.find(m => m.code.toUpperCase() === marketCode.toUpperCase()) ||
@@ -3248,8 +3252,8 @@ function generateFullTradingTimes(marketCode) {
                     window.marketsConfig[marketCode.toUpperCase()] : null);
     
     if (!market) {
-        console.warn(`⚠️ 未找到市场 ${marketCode} 的配置，无法生成时间轴`)
-        return [] // 返回空数组而不是默认A股时间轴
+        console.error(`❌ 未找到市场 ${marketCode} 的配置，无法生成时间轴`)
+        throw new Error(`未找到市场 ${marketCode} 的配置，无法生成时间轴`)
     }
     // 检查 window.marketTradingTimes 是否已正确初始化
     if (typeof window.marketTradingTimes === 'undefined') {
@@ -3266,8 +3270,8 @@ function generateFullTradingTimes(marketCode) {
         const { open, close, lunch_start, lunch_end } = tradingHours;
 
         if (!open || !close) {
-            console.warn(`⚠️ 市场 ${marketCode} 缺少交易时间配置，无法生成时间轴`)
-            return [] // 返回空数组而不是默认A股时间轴
+            console.error(`❌ 市场 ${marketCode} 缺少交易时间配置，无法生成时间轴`)
+            throw new Error(`市场 ${marketCode} 缺少交易时间配置，无法生成时间轴`)
         }
         // 解析开始和结束时间
         const start= open.split(':').map(Number)
@@ -3319,7 +3323,7 @@ function initializeIntradayTimeAxis() {
     }
     
     // 生成当前市场的完整交易时间轴
-    const fullTradingTimes = generateFullTradingTimes(window.currentMarketCode)
+    const fullTradingTimes = getFullTradingTimes(window.currentMarketCode)
     
     // 初始化数据数组
     window.priceData = new Array(fullTradingTimes.length).fill(null)
@@ -3349,7 +3353,7 @@ function renderIntradayCharts(data) {
     const change = parseFloat(data.change)
     const changePercent = parseFloat(data.change_percent)
 
-    const fullTradingTimes = generateFullTradingTimes(window.currentMarketCode)
+    const fullTradingTimes = getFullTradingTimes(window.currentMarketCode)
 
     // 重新初始化数据数组长度以匹配时间轴
     const priceData = new Array(fullTradingTimes.length).fill(null)
@@ -3599,8 +3603,8 @@ function updateIntradayChartsIncremental(newData) {
     }
     
     // 🔧 生成完整交易时段（与 renderIntradayCharts 相同，5秒级别）
-    // 🔧 使用统一的 generateFullTradingTimes 函数，避免重复逻辑和时间计算错误
-    const fullTradingTimes = generateFullTradingTimes(window.currentMarketCode) || [];
+    // 🔧 使用统一的 getFullTradingTimes 函数，避免重复逻辑和时间计算错误
+    const fullTradingTimes = getFullTradingTimes(window.currentMarketCode) || [];
     
     if (hasNewData) {
         newData.times.forEach((time, idx) => {
