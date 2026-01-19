@@ -3443,6 +3443,22 @@ function renderIntradayCharts(data) {
                 return result
             }
         },
+        grid: { left: '50px', right: '50px', top: '60px', bottom: '30px' },
+        xAxis: {
+            type: 'category',
+            data: window.fullTradingTimes,  // 🔧 使用全局初始化的时间轴
+            boundaryGap: false,
+            axisLabel: {
+                interval: 'auto',  // 🔧 自动间隔，避免标签重叠
+                formatter: function(value) {
+                    // 只显示整分钟的标签（HH:MM:00）
+                    if (value.endsWith(':00')) {
+                        return value.substring(0, 5)  // 去掉秒，显示HH:MM
+                    }
+                    return ''  // 非整分钟不显示
+                }
+            }
+        },
         yAxis: {
             type: 'value',
             scale: true,
@@ -3522,6 +3538,16 @@ function renderIntradayCharts(data) {
                 }
                 return params[0].axisValue + '<br/>' + params[0].marker + '成交量: ' + volume.toLocaleString() + '手'
             }
+        },
+        grid: { left: '50px', right: '50px', top: '40px', bottom: '20px' },
+        xAxis: {
+            type: 'category',
+            data: window.fullTradingTimes,  // 🔧 使用全局初始化的时间轴
+            show: false
+        },
+        yAxis: {
+            type: 'value',
+            splitLine: { lineStyle: { type: 'dashed', color: '#e5e7eb' } }
         },
         series: [{
             type: 'bar',
