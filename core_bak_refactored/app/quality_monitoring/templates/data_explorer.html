@@ -290,8 +290,13 @@ function getMarketTimezone() {
     const marketCode = window.currentMarketCode || 'CN';
     
     if (!window.marketsConfig || !Array.isArray(window.marketsConfig)) {
-        console.error(错误：markets配置未加载');
-        return null;
+        console.error('错误：markets配置未加载');
+        throw new Error('markets配置未加载');
+    }
+    const market = window.marketsConfig.find(m => m.id === marketCode);
+    if (!market) {
+        console.error(`未找到市场代码 ${marketCode} 的配置`);
+        throw new Error(`未找到市场代码 ${marketCode} 的配置`);
     }
     return market.timezone;
 }
