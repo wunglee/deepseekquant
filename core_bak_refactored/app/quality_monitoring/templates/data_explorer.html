@@ -2940,14 +2940,14 @@ function showIntradayError(message) {
 /**
  * 🔧 判断是否处于交易时段（根据市场）
  */
-// 🔧 删除：isTradingTime() - 前端不再判断交易时段，完全依赖后端 should_poll
 
 // 获取模式特定的配置
-function getModeConfig(mode, isInitial, simulationMode) {
+function getModeConfig(mode, isInitial) {
     const lastRequestTime = IntradayChart.getRequestTime();
     
     switch (mode) {
         case 'mock':
+            const simulationMode = window.selectedTradingPhase || 'trading';
             return {
                 pollInterval: 5000,
                 setupInitialState: function() {
@@ -3034,11 +3034,11 @@ function getModeConfig(mode, isInitial, simulationMode) {
                                 newStartTime = `${dateStr} ${tradingHours.open}`;
                             } else {
                                 // 如果解析失败，抛出异常
-                                throw new Error(`解析市场 ${marketCode} 交易时间失败，无法获取开盘时间`);
+                                throw new Error(`解析市场 ${currentMarketCode} 交易时间失败，无法获取开盘时间`);
                             }
                         } else {
                             // 如果没有市场配置，抛出异常
-                            throw new Error(`无法获取市场 ${marketCode} 的配置信息`);
+                            throw new Error(`无法获取市场 ${currentMarketCode} 的配置信息`);
                         }
                     }
                     
@@ -3065,9 +3065,7 @@ function getModeConfig(mode, isInitial, simulationMode) {
 function loadIntradayData(symbol, isInitial = true) {
     // 获取模式配置
     const mode = IntradayChart.getMode();
-    const simulationMode = window.selectedTradingPhase || 'trading';
-    const modeConfig = getModeConfig(mode, isInitial, simulationMode);
-
+    const modeConfig = getModeConfig(mode, isInitial);
     // 使用模式无关的处理函数
     handleIntradayDataLoading(symbol, isInitial, modeConfig);
 }
