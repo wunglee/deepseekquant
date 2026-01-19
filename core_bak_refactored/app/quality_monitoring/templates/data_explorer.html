@@ -2942,8 +2942,138 @@ function showIntradayError(message) {
  */
 // 🔧 删除：isTradingTime() - 前端不再判断交易时段，完全依赖后端 should_poll
 
-function loadIntradayData(symbol, isInitial = true) {
+// 获取模式特定的配置
+function getModeConfig(mode, isInitial, simulationMode) {
+    const lastRequestTime = IntradayChart.getRequestTime();
+    
+    switch (mode) {
+        case 'mock':
+            return {
+                pollInterval: 5000,
+                setupInitialState: function() {
+                    const virtualStartTime = '2024-12-14 09:30:00';
+                    IntradayChart.setVirtualTime(virtualStartTime);
+                },
+                getCurrentTime: function(isInitial) {
+                    if (isInitial) {
+                        // 首次加载：使用已设置的虚拟时间 (09:30:00)
+                        return IntradayChart.getVirtualTime();
+                    } else {
+                        // 增量更新：虚拟时间递增 1 分钟
+                        const lastVirtualTime = IntradayChart.getVirtualTime();
+                        // 🔧 直接字符串操作：解析时间并增加 1 分钟
+                        const [date, time] = lastVirtualTime.split(' ');
+                        const [hours, minutes, seconds] = time.split(':').map(Number);
+                        const totalMinutes = hours * 60 + minutes + 1;  // +1分钟
+                        const newHours = Math.floor(totalMinutes / 60);
+                        const newMinutes = totalMinutes % 60;
+                        const newTime = `${date} ${String(newHours).padStart(2, '0')}:${String(newMinutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+                        IntradayChart.setVirtualTime(newTime);
+                        return newTime;
+                    }
+                },
+                getUpdateTimeRange: function(lastRequestTime, currentTime) {
+                    // 模拟模式：使用虚拟时间
+                    return {
+                        start: lastRequestTime,  // 从上次结束时间开始
+                        end: currentTime
+                    };
+                },
+                buildUrl: function(symbol, tickRange) {
+                    let url = `/api/v1/intraday/mock?symbol=${encodeURIComponent(symbol)}&trading_phase=${simulationMode}`;
 
+                    // 🔧 传递last_price（用于保证价格连续性）
+                    const intradayData = IntradayChart.getData();
+                    if (intradayData && intradayData.current_price) {
+                        url += `&last_price=${intradayData.current_price}`;
+                    }
+
+                    if (tickRange) {
+                        url += `&tick_range=${encodeURIComponent(JSON.stringify(tickRange))}`;
+                    }
+                    
+                    return url;
+                },
+                shouldGenerateTickRange: simulationMode === 'trading', // 属性而不是方法
+                shouldRecordFullTimestamp: false
+            };
+        case 'real':
+        default:
+            return {
+                pollInterval: 1000,
+                setupInitialState: function() {
+                    // 真实模式下不需要特殊初始化
+                },
+                getCurrentTime: function(isInitial) {
+                    // 📊 真实模式：使用系统实际时间
+                    return Math.floor(Date.now() / 1000);  // 当前时间（秒）
+                },
+                getUpdateTimeRange: function(lastRequestTime, currentTime) {
+                    // 🔧 真实模式：使用市场时间，而不是浏览器时间
+                    // 应该从后端API获取准确的市场时间，暂时使用服务器时间
+                    const marketDateTimeStr = formatToDateTimeStr(new Date());
+                    const dateStr = extractFromDateStr(marketDateTimeStr);  // YYYY-MM-DD
+                    const timeStr = extractFromTimeStr(marketDateTimeStr); // HH:MM:SS
+                    const newEndTime = `${dateStr} ${timeStr}`;
+
+                    // 如果有lastRequestTime，使用它；否则使用开盘时间
+                    let newStartTime;
+                    if (lastRequestTime) {
+                        newStartTime = lastRequestTime;
+                    } else {
+                        // 首次增量更新，从开盘到现在
+                        // 根据当前市场代码获取正确的开盘时间
+                        const currentMarketCode = window.currentMarketCode || 'CN'; // 默认为中国市场
+                        const marketConfig = window.marketConfig || {};
+                        const marketInfo = marketConfig[currentMarketCode];
+                        
+                        if (marketInfo && marketInfo.trading_hours) {
+                            // 解析交易时间字符串，获取开盘时间
+                            const tradingHours = parseTradingHoursString(marketInfo.trading_hours);
+                            if (tradingHours && tradingHours.open) {
+                                newStartTime = `${dateStr} ${tradingHours.open}`;
+                            } else {
+                                // 如果解析失败，抛出异常
+                                throw new Error(`解析市场 ${marketCode} 交易时间失败，无法获取开盘时间`);
+                            }
+                        } else {
+                            // 如果没有市场配置，抛出异常
+                            throw new Error(`无法获取市场 ${marketCode} 的配置信息`);
+                        }
+                    }
+                    
+                    return {
+                        start: newStartTime,
+                        end: newEndTime
+                    };
+                },
+                buildUrl: function(symbol, tickRange) {
+                    let url = `/api/v1/intraday/data?symbol=${encodeURIComponent(symbol)}`;
+
+                    if (tickRange) {
+                        url += `&tick_range=${encodeURIComponent(JSON.stringify(tickRange))}`;
+                    }
+                    
+                    return url;
+                },
+                shouldGenerateTickRange: !isInitial && lastRequestTime, // 属性而不是方法
+                shouldRecordFullTimestamp: true
+            };
+    }
+}
+
+function loadIntradayData(symbol, isInitial = true) {
+    // 获取模式配置
+    const mode = IntradayChart.getMode();
+    const simulationMode = window.selectedTradingPhase || 'trading';
+    const modeConfig = getModeConfig(mode, isInitial, simulationMode);
+
+    // 使用模式无关的处理函数
+    handleIntradayDataLoading(symbol, isInitial, modeConfig);
+}
+
+// 与模式无关的处理函数
+function handleIntradayDataLoading(symbol, isInitial, modeConfig) {
     // 🔧 只有首次加载才清空旧数据和显示加载状态
     if (isInitial) {
         IntradayChart.setData(null)
@@ -2951,39 +3081,12 @@ function loadIntradayData(symbol, isInitial = true) {
         IntradayChart.setBatchIndex(0)  // 重置批次序号
         IntradayChart.setRequestTime(0)  // 重置时间
 
-        // 🎮 模拟模式：初始化虚拟时间为 09:30:00
-        const mode = IntradayChart.getMode()
-        if (mode === 'mock') {
-            const virtualStartTime = '2024-12-14 09:30:00'
-            IntradayChart.setVirtualTime(virtualStartTime)
-        }
+        // 设置初始状态（根据模式）
+        modeConfig.setupInitialState();
     }
 
     // 🔧 计算 TickRange（时间范围）
-    const mode = IntradayChart.getMode()
-    let currentTime
-
-    if (mode === 'mock') {
-        // 🎮 模拟模式：使用虚拟时间（每次递增1分钟）
-        if (isInitial) {
-            // 首次加载：使用已设置的虚拟时间 (09:30:00)
-            currentTime = IntradayChart.getVirtualTime()
-        } else {
-            // 增量更新：虚拟时间递增 1 分钟
-            const lastVirtualTime = IntradayChart.getVirtualTime()
-            // 🔧 直接字符串操作：解析时间并增加 1 分钟
-            const [date, time] = lastVirtualTime.split(' ')
-            const [hours, minutes, seconds] = time.split(':').map(Number)
-            const totalMinutes = hours * 60 + minutes + 1  // +1分钟
-            const newHours = Math.floor(totalMinutes / 60)
-            const newMinutes = totalMinutes % 60
-            currentTime = `${date} ${String(newHours).padStart(2, '0')}:${String(newMinutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
-            IntradayChart.setVirtualTime(currentTime)
-        }
-    } else {
-        // 📊 真实模式：使用系统实际时间
-        currentTime = Math.floor(Date.now() / 1000)  // 当前时间（秒）
-    }
+    let currentTime = modeConfig.getCurrentTime(isInitial);
 
     // 🔧 构建 TickRange 对象
     // 规则：
@@ -2992,13 +3095,8 @@ function loadIntradayData(symbol, isInitial = true) {
     let tickRange = null
     const lastRequestTime = IntradayChart.getRequestTime()
 
-    let simulationMode = window.selectedTradingPhase || 'trading'
-
-    // 🔧 判断是否生成 TickRange
-    // 模拟模式：盘中时始终生成
-    // 真实模式：只在增量更新时生成（有 lastRequestTime）
-    const shouldGenerateTickRange = (mode === 'mock' && simulationMode === 'trading')
-                                    || (mode === 'real' && !isInitial && lastRequestTime)
+    // 🔧 判断是否生成 TickRange - 现在是简单的属性访问，不感知mode差异
+    let shouldGenerateTickRange = modeConfig.shouldGenerateTickRange;
 
     if (shouldGenerateTickRange) {
         if (isInitial) {
@@ -3021,28 +3119,9 @@ function loadIntradayData(symbol, isInitial = true) {
         } else {
             // 🎯 增量更新：每次增加 1 分钟（从上次结束时间到新的结束时间）
             const lastRequestTime = IntradayChart.getRequestTime()
-            let newStartTime, newEndTime
-
-            if (mode === 'mock') {
-                // 模拟模式：使用虚拟时间
-                newStartTime = lastRequestTime  // 从上次结束时间开始
-                newEndTime = currentTime  
-            } else {
-                // 🔧 真实模式：使用市场时间，而不是浏览器时间
-                // 应该从后端API获取准确的市场时间，暂时使用服务器时间
-                const marketDateTimeStr = formatToDateTimeStr(new Date())
-                const dateStr = extractFromDateStr(marketDateTimeStr)  // YYYY-MM-DD
-                const timeStr = extractFromTimeStr(marketDateTimeStr) // HH:MM:SS
-                newEndTime = `${dateStr} ${timeStr}`
-
-                // 如果有lastRequestTime，使用它；否则使用开盘时间
-                if (lastRequestTime) {
-                    newStartTime = lastRequestTime
-                } else {
-                    // 首次增量更新，从开盘到现在
-                    newStartTime = `${dateStr} 09:30:00`
-                }
-            }
+            const updateTimeRange = modeConfig.getUpdateTimeRange(lastRequestTime, currentTime);
+            const newStartTime = updateTimeRange.start;
+            const newEndTime = updateTimeRange.end;
 
             tickRange = {
                 start_time: newStartTime,
@@ -3053,24 +3132,8 @@ function loadIntradayData(symbol, isInitial = true) {
         }
     }
 
-    let url
-    if (mode === 'mock') {
-        // 模拟模式：调用 /api/v1/intraday/mock
-        url = `/api/v1/intraday/mock?symbol=${encodeURIComponent(symbol)}&trading_phase=${simulationMode}`
-
-        // 🔧 传递last_price（用于保证价格连续性）
-        const intradayData = IntradayChart.getData()
-        if (intradayData && intradayData.current_price) {
-            url += `&last_price=${intradayData.current_price}`
-        }
-    } else {
-        // 真实模式：调用 /api/v1/intraday/data
-        url = `/api/v1/intraday/data?symbol=${encodeURIComponent(symbol)}`
-    }
-
-    if (tickRange) {
-        url += `&tick_range=${encodeURIComponent(JSON.stringify(tickRange))}`
-    }
+    // 构建请求URL
+    let url = modeConfig.buildUrl(symbol, tickRange);
 
     fetch(url)
         .then(r => {
@@ -3097,8 +3160,8 @@ function loadIntradayData(symbol, isInitial = true) {
 
                 if (res.data.times && res.data.times.length > 0) {
                     const lastTime = res.data.times[res.data.times.length - 1]
-                    if (mode === 'real') {
-                        // 真实模式：记录完整时间戳（日期+时间）
+                    if (modeConfig.shouldRecordFullTimestamp) {
+                        // 根据模式配置决定是否记录完整时间戳（日期+时间）
                         const marketDateTimeStr = formatToDateTimeStr(new Date())
                         const dateStr = extractFromDateStr(marketDateTimeStr)  // YYYY-MM-DD
                         const lastRequestTime = `${dateStr} ${lastTime}`
@@ -3114,10 +3177,8 @@ function loadIntradayData(symbol, isInitial = true) {
                     IntradayChart.setTimer(null)
                 }
 
-                // 🔧 mode 已经在上面定义，不需要重复定义
-
                 if (res.data.should_poll) {
-                    const pollInterval = mode === 'mock' ? 5000 : 1000
+                    const pollInterval = modeConfig.pollInterval;
                     const newTimer = setInterval(() => {
                         if (currentChartType === 'intraday' && currentIndex) {
                             loadIntradayData(currentIndex.id, false)
