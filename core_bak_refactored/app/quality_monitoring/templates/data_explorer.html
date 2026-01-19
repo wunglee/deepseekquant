@@ -3324,12 +3324,7 @@ function initializeIntradayTimeAxis() {
     
     // 生成当前市场的完整交易时间轴
     const fullTradingTimes = getFullTradingTimes(window.currentMarketCode)
-    
-    // 初始化数据数组
-    window.priceData = new Array(fullTradingTimes.length).fill(null)
-    window.avgPriceData = new Array(fullTradingTimes.length).fill(null)
-    window.volumeData = new Array(fullTradingTimes.length).fill(null)
-    
+
     console.log(`✅ 分时图时间轴初始化完成，共 ${fullTradingTimes.length} 个时间点`)
 }
 
