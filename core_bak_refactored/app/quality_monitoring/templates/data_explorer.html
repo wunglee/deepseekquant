@@ -1086,10 +1086,6 @@ function init() {
         });
 
         buildMarketSelector(completeMarkets);
-        if (completeMarkets.length) {
-            selectMarket(completeMarkets[0]); // 默认选择第一个市场（A股）
-        }
-
         buildChartTypeSelector()
         buildIntradayModeSelector()  // 🔧 添加分时图数据模式选择器
         buildIntradayPhaseSelector()  // 🔧 添加分时图交易时段选择器
@@ -1097,39 +1093,12 @@ function init() {
         buildKlinePhaseSelector()  // 🔧 添加K线图交易时段选择器
         buildPeriodSelector()
         buildIndicatorSelector()
-
         // 🔧 关键修复：初始化时根据currentChartType设置容器显示/隐藏状态
-        if (currentChartType === 'intraday') {
-            // 默认显示分时图相关元素
-            document.getElementById('periodSelector').style.display = 'none'
-            document.getElementById('klineChart').style.display = 'none'
-            document.getElementById('intradayContainer').style.display = 'block'
-            document.querySelector('.indicator-area').style.display = 'none'
-            document.getElementById('dataZoomContainer').style.display = 'none'
-            // 🔧 显示分时图的控制
-            document.getElementById('intradayModeSelector').style.display = 'block'
-            document.getElementById('intradayPhaseSelector').style.display = 'block'
-            // 🔧 隐藏K线图的控制
-            document.getElementById('klineModeSelector').style.display = 'none'
-            document.getElementById('klinePhaseSelector').style.display = 'none'
-
-            // 🔧 注意：不在这里调用showLoading，因为图表还未初始化
-            // 等待selectIndex被调用时会自动重建布局
-        } else {
-            // K线图模式
-            document.getElementById('periodSelector').style.display = 'flex'
-            document.getElementById('klineChart').style.display = 'block'
-            document.getElementById('intradayContainer').style.display = 'none'
-            document.querySelector('.indicator-area').style.display = 'block'
-            document.getElementById('dataZoomContainer').style.display = 'block'
-            // 🔧 隐藏分时图的控制
-            document.getElementById('intradayModeSelector').style.display = 'none'
-            document.getElementById('intradayPhaseSelector').style.display = 'none'
-            // 🔧 显示K线图的控制
-            document.getElementById('klineModeSelector').style.display = 'block'
-            document.getElementById('klinePhaseSelector').style.display = 'none'  // 默认隐藏，切换到Mock模式才显示
+        switchChartType(currentChartType)
+        if (completeMarkets.length) {
+            selectMarket(completeMarkets[0]); // 默认选择第一个市场（A股）
+            console.log('✅ 默认选择第一个市场：', completeMarkets[0].name);
         }
-
     }).catch(err => {
         console.error('Init error:', err);
         showEmpty(klineChart, '初始化失败: ' + err.message);
@@ -1211,8 +1180,6 @@ function updateMarketHeader(marketCode) {
 }
 
 function selectMarket(market) {
-    currentMarket = market.id
-
     // 设置当前市场代码（从market.id中提取CN、US等代码，与market.yml中的market_registry id一致）
     // market.id格式为 'CN'
     const marketCode = market.id
@@ -1222,46 +1189,13 @@ function selectMarket(market) {
     // 更新市场标题和交易时间信息
     updateMarketHeader(marketCode)
 
+    // 在切换市场时初始化分时图时间轴（包含基础分割线等配置）
+    initializeIntradayTimeAxis()
+
     const indices = (market.default_indices || [])
     buildIndexList(indices)
 
-    // 清除之前的错误状态，确保切换市场时能正常显示新数据
-    if (klineChart) {
-        // 清除图表中的错误提示
-        klineChart.clear()
-        // 显示加载状态
-        klineChart.setOption({
-            graphic: [{
-                type: 'text',
-                left: 'center',
-                top: 'center',
-                style: {
-                    text: '加载中...',
-                    fontSize: 16,
-                    fill: '#999'
-                }
-            }]
-        }, true);
-    }
-
-    // 💚 同时清除技术指标图（关键修复）
-    if (indicatorChart) {
-        indicatorChart.clear()
-        // 显示加载状态
-        indicatorChart.setOption({
-            graphic: [{
-                type: 'text',
-                left: 'center',
-                top: 'center',
-                style: {
-                    text: '加载中...',
-                    fontSize: 16,
-                    fill: '#999'
-                }
-            }]
-        }, true);
-    }
-
+    // 市场切换后自动选择第一个指数，具体的图表清理和加载在selectIndex中处理
     if (indices.length) selectIndex(indices[0])
 }
 
@@ -1312,47 +1246,10 @@ function buildIndexList(indices) {
 function selectIndex(item) {
     currentIndex = item
 
-    // 清除之前的错误状态，确保切换指数时能正常显示新数据
-    if (klineChart) {
-        // 清除图表中的错误提示
-        klineChart.clear()
-        // 显示加载状态
-        klineChart.setOption({
-            graphic: [{
-                type: 'text',
-                left: 'center',
-                top: 'center',
-                style: {
-                    text: '加载中...',
-                    fontSize: 16,
-                    fill: '#999'
-                }
-            }]
-        }, true);
-    }
-
-    // 同时清除技术指标图的错误状态并显示加载状态
-    if (indicatorChart) {
-        // 清除图表中的错误提示
-        indicatorChart.clear()
-        // 显示加载状态
-        indicatorChart.setOption({
-            graphic: [{
-                type: 'text',
-                left: 'center',
-                top: 'center',
-                style: {
-                    text: '加载中...',
-                    fontSize: 16,
-                    fill: '#999'
-                }
-            }]
-        }, true);
-    }
-
     // 🔧 关键修复：如果当前是分时图模式，彻底重建布局并加载新数据
     if (currentChartType === 'intraday') {
-        // 🔥 使用独立模块的重建函数（连根拔起，彻底重建）
+        // 如果当前是分时图模式，不需要清理klineChart和indicatorChart，因为它们不会被使用
+        // 分时图的清理由IntradayChart.rebuildLayout()处理
         // 判断是否是指数：优先看 type 属性，其次看是否是常见指数代码
         const isIndex = item.type === 'index'
         const isStock = !isIndex
@@ -1362,6 +1259,43 @@ function selectIndex(item) {
         // 加载新股票的分时数据
         loadIntradayData(item.id, true)
     } else {
+        // 如果当前是K线图模式，清理K线图和指标图后再加载新数据
+        if (klineChart) {
+            // 清除图表中的错误提示
+            klineChart.clear()
+            // 显示加载状态
+            klineChart.setOption({
+                graphic: [{
+                    type: 'text',
+                    left: 'center',
+                    top: 'center',
+                    style: {
+                        text: '加载中...',
+                        fontSize: 16,
+                        fill: '#999'
+                    }
+                }]
+            }, true);
+        }
+
+        // 同时清除技术指标图的错误状态并显示加载状态
+        if (indicatorChart) {
+            indicatorChart.clear()
+            // 显示加载状态
+            indicatorChart.setOption({
+                graphic: [{
+                    type: 'text',
+                    left: 'center',
+                    top: 'center',
+                    style: {
+                        text: '加载中...',
+                        fontSize: 16,
+                        fill: '#999'
+                    }
+                }]
+            }, true);
+        }
+
         // K线图模式，加载K线数据
         loadKline(item.id)
     }
@@ -3325,6 +3259,77 @@ function initializeIntradayTimeAxis() {
     // 生成当前市场的完整交易时间轴
     const fullTradingTimes = getFullTradingTimes(window.currentMarketCode)
 
+    // 设置图表的基础配置（与具体股票无关的时间轴和分割线）
+    const charts = IntradayChart.getCharts()
+    if (charts.price && charts.volume) {
+        // 准备基础markLine配置（用于午休分割线等）
+        const markLineData = []
+        makeLunchBreakLine(markLineData)
+
+        // 为价格图表设置基础时间轴
+        charts.price.setOption({
+            xAxis: {
+                type: 'category',
+                data: fullTradingTimes,  // 使用全局初始化的时间轴
+                boundaryGap: false,
+                axisLabel: {
+                    interval: 'auto',  // 自动间隔，避免标签重叠
+                    formatter: function(value) {
+                        // 只显示整分钟的标签（HH:MM:00）
+                        if (value.endsWith(':00')) {
+                            return value.substring(0, 5)  // 去掉秒，显示HH:MM
+                        }
+                        return ''  // 非整分钟不显示
+                    }
+                }
+            },
+            grid: { left: '50px', right: '50px', top: '60px', bottom: '30px' },
+            yAxis: {
+                type: 'value',
+                splitLine: {
+                    lineStyle: { type: 'dashed', color: '#e5e7eb' }
+                },
+                axisLine: { onZero: false }
+            },
+            // 添加午休分割线等基础markLine
+            series: [{
+                name: '基础分割线',
+                type: 'line',
+                markLine: {
+                    symbol: 'none',
+                    silent: false,
+                    animation: false,
+                    data: markLineData
+                }
+            }]
+        })
+
+        // 为成交量图表设置基础时间轴
+        charts.volume.setOption({
+            xAxis: {
+                type: 'category',
+                data: fullTradingTimes,
+                show: false
+            },
+            grid: { left: '50px', right: '50px', top: '40px', bottom: '20px' },
+            yAxis: {
+                type: 'value',
+                splitLine: { lineStyle: { type: 'dashed', color: '#e5e7eb' } }
+            },
+            // 添加午休分割线等基础markLine
+            series: [{
+                name: '基础分割线',
+                type: 'line',
+                markLine: {
+                    symbol: 'none',
+                    silent: false,
+                    animation: false,
+                    data: markLineData
+                }
+            }]
+        })
+    }
+
     console.log(`✅ 分时图时间轴初始化完成，共 ${fullTradingTimes.length} 个时间点`)
 }
 
@@ -3390,9 +3395,6 @@ function renderIntradayCharts(data) {
         return
     }
 
-    charts.price.clear()
-    charts.volume.clear()
-
     const markLineData = [
         {
             // 🔧 昨收横线
@@ -3412,7 +3414,6 @@ function renderIntradayCharts(data) {
             }
         }
     ]
-    makeLunchBreakLine(markLineData)
     charts.price.setOption({
         title: {
             text: (currentIndex ? currentIndex.name : '') + ' 分时图 (' + formatToMarketDateTimeStr(new Date()) + ')',
@@ -3440,22 +3441,6 @@ function renderIntradayCharts(data) {
                              ` (${change >= 0 ? '+' : ''}${change.toFixed(2)}, ${changePercent}%)<br/>`
                 })
                 return result
-            }
-        },
-        grid: { left: '50px', right: '50px', top: '60px', bottom: '30px' },
-        xAxis: {
-            type: 'category',
-            data: fullTradingTimes,  // 🔧 使用全局初始化的时间轴
-            boundaryGap: false,
-            axisLabel: {
-                interval: 'auto',  // 🔧 自动间隔，避免标签重叠
-                formatter: function(value) {
-                    // 只显示整分钟的标签（HH:MM:00）
-                    if (value.endsWith(':00')) {
-                        return value.substring(0, 5)  // 去掉秒，显示HH:MM
-                    }
-                    return ''  // 非整分钟不显示
-                }
             }
         },
         yAxis: {
@@ -3506,7 +3491,7 @@ function renderIntradayCharts(data) {
                     symbol: 'none',
                     silent: false,
                     animation: false,
-                    data: markLineData  // 🔧 使用动态生成的markLine配置
+                    data: markLineData  // 🔧 使用动态生成的markLine配置（包含昨收线）
                 },
             },
             {
@@ -3519,6 +3504,7 @@ function renderIntradayCharts(data) {
                 lineStyle: { width: 1.5, color: '#f59e0b', type: 'dashed' },
                 connectNulls: true  // 🔧 连接null值
             }
+            // 注意：基础分割线由initializeIntradayTimeAxis函数设置，这里不再重复设置
         ]
     }, true)  // 🔧 关键：使用true完全替换配置，清除graphic
 
@@ -3536,16 +3522,6 @@ function renderIntradayCharts(data) {
                 }
                 return params[0].axisValue + '<br/>' + params[0].marker + '成交量: ' + volume.toLocaleString() + '手'
             }
-        },
-        grid: { left: '50px', right: '50px', top: '40px', bottom: '20px' },
-        xAxis: {
-            type: 'category',
-            data: fullTradingTimes,  //
-            show: false
-        },
-        yAxis: {
-            type: 'value',
-            splitLine: { lineStyle: { type: 'dashed', color: '#e5e7eb' } }
         },
         series: [{
             type: 'bar',
@@ -3625,27 +3601,16 @@ function updateIntradayChartsIncremental(newData) {
             volumeData[timeIndex] = intradayData.volumes[idx]
         }
     })
-    const markLineData=[
-                    {
-                        // 🔧 昨收横线
-                        yAxis: yesterdayClose,
-                        label: {
-                            show: true,
-                            formatter: '昨收: {c}',
-                            position: 'end',
-                            color: '#6b7280',
-                            fontSize: 11
-                        },
-                        lineStyle: {
-                            color: '#9ca3af',
-                            type: 'dashed',
-                            width: 2,
-                            opacity: 0.9
-                        }
-                    }
-                 ]
-    makeLunchBreakLine(markLineData)
-    const priceOption = {
+    
+    // 获取已有的markLine配置，避免重复创建基础分割线
+    const charts = IntradayChart.getCharts()
+    if (!charts.price || !charts.volume) {
+        console.error('❌ 图表实例为空，无法更新！')
+        return
+    }
+    
+    // 更新价格图表
+    charts.price.setOption({
         title: {
             subtext: `昨收: ${yesterdayClose.toFixed(2)}  现价: ${currentPrice.toFixed(2)}  涨跌: ${change >= 0 ? '+' : ''}${change.toFixed(2)} (${changePercent.toFixed(2)}%)`,
             subtextStyle: { 
@@ -3655,64 +3620,17 @@ function updateIntradayChartsIncremental(newData) {
         },
         series: [
             { 
-                data: priceData,
-                // 🔧 关键：增量更新时也要设置 markLine，配置必须与首次渲染完全一致
-                markLine: {
-                    symbol: 'none',
-                    silent: false,
-                    animation: false,
-                    data:markLineData,
-                }
+                data: priceData
             },
             { data: avgPriceData }
         ]
-    }
+    })
     
-    const volumeOption = {
+    // 更新成交量图表
+    charts.volume.setOption({
         series: [{
-            type: 'bar',  // 🔧 添加 type，确保 ECharts 能识别
-            data: volumeData,
-            itemStyle: {
-                color: (params) => {
-                    const idx = params.dataIndex
-                    if (idx === 0 || !priceData[idx] || !priceData[idx - 1]) return '#64748b'
-                    const currentPrice = parseFloat(priceData[idx])
-                    const prevPrice = parseFloat(priceData[idx - 1])
-                    return currentPrice >= prevPrice ? '#ef4444' : '#10b981'
-                }
-            },
-            barWidth: '80%'  // 🔧 添加 barWidth
+            data: volumeData
         }]
-    }
-    
-    console.log(`📦 volumeOption配置:`, JSON.stringify(volumeOption).substring(0, 200))
-    
-    // 🔧 关键：验证图表实例是否有效
-    if (!intradayPriceChart || !intradayVolumeChart) {
-        console.error('❌ 图表实例无效，尝试重新初始化')
-        intradayPriceChart = echarts.init(document.getElementById('intradayPriceChart'))
-        intradayVolumeChart = echarts.init(document.getElementById('intradayVolumeChart'))
-        echarts.connect([intradayPriceChart, intradayVolumeChart])
-    }
-    
-    // 🔧 检查图表是否已被销毁
-    if (intradayVolumeChart.isDisposed && intradayVolumeChart.isDisposed()) {
-        console.error('❌ 成交量图表已被销毁，重新初始化')
-        intradayVolumeChart = echarts.init(document.getElementById('intradayVolumeChart'))
-        echarts.connect([intradayPriceChart, intradayVolumeChart])
-    }
-    
-    requestAnimationFrame(() => {
-        try {
-            intradayPriceChart.setOption(priceOption)
-            intradayVolumeChart.setOption(volumeOption, { replaceMerge: ['series'] })
-        } catch (error) {
-            console.error('❌ 图表更新失败:', error)
-            // 尝试重新初始化
-            intradayVolumeChart = echarts.init(document.getElementById('intradayVolumeChart'))
-            echarts.connect([intradayPriceChart, intradayVolumeChart])
-            intradayVolumeChart.setOption(volumeOption, { replaceMerge: ['series'] })
-        }
     })
 }
 function makeLunchBreakLine(markLineData) {
