@@ -3319,14 +3319,14 @@ function initializeIntradayTimeAxis() {
     }
     
     // 生成当前市场的完整交易时间轴
-    window.fullTradingTimes = generateFullTradingTimes(window.currentMarketCode)
+    const fullTradingTimes = generateFullTradingTimes(window.currentMarketCode)
     
     // 初始化数据数组
-    window.priceData = new Array(window.fullTradingTimes.length).fill(null)
-    window.avgPriceData = new Array(window.fullTradingTimes.length).fill(null)
-    window.volumeData = new Array(window.fullTradingTimes.length).fill(null)
+    window.priceData = new Array(fullTradingTimes.length).fill(null)
+    window.avgPriceData = new Array(fullTradingTimes.length).fill(null)
+    window.volumeData = new Array(fullTradingTimes.length).fill(null)
     
-    console.log(`✅ 分时图时间轴初始化完成，共 ${window.fullTradingTimes.length} 个时间点`)
+    console.log(`✅ 分时图时间轴初始化完成，共 ${fullTradingTimes.length} 个时间点`)
 }
 
 /**
@@ -3349,21 +3349,17 @@ function renderIntradayCharts(data) {
     const change = parseFloat(data.change)
     const changePercent = parseFloat(data.change_percent)
 
-    // 🔧 使用已初始化的时间轴，而不是每次都重新生成
-    if (!window.fullTradingTimes || window.fullTradingTimes.length === 0) {
-        console.warn('⚠️ 时间轴未初始化，开始初始化时间轴')
-        window.fullTradingTimes = generateFullTradingTimes(window.currentMarketCode)
-    }
+    const fullTradingTimes = generateFullTradingTimes(window.currentMarketCode)
 
     // 重新初始化数据数组长度以匹配时间轴
-    const priceData = new Array(window.fullTradingTimes.length).fill(null)
-    const avgPriceData = new Array(window.fullTradingTimes.length).fill(null)
-    const volumeData = new Array(window.fullTradingTimes.length).fill(null)
+    const priceData = new Array(fullTradingTimes.length).fill(null)
+    const avgPriceData = new Array(fullTradingTimes.length).fill(null)
+    const volumeData = new Array(fullTradingTimes.length).fill(null)
 
     // 🔧 关键修复：只有hasTicks为true时才映射数据（盘前为空）
     if (hasTicks) {
         data.times.forEach((time, idx) => {
-            const timeIndex = window.fullTradingTimes.indexOf(time)
+            const timeIndex = fullTradingTimes.indexOf(time)
             if (timeIndex !== -1) {
                 // 🔧 关键修复：强制转换为数字类型，并验证有效性
                 const price = parseFloat(data.prices[idx])
@@ -3450,7 +3446,7 @@ function renderIntradayCharts(data) {
         grid: { left: '50px', right: '50px', top: '60px', bottom: '30px' },
         xAxis: {
             type: 'category',
-            data: window.fullTradingTimes,  // 🔧 使用全局初始化的时间轴
+            data: fullTradingTimes,  // 🔧 使用全局初始化的时间轴
             boundaryGap: false,
             axisLabel: {
                 interval: 'auto',  // 🔧 自动间隔，避免标签重叠
@@ -3545,7 +3541,7 @@ function renderIntradayCharts(data) {
         grid: { left: '50px', right: '50px', top: '40px', bottom: '20px' },
         xAxis: {
             type: 'category',
-            data: window.fullTradingTimes,  // 🔧 使用全局初始化的时间轴
+            data: fullTradingTimes,  //
             show: false
         },
         yAxis: {
