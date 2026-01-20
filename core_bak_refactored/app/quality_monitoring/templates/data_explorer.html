@@ -3170,7 +3170,7 @@ function renderIntradayCharts(data) {
         console.error('❌ 成交量图表实例为空，无法渲染！')
         return
     }
-
+    const lunchBreakData = makeLunchBreakLine()
     const markLineData = [
         {
             // 🔧 昨收横线
@@ -3188,7 +3188,8 @@ function renderIntradayCharts(data) {
                 width: 2,  // 🔧 加粗昨收线
                 opacity: 0.9
             }
-        }
+        },
+        ...lunchBreakData  // 🔧 合并午休分割线数据
     ]
     charts.price.setOption({
         title: {
