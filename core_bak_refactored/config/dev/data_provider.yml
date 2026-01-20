@@ -33,7 +33,6 @@ providers:
   adapter_module: core_bak_refactored.core.data.providers.yahoo_provider
   adapter_class: YahooFinanceDataProvider
   markets:
-  - CN
   - HK
   - US
   - EU

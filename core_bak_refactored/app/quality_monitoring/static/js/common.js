@@ -241,6 +241,245 @@ document.addEventListener('DOMContentLoaded', function() {
     document.head.appendChild(style);
 });
 
+// ========== 市场时区相关工具函数 ==========
+
+/**
+ * 根据当前选择的市场获取对应时区（从markets配置中获取）
+ * @returns {string} 时区字符串
+ */
+function getMarketTimezone() {
+    const marketCode = window.currentMarketCode || 'CN';
+    
+    if (!window.marketsConfig || !Array.isArray(window.marketsConfig)) {
+        console.error('❌错误：markets配置未加载');
+        throw new Error('markets配置未加载');
+    }
+    const market = window.marketsConfig.find(m => m.code === marketCode);
+    if (!market) {
+        console.error(`❌未找到市场代码 ${marketCode} 的配置`);
+        throw new Error(`未找到市场代码 ${marketCode} 的配置`);
+    }
+    return market.timezone;
+}
+
+/**
+ * 获取指定时间在当前市场时区的格式化时间字符串
+ * @param {Date} date - Date对象（必须传入）
+ * @returns {string} 当前市场时区的格式化时间字符串
+ */
+function formatToMarketDateTimeStr(date) {
+    if (!date || !(date instanceof Date)) {
+        console.error('formatToMarketDateTimeStr: 必须传入有效的Date对象');
+        return '';
+    }
+
+    const timezone = getMarketTimezone();
+
+    try {
+        return date.toLocaleString('zh-CN', {
+            timeZone: timezone,
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: false
+        });
+    } catch (e) {
+        console.error('格式化市场时间失败:', e);
+        return '';
+    }
+}
+
+/**
+ * 从完整日期时间字符串中提取日期部分（YYYY-MM-DD格式）
+ * @param {string} dateTimeStr - 完整的日期时间字符串
+ * @returns {string} 日期部分（YYYY-MM-DD格式）
+ */
+function extractFromDateStr(dateTimeStr) {
+    if (!dateTimeStr || typeof dateTimeStr !== 'string') {
+        console.error('extractFromDateStr: 必须传入有效的日期时间字符串');
+        return '';
+    }
+    
+    try {
+        // 支持多种日期格式的提取
+        const dateMatch = dateTimeStr.match(/(\d{4}-\d{2}-\d{2})/);
+        if (dateMatch) {
+            return dateMatch[1];
+        }
+        
+        // 如果标准格式不匹配，尝试解析并重新格式化
+        const date = extractFromMarketDateTimeStr(dateTimeStr);
+        if (date) {
+            return date.toISOString().split('T')[0];
+        }
+        
+        console.error('extractFromDateStr: 无法解析日期时间字符串:', dateTimeStr);
+        return '';
+    } catch (e) {
+        console.error('extractFromDateStr: 提取日期部分失败:', e);
+        return '';
+    }
+}
+
+/**
+ * 从完整日期时间字符串中提取时间部分（HH:MM:SS格式）
+ * @param {string} dateTimeStr - 完整的日期时间字符串
+ * @returns {string} 时间部分（HH:MM:SS格式）
+ */
+function extractFromTimeStr(dateTimeStr) {
+    if (!dateTimeStr || typeof dateTimeStr !== 'string') {
+        console.error('extractFromTimeStr: 必须传入有效的日期时间字符串');
+        return '';
+    }
+    
+    try {
+        // 支持多种时间格式的提取
+        const timeMatch = dateTimeStr.match(/(\d{2}:\d{2}:\d{2})/);
+        if (timeMatch) {
+            return timeMatch[1];
+        }
+        
+        // 如果标准格式不匹配，尝试解析并重新格式化
+        const date = extractFromMarketDateTimeStr(dateTimeStr);
+        if (date) {
+            const hours = String(date.getHours()).padStart(2, '0');
+            const minutes = String(date.getMinutes()).padStart(2, '0');
+            const seconds = String(date.getSeconds()).padStart(2, '0');
+            return `${hours}:${minutes}:${seconds}`;
+        }
+        
+        console.error('extractFromTimeStr: 无法解析日期时间字符串:', dateTimeStr);
+        return '';
+    } catch (e) {
+        console.error('extractFromTimeStr: 提取时间部分失败:', e);
+        return '';
+    }
+}
+
+/**
+ * 将时间字符串解析为市场时区的Date对象
+ * @param {string} timeString - 时间字符串（支持多种格式）
+ * @returns {Date} 市场时区的Date对象
+ */
+function extractFromMarketDateTimeStr(timeString) {
+    if (!timeString || typeof timeString !== 'string') {
+        console.error('extractFromMarketDateTimeStr: 必须传入有效的时间字符串');
+        return null;
+    }
+    
+    try {
+        // 获取当前市场时区
+        const timezone = getMarketTimezone();
+        
+        // 支持多种时间格式的解析
+        let date;
+        
+        // 尝试解析ISO格式
+        if (timeString.includes('T')) {
+            date = new Date(timeString);
+        } 
+        // 尝试解析中文格式（如：2024-01-15 14:30:00）
+        else if (timeString.includes('-') && timeString.includes(':')) {
+            // 将中文格式转换为ISO格式
+            const isoString = timeString.replace(' ', 'T');
+            date = new Date(isoString);
+        }
+        // 尝试解析时间戳
+        else if (/^\d+$/.test(timeString)) {
+            date = new Date(parseInt(timeString));
+        }
+        // 其他格式使用默认解析
+        else {
+            date = new Date(timeString);
+        }
+        
+        if (isNaN(date.getTime())) {
+            console.error('extractFromMarketDateTimeStr: 无法解析时间字符串:', timeString);
+            return null;
+        }
+        
+        // 正确的时区转换方法：使用时区偏移量调整
+        const timezoneOffset = getTimezoneOffset(timezone);
+        const localOffset = date.getTimezoneOffset();
+        const adjustedTime = new Date(date.getTime() + (timezoneOffset - localOffset) * 60000);
+        
+        return adjustedTime;
+        
+    } catch (e) {
+        console.error('extractFromMarketDateTimeStr: 解析时间字符串失败:', e);
+        return null;
+    }
+}
+
+/**
+ * 获取指定时区的分钟偏移量
+ * @param {string} timezone - 时区名称
+ * @returns {number} 分钟偏移量
+ */
+function getTimezoneOffset(timezone) {
+    const date = new Date();
+    const utcDate = new Date(date.toLocaleString('en-US', { timeZone: 'UTC' }));
+    const tzDate = new Date(date.toLocaleString('en-US', { timeZone: timezone }));
+    return (utcDate.getTime() - tzDate.getTime()) / 60000;
+}
+
+/**
+ * 统一解析交易时间字符串
+ * @param {string} tradingHoursStr - 交易时间字符串，格式如 "09:30-11:30,13:00-15:00" 或 "09:30-15:00"
+ * @returns {Object} 包含open, close, lunch_start, lunch_end的对象
+ */
+function parseTradingHoursString(tradingHoursStr) {
+    if (!tradingHoursStr || typeof tradingHoursStr !== 'string') {
+        return {};
+    }
+
+    // 检查是否包含午休时段（逗号分隔）
+    if (tradingHoursStr.includes(',')) {
+        const segments = tradingHoursStr.split(',');
+        const morning = segments[0].trim();
+        const afternoon = segments[1].trim();
+
+        const morningParts = morning.split('-');
+        const afternoonParts = afternoon.split('-');
+
+        return {
+            open: morningParts[0]?.trim(),
+            close: afternoonParts[1]?.trim(),
+            lunch_start: morningParts[1]?.trim(),
+            lunch_end: afternoonParts[0]?.trim()
+        };
+    } else {
+        // 没有午休时段的格式，如 "09:30-15:00"
+        const parts = tradingHoursStr.split('-');
+        return {
+            open: parts[0]?.trim(),
+            close: parts[1]?.trim(),
+            lunch_start: null,
+            lunch_end: null
+        };
+    }
+}
+
+/**
+ * 时间轴标签格式化函数
+ * @param {string|number} value - 时间值
+ * @returns {string} 格式化后的时间标签
+ */
+function formatTimeAxisLabel(value) {
+    // 只显示整分钟的标签（HH:MM:00）
+    if (value && value.endsWith && value.endsWith(':00')) {
+        return value.substring(0, 5);  // 去掉秒，显示HH:MM
+    }
+    // 对于非整分钟或非字符串值，返回格式化的时刻显示
+    if (typeof value === 'string' && value.length >= 5) {
+        return value.substring(0, 5);  // 显示HH:MM格式
+    }
+    return value;  // 如果不是字符串则返回原值
+}
+
 // ========== 导出工具函数 ==========
 window.AppUtils = {
     setActiveNav,
@@ -256,5 +495,14 @@ window.AppUtils = {
     showLoading,
     hideLoading,
     renderTable,
-    checkSystemHealth
+    checkSystemHealth,
+    // 市场时区相关工具函数
+    getMarketTimezone,
+    formatToMarketDateTimeStr,
+    extractFromDateStr,
+    extractFromTimeStr,
+    extractFromMarketDateTimeStr,
+    getTimezoneOffset,
+    parseTradingHoursString,
+    formatTimeAxisLabel
 };

@@ -1,5 +1,5 @@
 market_sources:
-  CN: yahoo
+  CN: akshare
   EU: yahoo
   HK: yahoo
   JP: yahoo
@@ -169,174 +169,172 @@ trading_hours:
     close: '17:00'
     lunch_start: '12:00'
     lunch_end: '13:00'
-# 默认指数/股票列表（按市场分类）
 default_indices:
   CN:
-    - code: "000001.SH"
-      name: "上证指数"
-      type: "index"
-    - code: "000300.SH"
-      name: "沪深300"
-      type: "index"
-    - code: "000016.SH"
-      name: "上证50"
-      type: "index"
-    - code: "399001.SZ"
-      name: "深证成指"
-      type: "index"
-    - code: "399006.SZ"
-      name: "创业板指"
-      type: "index"
-    - code: "000688.SH"
-      name: "科创50"
-      type: "index"
-    - code: "000905.SH"
-      name: "中证500"
-      type: "index"
-    - code: "000852.SH"
-      name: "中证1000"
-      type: "index"
-    - code: "399005.SZ"
-      name: "中小板指"
-      type: "index"
-    - code: "000991.SH"
-      name: "全指消费"
-      type: "index"
+  - code: 000001.SH
+    name: 上证指数
+    type: index
+  - code: 000300.SH
+    name: 沪深300
+    type: index
+  - code: 000016.SH
+    name: 上证50
+    type: index
+  - code: 399001.SZ
+    name: 深证成指
+    type: index
+  - code: 399006.SZ
+    name: 创业板指
+    type: index
+  - code: 000688.SH
+    name: 科创50
+    type: index
+  - code: 000905.SH
+    name: 中证500
+    type: index
+  - code: 000852.SH
+    name: 中证1000
+    type: index
+  - code: 399005.SZ
+    name: 中小板指
+    type: index
+  - code: 000991.SH
+    name: 全指消费
+    type: index
   US:
-    - code: "^GSPC.US"
-      name: "S&P 500"
-      type: "index"
-    - code: "^DJI.US"
-      name: "道琼斯工业平均指数"
-      type: "index"
-    - code: "^IXIC.US"
-      name: "纳斯达克综合指数"
-      type: "index"
-    - code: "^RUT.US"
-      name: "罗素2000"
-      type: "index"
-    - code: "^VIX.US"
-      name: "VIX恐慌指数"
-      type: "index"
-    - code: "AAPL.US"
-      name: "苹果公司"
-      type: "stock"
-    - code: "MSFT.US"
-      name: "微软公司"
-      type: "stock"
-    - code: "GOOGL.US"
-      name: "谷歌"
-      type: "stock"
-    - code: "AMZN.US"
-      name: "亚马逊"
-      type: "stock"
-    - code: "TSLA.US"
-      name: "特斯拉"
-      type: "stock"
+  - code: ^GSPC.US
+    name: S&P 500
+    type: index
+  - code: ^DJI.US
+    name: 道琼斯工业平均指数
+    type: index
+  - code: ^IXIC.US
+    name: 纳斯达克综合指数
+    type: index
+  - code: ^RUT.US
+    name: 罗素2000
+    type: index
+  - code: ^VIX.US
+    name: VIX恐慌指数
+    type: index
+  - code: AAPL.US
+    name: 苹果公司
+    type: stock
+  - code: MSFT.US
+    name: 微软公司
+    type: stock
+  - code: GOOGL.US
+    name: 谷歌
+    type: stock
+  - code: AMZN.US
+    name: 亚马逊
+    type: stock
+  - code: TSLA.US
+    name: 特斯拉
+    type: stock
   HK:
-    - code: "^HSI.HK"
-      name: "恒生指数"
-      type: "index"
-    - code: "^HSCE.HK"
-      name: "恒生中国企业指数"
-      type: "index"
-    - code: "^HSCCI.HK"
-      name: "恒生综合指数"
-      type: "index"
-    - code: "0700.HK"
-      name: "腾讯控股"
-      type: "stock"
-    - code: "0939.HK"
-      name: "建设银行"
-      type: "stock"
-    - code: "1299.HK"
-      name: "友邦保险"
-      type: "stock"
-    - code: "0005.HK"
-      name: "汇丰控股"
-      type: "stock"
-    - code: "0941.HK"
-      name: "中国移动"
-      type: "stock"
-    - code: "0388.HK"
-      name: "香港交易所"
-      type: "stock"
-    - code: "2318.HK"
-      name: "中国平安"
-      type: "stock"
+  - code: ^HSI.HK
+    name: 恒生指数
+    type: index
+  - code: ^HSCE.HK
+    name: 恒生中国企业指数
+    type: index
+  - code: ^HSCCI.HK
+    name: 恒生综合指数
+    type: index
+  - code: 0700.HK
+    name: 腾讯控股
+    type: stock
+  - code: 0939.HK
+    name: 建设银行
+    type: stock
+  - code: 1299.HK
+    name: 友邦保险
+    type: stock
+  - code: 0005.HK
+    name: 汇丰控股
+    type: stock
+  - code: 0941.HK
+    name: 中国移动
+    type: stock
+  - code: 0388.HK
+    name: 香港交易所
+    type: stock
+  - code: 2318.HK
+    name: 中国平安
+    type: stock
   JP:
-    - code: "^N225.JP"
-      name: "日经225指数"
-      type: "index"
-    - code: "^TOPX.JP"
-      name: "东证股价指数"
-      type: "index"
-    - code: "7203.JP"
-      name: "丰田汽车"
-      type: "stock"
-    - code: "9984.JP"
-      name: "软银集团"
-      type: "stock"
-    - code: "9433.JP"
-      name: "KDDI"
-      type: "stock"
-    - code: "6758.JP"
-      name: "索尼集团"
-      type: "stock"
-    - code: "8306.JP"
-      name: "三菱UFJ金融集团"
-      type: "stock"
-    - code: "9432.JP"
-      name: "日本电信电话"
-      type: "stock"
+  - code: ^N225.JP
+    name: 日经225指数
+    type: index
+  - code: ^TOPX.JP
+    name: 东证股价指数
+    type: index
+  - code: 7203.JP
+    name: 丰田汽车
+    type: stock
+  - code: 9984.JP
+    name: 软银集团
+    type: stock
+  - code: 9433.JP
+    name: KDDI
+    type: stock
+  - code: 6758.JP
+    name: 索尼集团
+    type: stock
+  - code: 8306.JP
+    name: 三菱UFJ金融集团
+    type: stock
+  - code: 9432.JP
+    name: 日本电信电话
+    type: stock
   EU:
-    - code: "^GDAXI.EU"
-      name: "德国DAX指数"
-      type: "index"
-    - code: "^FTSE.EU"
-      name: "英国富时100指数"
-      type: "index"
-    - code: "^FCHI.EU"
-      name: "法国CAC40指数"
-      type: "index"
-    - code: "^STOXX50E.EU"
-      name: "欧洲斯托克50指数"
-      type: "index"
-    - code: "ASML.AS.EU"
-      name: "阿斯麦"
-      type: "stock"
-    - code: "SAP.DE.EU"
-      name: "SAP"
-      type: "stock"
-    - code: "LVMH.PA.EU"
-      name: "路威酩轩"
-      type: "stock"
-    - code: "NESN.SW.EU"
-      name: "雀巢"
-      type: "stock"
-    - code: "HSBA.L.EU"
-      name: "汇丰控股"
-      type: "stock"
+  - code: ^GDAXI.EU
+    name: 德国DAX指数
+    type: index
+  - code: ^FTSE.EU
+    name: 英国富时100指数
+    type: index
+  - code: ^FCHI.EU
+    name: 法国CAC40指数
+    type: index
+  - code: ^STOXX50E.EU
+    name: 欧洲斯托克50指数
+    type: index
+  - code: ASML.AS.EU
+    name: 阿斯麦
+    type: stock
+  - code: SAP.DE.EU
+    name: SAP
+    type: stock
+  - code: LVMH.PA.EU
+    name: 路威酩轩
+    type: stock
+  - code: NESN.SW.EU
+    name: 雀巢
+    type: stock
+  - code: HSBA.L.EU
+    name: 汇丰控股
+    type: stock
   SG:
-    - code: "^STI.SG"
-      name: "新加坡海峡时报指数"
-      type: "index"
-    - code: "D05.SG"
-      name: "星展集团"
-      type: "stock"
-    - code: "O39.SG"
-      name: "华侨银行"
-      type: "stock"
-    - code: "U11.SG"
-      name: "大华银行"
-      type: "stock"
-    - code: "Z74.SG"
-      name: "新加坡电信"
-      type: "stock"
-    - code: "C09.SG"
-      name: "城市发展"
-      type: "stock"
-
+  - code: ^STI.SG
+    name: 新加坡海峡时报指数
+    type: index
+  - code: D05.SG
+    name: 星展集团
+    type: stock
+  - code: O39.SG
+    name: 华侨银行
+    type: stock
+  - code: U11.SG
+    name: 大华银行
+    type: stock
+  - code: Z74.SG
+    name: 新加坡电信
+    type: stock
+  - code: C09.SG
+    name: 城市发展
+    type: stock
 market_mechanisms:
   CN:
     has_limit_up_down: true

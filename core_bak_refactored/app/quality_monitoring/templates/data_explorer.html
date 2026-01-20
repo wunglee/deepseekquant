@@ -280,242 +280,6 @@
     <!-- 🔧 分时图独立模块 -->
     <script src="/static/js/intraday_chart.js"></script>
     <script>
-// ==================== 公共函数定义 ====================
-
-// 公共时间轴格式化函数
-function formatTimeAxisLabel(value) {
-    // 只显示整分钟的标签（HH:MM:00）
-    if (value && value.endsWith && value.endsWith(':00')) {
-        return value.substring(0, 5)  // 去掉秒，显示HH:MM
-    }
-    // 对于非整分钟或非字符串值，返回格式化的时刻显示
-    if (typeof value === 'string' && value.length >= 5) {
-        return value.substring(0, 5);  // 显示HH:MM格式
-    }
-    return value;  // 如果不是字符串则返回原值
-}
-
-// ==================== 时间处理工具函数 ====================
-
-/**
- * 根据当前选择的市场获取对应时区（从markets配置中获取）
- * @returns {string} 时区字符串
- */
-function getMarketTimezone() {
-    const marketCode = window.currentMarketCode || 'CN';
-    
-    if (!window.marketsConfig || !Array.isArray(window.marketsConfig)) {
-        console.error('❌错误：markets配置未加载');
-        throw new Error('markets配置未加载');
-    }
-    const market = window.marketsConfig.find(m => m.code === marketCode);
-    if (!market) {
-        console.error(`❌未找到市场代码 ${marketCode} 的配置`);
-        throw new Error(`未找到市场代码 ${marketCode} 的配置`);
-    }
-    return market.timezone;
-}
-
-/**
- * 获取指定时间在当前市场时区的格式化时间字符串
- * @param {Date} date - Date对象（必须传入）
- * @returns {string} 当前市场时区的格式化时间字符串
- */
-function formatToMarketDateTimeStr(date) {
-    if (!date || !(date instanceof Date)) {
-        console.error('formatToMarketDateTimeStr: 必须传入有效的Date对象');
-        return '';
-    }
-
-    const timezone = getMarketTimezone();
-
-    try {
-        return date.toLocaleString('zh-CN', {
-            timeZone: timezone,
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit',
-            hour: '2-digit',
-            minute: '2-digit',
-            second: '2-digit',
-            hour12: false
-        });
-    } catch (e) {
-        console.error('格式化市场时间失败:', e);
-        return '';
-    }
-}
-/**
- * 从完整日期时间字符串中提取日期部分（YYYY-MM-DD格式）
- * @param {string} dateTimeStr - 完整的日期时间字符串
- * @returns {string} 日期部分（YYYY-MM-DD格式）
- */
-function extractFromDateStr(dateTimeStr) {
-    if (!dateTimeStr || typeof dateTimeStr !== 'string') {
-        console.error('extractFromDateStr: 必须传入有效的日期时间字符串');
-        return '';
-    }
-    
-    try {
-        // 支持多种日期格式的提取
-        const dateMatch = dateTimeStr.match(/(\d{4}-\d{2}-\d{2})/);
-        if (dateMatch) {
-            return dateMatch[1];
-        }
-        
-        // 如果标准格式不匹配，尝试解析并重新格式化
-        const date = extractFromMarketDateTimeStr(dateTimeStr);
-        if (date) {
-            return date.toISOString().split('T')[0];
-        }
-        
-        console.error('extractFromDateStr: 无法解析日期时间字符串:', dateTimeStr);
-        return '';
-    } catch (e) {
-        console.error('extractFromDateStr: 提取日期部分失败:', e);
-        return '';
-    }
-}
-
-/**
- * 从完整日期时间字符串中提取时间部分（HH:MM:SS格式）
- * @param {string} dateTimeStr - 完整的日期时间字符串
- * @returns {string} 时间部分（HH:MM:SS格式）
- */
-function extractFromTimeStr(dateTimeStr) {
-    if (!dateTimeStr || typeof dateTimeStr !== 'string') {
-        console.error('extractFromTimeStr: 必须传入有效的日期时间字符串');
-        return '';
-    }
-    
-    try {
-        // 支持多种时间格式的提取
-        const timeMatch = dateTimeStr.match(/(\d{2}:\d{2}:\d{2})/);
-        if (timeMatch) {
-            return timeMatch[1];
-        }
-        
-        // 如果标准格式不匹配，尝试解析并重新格式化
-        const date = extractFromMarketDateTimeStr(dateTimeStr);
-        if (date) {
-            const hours = String(date.getHours()).padStart(2, '0');
-            const minutes = String(date.getMinutes()).padStart(2, '0');
-            const seconds = String(date.getSeconds()).padStart(2, '0');
-            return `${hours}:${minutes}:${seconds}`;
-        }
-        
-        console.error('extractFromTimeStr: 无法解析日期时间字符串:', dateTimeStr);
-        return '';
-    } catch (e) {
-        console.error('extractFromTimeStr: 提取时间部分失败:', e);
-        return '';
-    }
-}
-
-/**
- * 将时间字符串解析为市场时区的Date对象
- * @param {string} timeString - 时间字符串（支持多种格式）
- * @returns {Date} 市场时区的Date对象
- */
-function extractFromMarketDateTimeStr(timeString) {
-    if (!timeString || typeof timeString !== 'string') {
-        console.error('extractFromMarketDateTimeStr: 必须传入有效的时间字符串');
-        return null;
-    }
-    
-    try {
-        // 获取当前市场时区
-        const timezone = getMarketTimezone();
-        
-        // 支持多种时间格式的解析
-        let date;
-        
-        // 尝试解析ISO格式
-        if (timeString.includes('T')) {
-            date = new Date(timeString);
-        } 
-        // 尝试解析中文格式（如：2024-01-15 14:30:00）
-        else if (timeString.includes('-') && timeString.includes(':')) {
-            // 将中文格式转换为ISO格式
-            const isoString = timeString.replace(' ', 'T');
-            date = new Date(isoString);
-        }
-        // 尝试解析时间戳
-        else if (/^\d+$/.test(timeString)) {
-            date = new Date(parseInt(timeString));
-        }
-        // 其他格式使用默认解析
-        else {
-            date = new Date(timeString);
-        }
-        
-        if (isNaN(date.getTime())) {
-            console.error('extractFromMarketDateTimeStr: 无法解析时间字符串:', timeString);
-            return null;
-        }
-        
-        // 正确的时区转换方法：使用时区偏移量调整
-        const timezoneOffset = getTimezoneOffset(timezone);
-        const localOffset = date.getTimezoneOffset();
-        const adjustedTime = new Date(date.getTime() + (timezoneOffset - localOffset) * 60000);
-        
-        return adjustedTime;
-        
-    } catch (e) {
-        console.error('extractFromMarketDateTimeStr: 解析时间字符串失败:', e);
-        return null;
-    }
-}
-
-/**
- * 获取指定时区的分钟偏移量
- * @param {string} timezone - 时区名称
- * @returns {number} 分钟偏移量
- */
-function getTimezoneOffset(timezone) {
-    const date = new Date();
-    const utcDate = new Date(date.toLocaleString('en-US', { timeZone: 'UTC' }));
-    const tzDate = new Date(date.toLocaleString('en-US', { timeZone: timezone }));
-    return (utcDate.getTime() - tzDate.getTime()) / 60000;
-}
-
-/**
- * 统一解析交易时间字符串
- * @param {string} tradingHoursStr - 交易时间字符串，格式如 "09:30-11:30,13:00-15:00" 或 "09:30-15:00"
- * @returns {Object} 包含open, close, lunch_start, lunch_end的对象
- */
-function parseTradingHoursString(tradingHoursStr) {
-    if (!tradingHoursStr || typeof tradingHoursStr !== 'string') {
-        return {};
-    }
-
-    // 检查是否包含午休时段（逗号分隔）
-    if (tradingHoursStr.includes(',')) {
-        const segments = tradingHoursStr.split(',');
-        const morning = segments[0].trim();
-        const afternoon = segments[1].trim();
-
-        const morningParts = morning.split('-');
-        const afternoonParts = afternoon.split('-');
-
-        return {
-            open: morningParts[0]?.trim(),
-            close: afternoonParts[1]?.trim(),
-            lunch_start: morningParts[1]?.trim(),
-            lunch_end: afternoonParts[0]?.trim()
-        };
-    } else {
-        // 没有午休时段的格式，如 "09:30-15:00"
-        const parts = tradingHoursStr.split('-');
-        return {
-            open: parts[0]?.trim(),
-            close: parts[1]?.trim(),
-            lunch_start: null,
-            lunch_end: null
-        };
-    }
-}
-
 // ==================== K线图相关（不受分时图影响） ====================
 const klineChart = echarts.init(document.getElementById('klineChart'))
 const indicatorChart = echarts.init(document.getElementById('indicatorChart'))
@@ -816,10 +580,10 @@ function updateChartData(data, events) {
         const processedData = data.map(d => {
             let dateStr = d.date
             if (typeof dateStr === 'string') {
-                // 使用 extractFromMarketDateTimeStr 正确解析时间字符串为市场时区Date对象
-                const marketDate = extractFromMarketDateTimeStr(dateStr)
-                // 使用 formatToMarketDateTimeStr 格式化为标准日期字符串
-                dateStr = extractFromDateStr(formatToMarketDateTimeStr(marketDate))
+                // 使用 AppUtils.extractFromMarketDateTimeStr 正确解析时间字符串为市场时区Date对象
+                const marketDate = AppUtils.extractFromMarketDateTimeStr(dateStr)
+                // 使用 AppUtils.formatToMarketDateTimeStr 格式化为标准日期字符串
+                dateStr = AppUtils.extractFromDateStr(AppUtils.formatToMarketDateTimeStr(marketDate))
             }
             return { ...d, date: dateStr }
         })
@@ -1072,7 +836,7 @@ function init() {
         if (configData.data && Array.isArray(configData.data.markets)) {
             configData.data.markets.forEach(market => {
                 window.marketConfig[market.code.toUpperCase()] = {
-                    detailed_trading_hours: market.detailed_trading_hours || parseTradingHoursString(market.trading_hours),
+                    detailed_trading_hours: market.detailed_trading_hours || AppUtils.parseTradingHoursString(market.trading_hours),
                     trading_hours: market.trading_hours,
                     timezone: market.timezone,
                     currency: market.currency
@@ -1630,10 +1394,10 @@ function renderIndicator(data, klineZoom) {
     const processedData = data.map(d => {
         let dateStr = d.date
         if (typeof dateStr === 'string') {
-            // 使用 extractFromMarketDateTimeStr 正确解析时间字符串为市场时区Date对象
-            const marketDate = extractFromMarketDateTimeStr(dateStr)
-            // 使用 formatToMarketDateTimeStr 格式化为标准日期字符串
-            dateStr = extractFromDateStr(formatToMarketDateTimeStr(marketDate))
+            // 使用 AppUtils.extractFromMarketDateTimeStr 正确解析时间字符串为市场时区Date对象
+            const marketDate = AppUtils.extractFromMarketDateTimeStr(dateStr)
+            // 使用 AppUtils.formatToMarketDateTimeStr 格式化为标准日期字符串
+            dateStr = AppUtils.extractFromDateStr(AppUtils.formatToMarketDateTimeStr(marketDate))
         }
         return { ...d, date: dateStr }
     })
@@ -2326,10 +2090,10 @@ function renderKline(data, events) {
     const processedData = data.map(d => {
         let dateStr = d.date
         if (typeof dateStr === 'string') {
-            // 使用 extractFromMarketDateTimeStr 正确解析时间字符串为市场时区Date对象
-            const marketDate = extractFromMarketDateTimeStr(dateStr)
-            // 使用 formatToMarketDateTimeStr 格式化为标准日期字符串
-            dateStr = extractFromDateStr(formatToMarketDateTimeStr(marketDate))
+            // 使用 AppUtils.extractFromMarketDateTimeStr 正确解析时间字符串为市场时区Date对象
+            const marketDate = AppUtils.extractFromMarketDateTimeStr(dateStr)
+            // 使用 AppUtils.formatToMarketDateTimeStr 格式化为标准日期字符串
+            dateStr = AppUtils.extractFromDateStr(AppUtils.formatToMarketDateTimeStr(marketDate))
         }
         return { ...d, date: dateStr }
     })
@@ -2598,7 +2362,7 @@ function loadKline(indexId) {
     isLoadingNewStock = true
 
     // 💚 性能优化: A股默认60条,其他市场120条
-    const count = currentMarket === 'CN' ? 60 : 120
+    const count = window.currentMarketCode === 'CN' ? 60 : 120
 
     // 🔧 Mock模式使用独立端点，真实模式使用真实端点
     const baseUrl = useMockMode ? '/api/v1/chart/data/mock' : '/api/v1/chart/data'
@@ -2962,9 +2726,9 @@ function getModeConfig(mode, isInitial) {
                 getUpdateTimeRange: function(lastRequestTime, currentTime) {
                     // 🔧 真实模式：使用市场时间，而不是浏览器时间
                     // 应该从后端API获取准确的市场时间，暂时使用服务器时间
-                    const marketDateTimeStr = formatToMarketDateTimeStr(new Date());
-                    const dateStr = extractFromDateStr(marketDateTimeStr);  // YYYY-MM-DD
-                    const timeStr = extractFromTimeStr(marketDateTimeStr); // HH:MM:SS
+                    const marketDateTimeStr = AppUtils.formatToMarketDateTimeStr(new Date());
+                    const dateStr = AppUtils.extractFromDateStr(marketDateTimeStr);  // YYYY-MM-DD
+                    const timeStr = AppUtils.extractFromTimeStr(marketDateTimeStr); // HH:MM:SS
                     const newEndTime = `${dateStr} ${timeStr}`;
 
                     // 如果有lastRequestTime，使用它；否则使用开盘时间
@@ -2980,7 +2744,7 @@ function getModeConfig(mode, isInitial) {
                         
                         if (marketInfo && marketInfo.trading_hours) {
                             // 解析交易时间字符串，获取开盘时间
-                            const tradingHours = parseTradingHoursString(marketInfo.trading_hours);
+                            const tradingHours = AppUtils.parseTradingHoursString(marketInfo.trading_hours);
                             if (tradingHours && tradingHours.open) {
                                 newStartTime = `${dateStr} ${tradingHours.open}`;
                             } else {
@@ -3108,8 +2872,8 @@ function handleIntradayDataLoading(symbol, isInitial, modeConfig) {
                     const lastTime = res.data.times[res.data.times.length - 1]
                     if (modeConfig.shouldRecordFullTimestamp) {
                         // 根据模式配置决定是否记录完整时间戳（日期+时间）
-                        const marketDateTimeStr = formatToMarketDateTimeStr(new Date())
-                        const dateStr = extractFromDateStr(marketDateTimeStr)  // YYYY-MM-DD
+                        const marketDateTimeStr = AppUtils.formatToMarketDateTimeStr(new Date())
+                        const dateStr = AppUtils.extractFromDateStr(marketDateTimeStr)  // YYYY-MM-DD
                         const lastRequestTime = `${dateStr} ${lastTime}`
                         IntradayChart.setRequestTime(lastRequestTime)
                     }
@@ -3214,7 +2978,7 @@ function getFullTradingTimes(marketCode) {
     }else{
         // 解构市场配置 - 根据配置格式处理
         const tradingHours = market.detailed_trading_hours ||
-                        (market.trading_hours ? parseTradingHoursString(market.trading_hours) : {});
+                        (market.trading_hours ? AppUtils.parseTradingHoursString(market.trading_hours) : {});
 
         const { open, close, lunch_start, lunch_end } = tradingHours;
 
@@ -3428,7 +3192,7 @@ function renderIntradayCharts(data) {
     ]
     charts.price.setOption({
         title: {
-            text: (currentIndex ? currentIndex.name : '') + ' 分时图 (' + formatToMarketDateTimeStr(new Date()) + ')',
+            text: (currentIndex ? currentIndex.name : '') + ' 分时图 (' + AppUtils.formatToMarketDateTimeStr(new Date()) + ')',
             left: 'center',
             textStyle: { fontSize: 14 },
             subtext: `昨收: ${yesterdayClose.toFixed(2)}  现价: ${currentPrice.toFixed(2)}  涨跌: ${change >= 0 ? '+' : ''}${change.toFixed(2)} (${changePercent.toFixed(2)}%)`,
@@ -3673,7 +3437,7 @@ function makeLunchBreakLine() {
     // 如果有午休时间，则添加午休分割线
     const market = window.marketConfig[window.currentMarketCode?.toUpperCase()] || {}
     const { lunch_start, lunch_end } = market.detailed_trading_hours || {}
-    const markLineData={}
+    const markLineData = []
     if (lunch_start && lunch_end) {
         // 确保午休时间格式与数据时间格式一致
         const lunchStartTime = lunch_start + ':00';
