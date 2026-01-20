@@ -26,7 +26,6 @@ import time
 from typing import Optional
 import urllib.parse
 
-import pandas as pd
 # 导入curl_cffi，假设总是存在
 from curl_cffi import requests as curl_requests
 
@@ -74,7 +73,6 @@ _USER_AGENTS = [
 
 def extract_crumb_from_html(response_text: str) -> str:
     """从HTML中提取crumb"""
-    crumb = None  # 初始化 crumb 变量
     crumb_patterns = [
         r'"crumb":"([^"]+)"',  # 标准格式
         r'crumb["\'\s]{0,3}:["\'\s]{0,3}["\']([^"\']*)["\']',  # 冒号分隔格式
@@ -96,6 +94,7 @@ def extract_crumb_from_html(response_text: str) -> str:
     if not crumb:
         # 可能需要检查页面源码中是否有其他线索
         # 检查是否有相关的JavaScript文件或模块包含crumb
+        import json
         # 尝试在页面中查找可能包含crumb的script标签
         script_matches = re.findall(r'<script[^>]*>(.*?)</script>', response_text, re.DOTALL)
         for script in script_matches:
@@ -110,7 +109,7 @@ def extract_crumb_from_html(response_text: str) -> str:
                         crumb = inline_crumb_match.group(1)
                         logger.info(f"🔑 从内联脚本找到 crumb: {crumb[:10]}...")
                         break
-                except Exception:
+                except:
                     pass
     return crumb
 
@@ -159,7 +158,7 @@ def get_crumb(url, timeout) -> Optional[str]:
                 except Exception as e:
                     logger.warning(f"获取crumb失败 (尝试 {attempt + 1}/{max_retries}): {e}")
                     if attempt == max_retries - 1:  # 如果是最后一次尝试
-                        raise e  # 重新抛出异常
+                        raise e # 重新抛出异常
         except Exception as e:
             logger.warning(f"无法获取crumb: {e}")
     return crumb
@@ -176,133 +175,6 @@ def speed_limit():
         if sleep_time > 0:  # 确保只有当需要等待时才等待
             logger.debug(f"请求限流: 等待 {sleep_time:.3f}秒以遵守Yahoo速率限制")
             time.sleep(sleep_time)
-
-
-def _fetch_chunked_data(url, user_agent_headers, safe_params, timeout):
-    """
-    分块请求数据并合并结果
-
-    Args:
-        url: API URL
-        user_agent_headers: 用户代理头
-        safe_params: 请求参数（包含 period1, period2 等）
-        timeout: 超时时间
-
-    Returns:
-        合并后的响应对象
-    """
-    global _LAST_REQUEST_TIME
-    import json
-
-    logger.info("🔧 开始分块请求数据...")
-
-    period1 = int(safe_params['period1'])
-    period2 = int(safe_params['period2'])
-
-    all_timestamps = []
-    all_open = []
-    all_high = []
-    all_low = []
-    all_close = []
-    all_volume = []
-    # 分块请求
-    current_start = period1
-    chunk_count = 0
-    meta={}
-    max_range_per_request = 60 * 60 * 24 * 1  # 每块的最大时间范围（秒）
-    while current_start < period2:
-        current_end = min(current_start + max_range_per_request, period2)
-
-        chunk_params = safe_params.copy()
-        chunk_params['period1'] = current_start
-        chunk_params['period2'] = current_end
-
-        days_in_chunk = (current_end - current_start) // (24 * 3600)
-        logger.info(
-            f"📦 请求数据块 {chunk_count + 1}: {pd.Timestamp.fromtimestamp(current_start).date()} ~ {pd.Timestamp.fromtimestamp(current_end).date()} ({days_in_chunk}天)")
-
-        crumb = get_crumb(url, timeout)
-        if crumb:
-            chunk_params['crumb'] = crumb
-
-        _CURL_SESSION.headers.update({
-            **user_agent_headers,
-            'Accept': 'application/json, text/plain, */*',
-        })
-
-        speed_limit()
-        response = _CURL_SESSION.get(url, params=chunk_params, timeout=timeout, impersonate="chrome110")
-
-        if response.status_code == 200:
-            _LAST_REQUEST_TIME = time.time()
-
-            try:
-                data = response.json()
-                # 提取数据
-                chunk_result = data.get('chart', {}).get('result', [])
-                if chunk_result:
-                    if len(meta.keys()) == 0:
-                        meta=chunk_result[0].get('meta', {}) if chunk_result else {}
-                    timestamps = chunk_result[0].get('timestamp', [])
-                    indicators = chunk_result[0].get('indicators', {})
-                    quote = indicators.get('quote', [{}])[0]
-
-                    if timestamps:
-                        all_timestamps.extend(timestamps)
-                        all_open.extend(quote.get('open', []))
-                        all_high.extend(quote.get('high', []))
-                        all_low.extend(quote.get('low', []))
-                        all_close.extend(quote.get('close', []))
-                        all_volume.extend(quote.get('volume', []))
-
-                        logger.info(f"✅ 数据块 {chunk_count + 1} 成功: {len(timestamps)} 条记录")
-                    else:
-                        logger.warning(f"⚠️ 数据块 {chunk_count + 1} 无数据")
-            except Exception as e:
-                logger.warning(f"⚠️ 解析数据块 {chunk_count + 1} 失败: {e}")
-        else:
-            logger.error(f"❌ 数据块 {chunk_count + 1} 请求失败: {response.status_code}")
-
-        current_start = current_end
-        chunk_count += 1
-
-    # 构建合并后的响应
-    logger.info(f"🔧 分块请求完成，共 {chunk_count} 个数据块，总计 {len(all_timestamps)} 条记录")
-
-    # 创建合并后的JSON数据
-    merged_result = {
-        'chart': {
-            'result': [{
-                'meta': meta,
-                'timestamp': all_timestamps,
-                'indicators': {
-                    'quote': [{
-                        'open': all_open,
-                        'high': all_high,
-                        'low': all_low,
-                        'close': all_close,
-                        'volume': all_volume
-                    }]
-                }
-            }],
-            'error': None
-        }
-    }
-
-    # 创建模拟的响应对象
-    class MergedResponse:
-        def __init__(self, json_data):
-            self.status_code = 200
-            self._json_data = json_data
-
-        def json(self):
-            return self._json_data
-
-        @property
-        def text(self):
-            return json.dumps(self._json_data)
-
-    return MergedResponse(merged_result)
 
 
 def patch_yfinance(proxy_url=None):
@@ -342,10 +214,8 @@ def patch_yfinance(proxy_url=None):
         3. 复用 Session - 保持 cookies
         4. Browser simulation - 模拟真实浏览器行为
         5. 指数退避重试 - 处理临时错误
-        6. 自动分块请求 - 透明处理大范围时间请求，绕过API限制
         """
         global _LAST_REQUEST_TIME
-
         if user_agent_headers is None:
             user_agent_headers = {
                 'User-Agent': random.choice(_USER_AGENTS)
@@ -361,7 +231,6 @@ def patch_yfinance(proxy_url=None):
             except (TypeError, ValueError):
                 logger.warning("无法转换 params 为字典，使用空参数")
                 safe_params = {}
-
         crumb = get_crumb(url, timeout)
         if crumb:
             safe_params['crumb'] = crumb
@@ -378,13 +247,7 @@ def patch_yfinance(proxy_url=None):
             # 更新最后请求时间
             _LAST_REQUEST_TIME = time.time()
             logger.info(f"✅模拟浏览器请求成功: {response.status_code} - {url[:100]}...")
-            data = response.json()
-            if len(data['chart']['result']) == 1:
-                # 判断返回的数据只有一条，说明被限制了，需要分块请求
-                return _fetch_chunked_data(url, user_agent_headers, safe_params, timeout)
-            else:
-                return response
-
+            return response
         else:
             logger.error(f"模拟浏览器请求失败: {response.status_code} - {url[:100]}...")
             raise Exception(f"HTTP {response.status_code} 错误")
