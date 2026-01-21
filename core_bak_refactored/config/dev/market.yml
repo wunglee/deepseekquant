@@ -171,36 +171,36 @@ trading_hours:
     lunch_end: '13:00'
 default_indices:
   CN:
-  - code: 000001.SH
+  - code: ^000001.SH
     name: 上证指数
     type: index
-  - code: 000300.SH
+  - code: ^000300.SH
     name: 沪深300
     type: index
-  - code: 000016.SH
+  - code: ^000016.SH
     name: 上证50
     type: index
-  - code: 399001.SZ
+  - code: ^399001.SZ
     name: 深证成指
     type: index
-  - code: 399006.SZ
+  - code: ^399006.SZ
     name: 创业板指
     type: index
-  - code: 000688.SH
+  - code: ^000688.SH
     name: 科创50
     type: index
-  - code: 000905.SH
+  - code: ^000905.SH
     name: 中证500
     type: index
-  - code: 000852.SH
+  - code: ^000852.SH
     name: 中证1000
     type: index
-  - code: 399005.SZ
+  - code: ^399005.SZ
     name: 中小板指
     type: index
-  - code: 000991.SH
-    name: 全指消费
-    type: index
+  - code: 600036.SH
+    name: 招商银行
+    type: Stock
   US:
   - code: ^GSPC.US
     name: S&P 500

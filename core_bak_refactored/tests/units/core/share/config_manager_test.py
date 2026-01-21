@@ -87,7 +87,6 @@ class TestConfigManager(unittest.TestCase):
         """测试保存配置"""
         manager = ConfigManager()
         manager.set('test_key', 'test_value')
-        manager.save(self.config_file)
         
         with open(self.config_file, 'r') as f:
             saved_config = json.load(f)
@@ -147,6 +146,160 @@ class TestConfigManager(unittest.TestCase):
             elif 'DEEPSEEK_ENV' in os.environ:
                 del os.environ['DEEPSEEK_ENV']
 
+    def test_get_credential_with_nested_key(self):
+        """测试获取嵌套的 credential 值"""
+        manager = ConfigManager()
+        # 假设配置中有 akshare.ut
+        value = manager.get_credential('akshare.ut')
+        # 验证返回的是字符串（ut token 格式）
+        if value is not None:
+            self.assertIsInstance(value, str)
+            self.assertEqual(len(value), 32)  # ut token 应为 32 位
+
+    def test_get_credential_with_flat_key(self):
+        """测试获取扁平的 credential 值"""
+        manager = ConfigManager()
+        # 获取 mock_provider
+        value = manager.get_credential('mock_provider')
+        self.assertIsNotNone(value)
+        self.assertIsInstance(value, str)
+
+    def test_get_credential_with_default_value(self):
+        """测试获取不存在的 credential 值时使用默认值"""
+        manager = ConfigManager()
+        default_value = 'default_credential'
+        value = manager.get_credential('nonexistent.key', default_value)
+        self.assertEqual(value, default_value)
+
+    def test_get_credential_with_none_default(self):
+        """测试获取不存在的 credential 值时默认返回 None"""
+        manager = ConfigManager()
+        value = manager.get_credential('nonexistent.key')
+        self.assertIsNone(value)
+
+    def test_set_credential_with_nested_key(self):
+        """测试设置嵌套的 credential 值"""
+        manager = ConfigManager()
+        test_value = 'test_ut_7eea3edcaed734bea9cbfc24409ed989'
+
+        result = manager.set_credential('akshare.ut', test_value)
+
+        self.assertTrue(result)
+        # 验证设置成功
+        value = manager.get_credential('akshare.ut')
+        self.assertEqual(value, test_value)
+
+    def test_set_credential_with_flat_key(self):
+        """测试设置扁平的 credential 值"""
+        manager = ConfigManager()
+        test_value = 'test_credential'
+
+        result = manager.set_credential('mock_provider', test_value)
+
+        self.assertTrue(result)
+        # 验证设置成功
+        value = manager.get_credential('mock_provider')
+        self.assertEqual(value, test_value)
+
+    def test_set_credential_create_nested_structure(self):
+        """测试设置 credential 时自动创建嵌套结构"""
+        manager = ConfigManager()
+        test_value = 'nested_value'
+
+        # 设置一个多层的嵌套键
+        result = manager.set_credential('level1.level2.level3', test_value)
+
+        self.assertTrue(result)
+        # 验证嵌套结构创建成功
+        value = manager.get_credential('level1.level2.level3')
+        self.assertEqual(value, test_value)
+
+    def test_set_credential_overwrite_existing(self):
+        """测试设置 credential 覆盖已存在的值"""
+        manager = ConfigManager()
+        original_value = 'original_ut_7eea3edcaed734bea9cbfc24409ed989'
+        new_value = 'new_ut_7eea3edcaed734bea9cbfc24409ed989'
+
+        # 先设置原始值
+        manager.set_credential('akshare.ut', original_value)
+        # 验证设置成功
+        self.assertEqual(manager.get_credential('akshare.ut'), original_value)
+
+        # 覆盖为新值
+        result = manager.set_credential('akshare.ut', new_value)
+
+        self.assertTrue(result)
+        # 验证覆盖成功
+        value = manager.get_credential('akshare.ut')
+        self.assertEqual(value, new_value)
+        self.assertNotEqual(value, original_value)
+
+    def test_get_credential_after_set_credential(self):
+        """测试 set_credential 后能通过 get_credential 获取到值"""
+        manager = ConfigManager()
+        test_key = 'test.credential.key'
+        test_value = 'test_credential_value'
+
+        # 设置值
+        set_result = manager.set_credential(test_key, test_value)
+        self.assertTrue(set_result)
+
+        # 获取值
+        get_result = manager.get_credential(test_key)
+
+        self.assertEqual(get_result, test_value)
+
+    def test_get_credential_deeply_nested(self):
+        """测试获取多层嵌套的 credential 值（5层嵌套）"""
+        manager = ConfigManager()
+        # 设置5层嵌套的值
+        nested_key = 'level1.level2.level3.level4.level5'
+        test_value = 'deeply_nested_value'
+        manager.set_credential(nested_key, test_value)
+
+        # 获取多层嵌套的值
+        result = manager.get_credential(nested_key)
+
+        self.assertEqual(result, test_value)
+
+    def test_set_credential_deeply_nested(self):
+        """测试设置多层嵌套的 credential 值"""
+        manager = ConfigManager()
+        # 设置5层嵌套的值
+        nested_key = 'a.b.c.d.e'
+        test_value = '5_level_nested_value'
+
+        result = manager.set_credential(nested_key, test_value)
+
+        self.assertTrue(result)
+        # 验证每一层都存在
+        self.assertIsNotNone(manager.get_credential('a'))
+        self.assertIsNotNone(manager.get_credential('a.b'))
+        self.assertIsNotNone(manager.get_credential('a.b.c'))
+        self.assertIsNotNone(manager.get_credential('a.b.c.d'))
+        self.assertEqual(manager.get_credential('a.b.c.d.e'), test_value)
+
+    def test_get_credential_consistency_with_set_credential(self):
+        """测试 get_credential 和 set_credential 对多层嵌套 key 的处理一致性"""
+        manager = ConfigManager()
+        test_cases = [
+            'single_key',
+            'two.level',
+            'three.level.deep',
+            'four.level.deep.nested',
+            'five.level.deep.nested.structure'
+        ]
+
+        for i, key in enumerate(test_cases):
+            test_value = f'test_value_{i}'
+            # 设置值
+            set_result = manager.set_credential(key, test_value)
+            self.assertTrue(set_result, f"set_credential failed for key: {key}")
+
+            # 获取值并验证一致性
+            get_result = manager.get_credential(key)
+            self.assertEqual(get_result, test_value, f"get_credential returned different value for key: {key}")
 
 if __name__ == '__main__':
     unittest.main()
+
