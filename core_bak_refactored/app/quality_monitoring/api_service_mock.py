@@ -300,7 +300,7 @@ class DataQualityMockAPIService:
                 # 🔧 API层统一使用UTC时间，然后转换为市场本地时间
                 utc_now = pd.Timestamp.now(tz='UTC')
                 market_code = MarketUtils.infer_market_from_symbol(symbol)
-                market_tz = MarketTimeUtils._get_market_timezone(market_code)
+                market_tz = MarketTimeUtils.get_market_timezone(market_code)
                 trade_date = utc_now.tz_convert(market_tz)
 
                 # tick_range 由前端直接传入，不需要转换
@@ -540,7 +540,7 @@ class DataQualityMockAPIService:
                     # 没有提供日期，使用服务器UTC时间
                     utc_now = pd.Timestamp.now(tz='UTC')
                     market_code = MarketUtils.infer_market_from_symbol(index_id)
-                    market_tz = MarketTimeUtils._get_market_timezone(market_code)
+                    market_tz = MarketTimeUtils.get_market_timezone(market_code)
                     trade_date = utc_now.tz_convert(market_tz)
                 else:
                     # 提供了日期，需要从浏览器本地时间转换
@@ -553,9 +553,8 @@ class DataQualityMockAPIService:
                     try:
                         # 使用统一的转换方法
                         market_code = MarketUtils.infer_market_from_symbol(index_id)
-                        trade_date = MarketTimeUtils.convert_client_time_to_market_time(
-                            trade_date_str, client_timezone, market_code
-                        )
+                        trade_date = pd.Timestamp(trade_date_str)
+                        trade_date = MarketTimeUtils.to_market_time(trade_date,  market_code)
                     except ValueError as e:
                         return jsonify({
                             'status': 'error',
@@ -643,7 +642,7 @@ def register_mock_routes(app: Flask):
 
             indicator_service = TechnicalIndicators(market=MarketCode.CN, timeframe=period)
             chart_assembler = ChartDataAssembler(data_provider=mock_provider, indicator_service=indicator_service)
-            chart_data = chart_assembler.assemble_chart_data(index_id=index_id, period=period, count=count, before=before, indicators=indicators, current_time=pd.Timestamp.now())
+            chart_data = chart_assembler.assemble_chart_data(index_id=index_id, period=period, count=count, before=before, indicators=indicators, market_local_time=pd.Timestamp.now())
 
             return jsonify({'status': 'success', 'data': chart_data, 'metadata': {'index_id': index_id, 'period': period, 'count': len(chart_data.get('kline', [])), 'indicators': list(chart_data.get('indicators', {}).keys()), 'events_count': len(chart_data.get('events', [])), 'data_source': 'mock'}, 'timestamp': pd.Timestamp.now().isoformat()})
         except Exception as e:
