@@ -1290,7 +1290,33 @@ function switchChartType(type) {
         // 🔧 隐藏K线图的控制
         document.getElementById('klineModeSelector').style.display = 'none'
         document.getElementById('klinePhaseSelector').style.display = 'none'
-
+            
+        // 🔧 同步UI与当前分时图模式状态
+        const currentMode = IntradayChart.getMode();
+        // 更新模式选择器UI状态
+        const modeSelector = document.getElementById('intradayModeSelector');
+        if (modeSelector) {
+            const buttons = modeSelector.querySelectorAll('.btn-segment');
+            buttons.forEach(btn => btn.classList.remove('active'));
+            // 激活当前模式对应的按钮
+            for (let i = 0; i < buttons.length; i++) {
+                const expectedText = currentMode === 'mock' ? '模拟数据' : '真实数据';
+                if (buttons[i].textContent === expectedText) {
+                    buttons[i].classList.add('active');
+                    break;
+                }
+            }
+        }
+        // 根据当前模式显示/隐藏交易时段选择器
+        const phaseSelector = document.getElementById('intradayPhaseSelector');
+        if (phaseSelector) {
+            if (currentMode === 'mock') {
+                phaseSelector.style.display = 'block';
+            } else {
+                phaseSelector.style.display = 'none';
+            }
+        }
+    
         // 🔧 重要：容器从隐藏变为显示后，需要调用 resize() 重新计算图表尺寸
         setTimeout(() => {
             const charts = IntradayChart.getCharts()
@@ -1298,14 +1324,12 @@ function switchChartType(type) {
             if (charts.volume) charts.volume.resize()
             console.log('📐 分时图表已重新调整尺寸')
         }, 100)
-
-        // 🔧 关键修复：先显示“加载中”状态，避免空白
-        IntradayChart.showLoading(true)
-
+    
         // 加载分时数据
         // 🔧 关键：只有当 intradayData 为空时才加载，避免与 selectIndex 重复加载
         const data = IntradayChart.getData()
         if (currentIndex && !data) {
+            IntradayChart.showLoading(true)
             loadIntradayData(currentIndex.id, true)
         }
     }
