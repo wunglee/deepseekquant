@@ -3002,7 +3002,7 @@ function getFullTradingTimes(marketCode) {
         // 🔧 使用 generateTradingTimes 生成午休时间段（5分钟间隔）
         const lunchStartParts = lunch_start.split(':').map(Number)
         const lunchEndParts = lunch_end.split(':').map(Number)
-        tradingTimes=generateTradingTimes(tradingTimes,lunchStartParts,lunchEndParts,300)
+        tradingTimes=generateTradingTimes(tradingTimes,lunchStartParts,lunchEndParts,50)
         
         // 🔧 记录午休时间段的结束索引
         const lunchEndIndex = tradingTimes.length - 1

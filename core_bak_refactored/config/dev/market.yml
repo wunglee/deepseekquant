@@ -59,7 +59,7 @@ market_registry:
     icon: 🇪🇺
     currency: EUR
     timezone: Europe/Paris
-    trading_hours: 09:00-17:30
+    trading_hours: 09:00-16:30
     settlement_days: 2
     regulatory_body: ESMA
     market_cap_category: developed
@@ -289,30 +289,9 @@ default_indices:
     name: 日本电信电话
     type: stock
   EU:
-  - code: ^GDAXI.EU
-    name: 德国DAX指数
-    type: index
   - code: ^FTSE.EU
     name: 英国富时100指数
     type: index
-  - code: ^FCHI.EU
-    name: 法国CAC40指数
-    type: index
-  - code: ^STOXX50E.EU
-    name: 欧洲斯托克50指数
-    type: index
-  - code: ASML.AS.EU
-    name: 阿斯麦
-    type: stock
-  - code: SAP.DE.EU
-    name: SAP
-    type: stock
-  - code: LVMH.PA.EU
-    name: 路威酩轩
-    type: stock
-  - code: NESN.SW.EU
-    name: 雀巢
-    type: stock
   - code: HSBA.L.EU
     name: 汇丰控股
     type: stock
