@@ -2534,6 +2534,82 @@ document.getElementById('indexAddButton').onclick = () => {
 // ==================== 分时图功能 ====================
 
 /**
+ * 根据市场配置动态生成时间轴标签配置
+ * @param {string} marketCode - 市场代码
+ * @param {Array} fullTradingTimes - 完整的交易时间数组
+ * @returns {Object} - ECharts x轴标签配置对象
+ */
+function generateTimeAxisLabelConfig(marketCode, fullTradingTimes) {
+    // 获取市场配置
+    const market = window.marketConfig?.[marketCode?.toUpperCase()] || 
+                   window.marketsConfig?.find(m => m.code.toUpperCase() === marketCode?.toUpperCase());
+    
+    const tradingHours = market?.detailed_trading_hours || {};
+    const { open, close, lunch_start, lunch_end } = tradingHours;
+    
+    // 解析时间
+    const [openHour, openMin] = open?.split(':').map(Number) || [9, 30];
+    const [closeHour, closeMin] = close?.split(':').map(Number) || [15, 0];
+    const [lunchStartHour, lunchStartMin] = lunch_start?.split(':').map(Number) || [11, 30];
+    const [lunchEndHour, lunchEndMin] = lunch_end?.split(':').map(Number) || [13, 0];
+    
+    // 🔧 动态生成半小时时间点
+    const displayTimes = new Set();
+    
+    // 从开盘时间开始，每30分钟生成一个时间点，直到收盘
+    let currentHour = openHour;
+    let currentMinute = openMin;
+    
+    while (currentHour < closeHour || (currentHour === closeHour && currentMinute <= closeMin)) {
+        const timeStr = `${String(currentHour).padStart(2, '0')}:${String(currentMinute).padStart(2, '0')}:00`;
+        displayTimes.add(timeStr);
+        
+        // 记录当前时间，用于判断是否遇到午休开始
+        const prevHour = currentHour;
+        const prevMinute = currentMinute;
+        
+        // 添加30分钟
+        currentMinute += 30;
+        if (currentMinute >= 60) {
+            currentMinute -= 60;
+            currentHour += 1;
+        }
+        
+        // 🔧 如果遇到午休开始时间，先添加午休开始时间，然后跳到午休结束时间
+        if (prevHour === lunchStartHour && prevMinute === lunchStartMin) {
+            // 确保午休开始时间已添加（已在上面的displayTimes.add中添加）
+            // 跳到午休结束时间
+            currentHour = lunchEndHour;
+            currentMinute = lunchEndMin;
+        }
+    }
+    
+    // 确保收盘时间显示，但排除午休结束时间
+    const closeTimeStr = `${String(closeHour).padStart(2, '0')}:${String(closeMin).padStart(2, '0')}:00`;
+    displayTimes.add(closeTimeStr);
+    
+    // 从显示时间集合中移除午休结束时间（如果存在）
+    const lunchEndTimeStr = `${String(lunchEndHour).padStart(2, '0')}:${String(lunchEndMin).padStart(2, '0')}:00`;
+    displayTimes.delete(lunchEndTimeStr);
+    
+    console.log('🔍 动态生成的时间点:', Array.from(displayTimes).sort());
+    
+    // 🔧 创建自定义的 formatter，只显示指定的时间点
+    return {
+        interval: 0,  // 显示所有标签，由 formatter 控制哪些显示
+        formatter: function(value, index) {
+            // 只显示指定的时间点，其他时间返回空字符串
+            if (displayTimes.has(value)) {
+                return formatTimeAxisLabel(value, index);
+            }
+            return '';
+        },
+        showMinLabel: true,
+        showMaxLabel: true
+    };
+}
+
+/**
  * 显示图表加载状态（通用函数）
  */
 function showChartLoading(chart, show, text = '加载中') {
@@ -3002,7 +3078,7 @@ function getFullTradingTimes(marketCode) {
         // 🔧 使用 generateTradingTimes 生成午休时间段（5分钟间隔）
         const lunchStartParts = lunch_start.split(':').map(Number)
         const lunchEndParts = lunch_end.split(':').map(Number)
-        tradingTimes=generateTradingTimes(tradingTimes,lunchStartParts,lunchEndParts,50)
+        tradingTimes=generateTradingTimes(tradingTimes,lunchStartParts,lunchEndParts,600)
         
         // 🔧 记录午休时间段的结束索引
         const lunchEndIndex = tradingTimes.length - 1
@@ -3033,23 +3109,29 @@ function generateTradingTimes(tradingTimes,start,end,stepSeconds = 5) {
     if (!tradingTimes) {
         tradingTimes = []
     }
-    const startHour = start[0]
-    const startMinute = start[1]
-    const endHour = end[0]
-    const endMinute = end[1]
-    for (let hourValue = startHour; hourValue <= endHour; hourValue++) {
-        const startMin = hourValue === startHour ? startMinute : 0
-        const endMin = hourValue === endHour ? endMinute : 59
-
-        for (let minuteValue = startMin; minuteValue <= endMin; minuteValue++) {
-            for (let secondValue = 0; secondValue < 60; secondValue += stepSeconds) {
-                // 避免超出结束时间
-                if (hourValue === endHour && minuteValue === endMinute && secondValue > 0) continue
-                const timeStr = `${String(hourValue).padStart(2, '0')}:${String(minuteValue).padStart(2, '0')}:${String(secondValue).padStart(2, '0')}`
-                tradingTimes.push(timeStr)
-            }
+    
+    // 将开始和结束时间转换为总秒数（从当天00:00:00开始计算）
+    const startTotalSeconds = start[0] * 3600 + start[1] * 60;
+    const endTotalSeconds = end[0] * 3600 + end[1] * 60; // 结束时间是XX:XX:00
+    
+    // 循环从开始时间到结束时间，按stepSeconds步长递增
+    for (let totalSeconds = startTotalSeconds; totalSeconds <= endTotalSeconds; totalSeconds += stepSeconds) {
+        // 将总秒数转换回时、分、秒
+        const hour = Math.floor(totalSeconds / 3600);
+        const minute = Math.floor((totalSeconds % 3600) / 60);
+        const second = totalSeconds % 60;
+        
+        // 检查是否超出结束时间
+        if (hour > end[0] || (hour === end[0] && minute > end[1])) continue;
+        
+        const timeStr = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:${String(second).padStart(2, '0')}`;
+        
+        // 避免重复添加时间点
+        if (!tradingTimes.includes(timeStr)) {
+            tradingTimes.push(timeStr);
         }
     }
+    
     return tradingTimes
 }
 
@@ -3071,69 +3153,8 @@ function initializeIntradayTimeAxis() {
     console.log('🔍 initializeIntradayTimeAxis - 时间轴长度:', fullTradingTimes.length, '午休范围:', lunchBreakRange)
     
     // 🔧 根据市场配置动态生成半小时时间点
-    // 获取市场配置
-    const market = window.marketConfig?.[window.currentMarketCode?.toUpperCase()] || 
-                   window.marketsConfig?.find(m => m.code.toUpperCase() === window.currentMarketCode?.toUpperCase())
+    const axisLabelConfig = generateTimeAxisLabelConfig(window.currentMarketCode, fullTradingTimes)
     
-    const tradingHours = market?.detailed_trading_hours || {}
-    const { open, close, lunch_start, lunch_end } = tradingHours
-    
-    // 解析时间
-    const [openHour, openMin] = open?.split(':').map(Number) || [9, 30]
-    const [closeHour, closeMin] = close?.split(':').map(Number) || [15, 0]
-    const [lunchStartHour, lunchStartMin] = lunch_start?.split(':').map(Number) || [11, 30]
-    const [lunchEndHour, lunchEndMin] = lunch_end?.split(':').map(Number) || [13, 0]
-    
-    // 🔧 动态生成半小时时间点
-    const displayTimes = new Set()
-    
-    // 从开盘时间开始，每30分钟生成一个时间点，直到收盘
-    let currentHour = openHour
-    let currentMinute = openMin
-    
-    while (currentHour < closeHour || (currentHour === closeHour && currentMinute <= closeMin)) {
-        const timeStr = `${String(currentHour).padStart(2, '0')}:${String(currentMinute).padStart(2, '0')}:00`
-        displayTimes.add(timeStr)
-        
-        // 记录当前时间，用于判断是否遇到午休开始
-        const prevHour = currentHour
-        const prevMinute = currentMinute
-        
-        // 添加30分钟
-        currentMinute += 30
-        if (currentMinute >= 60) {
-            currentMinute -= 60
-            currentHour += 1
-        }
-        
-        // 🔧 如果遇到午休开始时间，先添加午休开始时间，然后跳到午休结束时间
-        if (prevHour === lunchStartHour && prevMinute === lunchStartMin) {
-            // 确保午休开始时间已添加（已在上面的displayTimes.add中添加）
-            // 跳到午休结束时间
-            currentHour = lunchEndHour
-            currentMinute = lunchEndMin
-        }
-    }
-    
-    // 确保收盘时间显示
-    const closeTimeStr = `${String(closeHour).padStart(2, '0')}:${String(closeMin).padStart(2, '0')}:00`
-    displayTimes.add(closeTimeStr)
-    
-    console.log('🔍 动态生成的时间点:', Array.from(displayTimes).sort())
-    
-    // 🔧 创建自定义的 formatter，只显示指定的时间点
-    const axisLabelConfig = {
-        interval: 0,  // 显示所有标签，由 formatter 控制哪些显示
-        formatter: function(value, index) {
-            // 只显示指定的时间点，其他时间返回空字符串
-            if (displayTimes.has(value)) {
-                return formatTimeAxisLabel(value, index)
-            }
-            return ''
-        },
-        showMinLabel: true,
-        showMaxLabel: true
-    }
     
     // 设置图表的基础配置（与具体股票无关的时间轴和分割线）
     const charts = IntradayChart.getCharts()
