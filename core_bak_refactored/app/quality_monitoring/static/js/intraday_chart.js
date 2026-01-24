@@ -14,7 +14,6 @@ let intradayDataMode = 'mock'  // 'mock' 或 'real'
 let virtualIntradayTime = 0  // 🎮 虚拟交易时间（秒），用于模拟模式
 
 // ==================== 核心函数：彻底重建分时图布局 ====================
-
 /**
  * 🔥 彻底重建分时图布局（从最外层容器开始重建）
  * @param {boolean} isStock - 是否是股票（true=股票，左右布局; false=指数，单列布局）
@@ -25,7 +24,7 @@ function rebuildIntradayLayout(isStock) {
         console.error('❌ 找不到分时图容器')
         return
     }
-    
+
     // 🔧 1. 停止定时器
     if (intradayUpdateTimer) {
         clearInterval(intradayUpdateTimer)

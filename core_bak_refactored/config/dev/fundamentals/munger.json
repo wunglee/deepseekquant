@@ -1,0 +1,60 @@
+{
+  "config_name": "芒格港股黄金坑标准版2026",
+  "version": "1.0",
+  "last_update": "2026-01-23",
+  "description": "基于芒格四低一高原则，适配港股大额资金筛选",
+
+  "valuation_thresholds": {
+    "pb": {"max": 1.5, "ideal": 0.8, "danger": 3.0, "weight": 0.25},
+    "pe": {"max": 10, "ideal": 6, "danger": 30, "weight": 0.20},
+    "ps": {"max": 1.0, "ideal": 0.7, "danger": 5.0, "weight": 0.20},
+    "pcf": {"max": 5.0, "ideal": 3.0, "danger": 15, "weight": 0.25}
+  },
+
+  "profitability_thresholds": {
+    "roe": {"min": 0.12, "ideal": 0.15, "danger": 0.05, "weight": 0.10},
+    "roic": {"min": 0.10, "ideal": 0.15, "danger": 0.03, "weight": 0.05},
+    "gross_margin": {"min": 0.25, "ideal": 0.35, "danger": 0.15, "weight": 0.05}
+  },
+
+  "growth_thresholds": {
+    "revenue_growth": {"min": 0.05, "ideal": 0.15, "danger": -0.10, "weight": 0.05},
+    "profit_growth": {"min": 0.05, "ideal": 0.12, "danger": -0.15, "weight": 0.05},
+    "ocf_growth": {"min": 0.03, "ideal": 0.10, "danger": -0.20, "weight": 0.10}
+  },
+
+  "asset_quality_thresholds": {
+    "资产负债率": {"max": 0.50, "ideal": 0.35, "danger": 0.70, "weight": 0.05},
+    "流动比率": {"min": 1.5, "ideal": 2.0, "danger": 0.8, "weight": 0.05},
+    "商誉占比": {"max": 0.20, "ideal": 0.0, "danger": 0.40, "weight": 0.10},
+    "应收账款占比": {"max": 0.30, "ideal": 0.15, "danger": 0.50, "weight": 0.10}
+  },
+
+  "death_combinations": [
+    {"name": "PB低但商誉高", "condition": "pb < 1.5 and goodwill_ratio > 0.30", "action": "exclude"},
+    {"name": "PE低但利润不可持续", "condition": "pe < 10 and non_recurring_ratio > 0.50", "action": "exclude"},
+    {"name": "PS低但应收款爆雷", "condition": "ps < 1 and ar_to_revenue > 0.50", "action": "exclude"},
+    {"name": "PCF低但自由现金流为负", "condition": "pcf < 5 and capex_to_ocf > 0.80", "action": "exclude"},
+    {"name": "低PEG但行业衰退", "condition": "peg < 1 and industry_growth < 0.05", "action": "exclude"}
+  ],
+
+  "industry_weights": {
+    "资源": {"pb_weight": 0.35, "pcf_weight": 0.35, "roe_weight": 0.15, "growth_weight": 0.15},
+    "科技": {"ps_weight": 0.35, "pcf_weight": 0.25, "rd_weight": 0.20, "growth_weight": 0.20},
+    "医药": {"pcf_weight": 0.30, "rd_weight": 0.25, "profitability_weight": 0.25, "patent_weight": 0.20},
+    "制造": {"pb_weight": 0.30, "pcf_weight": 0.30, "roe_weight": 0.20, "margin_weight": 0.20}
+  },
+
+  "liquidity_filters": {
+    "最小日成交额": 50000000,
+    "大股东持股上限": 0.75,
+    "流通市值下限": 5000000000
+  },
+
+  "output_settings": {
+    "最小得分": 30,
+    "top_n": 10,
+    "排序权重": ["score", "pcf", "pb", "liquidity"],
+    "输出字段": ["代码", "名称", "得分", "pb", "pe", "ps", "pcf", "roe", "死亡组合", "行业"]
+  }
+}

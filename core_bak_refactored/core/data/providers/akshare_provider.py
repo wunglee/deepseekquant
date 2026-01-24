@@ -24,7 +24,7 @@ pip install akshare
 """
 
 import logging
-from typing import Optional
+from typing import Optional, Dict, Any
 
 import akshare as ak
 import pandas as pd
@@ -720,3 +720,223 @@ class AKShareDataProvider(BaseDataProvider):
             is_index=is_index,
             should_poll=False
         )
+
+    def get_all_symbols(self, market: MarketCode) -> pd.DataFrame:
+        """
+        获取指定市场的所有股票代码列表（AKShare实现）
+        
+        Args:
+            market: 市场枚举（MarketCode.CN, MarketCode.US, MarketCode.HK等）
+        
+        Returns:
+            pd.DataFrame: 股票列表，包含列：symbol, name, market
+        """
+        if not self.available or self.ak is None:
+            raise RuntimeError("AKShare API不可用，请安装: pip install akshare")
+
+        try:
+            logger.info(f"Fetching all symbols for market: {market.value}")
+
+            if market == MarketCode.CN:
+                # 获取A股列表
+                df = self.ak.stock_info_a_code_name()
+                # AKShare返回的列是：code, name
+                # 需要转换为带市场后缀的格式
+                df['symbol'] = df['code'].apply(lambda x: self._add_market_suffix(str(x)))
+                df['market'] = 'CN'
+                df = df.rename(columns={'name': 'name'})
+                return df[['symbol', 'name', 'market']]
+
+            elif market == MarketCode.HK:
+                # 获取港股列表
+                df = self.ak.stock_hk_spot()
+                # AKShare港股返回的列包含：symbol, name等
+                if 'symbol' in df.columns and 'name' in df.columns:
+                    df['market'] = 'HK'
+                    return df[['symbol', 'name', 'market']]
+                else:
+                    logger.warning(f"AKShare港股数据格式 unexpected: {df.columns.tolist()}")
+                    return pd.DataFrame(columns=['symbol', 'name', 'market'])
+
+            elif market == MarketCode.US:
+                # 获取美股列表（使用stock_info_global_em获取全球股票信息）
+                df = self.ak.stock_info_global_em()
+                # 筛选美股（通常以交易所缩写结尾，如 .O, .N, .A 等）
+                df_us = df[df['code'].str.contains(r'\.[A-Z]+$', na=False)].copy()
+                df_us['symbol'] = df_us['code']
+                df_us['name'] = df_us['name']
+                df_us['market'] = 'US'
+                return df_us[['symbol', 'name', 'market']]
+
+            else:
+                logger.warning(f"AKShare暂不支持获取市场: {market.value} 的股票列表")
+                return pd.DataFrame(columns=['symbol', 'name', 'market'])
+
+        except Exception as e:
+            logger.error(f"AKShare获取股票列表失败 for {market.value}: {e}")
+            raise ValueError(f"Failed to fetch symbols for {market.value}: {str(e)}") from e
+
+    def _add_market_suffix(self, code: str) -> str:
+        """
+        根据股票代码添加市场后缀
+        
+        Args:
+            code: 股票代码（纯数字）
+        
+        Returns:
+            str: 带市场后缀的代码（如 '000001.SZ'）
+        """
+        # 根据代码规则判断市场
+        code_str = str(code).zfill(6)
+
+        if code_str.startswith(('600', '601', '602', '603', '604', '605', '688')):
+            return f"{code_str}.SH"
+        elif code_str.startswith(('000', '001', '002', '003', '300', '301', '302', '303')):
+            return f"{code_str}.SZ"
+        return f"{code_str}.US"
+
+    def get_complete_fundamental_data(self, symbol: str) -> Dict[str, Any]:
+        """
+        获取指定股票的完整基本面数据（AKShare实现）
+        
+        Args:
+            symbol: 股票代码（带市场后缀，如 '600519.SH'）
+        
+        Returns:
+            Dict[str, Any]: 完整的基本面数据字典
+        """
+        if not self.available or self.ak is None:
+            raise RuntimeError("AKShare API不可用")
+
+        try:
+            logger.info(f"Fetching fundamental data for {symbol}")
+
+            # 提取纯代码（去除后缀）
+            code = symbol.split('.')[0]
+            market_suffix = symbol.split('.')[1] if '.' in symbol else 'SH'
+
+            # AKShare 需要的格式：sh600519 或 sz000001
+            ak_code = f"{market_suffix.lower()}{code}"
+
+            # 1. 获取实时行情数据（包含基础估值指标）
+            spot_df = self.ak.stock_zh_a_spot_em()
+            spot_data = spot_df[spot_df['代码'] == code]
+
+            if spot_data.empty:
+                logger.warning(f"No spot data found for {symbol}")
+                return {}
+
+            spot_row = spot_data.iloc[0]
+
+            # 2. 获取财务分析指标
+            try:
+                financial_df = self.ak.stock_financial_analysis_indicator(symbol=ak_code)
+                # 获取最新的财务数据
+                if not financial_df.empty:
+                    financial_row = financial_df.iloc[0]
+                else:
+                    financial_row = {}
+            except Exception as e:
+                logger.warning(f"Failed to fetch financial indicators for {symbol}: {e}")
+                financial_row = {}
+
+            # 3. 构建基本面数据字典
+            fundamental_data = {
+                # 基本信息
+                'symbol': symbol,
+                'name': str(spot_row.get('名称', '')),
+                'market': market_suffix,
+                'sector': '',  # AKShare 的 spot 接口不提供行业信息
+                'industry': '',
+
+                # 估值指标
+                'pe': self._safe_float(spot_row.get('市盈率-动态')),
+                'pb': self._safe_float(spot_row.get('市净率')),
+                'ps': None,  # AKShare spot 不提供PS，需要从其他地方获取
+                'pcf': None,  # AKShare spot 不提供PCF
+
+                # 盈利能力
+                'roe': self._safe_float(financial_row.get('净资产收益率')),
+                'roic': self._safe_float(financial_row.get('投入资本回报率')),
+                'gross_margin': self._safe_float(financial_row.get('销售毛利率')),
+                'net_margin': self._safe_float(financial_row.get('销售净利率')),
+
+                # 成长性
+                'revenue_growth': self._safe_float(financial_row.get('营业收入增长率')),
+                'profit_growth': self._safe_float(financial_row.get('净利润增长率')),
+                'ocf_growth': None,  # 需要额外获取
+
+                # 资产质量
+                '资产负债率': self._safe_float(financial_row.get('资产负债率')),
+                '流动比率': self._safe_float(financial_row.get('流动比率')),
+                '商誉占比': None,  # 需要额外获取
+                '应收账款占比': None,  # 需要额外获取
+
+                # 流动性
+                'market_cap': self._safe_float(spot_row.get('总市值')),
+                'avg_volume': self._safe_float(spot_row.get('成交量')),
+                'current_price': self._safe_float(spot_row.get('最新价')),
+
+                # 其他重要指标
+                'dividend_yield': None,  # 股息率
+                'debtto_equity': self._safe_float(financial_row.get('产权比率')),
+                'current_assets': self._safe_float(financial_row.get('流动资产')),
+                'total_assets': self._safe_float(financial_row.get('资产总计')),
+                'current_liabilities': self._safe_float(financial_row.get('流动负债')),
+                'total_liabilities': self._safe_float(financial_row.get('负债合计')),
+                'total_equity': self._safe_float(financial_row.get('所有者权益合计')),
+                'revenue_ttm': self._safe_float(financial_row.get('营业收入')),
+                'net_income_ttm': self._safe_float(financial_row.get('净利润')),
+                'operating_cash_flow': self._safe_float(financial_row.get('经营活动产生的现金流量净额')),
+                'free_cash_flow': None,  # 需要计算
+            }
+
+            # 将百分比转换为小数
+            for key in ['roe', 'roic', 'gross_margin', 'net_margin', 'revenue_growth',
+                        'profit_growth', '资产负债率']:
+                if fundamental_data[key] is not None:
+                    # 如果值大于10，说明是百分比格式（如15.5表示15.5%）
+                    if fundamental_data[key] > 10:
+                        fundamental_data[key] = fundamental_data[key] / 100.0
+
+            # 计算缺失的指标（如果可能）
+            self._calculate_derived_metrics(fundamental_data)
+
+            logger.info(f"✓ Successfully fetched fundamental data for {symbol}")
+            return fundamental_data
+
+        except Exception as e:
+            logger.error(f"Failed to fetch fundamental data for {symbol}: {e}")
+            raise ValueError(f"Failed to fetch fundamental data for {symbol}: {str(e)}") from e
+
+    def _safe_float(self, value) -> Optional[float]:
+        """安全转换为float，处理None和NaN"""
+        if value is None:
+            return None
+        try:
+            f = float(value)
+            # 处理 pandas 的 NaN
+            if pd.isna(f):
+                return None
+            return f
+        except (ValueError, TypeError):
+            return None
+
+    def _calculate_derived_metrics(self, data: Dict[str, Any]) -> None:
+        """计算衍生指标"""
+        # 计算PS（市销率）= 市值 / 营业收入
+        if data['market_cap'] is not None and data['revenue_ttm'] is not None and data['revenue_ttm'] > 0:
+            data['ps'] = data['market_cap'] / data['revenue_ttm']
+
+        # 计算PCF（市现率）= 市值 / 经营现金流
+        if data['market_cap'] is not None and data['operating_cash_flow'] is not None and data[
+            'operating_cash_flow'] > 0:
+            data['pcf'] = data['market_cap'] / data['operating_cash_flow']
+
+        # 计算商誉占比（需要额外数据，这里暂时无法计算）
+        # 计算应收账款占比（需要额外数据，这里暂时无法计算）
+
+        # 计算自由现金流（简化计算）
+        if data['operating_cash_flow'] is not None:
+            # 简化的FCF估算：经营现金流 - 资本支出（估算为10%）
+            data['free_cash_flow'] = data['operating_cash_flow'] * 0.9

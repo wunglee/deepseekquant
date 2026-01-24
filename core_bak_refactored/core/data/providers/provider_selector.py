@@ -63,31 +63,30 @@ class ProviderSelector:
         """
         # 1. 推断市场
         market_code = MarketUtils.infer_market_from_symbol(symbol)
-        market = market_code.value
-        logger.debug(f"根据 symbol='{symbol}' 推断市场: {market}")
+        logger.debug(f"根据 symbol='{symbol}' 推断市场: {market_code.value}")
         
         # 2. 获取 provider_id
-        provider_id = self.get_provider_id_for_market(market)
-        logger.info(f"为市场 '{market}' 选择 provider: {provider_id}")
+        provider_id = self.get_provider_id_for_market(market_code)
+        logger.info(f"为市场 '{market_code.value}' 选择 provider: {provider_id}")
         
         # 3. 从 factory 获取实例
         provider = provider_factory.get(provider_id)
         return provider
     
-    def get_provider_id_for_market(self, market: str) -> str:
+    def get_provider_id_for_market(self, market: MarketCode) -> str:
         """根据市场代码获取数据源 ID
         
         Args:
-            market: 市场代码（如 'CN', 'US', 'HK'）
+            market: 市场枚举（MarketCode.CN, MarketCode.US 等）
         
         Returns:
             str: 数据源 ID（如 'akshare', 'yahoo'）
         
         Examples:
             >>> selector = ProviderSelector()
-            >>> selector.get_provider_id_for_market('CN')
+            >>> selector.get_provider_id_for_market(MarketCode.CN)
             'akshare'
-            >>> selector.get_provider_id_for_market('US')
+            >>> selector.get_provider_id_for_market(MarketCode.US)
             'yahoo'
         
         配置来源:
@@ -98,10 +97,11 @@ class ProviderSelector:
         market_sources = data_config.market_sources or {}
         
         # 查找对应的 provider_id
-        provider_id = market_sources.get(market)
+        market_str = market.value if isinstance(market, MarketCode) else str(market)
+        provider_id = market_sources.get(market_str)
         
         if not provider_id:
-            logger.warning(f"市场 '{market}' 在 market_sources 中未配置，使用默认 'akshare'")
+            logger.warning(f"市场 '{market_str}' 在 market_sources 中未配置，使用默认 'akshare'")
             provider_id = 'akshare'
         
         return provider_id
@@ -122,9 +122,8 @@ class ProviderSelector:
             >>> factory = get_global_factory()
             >>> provider = selector.select_provider_for_market(MarketCode.CN, factory)
         """
-        market_str = market.value if isinstance(market, MarketCode) else str(market)
-        provider_id = self.get_provider_id_for_market(market_str)
-        logger.info(f"为市场 '{market_str}' 选择 provider: {provider_id}")
+        provider_id = self.get_provider_id_for_market(market)
+        logger.info(f"为市场 '{market.value}' 选择 provider: {provider_id}")
         
         provider = provider_factory.get(provider_id)
         return provider
@@ -141,5 +140,5 @@ class ProviderSelector:
             >>> mapping
             {'CN': 'akshare', 'US': 'yahoo', 'HK': 'akshare', ...}
         """
-        data_config = self.config_manager.get_provider_config()
-        return data_config.market_sources or {}
+        market_config = self.config_manager.get_market_config()
+        return market_config.market_sources or {}

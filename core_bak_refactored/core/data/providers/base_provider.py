@@ -1474,6 +1474,32 @@ class BaseDataProvider(HistoricalDataProvider):
         """
         pass
 
+    def get_all_symbols(self, market: MarketCode) -> pd.DataFrame:
+        """
+        获取指定市场的所有股票代码列表（基础实现，子类应覆盖）
+        
+        Args:
+            market: 市场枚举
+            
+        Returns:
+            pd.DataFrame: 空DataFrame，子类应实现具体逻辑
+        """
+        logger.warning(f"BaseDataProvider.get_all_symbols() 未实现具体逻辑，市场: {market}")
+        return pd.DataFrame(columns=['symbol', 'name', 'market'])
+    
+    def get_complete_fundamental_data(self, symbol: str) -> Dict[str, Any]:
+        """
+        获取指定股票的完整基本面数据（基础实现，子类应覆盖）
+        
+        Args:
+            symbol: 股票代码
+            
+        Returns:
+            Dict[str, Any]: 空字典，子类应实现具体逻辑
+        """
+        logger.warning(f"BaseDataProvider.get_complete_fundamental_data() 未实现具体逻辑，股票: {symbol}")
+        return {}
+
     # ========================================================================
     # 内部接口（子类必须实现）
     # ========================================================================

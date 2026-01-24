@@ -128,6 +128,8 @@ class IntradayData:
             >>> intraday_obj = IntradayData(...)
             >>> same_obj = IntradayData.from_any(intraday_obj)  # 直接返回
         """
+        if data is None:
+            return None
         if isinstance(data, cls):
             # 已经是 IntradayData 对象，直接返回
             return data
@@ -379,5 +381,61 @@ class HistoricalDataProvider(ABC):
         - trade_records: 按时间降序排列（最新的在前）
         
         注意：实现类可以返回实时数据或历史分时数据
+        """
+        pass
+    
+    @abstractmethod
+    def get_all_symbols(self, market: 'MarketCode') -> pd.DataFrame:
+        """
+        获取指定市场的所有股票代码列表
+        
+        Args:
+            market: 市场枚举（MarketCode.CN, MarketCode.US, MarketCode.HK等）
+        
+        Returns:
+            pd.DataFrame: 股票列表，包含以下列：
+                - symbol: 股票代码（带市场后缀，如 '000001.SZ'）
+                - name: 股票名称
+                - market: 市场代码
+                
+        示例：
+            >>> provider = AKShareDataProvider()
+            >>> df = provider.get_all_symbols(MarketCode.CN)
+            >>> df.head()
+               symbol      name market
+            0  000001.SZ  平安银行     CN
+            1  000002.SZ   万科A      CN
+        """
+        pass
+    
+    @abstractmethod
+    def get_complete_fundamental_data(self, symbol: str) -> Dict[str, Any]:
+        """
+        获取指定股票的完整基本面数据
+        
+        Args:
+            symbol: 股票代码（带市场后缀，如 '000001.SZ'）
+        
+        Returns:
+            Dict[str, Any]: 完整的基本面数据字典，包含：
+                - 估值指标：pb, pe, ps, pcf
+                - 盈利能力：roe, roic, gross_margin
+                - 成长性：revenue_growth, profit_growth, ocf_growth
+                - 资产质量：资产负债率, 流动比率, 商誉占比, 应收账款占比
+                - 流动性：market_cap, avg_volume
+                - 基本信息：name, sector, industry, market
+                
+        示例：
+            >>> provider = AKShareDataProvider()
+            >>> data = provider.get_complete_fundamental_data('000001.SZ')
+            >>> print(data['pe'])
+            5.2
+            >>> print(data['roe'])
+            0.15
+        
+        注意：
+        - 所有财务数据应为最新年报或TTM数据
+        - 增长率应使用同比数据
+        - 百分比字段使用小数表示（如15%表示为0.15）
         """
         pass

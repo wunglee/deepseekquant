@@ -25,7 +25,7 @@ pip install yfinance
 
 import logging
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Dict, Any
 
 import pandas as pd
 import yfinance as yf
@@ -460,3 +460,157 @@ class YahooFinanceDataProvider(BaseDataProvider):
 
     # validate_data_quality方法已迁移到data_quality_utils.py
     # 请使用: from core_bak_refactored.core.data.quality.data_quality_utils import validate_data_quality
+    
+    def get_complete_fundamental_data(self, symbol: str) -> Dict[str, Any]:
+        """
+        获取指定股票的完整基本面数据（Yahoo Finance实现）
+        
+        Args:
+            symbol: 股票代码（带市场后缀，如 'AAPL.US'）
+        
+        Returns:
+            Dict[str, Any]: 完整的基本面数据字典
+        """
+        try:
+            logger.info(f"Fetching fundamental data for {symbol}")
+            
+            # 转换为Yahoo格式
+            yahoo_symbol = self._map_to_yahoo(symbol)
+            
+            # 获取股票信息
+            ticker = self.yf.Ticker(yahoo_symbol)
+            info = ticker.info
+            
+            if not info:
+                logger.warning(f"No fundamental data found for {symbol}")
+                return {}
+            
+            # 构建基本面数据字典
+            fundamental_data = {
+                # 基本信息
+                'symbol': symbol,
+                'name': info.get('longName', info.get('shortName', symbol)),
+                'market': symbol.split('.')[-1] if '.' in symbol else 'US',
+                'sector': info.get('sector', ''),
+                'industry': info.get('industry', ''),
+                'currency': info.get('currency', ''),
+                'exchange': info.get('exchange', ''),
+                
+                # 估值指标
+                'pe': info.get('trailingPE'),
+                'pb': info.get('priceToBook'),
+                'ps': info.get('priceToSalesTrailing12Months'),
+                'pcf': None,  # Yahoo 不提供直接的PCF
+                'peg': info.get('pegRatio'),
+                'enterprise_value': info.get('enterpriseValue'),
+                'ev_to_revenue': info.get('enterpriseToRevenue'),
+                'ev_to_ebitda': info.get('enterpriseToEbitda'),
+                
+                # 盈利能力
+                'roe': info.get('returnOnEquity'),
+                'roic': None,  # Yahoo 不提供直接的ROIC
+                'roa': info.get('returnOnAssets'),
+                'gross_margin': info.get('grossMargins'),
+                'operating_margin': info.get('operatingMargins'),
+                'net_margin': info.get('profitMargins'),
+                'ebitda_margin': None,  # 需要计算
+                
+                # 成长性
+                'revenue_growth': info.get('revenueGrowth'),
+                'profit_growth': info.get('earningsGrowth'),
+                'ocf_growth': None,  # Yahoo 不提供OCF增长率
+                'earnings_growth_qtr': info.get('earningsQuarterlyGrowth'),
+                'revenue_growth_qtr': None,  # 需要额外获取
+                
+                # 资产质量
+                '资产负债率': None,  # 需要计算
+                '流动比率': info.get('currentRatio'),
+                'quick_ratio': info.get('quickRatio'),
+                'debt_to_equity': info.get('debtToEquity'),
+                'total_debt': info.get('totalDebt'),
+                'total_assets': info.get('totalAssets'),
+                'total_liabilities': None,  # 需要计算
+                'current_assets': info.get('totalAssets'),  # 近似
+                'current_liabilities': info.get('totalDebt'),  # 近似
+                'book_value': info.get('bookValue'),
+                'intangible_assets': None,  # 需要额外获取
+                '商誉占比': None,  # 需要额外获取
+                '应收账款占比': None,  # 需要额外获取
+                
+                # 流动性
+                'market_cap': info.get('marketCap'),
+                'shares_outstanding': info.get('sharesOutstanding'),
+                'float_shares': info.get('floatShares'),
+                'avg_volume': info.get('averageVolume'),
+                'avg_volume_10d': info.get('averageVolume10days'),
+                'avg_volume_3m': info.get('averageDailyVolume3Month'),
+                'current_price': info.get('currentPrice'),
+                'previous_close': info.get('previousClose'),
+                'fifty_two_week_high': info.get('fiftyTwoWeekHigh'),
+                'fifty_two_week_low': info.get('fiftyTwoWeekLow'),
+                
+                # 现金流
+                'operating_cash_flow': info.get('operatingCashflow'),
+                'free_cash_flow': info.get('freeCashflow'),
+                'capital_expenditure': None,  # 需要额外获取
+                'cash_and_equivalents': info.get('totalCash'),
+                'cash_per_share': info.get('totalCashPerShare'),
+                
+                # 分红和股东回报
+                'dividend_yield': info.get('dividendYield'),
+                'dividend_rate': info.get('dividendRate'),
+                'payout_ratio': info.get('payoutRatio'),
+                'ex_dividend_date': info.get('exDividendDate'),
+                'beta': info.get('beta'),
+                
+                # 分析师预期
+                'target_high_price': info.get('targetHighPrice'),
+                'target_low_price': info.get('targetLowPrice'),
+                'target_mean_price': info.get('targetMeanPrice'),
+                'recommendation_mean': info.get('recommendationMean'),
+                'recommendation_key': info.get('recommendationKey'),
+                'number_of_analyst_opinions': info.get('numberOfAnalystOpinions'),
+                
+                # 盈利数据
+                'earnings_ttm': info.get('trailingEps'),
+                'earnings_forward': info.get('forwardEps'),
+                'pe_forward': info.get('forwardPE'),
+                'revenue_ttm': info.get('totalRevenue'),
+                'revenue_per_share': info.get('revenuePerShare'),
+                'earnings_date': info.get('earningsDate'),
+            }
+            
+            # 计算一些衍生指标
+            self._calculate_yahoo_derived_metrics(fundamental_data)
+            
+            logger.info(f"✓ Successfully fetched fundamental data for {symbol}")
+            return fundamental_data
+            
+        except Exception as e:
+            logger.error(f"Failed to fetch fundamental data for {symbol}: {e}")
+            raise ValueError(f"Failed to fetch fundamental data for {symbol}: {str(e)}") from e
+    
+    def _calculate_yahoo_derived_metrics(self, data: Dict[str, Any]) -> None:
+        """计算Yahoo Finance的衍生指标"""
+        # 计算资产负债率
+        if data['total_assets'] is not None and data['total_debt'] is not None and data['total_assets'] > 0:
+            data['资产负债率'] = data['total_debt'] / data['total_assets']
+        
+        # 计算EBITDA Margin
+        if data['ev_to_ebitda'] is not None and data['ev_to_revenue'] is not None and data['ev_to_ebitda'] > 0:
+            data['ebitda_margin'] = data['ev_to_revenue'] / data['ev_to_ebitda']
+        
+        # 计算OCF增长率（需要历史数据，这里无法计算）
+        data['ocf_growth'] = None
+        
+        # 计算应收账款占比（需要额外数据，这里无法计算）
+        data['应收账款占比'] = None
+        
+        # 计算商誉占比（需要额外数据，这里无法计算）
+        data['商誉占比'] = None
+        
+        # 计算ROIC的近似值（如果ROIC不存在）
+        if data['roic'] is None and data['roa'] is not None and data['资产负债率'] is not None:
+            # 简化的ROIC估算：ROA / (1 - 资产负债率)
+            if data['资产负债率'] < 1:
+                data['roic'] = data['roa'] / (1 - data['资产负债率'])
