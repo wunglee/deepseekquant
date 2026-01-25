@@ -141,11 +141,10 @@ function generateTimeAxisLabelConfig(marketCode, fullTradingTimes) {
     const { open, close, lunch_start, lunch_end } = tradingHours;
     
     // 解析时间
-    const [openHour, openMin] = open?.split(':').map(Number) || [9, 30];
-    const [closeHour, closeMin] = close?.split(':').map(Number) || [15, 0];
-    const [lunchStartHour, lunchStartMin] = lunch_start?.split(':').map(Number) || [11, 30];
-    const [lunchEndHour, lunchEndMin] = lunch_end?.split(':').map(Number) || [13, 0];
-    
+    const [openHour, openMin] = open?.split(':').map(Number)|| [undefined, undefined];
+    const [closeHour, closeMin] = close?.split(':').map(Number)|| [undefined, undefined];
+    const [lunchStartHour, lunchStartMin] = lunch_start?.split(':').map(Number) || [undefined, undefined];
+    const [lunchEndHour, lunchEndMin] = lunch_end?.split(':').map(Number)|| [undefined, undefined];
     // 🔧 动态生成半小时时间点
     const displayTimes = new Set();
     
@@ -169,6 +168,7 @@ function generateTimeAxisLabelConfig(marketCode, fullTradingTimes) {
         }
         
         // 🔧 如果遇到午休开始时间，先添加午休开始时间，然后跳到午休结束时间
+
         if (prevHour === lunchStartHour && prevMinute === lunchStartMin) {
             // 确保午休开始时间已添加（已在上面的displayTimes.add中添加）
             // 跳到午休结束时间
@@ -180,11 +180,11 @@ function generateTimeAxisLabelConfig(marketCode, fullTradingTimes) {
     // 确保收盘时间显示，但排除午休结束时间
     const closeTimeStr = `${String(closeHour).padStart(2, '0')}:${String(closeMin).padStart(2, '0')}:00`;
     displayTimes.add(closeTimeStr);
-    
     // 从显示时间集合中移除午休结束时间（如果存在）
-    const lunchEndTimeStr = `${String(lunchEndHour).padStart(2, '0')}:${String(lunchEndMin).padStart(2, '0')}:00`;
-    displayTimes.delete(lunchEndTimeStr);
-    
+    if(lunchEndHour!=undefined && lunchEndMin!=undefined){
+        const lunchEndTimeStr = `${String(lunchEndHour).padStart(2, '0')}:${String(lunchEndMin).padStart(2, '0')}:00`;
+        displayTimes.delete(lunchEndTimeStr);
+    }
     console.log('🔍 动态生成的时间点:', Array.from(displayTimes).sort());
     
     // 🔧 创建自定义的 formatter，只显示指定的时间点
