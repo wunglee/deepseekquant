@@ -272,40 +272,25 @@ document.addEventListener('DOMContentLoaded', function() {
 // ========== 市场时区相关工具函数 ==========
 
 /**
- * 根据当前选择的市场获取对应时区（从markets配置中获取）
- * @returns {string} 时区字符串
- */
-function getMarketTimezone() {
-    const marketCode = window.currentMarketCode || 'CN';
-    
-    if (!window.marketsConfig || !Array.isArray(window.marketsConfig)) {
-        console.error('❌错误：markets配置未加载');
-        throw new Error('markets配置未加载');
-    }
-    const market = window.marketsConfig.find(m => m.code === marketCode);
-    if (!market) {
-        console.error(`❌未找到市场代码 ${marketCode} 的配置`);
-        throw new Error(`未找到市场代码 ${marketCode} 的配置`);
-    }
-    return market.timezone;
-}
-
-/**
- * 获取指定时间在当前市场时区的格式化时间字符串
+ * 获取指定时间在指定市场时区的格式化时间字符串
  * @param {Date} date - Date对象（必须传入）
- * @returns {string} 当前市场时区的格式化时间字符串
+ * @param {string} marketTimezone - 市场时区
+ * @returns {string} 指定市场时区的格式化时间字符串
  */
-function formatToMarketDateTimeStr(date) {
+function formatToMarketDateTimeStr(date, marketTimezone) {
     if (!date || !(date instanceof Date)) {
         console.error('formatToMarketDateTimeStr: 必须传入有效的Date对象');
         return '';
     }
 
-    const timezone = getMarketTimezone();
+    if (!marketTimezone) {
+        console.error('formatToMarketDateTimeStr: 必须传入有效的市场时区');
+        return '';
+    }
 
     try {
         return date.toLocaleString('zh-CN', {
-            timeZone: timezone,
+            timeZone: marketTimezone,
             year: 'numeric',
             month: '2-digit',
             day: '2-digit',
@@ -323,9 +308,10 @@ function formatToMarketDateTimeStr(date) {
 /**
  * 从完整日期时间字符串中提取日期部分（YYYY-MM-DD格式）
  * @param {string} dateTimeStr - 完整的日期时间字符串
+ * @param {string} marketTimezone - 市场时区
  * @returns {string} 日期部分（YYYY-MM-DD格式）
  */
-function extractFromDateStr(dateTimeStr) {
+function extractFromDateStr(dateTimeStr, marketTimezone) {
     if (!dateTimeStr || typeof dateTimeStr !== 'string') {
         console.error('extractFromDateStr: 必须传入有效的日期时间字符串');
         return '';
@@ -339,7 +325,7 @@ function extractFromDateStr(dateTimeStr) {
         }
         
         // 如果标准格式不匹配，尝试解析并重新格式化
-        const date = extractFromMarketDateTimeStr(dateTimeStr);
+        const date = extractFromMarketDateTimeStr(dateTimeStr, marketTimezone);
         if (date) {
             return date.toISOString().split('T')[0];
         }
@@ -355,9 +341,10 @@ function extractFromDateStr(dateTimeStr) {
 /**
  * 从完整日期时间字符串中提取时间部分（HH:MM:SS格式）
  * @param {string} dateTimeStr - 完整的日期时间字符串
+ * @param {string} marketTimezone - 市场时区
  * @returns {string} 时间部分（HH:MM:SS格式）
  */
-function extractFromTimeStr(dateTimeStr) {
+function extractFromTimeStr(dateTimeStr, marketTimezone) {
     if (!dateTimeStr || typeof dateTimeStr !== 'string') {
         console.error('extractFromTimeStr: 必须传入有效的日期时间字符串');
         return '';
@@ -371,7 +358,7 @@ function extractFromTimeStr(dateTimeStr) {
         }
         
         // 如果标准格式不匹配，尝试解析并重新格式化
-        const date = extractFromMarketDateTimeStr(dateTimeStr);
+        const date = extractFromMarketDateTimeStr(dateTimeStr, marketTimezone);
         if (date) {
             const hours = String(date.getHours()).padStart(2, '0');
             const minutes = String(date.getMinutes()).padStart(2, '0');
@@ -388,20 +375,23 @@ function extractFromTimeStr(dateTimeStr) {
 }
 
 /**
- * 将时间字符串解析为市场时区的Date对象
+ * 将时间字符串解析为指定市场时区的Date对象
  * @param {string} timeString - 时间字符串（支持多种格式）
- * @returns {Date} 市场时区的Date对象
+ * @param {string} marketTimezone - 市场时区
+ * @returns {Date} 指定市场时区的Date对象
  */
-function extractFromMarketDateTimeStr(timeString) {
+function extractFromMarketDateTimeStr(timeString, marketTimezone) {
     if (!timeString || typeof timeString !== 'string') {
         console.error('extractFromMarketDateTimeStr: 必须传入有效的时间字符串');
         return null;
     }
     
+    if (!marketTimezone) {
+        console.error('extractFromMarketDateTimeStr: 必须传入有效的市场时区');
+        return null;
+    }
+    
     try {
-        // 获取当前市场时区
-        const timezone = getMarketTimezone();
-        
         // 支持多种时间格式的解析
         let date;
         
@@ -430,7 +420,7 @@ function extractFromMarketDateTimeStr(timeString) {
         }
         
         // 正确的时区转换方法：使用时区偏移量调整
-        const timezoneOffset = getTimezoneOffset(timezone);
+        const timezoneOffset = getTimezoneOffset(marketTimezone);
         const localOffset = date.getTimezoneOffset();
         const adjustedTime = new Date(date.getTime() + (timezoneOffset - localOffset) * 60000);
         
@@ -526,7 +516,6 @@ window.AppUtils = {
     renderTable,
     checkSystemHealth,
     // 市场时区相关工具函数
-    getMarketTimezone,
     formatToMarketDateTimeStr,
     extractFromDateStr,
     extractFromTimeStr,

@@ -581,9 +581,10 @@ function updateChartData(data, events) {
             let dateStr = d.date
             if (typeof dateStr === 'string') {
                 // 使用 AppUtils.extractFromMarketDateTimeStr 正确解析时间字符串为市场时区Date对象
-                const marketDate = AppUtils.extractFromMarketDateTimeStr(dateStr)
+                const marketTimezone = getMarketTimezone();
+                const marketDate = AppUtils.extractFromMarketDateTimeStr(dateStr, marketTimezone)
                 // 使用 AppUtils.formatToMarketDateTimeStr 格式化为标准日期字符串
-                dateStr = AppUtils.extractFromDateStr(AppUtils.formatToMarketDateTimeStr(marketDate))
+                dateStr = AppUtils.extractFromDateStr(AppUtils.formatToMarketDateTimeStr(marketDate, marketTimezone), marketTimezone)
             }
             return { ...d, date: dateStr }
         })
@@ -799,6 +800,7 @@ let currentPeriod = 'daily'
 let currentIndicator = 'VOL'
 let currentChartType = 'intraday'  // 🔧 修改：默认为分时图
 let globalDataMode = 'mock'  // 'mock' 或 'real'，全局数据模式
+let currentMarketCode = null  // 当前市场代码，data_explorer.html 范围的属性
 // 注意：intradayData、intradayUpdateTimer 已在 intraday_chart.js 中声明
 
 // 全局模式管理函数
@@ -1009,8 +1011,8 @@ function selectMarket(market) {
     // 设置当前市场代码（从market.id中提取CN、US等代码，与market.yml中的market_registry id一致）
     // market.id格式为 'CN'
     const marketCode = market.id
-    window.currentMarketCode = marketCode
-    console.log('✅ 设置当前市场代码:', window.currentMarketCode, '来源:', market.id)
+    currentMarketCode = marketCode
+    console.log('✅ 设置当前市场代码:', currentMarketCode, '来源:', market.id)
 
     // 更新市场标题和交易时间信息
     updateMarketHeader(marketCode)
@@ -1080,7 +1082,9 @@ function selectIndex(item) {
         // 分时图的清理由IntradayChart.rebuildLayout()处理
         if (window.IntradayChart && typeof window.IntradayChart.rebuildLayout === 'function') {
             IntradayChart.rebuildLayout(isStock)
-            IntradayChart.loadData(currentIndex.id, getDataMode(), true)
+            // 获取当前市场时区并传递给loadData
+            const marketTimezone = getMarketTimezone();
+            IntradayChart.loadData(currentIndex.id, getDataMode(), true, marketTimezone)
         } else {
             console.warn('⚠️ IntradayChart 未加载，跳过分时图重建和数据加载')
         }
@@ -1355,7 +1359,9 @@ function switchChartType(type) {
                 if (typeof IntradayChart.rebuildLayout === 'function') {
                     IntradayChart.rebuildLayout(isStock)
                 }
-                IntradayChart.loadData(currentIndex.id, getDataMode(), true)
+                // 获取当前市场时区并传递给loadData
+                const marketTimezone = getMarketTimezone();
+                IntradayChart.loadData(currentIndex.id, getDataMode(), true, marketTimezone)
             } else {
                 console.warn('⚠️ IntradayChart 未加载，跳过分时数据加载')
             }
@@ -1399,7 +1405,8 @@ function switchMode(mode) {
             const isIndex = currentIndex.type === 'index'
             const isStock = !isIndex
             IntradayChart.rebuildLayout(isStock)
-            IntradayChart.loadData(currentIndex.id, getDataMode(), true)
+            const marketTimezone = getMarketTimezone();
+            IntradayChart.loadData(currentIndex.id, getDataMode(), true, marketTimezone)
         } else {
             console.warn('⚠️ IntradayChart 未加载，跳过分时图重建和数据加载')
         }
@@ -1476,9 +1483,10 @@ function renderIndicator(data, klineZoom) {
         let dateStr = d.date
         if (typeof dateStr === 'string') {
             // 使用 AppUtils.extractFromMarketDateTimeStr 正确解析时间字符串为市场时区Date对象
-            const marketDate = AppUtils.extractFromMarketDateTimeStr(dateStr)
+            const marketTimezone = getMarketTimezone();
+            const marketDate = AppUtils.extractFromMarketDateTimeStr(dateStr, marketTimezone)
             // 使用 AppUtils.formatToMarketDateTimeStr 格式化为标准日期字符串
-            dateStr = AppUtils.extractFromDateStr(AppUtils.formatToMarketDateTimeStr(marketDate))
+            dateStr = AppUtils.extractFromDateStr(AppUtils.formatToMarketDateTimeStr(marketDate, marketTimezone), marketTimezone)
         }
         return { ...d, date: dateStr }
     })
@@ -2172,9 +2180,10 @@ function renderKline(data, events) {
         let dateStr = d.date
         if (typeof dateStr === 'string') {
             // 使用 AppUtils.extractFromMarketDateTimeStr 正确解析时间字符串为市场时区Date对象
-            const marketDate = AppUtils.extractFromMarketDateTimeStr(dateStr)
+            const marketTimezone = getMarketTimezone();
+            const marketDate = AppUtils.extractFromMarketDateTimeStr(dateStr, marketTimezone)
             // 使用 AppUtils.formatToMarketDateTimeStr 格式化为标准日期字符串
-            dateStr = AppUtils.extractFromDateStr(AppUtils.formatToMarketDateTimeStr(marketDate))
+            dateStr = AppUtils.extractFromDateStr(AppUtils.formatToMarketDateTimeStr(marketDate, marketTimezone), marketTimezone)
         }
         return { ...d, date: dateStr }
     })
@@ -2711,6 +2720,27 @@ function updateOrderBook(orderBook) {
 /**
  * 更新成交明细
  */
+// ========== 市场时区相关工具函数 ==========
+
+/**
+ * 根据当前选择的市场获取对应时区（从markets配置中获取）
+ * @returns {string} 时区字符串
+ */
+function getMarketTimezone() {
+    const marketCode = currentMarketCode || 'CN';
+    
+    if (!window.marketsConfig || !Array.isArray(window.marketsConfig)) {
+        console.error('❌错误：markets配置未加载');
+        throw new Error('markets配置未加载');
+    }
+    const market = window.marketsConfig.find(m => m.code === marketCode);
+    if (!market) {
+        console.error(`❌未找到市场代码 ${marketCode} 的配置`);
+        throw new Error(`未找到市场代码 ${marketCode} 的配置`);
+    }
+    return market.timezone;
+}
+
 function updateTicker(tickersData) {
     if (!tickersData) return
     
