@@ -105,11 +105,8 @@ function rebuildIntradayLayout(isStock) {
     if (priceChartDom && volumeChartDom) {
         intradayPriceChart = echarts.init(priceChartDom)
         intradayVolumeChart = echarts.init(volumeChartDom)
-        
         // 连接两个图表，确保 tooltip 同步
         echarts.connect([intradayPriceChart, intradayVolumeChart])
-        
-        showIntradayLoading(true)
     } else {
         console.error('❌ 无法找到图表DOM元素')
     }
@@ -284,9 +281,7 @@ function initializeIntradayTimeAxis() {
         console.warn('⚠️ 当前市场代码未设置，无法初始化时间轴')
         return
     }
-
     console.log('🔍 initializeIntradayTimeAxis - 当前市场:', window.currentMarketCode)
-
     // 生成当前市场的完整交易时间轴
     const timeAxisInfo = getFullTradingTimes(window.currentMarketCode)
     const fullTradingTimes = timeAxisInfo.tradingTimes
@@ -295,8 +290,7 @@ function initializeIntradayTimeAxis() {
     
     // 🔧 根据市场配置动态生成半小时时间点
     const axisLabelConfig = generateTimeAxisLabelConfig(window.currentMarketCode, fullTradingTimes)
-    
-    
+
     // 设置图表的基础配置（与具体股票无关的时间轴和分割线）
     const charts = IntradayChart.getCharts()
     console.log('🔍 initializeIntradayTimeAxis - 图表实例:', charts)
@@ -441,6 +435,7 @@ function initializeIntradayTimeAxis() {
                 }
             }]
         }, true)  // 关键：使用true完全替换，清除旧市场配置
+        IntradayChart.showLoading(true)
     }
 }
 
@@ -604,9 +599,11 @@ function getFullTradingTimes(marketCode) {
         throw new Error(`市场 ${marketCode} 缺少交易时间配置，无法生成时间轴`)
     }
     
-    let tradingTimes = []
-    let lunchBreakRange = null  // 🔧 记录午休时间段的索引范围
-    
+    // 🔧 返回包含午休范围信息的时间轴
+    let result = {
+        tradingTimes: [],
+        lunchBreakRange: null
+    }
     // 解析开始和结束时间
     const start = open.split(':').map(Number)
     const end = close.split(':').map(Number)
@@ -614,38 +611,10 @@ function getFullTradingTimes(marketCode) {
     if (lunch_start && lunch_end) {
         const firstEnd = lunch_start.split(':').map(Number)
         const secondStart = lunch_end.split(':').map(Number)
-        
-        // 生成上午交易时段（5秒间隔）
-        tradingTimes = generateTradingTimes(tradingTimes, start, firstEnd)
-        
-        // 🔧 记录午休时间段的开始索引
-        const lunchStartIndex = tradingTimes.length
-        
-        // 🔧 使用 generateTradingTimes 生成午休时间段（5分钟间隔）
-        const lunchStartParts = lunch_start.split(':').map(Number)
-        const lunchEndParts = lunch_end.split(':').map(Number)
-        tradingTimes = generateTradingTimes(tradingTimes, lunchStartParts, lunchEndParts, 600)
-        
-        // 🔧 记录午休时间段的结束索引
-        const lunchEndIndex = tradingTimes.length - 1
-        
-        // 🔧 保存午休时间段范围
-        lunchBreakRange = { start: lunchStartIndex, end: lunchEndIndex }
-        
-        console.log('🔍 getFullTradingTimes - 午休间隔已生成，范围:', lunchStartIndex, lunchEndIndex)
-        
-        // 生成下午交易时段（5秒间隔）
-        tradingTimes = generateTradingTimes(tradingTimes, secondStart, end)
+        result = generateTradingTimesWithLunchBreak(result.tradingTimes, start, firstEnd, secondStart, end)
     } else {
-        tradingTimes = generateTradingTimes(tradingTimes, start, end)
+        result.tradingTimes = generateTradingTimes(result.tradingTimes, start, end)
     }
-    
-    // 🔧 返回包含午休范围信息的时间轴
-    const result = {
-        tradingTimes: tradingTimes,
-        lunchBreakRange: lunchBreakRange
-    }
-    
     window.marketTradingTimes[marketCode] = result
     return result
 }
@@ -714,38 +683,8 @@ function renderIntradayCharts(data) {
         return
     }
     
-    // 🔧 获取已有的markLine配置（包含午休分割线）
-    const existingOption = charts.price.getOption()
-    const existingMarkLineData = (existingOption.series && 
-                                  existingOption.series[0] && 
-                                  existingOption.series[0].markLine && 
-                                  existingOption.series[0].markLine.data) || []
-    
-    // 复制现有的markLine数据并添加昨收线
-    const allMarkLineData = Array.isArray(existingMarkLineData) ? [...existingMarkLineData] : []
-    
-    // 添加昨收线
-    allMarkLineData.push({
-        // 昨收横线（股票相关的分割线）
-        yAxis: yesterdayClose,
-        label: {
-            show: true,
-            formatter: '昨收: {c}',
-            position: 'end',
-            color: '#000000',  // 黑色文字
-            fontSize: 12,
-            fontWeight: 'bold'
-        },
-        lineStyle: {
-            color: '#000000',  // 黑色线条
-            type: 'dashed',
-            width: 1,  // 细线
-            opacity: 1.0
-        },
-        z: 100  // 确保在最上层
-    })
-    
-    const markLineData = allMarkLineData
+    // 🔧 优化markLine数据处理：获取现有配置并添加/更新昨收线
+    const markLineData = updateMarkLineWithYesterdayClose(charts.price, yesterdayClose)
     
     console.log('🔍 renderIntradayCharts - markLineData长度:', markLineData.length)
     
@@ -799,6 +738,7 @@ function renderIntradayCharts(data) {
             data: volumeData
         }]
     })
+    IntradayChart.showLoading(false)
 }
 
 /**
@@ -864,12 +804,8 @@ function updateIntradayChartsIncremental(newData) {
         return
     }
     
-    // 获取当前的markLine配置（包含午休分割线和昨收线）
-    const existingOption = charts.price.getOption()
-    const existingMarkLineData = (existingOption.series && 
-                                  existingOption.series[0] && 
-                                  existingOption.series[0].markLine && 
-                                  existingOption.series[0].markLine.data) || []
+    // 使用优化的markLine数据处理方法更新昨收线
+    const markLineData = updateMarkLineWithYesterdayClose(charts.price, yesterdayClose)
     
     // 更新价格图表
     charts.price.setOption({
@@ -887,7 +823,7 @@ function updateIntradayChartsIncremental(newData) {
                     symbol: 'none',
                     silent: false,
                     animation: false,
-                    data: existingMarkLineData  // 保留现有的markLine数据
+                    data: markLineData  // 使用优化后的markLine数据
                 }
             },
             { data: avgPriceData }
@@ -928,6 +864,7 @@ function makeLunchBreakLine() {
         // 只添加两条分割线，中间的空白间隔由时间轴的null数据自然形成
         markLineData.push(
             {
+                id: 'lunch-start-line',  // 设置唯一ID用于识别
                 // 午休开始分割线
                 xAxis: lunchStartTime,
                 label: {
@@ -940,6 +877,7 @@ function makeLunchBreakLine() {
                 }
             },
             {
+                id: 'lunch-end-line',  // 设置唯一ID用于识别
                 // 午休结束分割线
                 xAxis: lunchEndTime,
                 label: {
@@ -958,6 +896,87 @@ function makeLunchBreakLine() {
     
     console.log('🔍 makeLunchBreakLine - 返回数据:', markLineData)
     return markLineData
+}
+
+/**
+ * 优化的markLine数据处理：获取现有配置并添加/更新昨收线
+ * @param {Object} chart - ECharts实例
+ * @param {number} yesterdayClose - 昨收价
+ * @returns {Array} 更新后的markLine数据
+ */
+function updateMarkLineWithYesterdayClose(chart, yesterdayClose) {
+    // 获取现有的markLine配置
+    const existingOption = chart.getOption();
+    let existingMarkLineData = [];
+    
+    if (existingOption.series && existingOption.series[0] && 
+        existingOption.series[0].markLine && existingOption.series[0].markLine.data) {
+        existingMarkLineData = existingOption.series[0].markLine.data;
+    }
+    
+    // 过滤掉旧的昨收线（通过ID识别），保留其他markLine元素
+    const filteredMarkLineData = existingMarkLineData.filter(line => line.id !== 'yesterday-close-line');
+    
+    // 添加新的昨收线（带有ID便于后续更新或删除）
+    const yesterdayCloseLine = {
+        id: 'yesterday-close-line',  // 设置唯一ID用于识别
+        // 昨收横线（股票相关的分割线）
+        yAxis: yesterdayClose,
+        label: {
+            show: true,
+            formatter: '昨收: {c}',
+            position: 'end',
+            color: '#000000',  // 黑色文字
+            fontSize: 12,
+            fontWeight: 'bold'
+        },
+        lineStyle: {
+            color: '#000000',  // 黑色线条
+            type: 'dashed',
+            width: 1,  // 细线
+            opacity: 1.0
+        },
+        z: 100  // 确保在最上层
+    };
+    
+    // 合并过滤后的现有数据和新的昨收线
+    return [...filteredMarkLineData, yesterdayCloseLine];
+}
+
+/**
+ * 提取午休时间段处理逻辑为独立方法
+ * @param {Array} tradingTimes - 当前的交易时间数组
+ * @param {Array} firstStart - 上午开始时间 [小时, 分钟]
+ * @param {Array} firstEnd - 上午结束时间/午休开始时间 [小时, 分钟]
+ * @param {Array} secondStart - 下午开始时间/午休结束时间 [小时, 分钟]
+ * @param {Array} secondEnd - 下午结束时间 [小时, 分钟]
+ * @returns {Object} 包含更新后的tradingTimes和lunchBreakRange的对象
+ */
+function generateTradingTimesWithLunchBreak(tradingTimes, firstStart, firstEnd, secondStart, secondEnd) {
+    let updatedTradingTimes = [...tradingTimes];
+    let lunchBreakRange = null;
+    
+    // 生成上午交易时段（5秒间隔）
+    updatedTradingTimes = generateTradingTimes(updatedTradingTimes, firstStart, firstEnd);
+    
+    // 🔧 记录午休时间段的开始索引
+    const lunchStartIndex = updatedTradingTimes.length;
+    
+    // 🔧 使用 generateTradingTimes 生成午休时间段（5分钟间隔）
+    updatedTradingTimes = generateTradingTimes(updatedTradingTimes, firstEnd, secondStart, 600);  // 从firstEnd到secondStart是午休时间
+    
+    // 🔧 记录午休时间段的结束索引
+    const lunchEndIndex = updatedTradingTimes.length - 1;
+    
+    // 🔧 保存午休时间段范围
+    lunchBreakRange = { start: lunchStartIndex, end: lunchEndIndex };
+    
+    console.log('🔍 getFullTradingTimes - 午休间隔已生成，范围:', lunchStartIndex, lunchEndIndex);
+    
+    // 生成下午交易时段（5秒间隔）
+    updatedTradingTimes = generateTradingTimes(updatedTradingTimes, secondStart, secondEnd);
+    
+    return { tradingTimes: updatedTradingTimes, lunchBreakRange };
 }
 
 /**
@@ -1013,7 +1032,6 @@ function loadIntradayData(symbol, mode, isInitial = true) {
     // 🔧 只有首次加载才清空旧数据和显示加载状态
     if (isInitial) {
         IntradayChart.setData(null)
-        IntradayChart.showLoading(true)
         IntradayChart.setBatchIndex(0)  // 重置批次序号
         IntradayChart.setRequestTime(0)  // 重置时间
         // 设置初始状态（根据模式）
@@ -1133,8 +1151,6 @@ function loadIntradayData(symbol, mode, isInitial = true) {
                     if (charts.price) charts.price.resize()
                     if (charts.volume) charts.volume.resize()
                 }, 50)
-
-                IntradayChart.showLoading(false)
             } else {
                 const intradayData = IntradayChart.getData()
                 if (!intradayData) {

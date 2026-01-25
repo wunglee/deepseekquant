@@ -49,10 +49,10 @@ function showEmptyChart(chart, text = '暂无数据') {
 // ========== 图表加载状态管理 ==========
 function showChartLoading(chart, show, text = '加载中...') {
     if (show) {
-        // 先清除图表内容，然后再显示加载状态
-        chart.clear();
+        // 使用 replace 模式，确保加载状态 graphic 被正确设置
         chart.setOption({
             graphic: [{
+                id: 'loading-overlay',  // 设置唯一ID用于识别
                 type: 'text',
                 left: 'center',
                 top: 'center',
@@ -62,10 +62,15 @@ function showChartLoading(chart, show, text = '加载中...') {
                     fill: '#999'
                 }
             }]
-        }, true);
+        }, false);  // 使用 true 确保替换整个配置
     } else {
-        // 清除graphic（实际上不需要，因为renderXXX会覆盖）
-        chart.setOption({ graphic: [] })
+        // 移除加载状态 graphic
+        chart.setOption({
+            graphic: [{
+                id: 'loading-overlay',
+                $action: 'remove'  // ECharts 专用语法移除元素
+            }]
+        }, false);  // 使用 merge 模式仅移除指定元素
     }
 }
 

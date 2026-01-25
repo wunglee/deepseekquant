@@ -1080,10 +1080,6 @@ function selectIndex(item) {
         // 分时图的清理由IntradayChart.rebuildLayout()处理
         if (window.IntradayChart && typeof window.IntradayChart.rebuildLayout === 'function') {
             IntradayChart.rebuildLayout(isStock)
-            // 显示加载状态
-            if (window.IntradayChart && typeof window.IntradayChart.showLoading === 'function') {
-                IntradayChart.showLoading(true);
-            }
             IntradayChart.loadData(currentIndex.id, getDataMode(), true)
         } else {
             console.warn('⚠️ IntradayChart 未加载，跳过分时图重建和数据加载')
