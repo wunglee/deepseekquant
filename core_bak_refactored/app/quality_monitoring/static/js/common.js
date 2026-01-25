@@ -46,6 +46,29 @@ function showEmptyChart(chart, text = '暂无数据') {
     }, true);
 }
 
+// ========== 图表加载状态管理 ==========
+function showChartLoading(chart, show, text = '加载中...') {
+    if (show) {
+        // 先清除图表内容，然后再显示加载状态
+        chart.clear();
+        chart.setOption({
+            graphic: [{
+                type: 'text',
+                left: 'center',
+                top: 'center',
+                style: {
+                    text: text,
+                    fontSize: 16,
+                    fill: '#999'
+                }
+            }]
+        }, true);
+    } else {
+        // 清除graphic（实际上不需要，因为renderXXX会覆盖）
+        chart.setOption({ graphic: [] })
+    }
+}
+
 // ========== API 请求封装 ==========
 async function apiRequest(endpoint, options = {}) {
     const url = endpoint.startsWith('http') ? endpoint : `${AppConfig.apiBaseUrl}${endpoint}`;
@@ -486,6 +509,7 @@ window.AppUtils = {
     apiRequest,
     showToast,
     showEmptyChart,
+    showChartLoading,
     formatDate,
     formatNumber,
     formatPercent,

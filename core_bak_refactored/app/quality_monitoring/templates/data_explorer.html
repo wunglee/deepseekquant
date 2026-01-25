@@ -1080,6 +1080,10 @@ function selectIndex(item) {
         // 分时图的清理由IntradayChart.rebuildLayout()处理
         if (window.IntradayChart && typeof window.IntradayChart.rebuildLayout === 'function') {
             IntradayChart.rebuildLayout(isStock)
+            // 显示加载状态
+            if (window.IntradayChart && typeof window.IntradayChart.showLoading === 'function') {
+                IntradayChart.showLoading(true);
+            }
             IntradayChart.loadData(currentIndex.id, getDataMode(), true)
         } else {
             console.warn('⚠️ IntradayChart 未加载，跳过分时图重建和数据加载')
@@ -1089,37 +1093,11 @@ function selectIndex(item) {
         if (klineChart) {
             // 清除图表中的错误提示
             klineChart.clear()
-            // 显示加载状态
-            klineChart.setOption({
-                graphic: [{
-                    type: 'text',
-                    left: 'center',
-                    top: 'center',
-                    style: {
-                        text: '加载中...',
-                        fontSize: 16,
-                        fill: '#999'
-                    }
-                }]
-            }, true);
         }
 
-        // 同时清除技术指标图的错误状态并显示加载状态
+        // 同时清除技术指标图的错误状态
         if (indicatorChart) {
             indicatorChart.clear()
-            // 显示加载状态
-            indicatorChart.setOption({
-                graphic: [{
-                    type: 'text',
-                    left: 'center',
-                    top: 'center',
-                    style: {
-                        text: '加载中...',
-                        fontSize: 16,
-                        fill: '#999'
-                    }
-                }]
-            }, true);
         }
 
         // K线图模式，加载K线数据
@@ -1285,7 +1263,11 @@ function switchChartType(type) {
         }
 
         // 如果有当前选中的股票，重新加载K线数据
-        if (currentIndex && allKlineData.length === 0) {
+        if (currentIndex) {
+            // 显示加载状态
+            if (klineChart) {
+                AppUtils.showChartLoading(klineChart, true, '加载中...');
+            }
             loadKline(currentIndex.id)
         }
         
@@ -1367,14 +1349,16 @@ function switchChartType(type) {
         }, 100)
     
         // 加载分时数据
-        // 🔧 关键：只有当 intradayData 为空时才加载，避免与 selectIndex 重复加载
-        let data = null
-        if (window.IntradayChart && typeof window.IntradayChart.getData === 'function') {
-            data = IntradayChart.getData()
-        }
-        if (currentIndex && !data) {
+        // 🔧 修复：切换到分时图时总是加载当前选中的股票，确保与K线图状态同步
+        if (currentIndex) {
             if (window.IntradayChart && typeof window.IntradayChart.showLoading === 'function') {
                 IntradayChart.showLoading(true)
+                // 🔧 重建布局以适应股票类型（股票vs指数）和市场
+                const isIndex = currentIndex.type === 'index'
+                const isStock = !isIndex
+                if (typeof IntradayChart.rebuildLayout === 'function') {
+                    IntradayChart.rebuildLayout(isStock)
+                }
                 IntradayChart.loadData(currentIndex.id, getDataMode(), true)
             } else {
                 console.warn('⚠️ IntradayChart 未加载，跳过分时数据加载')
@@ -2461,6 +2445,16 @@ function loadKline(indexId) {
 
     // 🔧 标记正在加载新股票（需要复位 dataZoom 到默认位置）
     isLoadingNewStock = true
+
+    // 显示加载状态
+    if (klineChart) {
+        AppUtils.showChartLoading(klineChart, true, '加载中...');
+    }
+    
+    // 同时为技术指标图显示加载状态
+    if (indicatorChart) {
+        AppUtils.showChartLoading(indicatorChart, true, '加载中...');
+    }
 
     // 💚 性能优化: A股默认60条,其他市场120条
     const count = window.currentMarketCode === 'CN' ? 60 : 120

@@ -121,28 +121,9 @@ function rebuildIntradayLayout(isStock) {
 function showIntradayLoading(show) {
     if (!intradayPriceChart || !intradayVolumeChart) return
     
-    if (show) {
-        intradayPriceChart.setOption({
-            graphic: [{
-                type: 'text',
-                left: 'center',
-                top: 'center',
-                style: { text: '加载中...', fontSize: 16, fill: '#999' }
-            }]
-        }, true)
-        
-        intradayVolumeChart.setOption({
-            graphic: [{
-                type: 'text',
-                left: 'center',
-                top: 'center',
-                style: { text: '加载中...', fontSize: 16, fill: '#999' }
-            }]
-        }, true)
-    } else {
-        intradayPriceChart.setOption({ graphic: [] })
-        intradayVolumeChart.setOption({ graphic: [] })
-    }
+    // 使用通用的加载状态函数
+    AppUtils.showChartLoading(intradayPriceChart, show, '加载中...');
+    AppUtils.showChartLoading(intradayVolumeChart, show, '加载中...');
 }
 
 // 🔧 删除：isTradingTime() - 前端不再判断交易时段，完全依赖后端 should_poll
@@ -227,26 +208,7 @@ function generateTimeAxisLabelConfig(marketCode, fullTradingTimes) {
 /**
  * 显示图表加载状态（通用函数）
  */
-function showChartLoading(chart, show, text = '加载中') {
-    if (show) {
-        chart.clear()
-        chart.setOption({
-            graphic: [{
-                type: 'text',
-                left: 'center',
-                top: 'center',
-                style: {
-                    text: text,
-                    fontSize: 16,
-                    fill: '#999'
-                }
-            }]
-        }, true)
-    } else {
-        // 清除graphic（实际上不需要，因为renderXXX会覆盖）
-        chart.setOption({ graphic: [] })
-    }
-}
+
 
 /**
  * 显示分时图错误信息
@@ -475,7 +437,7 @@ function initializeIntradayTimeAxis() {
                     symbol: 'none',
                     silent: false,
                     animation: false,
-                    data: markLineData  // 午休分割线
+                    data: markLineData  // 合并后的markLine数据（包含午休分割线和保留的其他线）
                 }
             }]
         }, true)  // 关键：使用true完全替换，清除旧市场配置
@@ -813,7 +775,15 @@ function renderIntradayCharts(data) {
             }
         },
         series: [
-            { data: priceData },
+            { 
+                data: priceData,
+                markLine: {
+                    symbol: 'none',
+                    silent: false,
+                    animation: false,
+                    data: markLineData  // 重新设置markLine数据，包含午休分割线和昨收线
+                }
+            },
             { data: avgPriceData }
         ]
     })
@@ -894,6 +864,13 @@ function updateIntradayChartsIncremental(newData) {
         return
     }
     
+    // 获取当前的markLine配置（包含午休分割线和昨收线）
+    const existingOption = charts.price.getOption()
+    const existingMarkLineData = (existingOption.series && 
+                                  existingOption.series[0] && 
+                                  existingOption.series[0].markLine && 
+                                  existingOption.series[0].markLine.data) || []
+    
     // 更新价格图表
     charts.price.setOption({
         title: {
@@ -905,7 +882,13 @@ function updateIntradayChartsIncremental(newData) {
         },
         series: [
             { 
-                data: priceData
+                data: priceData,
+                markLine: {
+                    symbol: 'none',
+                    silent: false,
+                    animation: false,
+                    data: existingMarkLineData  // 保留现有的markLine数据
+                }
             },
             { data: avgPriceData }
         ]
@@ -1208,7 +1191,6 @@ window.IntradayChart = {
     
     // 分时图相关功能
     generateTimeAxisLabelConfig: generateTimeAxisLabelConfig,
-    showChartLoading: showChartLoading,
     showError: showIntradayError,
     generateTradingTimes: generateTradingTimes,
     initializeIntradayTimeAxis: initializeIntradayTimeAxis,
