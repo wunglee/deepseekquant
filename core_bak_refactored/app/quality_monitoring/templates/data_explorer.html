@@ -2476,6 +2476,10 @@ function loadKline(indexId) {
             if (res.status !== 'success') {
                 console.error('API returned error:', res)
                 showEmpty(klineChart, '加载失败: ' + (res.message || '未知错误'))
+                // 同时处理技术指标图
+                if (indicatorChart) {
+                    showEmpty(indicatorChart, '加载失败: ' + (res.message || '未知错误'))
+                }
                 return
             }
             const chartData = res.data || {}
@@ -2483,6 +2487,10 @@ function loadKline(indexId) {
             console.log('Data length:', data.length)
             if (!data.length) {
                 showEmpty(klineChart, '暂无数据')
+                // 同时处理技术指标图
+                if (indicatorChart) {
+                    showEmpty(indicatorChart, '暂无数据')
+                }
                 return
             }
 
@@ -2524,10 +2532,16 @@ function loadKline(indexId) {
         .catch(err => {
             console.error('Fetch error:', err)
             // 更详细的错误信息显示
+            let errorMsg = ''
             if (err instanceof TypeError && err.message.includes('fetch')) {
-                showEmpty(klineChart, '网络连接失败，请检查网络设置')
+                errorMsg = '网络连接失败，请检查网络设置'
             } else {
-                showEmpty(klineChart, '加载失败: ' + err.message)
+                errorMsg = '加载失败: ' + err.message
+            }
+            showEmpty(klineChart, errorMsg)
+            // 同时处理技术指标图
+            if (indicatorChart) {
+                showEmpty(indicatorChart, errorMsg)
             }
         })
 }
