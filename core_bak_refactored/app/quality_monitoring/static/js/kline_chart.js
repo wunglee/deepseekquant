@@ -1796,5 +1796,5 @@ window.KlineChart = {
     },
     showEmpty:showEmpty,
     showLoading:showLoading
-}%
+};
 

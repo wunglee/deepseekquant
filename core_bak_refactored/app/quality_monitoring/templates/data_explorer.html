@@ -513,7 +513,7 @@ function reload(){
         if (window.IntradayChart && typeof window.IntradayChart.rebuildLayout === 'function') {
             const isIndex = currentIndex.type === 'index'
             const isStock = !isIndex
-            window.IntradayChart.setCurrent(index=currentIndex.id,isStock=isStock,marketCode=currentMarketCode, useMockMode=globalDataMode==='mock',mockTradingPhase=mockTradingPhase,mockTradingPhase=mockTradingPhase)
+            window.IntradayChart.setCurrent(index=currentIndex.id,isStock=isStock,marketCode=currentMarketCode, useMockMode=globalDataMode==='mock',mockTradingPhase=mockTradingPhase)
         } else {
             console.warn('⚠️ IntradayChart 未加载，跳过分时图重建和数据加载')
         }

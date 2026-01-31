@@ -296,7 +296,7 @@ function initializeIntradayTimeAxis(marketCode) {
     const axisLabelConfig = generateTimeAxisLabelConfig(marketCode, fullTradingTimes)
 
     // 设置图表的基础配置（与具体股票无关的时间轴和分割线）
-    const charts = .getCharts()
+    const charts = getCharts()
     console.log('🔍 initializeIntradayTimeAxis - 图表实例:', charts)
 
     if (charts.price && charts.volume) {
@@ -676,7 +676,7 @@ function renderIntradayCharts(data, marketTimezone) {
         })
     }
 
-    const charts = .getCharts()
+    const charts = getCharts()
 
     if (!charts.price) {
         console.error('❌ 价格图表实例为空，无法渲染！')
@@ -803,7 +803,7 @@ function updateIntradayChartsIncremental(newData, marketTimezone) {
     })
 
     // 获取已有的markLine配置，避免重复创建基础分割线
-    const charts = .getCharts()
+    const charts = getCharts()
     if (!charts.price || !charts.volume) {
         console.error('❌ 图表实例为空，无法更新！')
         return
@@ -1128,7 +1128,7 @@ function loadData(isInitial = true) {
 
                 // 🔧 布局变化后，需要 resize 图表
                 setTimeout(() => {
-                    const charts = .getCharts()
+                    const charts = getCharts()
                     if (charts.price) charts.price.resize()
                     if (charts.volume) charts.volume.resize()
                 }, 50)
@@ -1181,4 +1181,4 @@ window.IntradayChart = {
     }
 }
 
-}
+
