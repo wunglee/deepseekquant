@@ -1047,7 +1047,7 @@ function loadData(isInitial = true) {
             }
 
             setVirtualTime(endTime)
-            .setRequestTime(endTime)
+            setRequestTime(endTime)
         } else {
             // 🎯 增量更新：每次增加 1 分钟（从上次结束时间到新的结束时间）
             const lastRequestTime = getRequestTime()
@@ -1060,7 +1060,7 @@ function loadData(isInitial = true) {
                 end_time: newEndTime,
                 period_seconds: 5
             }
-            .setRequestTime(newEndTime)
+            setRequestTime(newEndTime)
         }
     }
 
@@ -1088,7 +1088,7 @@ function loadData(isInitial = true) {
             }
 
             if (isInitial) {
-                .setData(res.data)
+                setData(res.data)
                 marketTimezone=AppUtils.getMarketTimezone(currentMarketCode)
                 if (res.data.times && res.data.times.length > 0) {
                     const lastTime = res.data.times[res.data.times.length - 1]
@@ -1097,7 +1097,7 @@ function loadData(isInitial = true) {
                         const marketDateTimeStr = AppUtils.formatToMarketDateTimeStr(new Date(), marketTimezone)
                         const dateStr = AppUtils.extractFromDateStr(marketDateTimeStr, marketTimezone)  // YYYY-MM-DD
                         const lastRequestTime = `${dateStr} ${lastTime}`
-                        .setRequestTime(lastRequestTime)
+                        setRequestTime(lastRequestTime)
                     }
                 }
 
