@@ -1783,15 +1783,8 @@ function startInfiniteScrollDetection() {
 /**
  * K线图模块接口
  */
-KlineChart = {
-    // 图表实例
-    getCharts: function() {
-        return { kline: kline_chart, indicator: indicator_chart, dataZoom: dataZoomChart }
-    },
-    // 渲染函数
-    renderKline: renderKline,
-    renderIndicator:renderIndicator,
-    renderDataZoom: renderDataZoom,
+window.KlineChart = {
+    // 只导出data_explorer.html中使用的函数
     setCurrent: function(index,marketCode,useMockMode,mockTradingPhase='TRADING')  {
         currentIndexId = index;
         currentMarketCode = marketCode;
@@ -1801,45 +1794,7 @@ KlineChart = {
         rebuildLayout()
         loadData();
     },
-    // 数据更新函数
-    updateChartData:updateChartData,
-    updateIndicatorData:updateIndicatorData,
-    adjustDataZoomAfterPrepend: adjustDataZoomAfterPrepend,
-    
-    loadMoreHistoryData:loadMoreHistoryData,
-    // 实时K线函数
-    fetchRealtimeKline:fetchRealtimeKline,
-    updateRealtimeKlineOnChart: updateRealtimeKlineOnChart,
-    stopRealtimeKline: stopRealtimeKline,
-    startRealtimeKline:startRealtimeKline,
-    // 全局数据访问
-    getAllKlineData: function() {
-        return allKlineData
-    },
-    setAllKlineData: function(data) {
-        allKlineData = data
-    },
-    getAllEvents: function() {
-        return allEvents
-    },
-    setAllEvents: function(events) {
-        allEvents = events
-    },
-    getAllIndicatorsData: function() {
-        return allIndicatorsData
-    },
-    setAllIndicatorsData: function(indicators) {
-        allIndicatorsData = indicators
-    },
-
-    // 设置当前周期
-    setCurrentPeriod: function(period) {
-        currentPeriod = period
-    },
-
-    // 显示空状态
     showEmpty:showEmpty,
-
-    // 显示加载状态
     showLoading:showLoading
-}
+}%
+

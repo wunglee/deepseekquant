@@ -439,7 +439,7 @@ function initializeIntradayTimeAxis(marketCode) {
                 }
             }]
         }, true)  // 关键：使用true完全替换，清除旧市场配置
-        .showLoading(true)
+        showLoading(true)
     }
 }
 
@@ -458,10 +458,10 @@ function getModeConfig(isInitial) {
                 getCurrentTime: function(isInitial) {
                     if (isInitial) {
                         // 首次加载：使用已设置的虚拟时间 (09:30:00)
-                        return .getVirtualTime();
+                        return getVirtualTime();
                     } else {
                         // 增量更新：虚拟时间递增 1 分钟
-                        const lastVirtualTime = .getVirtualTime();
+                        const lastVirtualTime = getVirtualTime();
                         // 🔧 直接字符串操作：解析时间并增加 1 分钟
                         const [date, time] = lastVirtualTime.split(' ');
                         const [hours, minutes, seconds] = time.split(':').map(Number);
@@ -742,7 +742,7 @@ function renderIntradayCharts(data, marketTimezone) {
             data: volumeData
         }]
     })
-    .showLoading(false)
+    showLoading(false)
 }
 
 /**
@@ -1014,19 +1014,19 @@ function loadData(isInitial = true) {
     const modeConfig = getModeConfig(isInitial);
     // 🔧 只有首次加载才清空旧数据和显示加载状态
     if (isInitial) {
-        .setData(null)
-        .setBatchIndex(0)  // 重置批次序号
-        .setRequestTime(0)  // 重置时间
+        setData(null)
+        setBatchIndex(0)  // 重置批次序号
+        setRequestTime(0)  // 重置时间
         // 设置初始状态（根据模式）
         modeConfig.setupInitialState();
-        .initializeIntradayTimeAxis(currentMarketCode)
+        initializeIntradayTimeAxis(currentMarketCode)
     }
     showLoading(true)
     // 🔧 计算 TickRange（时间范围）
     let currentTime = modeConfig.getCurrentTime(isInitial);
 
     let tickRange = null
-    const lastRequestTime = .getRequestTime()
+    const lastRequestTime = getRequestTime()
 
     let shouldGenerateTickRange = modeConfig.shouldGenerateTickRange;
 
@@ -1046,11 +1046,11 @@ function loadData(isInitial = true) {
                 period_seconds: 5
             }
 
-            .setVirtualTime(endTime)
+            setVirtualTime(endTime)
             .setRequestTime(endTime)
         } else {
             // 🎯 增量更新：每次增加 1 分钟（从上次结束时间到新的结束时间）
-            const lastRequestTime = .getRequestTime()
+            const lastRequestTime = getRequestTime()
             const updateTimeRange = modeConfig.getUpdateTimeRange(lastRequestTime, currentTime);
             const newStartTime = updateTimeRange.start;
             const newEndTime = updateTimeRange.end;
@@ -1082,7 +1082,7 @@ function loadData(isInitial = true) {
             if (res.status !== 'success') {
                 console.error('加载失败:', res.message)
                 if (isInitial) {
-                    .showError('加载失败: ' + res.message)
+                    showError('加载失败: ' + res.message)
                 }
                 return
             }
@@ -1101,12 +1101,12 @@ function loadData(isInitial = true) {
                     }
                 }
 
-                .renderCharts(res.data, marketTimezone)
+                renderIntradayCharts(res.data, marketTimezone)
 
-                const timer = .getTimer()
+                const timer = getTimer()
                 if (timer) {
                     clearInterval(timer)
-                    .setTimer(null)
+                    setTimer(null)
                 }
 
                 if (res.data.should_poll) {
@@ -1114,7 +1114,7 @@ function loadData(isInitial = true) {
                     const newTimer = setInterval(() => {
                         loadData(false)
                     }, pollInterval)
-                    .setTimer(newTimer)
+                    setTimer(newTimer)
                 }
 
                 // 🔧 如果不是指数，更新盘口和成交明细（等待DOM渲染完成）
@@ -1133,7 +1133,7 @@ function loadData(isInitial = true) {
                     if (charts.volume) charts.volume.resize()
                 }, 50)
             } else {
-                const intradayData = .getData()
+                const intradayData = getData()
                 if (!intradayData) {
                     return
                 }
@@ -1151,7 +1151,7 @@ function loadData(isInitial = true) {
                 intradayData.change = res.data.change
                 intradayData.change_percent = res.data.change_percent
 
-                .updateChartsIncremental(res.data, marketTimezone)
+                updateIntradayChartsIncremental(res.data, marketTimezone)
 
                 if (!res.data.is_index) {
                     updateOrderBook(res.data.order_book)
@@ -1162,25 +1162,14 @@ function loadData(isInitial = true) {
         .catch(err => {
             console.error('加载分时数据失败:', err)
             if (isInitial) {
-                .showError('加载失败: ' + err.message)
+                showError('加载失败: ' + err.message)
             }
         })
 }
 
 // ==================== 导出接口 ====================
 window.IntradayChart = {
-    // 状态访问
-    getCharts: () => ({ price: intradayPriceChart, volume: intradayVolumeChart }),
-    getData: () => intradayData,
-    setData: (data) => { intradayData = data },
-    getTimer: () => intradayUpdateTimer,
-    setTimer: (timer) => { intradayUpdateTimer = timer },
-    getBatchIndex: () => lastIntradayBatchIndex,
-    setBatchIndex: (index) => { lastIntradayBatchIndex = index },
-    getRequestTime: () => lastIntradayRequestTime,
-    setRequestTime: (time) => { lastIntradayRequestTime = time },
-    getVirtualTime: () => virtualIntradayTime,  // 🎮 获取虚拟时间
-    setVirtualTime: (time) => { virtualIntradayTime = time },  // 🎮 设置虚拟时间
+    // 只导出data_explorer.html中使用的函数
     setCurrent: function(index,isStock,marketCode,useMockMode,mockTradingPhase='TRADING')  {
         currentIndexId = index;
         currentMarketCode = marketCode;
@@ -1189,18 +1178,7 @@ window.IntradayChart = {
         clearCharts();
         rebuildLayout(isStock=isStock);
         loadData(true);
-    },
-    setUseMockMode: (useMock) => { useMockMode = useMock },
-    
-    // 分时图相关功能
-    generateTimeAxisLabelConfig: generateTimeAxisLabelConfig,
-    showError: showIntradayError,
-    generateTradingTimes: generateTradingTimes,
-    initializeIntradayTimeAxis: initializeIntradayTimeAxis,
-    getModeConfig: getModeConfig,
-    getFullTradingTimes: getFullTradingTimes,
-    renderCharts: renderIntradayCharts,
-    updateChartsIncremental: updateIntradayChartsIncremental,
-    makeLunchBreakLine: makeLunchBreakLine,
-    // 🔧 删除：isTradingTime - 前端不再提供交易时段判断功能
+    }
+}
+
 }
