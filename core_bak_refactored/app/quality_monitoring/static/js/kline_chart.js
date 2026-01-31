@@ -1785,11 +1785,11 @@ function startInfiniteScrollDetection() {
  */
 window.KlineChart = {
     // 只导出data_explorer.html中使用的函数
-    setCurrent: function(index,marketCode,useMockMode,mockTradingPhase='TRADING')  {
+    setCurrent: function(index,marketCode,useMockMode,mockTradingPhaseVal='TRADING')  {
         currentIndexId = index;
         currentMarketCode = marketCode;
         useMockMode=useMockMode;
-        mockTradingPhase=mockTradingPhase;
+        window.mockTradingPhase=mockTradingPhaseVal;
         clearCharts();
         rebuildLayout()
         loadData();
