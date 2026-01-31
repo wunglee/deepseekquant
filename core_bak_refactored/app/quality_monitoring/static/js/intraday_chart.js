@@ -3,21 +3,22 @@
  * 职责：管理分时图的布局、数据加载、渲染
  */
 
-// ==================== 全局状态 ====================
-let intradayPriceChart = null
-let intradayVolumeChart = null
-let intradayData = null
-let intradayUpdateTimer = null
-let lastIntradayBatchIndex = 0
-let lastIntradayRequestTime = 0
-let virtualIntradayTime = 0  // 🎮 虚拟交易时间（秒），用于模拟模式
-let current_index = null
-let current_market_code = 'CN'
-let use_mock_mode = false
-let mock_trading_phase = 'TRADING'
-
-
-// ==================== 核心函数：彻底重建分时图布局 ====================
+// ==================== IntradayChart 模块对象 ====================
+window.IntradayChart = (function() {
+    // ==================== 私有状态 ====================
+    let intradayPriceChart = null
+    let intradayVolumeChart = null
+    let intradayData = null
+    let intradayUpdateTimer = null
+    let lastIntradayBatchIndex = 0
+    let lastIntradayRequestTime = 0
+    let virtualIntradayTime = 0  // 🎮 虚拟交易时间（秒），用于模拟模式
+    let current_index = null
+    let current_market_code = 'CN'
+    let use_mock_mode = false
+    let mock_trading_phase = 'TRADING'
+    
+    // ==================== 私有函数 ====================
 /**
  * 🔥 彻底重建分时图布局（从最外层容器开始重建）
  * @param {boolean} isStock - 是否是股票（true=股票，左右布局; false=指数，单列布局）
@@ -1167,18 +1168,20 @@ function loadData(isInitial = true) {
         })
 }
 
-// ==================== 导出接口 ====================
-window.IntradayChart = {
-    // 只导出data_explorer.html中使用的函数
-    setCurrent: function(index,isStock,marketCode,useMockMode,mockTradingPhase='TRADING')  {
-        current_index = index;
-        current_market_code = marketCode;
-        use_mock_mode=useMockMode;
-        mock_trading_phase=mockTradingPhase;
-        clearCharts();
-        rebuildLayout(isStock=isStock);
-        loadData(true);
-    }
-}
+    
+    // ==================== 公共接口 ====================
+    return {
+        // 只导出data_explorer.html中使用的函数
+        setCurrent: function(index,isStock,marketCode,useMockMode,mockTradingPhase='TRADING')  {
+            current_index = index;
+            current_market_code = marketCode;
+            use_mock_mode=useMockMode;
+            mock_trading_phase=mockTradingPhase;
+            clearChart();
+            rebuildLayout(isStock=isStock);
+            loadData(true);
+        }
+    };
+})(); // End of IntradayChart module
 
 

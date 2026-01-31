@@ -510,17 +510,17 @@ function switchMode(mode, element) {
 
 function reload(){
     if (currentIndex && currentChartType === 'intraday') {
-        if (window.IntradayChart && typeof window.IntradayChart.rebuildLayout === 'function') {
+        if (window.IntradayChart) {
             const isIndex = currentIndex.type === 'index'
             const isStock = !isIndex
-            window.IntradayChart.setCurrent(index=currentIndex.id,isStock=isStock,marketCode=currentMarketCode, useMockMode=globalDataMode==='mock',mockTradingPhase=mockTradingPhase)
+            window.IntradayChart.setCurrent(currentIndex.id,isStock,currentMarketCode, globalDataMode==='mock',mockTradingPhase)
         } else {
             console.warn('⚠️ IntradayChart 未加载，跳过分时图重建和数据加载')
         }
     } else if (currentIndex && currentChartType === 'kline') {
-        if (window.KlineChart && typeof window.KlineChart.rebuildLayout === 'function') {
+        if (window.KlineChart) {
             // 如果当前是K线图，也需要重新加载数据以应用新模式
-            window.KlineChart.setCurrent(index=currentIndex.id,marketCode=currentMarketCode,useMockMode=globalDataMode==='mock',mockTradingPhase=mockTradingPhase)
+            window.KlineChart.setCurrent(currentIndex.id,currentMarketCode,globalDataMode==='mock',mockTradingPhase)
         }else {
             console.warn('⚠️ KlineChart 未加载，跳过k线图重建和数据加载')
         }

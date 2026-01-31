@@ -3,31 +3,35 @@
  * 职责：管理K线图的渲染、数据加载、实时更新
  */
 
-// ==================== 全局状态 ====================
-let kline_chart = null
-let indicator_chart = null
-let dataZoomChart = null
-let allKlineData = []  // 所有K线数据
-let allEvents = []      // 所有事件数据
-let allIndicatorsData = {}  // 所有技术指标数据（后端API计算）
-let isLoadingNewStock = false  // 标记是否正在加载新股票（需要复位 dataZoom）
-let realtimeKlineTimer = null
-let currentRealtimeKline = null
-let mock_trading_phase = 'TRADING'  // 模拟控制：BEFORE_OPEN, TRADING, AFTER_CLOSE外部传入，
-let current_period = 'daily' // 当前周期（内部状态）
-let current_indicator = 'VOL' // 当前指标（内部状态）
-let current_market_code = 'CN'
-let current_index = null
-// 无限滚动相关状态
-let isLoadingMore = false  // 加载状态标志
-let hasMoreData = true      // 是否还有更多数据
-let lastLoadPosition = -1   // 上次触发加载的位置（避免重复触发）
-let lastStartValue = -1     // 修复：初始值设为-1（无效值），第一次获取到真实值后才开始比较
-let userIsMoving = false    // 用户是否正在拖动
-let movingResetTimer = null // 拖动重置定时器
-let isAdjustingBySystem = false // 标记系统是否正在自动调整（避免误判为用户拖动）
-let infiniteScrollEnabled = false // 修复：标记是否启用无限滚动（防止首次加载时误触发）
-let initialLoadComplete = false  // 标记初始加载是否完成
+// ==================== KlineChart 模块对象 ====================
+window.KlineChart = (function() {
+    // ==================== 私有状态 ====================
+    let kline_chart = null
+    let indicator_chart = null
+    let dataZoomChart = null
+    let allKlineData = []  // 所有K线数据
+    let allEvents = []      // 所有事件数据
+    let allIndicatorsData = {}  // 所有技术指标数据（后端API计算）
+    let isLoadingNewStock = false  // 标记是否正在加载新股票（需要复位 dataZoom）
+    let realtimeKlineTimer = null
+    let currentRealtimeKline = null
+    let mock_trading_phase = 'TRADING'  // 模拟控制：BEFORE_OPEN, TRADING, AFTER_CLOSE外部传入，
+    let current_period = 'daily' // 当前周期（内部状态）
+    let current_indicator = 'VOL' // 当前指标（内部状态）
+    let current_market_code = 'CN'
+    let current_index = null
+    // 无限滚动相关状态
+    let isLoadingMore = false  // 加载状态标志
+    let hasMoreData = true      // 是否还有更多数据
+    let lastLoadPosition = -1   // 上次触发加载的位置（避免重复触发）
+    let lastStartValue = -1     // 修复：初始值设为-1（无效值），第一次获取到真实值后才开始比较
+    let userIsMoving = false    // 用户是否正在拖动
+    let movingResetTimer = null // 拖动重置定时器
+    let isAdjustingBySystem = false // 标记系统是否正在自动调整（避免误判为用户拖动）
+    let infiniteScrollEnabled = false // 修复：标记是否启用无限滚动（防止首次加载时误触发）
+    let initialLoadComplete = false  // 标记初始加载是否完成
+    
+    // ==================== 私有函数 ====================
 
 // ==================== 工具函数 ====================
 
@@ -1585,7 +1589,7 @@ function showLoading(show=true, text='加载中...') {
     }
 }
 
-function clearCharts(){
+function clearChart(){
         // 显示K线相关元素
         document.getElementById('periodSelector').style.display = 'flex'
         document.getElementById('klineChart').style.display = 'block'
@@ -1777,24 +1781,21 @@ function startInfiniteScrollDetection() {
         }
     }, 100)
 }
-
-// ==================== K线图对外接口 ====================
-
-/**
- * K线图模块接口
- */
-window.KlineChart = {
-    // 只导出data_explorer.html中使用的函数
-    setCurrent: function(index,marketCode,useMockMode,mockTradingPhase='TRADING')  {
-        current_index = index;
-        current_market_code = marketCode;
-        use_mock_mode=useMockMode;
-        mock_trading_phase=mockTradingPhase;
-        clearCharts();
-        rebuildLayout()
-        loadData();
-    },
-    showEmpty:showEmpty,
-    showLoading:showLoading
-};
+    
+    // ==================== 公共接口 ====================
+    return {
+        // 只导出data_explorer.html中使用的函数
+        setCurrent: function(index,marketCode,useMockMode,mockTradingPhase='TRADING')  {
+            current_index = index;
+            current_market_code = marketCode;
+            use_mock_mode=useMockMode;
+            mock_trading_phase=mockTradingPhase;
+            clearChart();
+            rebuildLayout()
+            loadData();
+        },
+        showEmpty:showEmpty,
+        showLoading:showLoading
+    };
+})(); // End of KlineChart module
 
