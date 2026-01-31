@@ -11,10 +11,10 @@ let intradayUpdateTimer = null
 let lastIntradayBatchIndex = 0
 let lastIntradayRequestTime = 0
 let virtualIntradayTime = 0  // 🎮 虚拟交易时间（秒），用于模拟模式
-let currentIndex = null
-let currentMarketCode = 'CN'
-let useMockMode = false
-let mockTradingPhase = 'TRADING'
+let current_index = null
+let current_market_code = 'CN'
+let use_mock_mode = false
+let mock_trading_phase = 'TRADING'
 
 
 // ==================== 核心函数：彻底重建分时图布局 ====================
@@ -355,7 +355,7 @@ function initializeIntradayTimeAxis(marketCode) {
                     type: 'line',
                     data: [],  // 初始为空，等待 renderIntradayCharts 填充
                     smooth: 0.6,
-                    currentIndex: 'none',
+                    current_index: 'none',
                     showSymbol: false,
                     lineStyle: { width: 2 },
                     itemStyle: { color: '#2563eb' },
@@ -371,7 +371,7 @@ function initializeIntradayTimeAxis(marketCode) {
                     },
                     connectNulls: true,
                     markLine: {
-                        currentIndex: 'none',
+                        current_index: 'none',
                         silent: false,
                         animation: false,
                         data: markLineData  // 午休分割线
@@ -382,7 +382,7 @@ function initializeIntradayTimeAxis(marketCode) {
                     type: 'line',
                     data: [],  // 初始为空，等待 renderIntradayCharts 填充
                     smooth: 0.6,
-                    currentIndex: 'none',
+                    current_index: 'none',
                     showSymbol: false,
                     lineStyle: { width: 1.5, color: '#f59e0b', type: 'dashed' },
                     connectNulls: true
@@ -432,7 +432,7 @@ function initializeIntradayTimeAxis(marketCode) {
                 data: [],  // 初始为空，等待 renderIntradayCharts 填充
                 barWidth: '80%',
                 markLine: {
-                    currentIndex: 'none',
+                    current_index: 'none',
                     silent: false,
                     animation: false,
                     data: markLineData  // 合并后的markLine数据（包含午休分割线和保留的其他线）
@@ -480,8 +480,8 @@ function getModeConfig(isInitial) {
                         end: currentTime
                     };
                 },
-                buildUrl: function(currentIndex, tickRange) {
-                    let url = `/api/v1/intraday/mock?currentIndex=${encodeURIComponent(currentIndex)}&trading_phase=${mockTradingPhase}`;
+                buildUrl: function(current_index, tickRange) {
+                    let url = `/api/v1/intraday/mock?current_index=${encodeURIComponent(current_index)}&trading_phase=${mock_trading_phase}`;
 
                     // 🔧 传递last_price（用于保证价格连续性）
                     const intradayData = getData();
@@ -495,7 +495,7 @@ function getModeConfig(isInitial) {
 
                     return url;
                 },
-                shouldGenerateTickRange: mockTradingPhase === 'TRADING', // 属性而不是方法
+                shouldGenerateTickRange: mock_trading_phase === 'TRADING', // 属性而不是方法
                 shouldRecordFullTimestamp: false
             };
         case 'real':
@@ -512,7 +512,7 @@ function getModeConfig(isInitial) {
                 getUpdateTimeRange: function(lastRequestTime, currentTime) {
                     // 🔧 真实模式：使用市场时间，而不是浏览器时间
                     // 应该从后端API获取准确的市场时间，暂时使用服务器时间
-                    marketTimezone=AppUtils.getMarketTimezone(currentMarketCode);
+                    marketTimezone=AppUtils.getMarketTimezone(current_market_code);
                     const marketDateTimeStr = AppUtils.formatToMarketDateTimeStr(new Date(), marketTimezone);
                     const dateStr = AppUtils.extractFromDateStr(marketDateTimeStr, marketTimezone);  // YYYY-MM-DD
                     const timeStr = AppUtils.extractFromTimeStr(marketDateTimeStr, marketTimezone); // HH:MM:SS
@@ -526,7 +526,7 @@ function getModeConfig(isInitial) {
                         // 首次增量更新，从开盘到现在
                         // 根据当前市场代码获取正确的开盘时间
                         const marketConfig = window.marketConfig || {};
-                        const marketInfo = marketConfig[currentMarketCode];
+                        const marketInfo = marketConfig[current_market_code];
 
                         if (marketInfo && marketInfo.trading_hours) {
                             // 解析交易时间字符串，获取开盘时间
@@ -535,13 +535,13 @@ function getModeConfig(isInitial) {
                                 newStartTime = `${dateStr} ${tradingHours.open}`;
                             } else {
                                 // 如果解析失败，抛出异常
-                                console.error(`❌解析市场 ${currentMarketCode} 交易时间失败，无法获取开盘时间`);
-                                throw new Error(`解析市场 ${currentMarketCode} 交易时间失败，无法获取开盘时间`);
+                                console.error(`❌解析市场 ${current_market_code} 交易时间失败，无法获取开盘时间`);
+                                throw new Error(`解析市场 ${current_market_code} 交易时间失败，无法获取开盘时间`);
                             }
                         } else {
                             // 如果没有市场配置，抛出异常
-                            console.error(`❌无法获取市场 ${currentMarketCode} 的配置信息`);
-                            throw new Error(`无法获取市场 ${currentMarketCode} 的配置信息`);
+                            console.error(`❌无法获取市场 ${current_market_code} 的配置信息`);
+                            throw new Error(`无法获取市场 ${current_market_code} 的配置信息`);
                         }
                     }
 
@@ -550,8 +550,8 @@ function getModeConfig(isInitial) {
                         end: newEndTime
                     };
                 },
-                buildUrl: function(currentIndex, tickRange) {
-                    let url = `/api/v1/intraday/data?currentIndex=${encodeURIComponent(currentIndex)}`;
+                buildUrl: function(current_index, tickRange) {
+                    let url = `/api/v1/intraday/data?current_index=${encodeURIComponent(current_index)}`;
 
                     if (tickRange) {
                         url += `&tick_range=${encodeURIComponent(JSON.stringify(tickRange))}`;
@@ -643,7 +643,7 @@ function renderIntradayCharts(data, marketTimezone) {
     const change = parseFloat(data.change)
     const changePercent = parseFloat(data.change_percent)
 
-    const timeAxisInfo = getFullTradingTimes(currentMarketCode)
+    const timeAxisInfo = getFullTradingTimes(current_market_code)
     const fullTradingTimes = timeAxisInfo.tradingTimes
     const lunchBreakRange = timeAxisInfo.lunchBreakRange
 
@@ -695,7 +695,7 @@ function renderIntradayCharts(data, marketTimezone) {
     // 更新价格图表（只设置数据相关的配置）
     charts.price.setOption({
         title: {
-            text: (currentIndex ? currentIndex.name : '') + ' 分时图 (' + AppUtils.formatToMarketDateTimeStr(new Date(), marketTimezone) + ')',
+            text: (current_index ? current_index.name : '') + ' 分时图 (' + AppUtils.formatToMarketDateTimeStr(new Date(), marketTimezone) + ')',
             subtext: `昨收: ${yesterdayClose.toFixed(2)}  现价: ${currentPrice.toFixed(2)}  涨跌: ${change >= 0 ? '+' : ''}${change.toFixed(2)} (${changePercent.toFixed(2)}%)`,
             subtextStyle: {
                 color: change >= 0 ? '#ef4444' : '#10b981'
@@ -721,7 +721,7 @@ function renderIntradayCharts(data, marketTimezone) {
             {
                 data: priceData,
                 markLine: {
-                    currentIndex: 'none',
+                    current_index: 'none',
                     silent: false,
                     animation: false,
                     data: markLineData  // 重新设置markLine数据，包含午休分割线和昨收线
@@ -773,7 +773,7 @@ function updateIntradayChartsIncremental(newData, marketTimezone) {
 
     // 🔧 生成完整交易时段（与 renderIntradayCharts 相同，5秒级别）
     // 🔧 使用统一的 getFullTradingTimes 函数，避免重复逻辑和时间计算错误
-    const timeAxisInfo = getFullTradingTimes(currentMarketCode) || { tradingTimes: [] }
+    const timeAxisInfo = getFullTradingTimes(current_market_code) || { tradingTimes: [] }
     const fullTradingTimes = timeAxisInfo.tradingTimes
     const lunchBreakRange = timeAxisInfo.lunchBreakRange
 
@@ -825,7 +825,7 @@ function updateIntradayChartsIncremental(newData, marketTimezone) {
             {
                 data: priceData,
                 markLine: {
-                    currentIndex: 'none',
+                    current_index: 'none',
                     silent: false,
                     animation: false,
                     data: markLineData  // 使用优化后的markLine数据
@@ -1006,7 +1006,7 @@ function clearChart() {
 }
 /**
  * 加载分时图数据
- * @param {string} currentIndex - 股票代码
+ * @param {string} current_index - 股票代码
  * @param {boolean} isInitial - 是否为首次加载
  */
 function loadData(isInitial = true) {
@@ -1019,7 +1019,7 @@ function loadData(isInitial = true) {
         setRequestTime(0)  // 重置时间
         // 设置初始状态（根据模式）
         modeConfig.setupInitialState();
-        initializeIntradayTimeAxis(currentMarketCode)
+        initializeIntradayTimeAxis(current_market_code)
     }
     showLoading(true)
     // 🔧 计算 TickRange（时间范围）
@@ -1065,7 +1065,7 @@ function loadData(isInitial = true) {
     }
 
     // 构建请求URL
-    let url = modeConfig.buildUrl(currentIndex, tickRange);
+    let url = modeConfig.buildUrl(current_index, tickRange);
 
     fetch(url)
         .then(r => {
@@ -1089,7 +1089,7 @@ function loadData(isInitial = true) {
 
             if (isInitial) {
                 setData(res.data)
-                marketTimezone=AppUtils.getMarketTimezone(currentMarketCode)
+                marketTimezone=AppUtils.getMarketTimezone(current_market_code)
                 if (res.data.times && res.data.times.length > 0) {
                     const lastTime = res.data.times[res.data.times.length - 1]
                     if (modeConfig.shouldRecordFullTimestamp) {
@@ -1171,10 +1171,10 @@ function loadData(isInitial = true) {
 window.IntradayChart = {
     // 只导出data_explorer.html中使用的函数
     setCurrent: function(index,isStock,marketCode,useMockMode,mockTradingPhase='TRADING')  {
-        currentIndexId = index;
-        currentMarketCode = marketCode;
-        useMockMode=useMockMode;
-        mockTradingPhase=mockTradingPhase;
+        current_index = index;
+        current_market_code = marketCode;
+        use_mock_mode=useMockMode;
+        mock_trading_phase=mockTradingPhase;
         clearCharts();
         rebuildLayout(isStock=isStock);
         loadData(true);

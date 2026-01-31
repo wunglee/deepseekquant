@@ -13,11 +13,11 @@ let allIndicatorsData = {}  // 所有技术指标数据（后端API计算）
 let isLoadingNewStock = false  // 标记是否正在加载新股票（需要复位 dataZoom）
 let realtimeKlineTimer = null
 let currentRealtimeKline = null
-let mockTradingPhase = 'TRADING'  // 模拟控制：BEFORE_OPEN, TRADING, AFTER_CLOSE外部传入，
-let currentPeriod = 'daily' // 当前周期（内部状态）
-let currentIndicator = 'VOL' // 当前指标（内部状态）
-let currentMarketCode = 'CN'
-let currentIndexId = null
+let mock_trading_phase = 'TRADING'  // 模拟控制：BEFORE_OPEN, TRADING, AFTER_CLOSE外部传入，
+let current_period = 'daily' // 当前周期（内部状态）
+let current_indicator = 'VOL' // 当前指标（内部状态）
+let current_market_code = 'CN'
+let current_index = null
 // 无限滚动相关状态
 let isLoadingMore = false  // 加载状态标志
 let hasMoreData = true      // 是否还有更多数据
@@ -39,10 +39,10 @@ let initialLoadComplete = false  // 标记初始加载是否完成
 function calcMA(data) {
     const result = []
     for (let i = 0; i < data.length; i++) {
-        if (i < currentPeriod - 1) { result.push('-'); continue }
+        if (i < current_period - 1) { result.push('-'); continue }
         let sum = 0
-        for (let j = i - currentPeriod + 1; j <= i; j++) sum += data[j].close
-        result.push((sum / currentPeriod).toFixed(2))
+        for (let j = i - current_period + 1; j <= i; j++) sum += data[j].close
+        result.push((sum / current_period).toFixed(2))
     }
     return result
 }
@@ -81,7 +81,7 @@ function rebuildLayout() {
      isLoadingNewStock = false  // 标记是否正在加载新股票（需要复位 dataZoom）
      realtimeKlineTimer = null
      currentRealtimeKline = null
-     mockTradingPhase = 'TRADING'  // 模拟控制：BEFORE_OPEN, TRADING, AFTER_CLOSE外部传入，不由kline_chart.js内部管理
+     mock_trading_phase = 'TRADING'  // 模拟控制：BEFORE_OPEN, TRADING, AFTER_CLOSE外部传入，不由kline_chart.js内部管理
 
     // 无限滚动相关状态
      isLoadingMore = false  // 加载状态标志
@@ -149,14 +149,14 @@ function selectPeriod(period, element) {
     const container = document.getElementById('periodSelector');
     container.querySelectorAll('.btn-segment').forEach(b => b.classList.remove('active'));
     element.classList.add('active');
-    currentPeriod = period;
+    current_period = period;
 }
 
 function selectIndicator(indicator, element) {
     const container = document.getElementById('indicatorSelector');
     container.querySelectorAll('.btn-segment').forEach(b => b.classList.remove('active'));
     element.classList.add('active');
-    currentIndicator = indicator;
+    current_indicator = indicator;
     renderIndicator();
 }
 
@@ -995,7 +995,7 @@ function renderKline(stock_id,data, events, getMarketTimezoneFn) {
         kline_chart.setOption(option, true)
     }
     // 🔧 传入 currentZoom 参数，确保对齐
-    renderIndicator(displayData, currentZoom, currentIndicator, getMarketTimezoneFn)
+    renderIndicator(displayData, currentZoom, current_indicator, getMarketTimezoneFn)
     renderDataZoom(dates, currentZoom)  // 🔧 渲染数据窗口控制条
 }
 
@@ -1003,18 +1003,18 @@ function renderKline(stock_id,data, events, getMarketTimezoneFn) {
 
 /**
  * 加载K线数据（主要数据加载函数）
- * @param {string} currentIndexId - 指数ID
- * @param {boolean} useMockMode - 数据模式（true为mock，false为real）
+ * @param {string} current_index - 指数ID
+ * @param {boolean} use_mock_mode - 数据模式（true为mock，false为real）
  */
 function loadData() {
-    console.log('🔍 开始加载K线数据:', { currentIndexId, useMockMode })
+    console.log('🔍 开始加载K线数据:', { current_index, use_mock_mode })
     // 标记为加载新股票（会重置 dataZoom）
     isLoadingNewStock = true
 
     // 🔧 构建API URL（Mock模式使用独立端点）
-    const baseUrl = useMockMode ? '/api/v1/chart/data/mock' : '/api/v1/chart/data'
-    const tradingPhaseParam = useMockMode ? `&trading_phase=${mockTradingPhase}` : ''
-    const url = `${baseUrl}?currentIndexId=${encodeURIComponent(currentIndexId)}&period=${currentPeriod}&count=120&indicators=all${tradingPhaseParam}`
+    const baseUrl = use_mock_mode ? '/api/v1/chart/data/mock' : '/api/v1/chart/data'
+    const tradingPhaseParam = use_mock_mode ? `&trading_phase=${mock_trading_phase}` : ''
+    const url = `${baseUrl}?current_index=${encodeURIComponent(current_index)}&period=${current_period}&count=120&indicators=all${tradingPhaseParam}`
 
     console.log('📡 请求URL:', url)
 
@@ -1055,7 +1055,7 @@ function loadData() {
 
             // 渲染图表
             if (typeof renderKline === 'function') {
-                renderKline(currentIndexId,klineData, eventsData, window.getMarketTimezone)
+                renderKline(current_index,klineData, eventsData, window.getMarketTimezone)
 
                 // 标记初始加载完成（启用无限滚动）
                 initialLoadComplete = true
@@ -1166,7 +1166,7 @@ function updateIndicatorData(processedData, getMarketTimezoneFn) {
     try {
         const dates = processedData.map(d => d.date)
 
-        if (currentIndicator === 'VOL') {
+        if (current_indicator === 'VOL') {
             indicator_chart.setOption({
                 xAxis: { data: dates },
                 series: [{
@@ -1184,7 +1184,7 @@ function updateIndicatorData(processedData, getMarketTimezoneFn) {
                     }
                 }]
             }, { notMerge: false, lazyUpdate: true })
-        } else if (currentIndicator === 'MACD') {
+        } else if (current_indicator === 'MACD') {
             // 🔧 使用后端计算的MACD数据
             const macdData = allIndicatorsData.macd || []
             const macdDates = macdData.map(d => d.date)
@@ -1199,7 +1199,7 @@ function updateIndicatorData(processedData, getMarketTimezoneFn) {
                     { name: 'MACD柱', data: histogram }
                 ]
             }, { notMerge: false, lazyUpdate: true })
-        } else if (currentIndicator === 'RSI') {
+        } else if (current_indicator === 'RSI') {
             // 🔧 使用后端计算的RSI数据
             const rsiData = allIndicatorsData.rsi || []
             const rsiDates = rsiData.map(d => d.date)
@@ -1208,7 +1208,7 @@ function updateIndicatorData(processedData, getMarketTimezoneFn) {
                 xAxis: { data: rsiDates },
                 series: [{ data: rsi }]
             }, { notMerge: false, lazyUpdate: true })
-        } else if (currentIndicator === 'KDJ') {
+        } else if (current_indicator === 'KDJ') {
             // 🔧 使用后端计算的KDJ数据
             const kdjData = allIndicatorsData.kdj || []
             const kdjDates = kdjData.map(d => d.date)
@@ -1223,7 +1223,7 @@ function updateIndicatorData(processedData, getMarketTimezoneFn) {
                     { name: 'J', data: j }
                 ]
             }, { notMerge: false, lazyUpdate: true })
-        } else if (currentIndicator === 'OBV') {
+        } else if (current_indicator === 'OBV') {
             // 🔧 使用后端计算的OBV数据
             const obvData = allIndicatorsData.obv || []
             const obvDates = obvData.map(d => d.date)
@@ -1321,10 +1321,10 @@ function adjustDataZoomAfterPrepend(oldLength, prependLength) {
 /**
  * 加载更多历史数据（真实API版本）
  * @param {Function} callback - 回调函数(success)
- * @param {string} currentIndexId - 指数ID
+ * @param {string} current_index - 指数ID
  */
-function loadMoreHistoryData(callback, currentIndexId, useMockMode) {
-    console.log('开始加载更多历史数据...', {currentIndexId, useMockMode})
+function loadMoreHistoryData(callback, current_index, use_mock_mode) {
+    console.log('开始加载更多历史数据...', {current_index, use_mock_mode})
 
     // 检查是否有当前数据
     if (!allKlineData || allKlineData.length === 0) {
@@ -1340,9 +1340,9 @@ function loadMoreHistoryData(callback, currentIndexId, useMockMode) {
     const beforeDate = earliestData.date  // 'YYYY-MM-DD' 格式
 
     // 🔧 构建API URL（Mock模式使用独立端点）
-    const baseUrl = useMockMode ? '/api/v1/chart/data/mock' : '/api/v1/chart/data'
-    const tradingPhaseParam = useMockMode ? `&trading_phase=${mockTradingPhase}` : ''
-    const url = `${baseUrl}?currentIndexId=${encodeURIComponent(currentIndexId)}&period=${currentPeriod}&count=60&before=${beforeDate}&indicators=all${tradingPhaseParam}`
+    const baseUrl = use_mock_mode ? '/api/v1/chart/data/mock' : '/api/v1/chart/data'
+    const tradingPhaseParam = use_mock_mode ? `&trading_phase=${mock_trading_phase}` : ''
+    const url = `${baseUrl}?current_index=${encodeURIComponent(current_index)}&period=${current_period}&count=60&before=${beforeDate}&indicators=all${tradingPhaseParam}`
     console.log('📡 加载更多URL:', url)
 
     // 调用API
@@ -1433,22 +1433,22 @@ function loadMoreHistoryData(callback, currentIndexId, useMockMode) {
 
 /**
  * 获取实时K线数据（Mock和真实使用相同机制）
- * @param {string} currentIndexId - 指数ID
- * @param {boolean} useMockMode - 数据模式（true为mock，false为real）
+ * @param {string} current_index - 指数ID
+ * @param {boolean} use_mock_mode - 数据模式（true为mock，false为real）
  */
 function fetchRealtimeKline() {
-    if (!currentIndexId) return
+    if (!current_index) return
 
-    const idxId = currentIndexId
+    const idxId = current_index
     let url
 
-    if (useMockMode) {
+    if (use_mock_mode) {
         // 🎭 Mock模式：使用mock接口，但机制与真实模式完全一样
-        url = `/api/v1/data/kline/realtime/mock?currentIndexId=${encodeURIComponent(idxId)}&trading_phase=${mockTradingPhase}`
-        console.log('🎭 Mock模式 - 获取实时K线, trading_phase:', mockTradingPhase)
+        url = `/api/v1/data/kline/realtime/mock?current_index=${encodeURIComponent(idxId)}&trading_phase=${mock_trading_phase}`
+        console.log('🎭 Mock模式 - 获取实时K线, trading_phase:', mock_trading_phase)
     } else {
-        url = `/api/v1/data/kline/realtime?currentIndexId=${encodeURIComponent(idxId)}&period=${currentPeriod || currentPeriod}`
-        console.log(`🎯 真实模式 - 获取实时K线 (period=${currentPeriod})`)
+        url = `/api/v1/data/kline/realtime?current_index=${encodeURIComponent(idxId)}&period=${current_period || current_period}`
+        console.log(`🎯 真实模式 - 获取实时K线 (period=${current_period})`)
     }
 
     fetch(url)
@@ -1496,7 +1496,7 @@ function updateRealtimeKlineOnChart(realtimeData) {
     }
 
     console.log('📊 更新实时K线:', {
-        period: currentPeriod,
+        period: current_period,
         date: realtimeData.date,
         open: realtimeData.open,
         high: realtimeData.high,
@@ -1518,7 +1518,7 @@ function updateRealtimeKlineOnChart(realtimeData) {
 
     if (existingIndex >= 0) {
         // 更新已存在的K线（后端已完成合并逻辑）
-        console.log(`🔄 ${currentPeriod}线 - 更新K柱: ${realtimeDate}`)
+        console.log(`🔄 ${current_period}线 - 更新K柱: ${realtimeDate}`)
         allKlineData[existingIndex] = {
             date: realtimeDate,
             open: realtimeData.open,
@@ -1529,7 +1529,7 @@ function updateRealtimeKlineOnChart(realtimeData) {
         }
     } else {
         // 添加新K线（日线的新天、周线的新周、月线的新月）
-        console.log(`🔄 ${currentPeriod}线 - 添加新K柱: ${realtimeDate}`)
+        console.log(`🔄 ${current_period}线 - 添加新K柱: ${realtimeDate}`)
         allKlineData.push({
             date: realtimeDate,
             open: realtimeData.open,
@@ -1557,8 +1557,8 @@ function stopRealtimeKline() {
 
 /**
  * 启动实时K线（选择股票时调用）
- * @param {string} currentIndexId - 指数ID
- * @param {boolean} useMockMode - 数据模式（true为mock，false为real）
+ * @param {string} current_index - 指数ID
+ * @param {boolean} use_mock_mode - 数据模式（true为mock，false为real）
  */
 function startRealtimeKline() {
     stopRealtimeKline()  // 先停止之前的轮询
@@ -1619,7 +1619,7 @@ function setMockTradingPhase(phase) {
     document.querySelector(`[data-phase="${phase}"]`)?.classList.add('active')
 
     // 使用KlineChart模块切换模拟时段
-    mockTradingPhase=phase;
+    mock_trading_phase=phase;
 
     // 重新加载K线数据（触发needs_realtime_kline判断）
     loadData()
@@ -1758,7 +1758,7 @@ function startInfiniteScrollDetection() {
                             hasMoreData = false
                             console.log('✅ 已到达最早数据')
                         }
-                    }, currentIndexId, useMockMode)
+                    }, current_index, use_mock_mode)
                 }
             } else {
                 // 🔧 调试日志：输出为什么没有触发加载
@@ -1785,11 +1785,11 @@ function startInfiniteScrollDetection() {
  */
 window.KlineChart = {
     // 只导出data_explorer.html中使用的函数
-    setCurrent: function(index,marketCode,useMockMode,mockTradingPhaseVal='TRADING')  {
-        currentIndexId = index;
-        currentMarketCode = marketCode;
-        useMockMode=useMockMode;
-        window.mockTradingPhase=mockTradingPhaseVal;
+    setCurrent: function(index,marketCode,useMockMode,mockTradingPhase='TRADING')  {
+        current_index = index;
+        current_market_code = marketCode;
+        use_mock_mode=useMockMode;
+        mock_trading_phase=mockTradingPhase;
         clearCharts();
         rebuildLayout()
         loadData();
