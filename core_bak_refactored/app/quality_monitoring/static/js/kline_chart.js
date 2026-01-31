@@ -32,6 +32,148 @@ window.KlineChart = (function() {
     let initialLoadComplete = false  // 标记初始加载是否完成
     
     // ==================== 私有函数 ====================
+    function getCharts() {
+        return { kline: kline_chart, indicator: indicator_chart, dataZoom: dataZoomChart };
+    }
+    
+    function getData() {
+        return allKlineData;
+    }
+    
+    function setData(data) {
+        allKlineData = data;
+    }
+    
+    function getTimer() {
+        return realtimeKlineTimer;
+    }
+    
+    function setTimer(timer) {
+        realtimeKlineTimer = timer;
+    }
+    
+    function showError(message) {
+        showEmpty('kline', message);
+    }
+    
+    function renderCharts(data, getMarketTimezoneFn) {
+        renderKline(current_index?.name || '', data, allEvents, getMarketTimezoneFn);
+    }
+    
+    function updateChartsIncremental(newData, getMarketTimezoneFn) {
+        // K线图增量更新逻辑
+        if (newData && newData.length > 0) {
+            // 将新数据追加到现有数据
+            allKlineData = allKlineData.concat(newData);
+            
+            // 重新渲染图表
+            renderCharts(allKlineData, getMarketTimezoneFn);
+        }
+    }
+    
+    function generateTradingTimesInternal(start, end, stepSeconds = 5) {
+        let tradingTimes = []
+    
+        // 将开始和结束时间转换为总秒数（从当天00:00:00开始计算）
+        const startTotalSeconds = start[0] * 3600 + start[1] * 60;
+        const endTotalSeconds = end[0] * 3600 + end[1] * 60; // 结束时间是XX:XX:00
+    
+        // 循环从开始时间到结束时间，按stepSeconds步长递增
+        for (let totalSeconds = startTotalSeconds; totalSeconds <= endTotalSeconds; totalSeconds += stepSeconds) {
+            // 将总秒数转换回时、分、秒
+            const hour = Math.floor(totalSeconds / 3600);
+            const minute = Math.floor((totalSeconds % 3600) / 60);
+            const second = totalSeconds % 60;
+    
+            // 检查是否超出结束时间
+            if (hour > end[0] || (hour === end[0] && minute > end[1])) continue;
+    
+            const timeStr = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:${String(second).padStart(2, '0')}`;
+    
+            // 避免重复添加时间点
+            if (!tradingTimes.includes(timeStr)) {
+                tradingTimes.push(timeStr);
+            }
+        }
+    
+        return tradingTimes
+    }
+    
+    function initializeIntradayTimeAxis(marketCode) {
+        // K线图不需要分时图的时间轴初始化
+        console.log('K线图无需初始化分时图时间轴');
+    }
+    
+    function getModeConfig(isInitial) {
+        // 返回K线图的模式配置
+        return {
+            pollInterval: 60000, // K线图更新频率通常较慢
+            setupInitialState: function() {
+                // K线图初始设置
+            },
+            getCurrentTime: function(isInitial) {
+                // 返回当前时间
+                return Math.floor(Date.now() / 1000);
+            },
+            getUpdateTimeRange: function(lastRequestTime, currentTime) {
+                // 返回时间范围
+                return {
+                    start: lastRequestTime,
+                    end: currentTime
+                };
+            },
+            buildUrl: function(current_index, tickRange) {
+                // 构建K线图请求URL
+                let url = `/api/v1/kline/data?current_index=${encodeURIComponent(current_index?.name || '')}&period=${current_period}`;
+                return url;
+            },
+            shouldGenerateTickRange: false,
+            shouldRecordFullTimestamp: false
+        };
+    }
+    
+    function getFullTradingTimes(marketCode) {
+        // 对于K线图，返回空的时间段或者根据实际情况生成
+        return { tradingTimes: [], lunchBreakRange: null };
+    }
+    
+    function makeLunchBreakLine(marketCode) {
+        // K线图的午休分割线
+        const upperMarketCode = marketCode?.toUpperCase()
+        const market = window.marketConfig?.[upperMarketCode] || {};
+        const { lunch_start, lunch_end } = market.detailed_trading_hours || {};
+        
+        const markLineData = [];
+        if (lunch_start && lunch_end) {
+            const lunchStartTime = lunch_start + ':00'
+            const lunchEndTime = lunch_end + ':00'
+            
+            markLineData.push(
+                {
+                    id: 'lunch-start-line',
+                    xAxis: lunchStartTime,
+                    label: { show: false },
+                    lineStyle: {
+                        color: '#000000',
+                        type: 'dashed',
+                        width: 1
+                    }
+                },
+                {
+                    id: 'lunch-end-line',
+                    xAxis: lunchEndTime,
+                    label: { show: false },
+                    lineStyle: {
+                        color: '#000000',
+                        type: 'dashed',
+                        width: 1
+                    }
+                }
+            )
+        }
+        
+        return markLineData;
+    }
 
 // ==================== 工具函数 ====================
 
@@ -1591,18 +1733,19 @@ function showLoading(show=true, text='加载中...') {
 
 function clearChart(){
         // 显示K线相关元素
-        document.getElementById('periodSelector').style.display = 'flex'
-        document.getElementById('klineChart').style.display = 'block'
+        document.getElementById('klineContainer').style.display = 'block'
         document.getElementById('intradayContainer').style.display = 'none'
-        document.querySelector('.indicator-area').style.display = 'block'
-        document.getElementById('dataZoomContainer').style.display = 'block'
-        // 🔧 隐藏分时图的控制
-        document.getElementById('modeSelector').style.display = 'none'
-        document.getElementById('intradayPhaseSelector').style.display = 'none'
-        // 🔧 显示K线图的控制
-        document.getElementById('modeSelector').style.display = 'block'
-        // 默认隐藏K线的交易时段选择器（需要切换到Mock模式才显示）
-        document.getElementById('klinePhaseSelector').style.display = 'none'
+//        document.getElementById('periodSelector').style.display = 'flex'
+//        document.getElementById('klineChart').style.display = 'block'
+//        document.querySelector('.indicator-area').style.display = 'block'
+//        document.getElementById('dataZoomContainer').style.display = 'block'
+//        // 🔧 隐藏分时图的控制
+//        document.getElementById('modeSelector').style.display = 'none'
+//        document.getElementById('intradayPhaseSelector').style.display = 'none'
+//        // 🔧 显示K线图的控制
+//        document.getElementById('modeSelector').style.display = 'block'
+//        // 默认隐藏K线的交易时段选择器（需要切换到Mock模式才显示）
+//        document.getElementById('klinePhaseSelector').style.display = 'none'
         // 🔧 停止分时图更新（使用独立模块）
         const timer = getTimer()
         if (timer) {
