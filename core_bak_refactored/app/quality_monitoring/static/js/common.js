@@ -480,7 +480,22 @@ function parseTradingHoursString(tradingHoursStr) {
         };
     }
 }
-
+/**
+ * 根据当前选择的市场获取对应时区（从markets配置中获取）
+ * @returns {string} 时区字符串
+ */
+function getMarketTimezone(marketCode) {
+    if (!window.marketsConfig || !Array.isArray(window.marketsConfig)) {
+        console.error('❌错误：markets配置未加载');
+        throw new Error('markets配置未加载');
+    }
+    const market = window.marketsConfig.find(m => m.code === marketCode);
+    if (!market) {
+        console.error(`❌未找到市场代码 ${marketCode} 的配置`);
+        throw new Error(`未找到市场代码 ${marketCode} 的配置`);
+    }
+    return market.timezone;
+}
 /**
  * 时间轴标签格式化函数
  * @param {string|number} value - 时间值
@@ -497,6 +512,7 @@ function formatTimeAxisLabel(value) {
     }
     return value;  // 如果不是字符串则返回原值
 }
+
 
 // ========== 导出工具函数 ==========
 window.AppUtils = {
@@ -522,5 +538,6 @@ window.AppUtils = {
     extractFromMarketDateTimeStr,
     getTimezoneOffset,
     parseTradingHoursString,
-    formatTimeAxisLabel
+    formatTimeAxisLabel,
+    getMarketTimezone
 };
