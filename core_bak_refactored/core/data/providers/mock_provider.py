@@ -100,8 +100,8 @@ class MockDataProvider(BaseDataProvider):
         🔧 Mock数据不使用缓存，每次都重新生成（避免真实数据和模拟数据混淆）
         
         🎭 Mock模式规则：
-        - 盘后（AFTER_CLOSE）：历史数据生成到今天（今天的K线已完成）
-        - 盘前/盘中（BEFORE_OPEN/TRADING）：历史数据只生成到昨天（今天的K线由实时接口提供）
+        - 盘后（after_close）：历史数据生成到今天（今天的K线已完成）
+        - 盘前/盘中（before_open/trading）：历史数据只生成到昨天（今天的K线由实时接口提供）
 
         Args:
             symbol: 证券代码

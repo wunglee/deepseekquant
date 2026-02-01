@@ -117,7 +117,7 @@ class MockProviderTest(unittest.TestCase):
         self.assertIsNotNone(result['open'])
         self.assertGreaterEqual(result['high'], result['open'])
         self.assertLessEqual(result['low'], result['open'])
-        self.assertEqual(result['trading_phase'], 'TRADING')
+        self.assertEqual(result['trading_phase'], 'trading')
         self.assertTrue(result['should_poll'])
     
     def test_get_realtime_kline_before_open(self):
@@ -134,7 +134,7 @@ class MockProviderTest(unittest.TestCase):
         self.assertEqual(result['open'], result['low'])
         self.assertEqual(result['open'], result['close'])
         self.assertEqual(result['volume'], 0)
-        self.assertEqual(result['trading_phase'], 'BEFORE_OPEN')
+        self.assertEqual(result['trading_phase'], 'before_open')
         self.assertTrue(result['should_poll'])
     
     def test_get_realtime_kline_after_close(self):
@@ -148,7 +148,7 @@ class MockProviderTest(unittest.TestCase):
         
         self.assertIsNotNone(result['open'])
         self.assertGreaterEqual(result['high'], result['low'])
-        self.assertEqual(result['trading_phase'], 'AFTER_CLOSE')
+        self.assertEqual(result['trading_phase'], 'after_close')
         self.assertFalse(result['should_poll'])
     
     def test_get_realtime_kline_cache(self):

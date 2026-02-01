@@ -881,7 +881,7 @@ class BaseDataProvider(HistoricalDataProvider):
                 'low': float,   # 最低价
                 'close': float, # 收盘价（当前价）
                 'volume': int,  # 成交量
-                'trading_phase': str,  # 交易时段：BEFORE_OPEN, TRADING, AFTER_CLOSE等
+                'trading_phase': str,  # 交易时段：before_open, trading, AFTER_CLOSE等
                 'should_poll': bool  # 服务器根据 trading_phase 决定，前端只依赖此字段控制行为
             }
         """

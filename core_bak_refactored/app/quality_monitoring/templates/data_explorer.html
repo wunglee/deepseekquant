@@ -231,9 +231,9 @@
                     <button class="btn btn-segment" onclick="switchMode('mock', this)">模拟数据</button>
                 </div>
                 <div id="modePhaseSelector" class="segmented-control" style="display:none;margin-bottom:8px;">
-                    <button class="btn btn-segment" onclick="switchPhase('BEFORE_OPEN', this)">盘前</button>
-                    <button class="btn btn-segment active" onclick="switchPhase('TRADING', this)">盘中</button>
-                    <button class="btn btn-segment" onclick="switchPhase('AFTER_CLOSE', this)">盘后</button>
+                    <button class="btn btn-segment" onclick="switchPhase('before_open', this)">盘前</button>
+                    <button class="btn btn-segment active" onclick="switchPhase('trading', this)">盘中</button>
+                    <button class="btn btn-segment" onclick="switchPhase('after_close', this)">盘后</button>
                 </div>
             </div>
             <div id="chartTypeSelector" class="segmented-control" style="flex:1;">
@@ -267,7 +267,7 @@
 let currentSymbol = null
 let currentChartType = 'intraday'  // 🔧 修改：默认为分时图
 let globalDataMode = 'real'  // 'mock' 或 'real'，全局数据模式
-let mockTradingPhase = 'TRADING'  // 模拟控制：BEFORE_OPEN, TRADING, AFTER_CLOSE外部传入，
+let mockTradingPhase = 'trading'  // 模拟控制：before_open, trading, AFTER_CLOSE外部传入，
 let currentMarketCode = null  // 当前市场代码，data_explorer.html 范围的属性
 // 注意：intradayData、intradayUpdateTimer 已在 intraday_chart.js 中声明
 
@@ -528,13 +528,15 @@ function switchMode(mode, element) {
 
 function reload(){
     if (currentSymbol && currentChartType === 'intraday') {
-        if (window.IntradayChart) {
+        if (window.IntradayChart&&window.KlineChart) {
+            window.KlineChart.stopRealtimeKlineUpdateTimer()
             window.IntradayChart.setCurrent(currentSymbol,currentSymbol.type !== 'index',currentMarketCode, globalDataMode==='mock',mockTradingPhase)
         } else {
             console.warn('⚠️ IntradayChart 未加载，跳过分时图重建和数据加载')
         }
     } else if (currentSymbol && currentChartType === 'kline') {
-        if (window.KlineChart) {
+        if (window.IntradayChart&&window.KlineChart) {
+            window.IntradayChart.stopIntradayUpdateTimer()
             // 如果当前是K线图，也需要重新加载数据以应用新模式
             window.KlineChart.setCurrent(currentSymbol,currentMarketCode,globalDataMode==='mock',mockTradingPhase)
         }else {

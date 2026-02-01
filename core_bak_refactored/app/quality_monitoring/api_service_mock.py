@@ -76,7 +76,7 @@ class DataQualityMockAPIService:
                 - before: 获取此日期之前的数据（YYYY-MM-DD，已获取的K线日期，市场本地时间，可选）
                 - indicators: 需要的指标，逗号分隔（默认 'all'）
                                支持: vol, macd, rsi, kdj, obv
-                - trading_phase: 交易时段（BEFORE_OPEN/TRADING/NOON_BREAK/AFTER_CLOSE，默认 TRADING）
+                - trading_phase: 交易时段（before_open/trading/noon_break/after_close，默认 trading）
             
             返回示例：
             {
@@ -137,7 +137,7 @@ class DataQualityMockAPIService:
                 mock_provider = MockDataProvider()
 
                 # 🎭 从前端获取trading_phase参数（用于needs_realtime_kline判断）
-                trading_phase_str = request.args.get('trading_phase', 'TRADING')  # 默认盘中
+                trading_phase_str = request.args.get('trading_phase', 'trading')  # 默认盘中
                 try:
                     trading_phase = TradingPhase.parse(trading_phase_str)
                     mock_provider.set_mock_trading_phase(trading_phase)
@@ -495,7 +495,7 @@ class DataQualityMockAPIService:
             
             参数：
                 symbol: 证券代码
-                trading_phase: 交易时段 (BEFORE_OPEN, TRADING, AFTER_CLOSE) - 用于模拟控制
+                trading_phase: 交易时段 (before_open, trading, after_close) - 用于模拟控制
                 trade_date: 交易日期 (YYYY-MM-DD，浏览器本地时间)，默认今天
                 client_timezone: 浏览器时区（如 'Asia/Shanghai'，必需如果提供trade_date）
                 is_index: 是否为指数，默认false
@@ -522,13 +522,13 @@ class DataQualityMockAPIService:
                     return jsonify({'status': 'error', 'message': '缺少index_id', 'error_code': 'MISSING_PARAMS'}), 400
 
                 # 🔧 获取前端传入的trading_phase参数（用于模拟控制）
-                trading_phase_str = request.args.get('trading_phase', 'TRADING')  # 默认盘中
+                trading_phase_str = request.args.get('trading_phase', 'trading')  # 默认盘中
                 try:
                     trading_phase = TradingPhase.parse(trading_phase_str)
                 except KeyError:
                     return jsonify({
                         'status': 'error',
-                        'message': f'无效的trading_phase: {trading_phase_str}，允许值: BEFORE_OPEN, TRADING, AFTER_CLOSE',
+                        'message': f'无效的trading_phase: {trading_phase_str}，允许值: before_open, trading, after_close',
                         'error_code': 'INVALID_TRADING_PHASE'
                     }), 400
 
@@ -633,12 +633,12 @@ def register_mock_routes(app: Flask):
 
             logger.info(f"🎭 使用模拟数据源: {symbol}")
             mock_provider = MockDataProvider()
-            trading_phase_str = request.args.get('trading_phase', 'TRADING')
+            trading_phase_str = request.args.get('trading_phase', 'trading')
             try:
                 trading_phase = TradingPhase.parse(trading_phase_str)
                 mock_provider.set_mock_trading_phase(trading_phase)
             except KeyError:
-                mock_provider.set_mock_trading_phase(TradingPhase.TRADING)
+                mock_provider.set_mock_trading_phase(TradingPhase.trading)
 
             indicator_service = TechnicalIndicators(market=MarketCode.CN, timeframe=period)
             chart_assembler = ChartDataAssembler(data_provider=mock_provider, indicator_service=indicator_service)
@@ -775,7 +775,7 @@ def register_mock_routes(app: Flask):
             symbol = request.args.get('symbol', type=str)
             if not symbol:
                 return jsonify({'status': 'error', 'message': '缺少index_id', 'error_code': 'MISSING_PARAMS'}), 400
-            trading_phase_str = request.args.get('trading_phase', 'TRADING')
+            trading_phase_str = request.args.get('trading_phase', 'trading')
             try:
                 trading_phase = TradingPhase.parse(trading_phase_str)
             except KeyError:

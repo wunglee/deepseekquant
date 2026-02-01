@@ -10,7 +10,7 @@
 
 **新逻辑**：
 - ✅ **盘中时段 (TRADING)**：不读取缓存，实时获取，但会写入缓存
-- ✅ **盘后时段 (AFTER_CLOSE)**：从缓存读取，不调用API
+- ✅ **盘后时段 (after_close)**：从缓存读取，不调用API
 - ✅ 缓存key格式：`intraday_{symbol}_{date}_TRADING`
 - ✅ 盘后读取的是"最后交易日的盘中缓存"
 
