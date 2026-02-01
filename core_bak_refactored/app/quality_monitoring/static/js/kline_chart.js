@@ -19,7 +19,7 @@ window.KlineChart = (function() {
     let current_period = 'daily' // 当前周期（内部状态）
     let current_indicator = 'VOL' // 当前指标（内部状态）
     let current_market_code = 'CN'
-    let current_index = null
+    let symbol = null
     // 无限滚动相关状态
     let isLoadingMore = false  // 加载状态标志
     let hasMoreData = true      // 是否还有更多数据
@@ -57,7 +57,7 @@ window.KlineChart = (function() {
     }
     
     function renderCharts(data, getMarketTimezoneFn) {
-        renderKline(current_index?.name || '', data, allEvents, getMarketTimezoneFn);
+        renderKline(symbol?.name || '', data, allEvents, getMarketTimezoneFn);
     }
     
     function updateChartsIncremental(newData, getMarketTimezoneFn) {
@@ -122,9 +122,9 @@ window.KlineChart = (function() {
                     end: currentTime
                 };
             },
-            buildUrl: function(current_index, tickRange) {
+            buildUrl: function(symbol, tickRange) {
                 // 构建K线图请求URL
-                let url = `/api/v1/kline/data?current_index=${encodeURIComponent(current_index?.name || '')}&period=${current_period}`;
+                let url = `/api/v1/kline/data?symbol=${encodeURIComponent(symbol?.name || '')}&period=${current_period}`;
                 return url;
             },
             shouldGenerateTickRange: false,
@@ -1149,18 +1149,18 @@ function renderKline(stock_id,data, events, getMarketTimezoneFn) {
 
 /**
  * 加载K线数据（主要数据加载函数）
- * @param {string} current_index - 指数ID
+ * @param {string} symbol - 指数ID
  * @param {boolean} use_mock_mode - 数据模式（true为mock，false为real）
  */
 function loadData() {
-    console.log('🔍 开始加载K线数据:', { current_index, use_mock_mode })
+    console.log('🔍 开始加载K线数据:', { symbol, use_mock_mode })
     // 标记为加载新股票（会重置 dataZoom）
     isLoadingNewStock = true
 
     // 🔧 构建API URL（Mock模式使用独立端点）
     const baseUrl = use_mock_mode ? '/api/v1/chart/data/mock' : '/api/v1/chart/data'
     const tradingPhaseParam = use_mock_mode ? `&trading_phase=${mock_trading_phase}` : ''
-    const url = `${baseUrl}?current_index=${encodeURIComponent(current_index)}&period=${current_period}&count=120&indicators=all${tradingPhaseParam}`
+    const url = `${baseUrl}?symbol=${encodeURIComponent(symbol)}&period=${current_period}&count=120&indicators=all${tradingPhaseParam}`
 
     console.log('📡 请求URL:', url)
 
@@ -1201,7 +1201,7 @@ function loadData() {
 
             // 渲染图表
             if (typeof renderKline === 'function') {
-                renderKline(current_index,klineData, eventsData, window.getMarketTimezone)
+                renderKline(symbol,klineData, eventsData, window.getMarketTimezone)
 
                 // 标记初始加载完成（启用无限滚动）
                 initialLoadComplete = true
@@ -1467,10 +1467,10 @@ function adjustDataZoomAfterPrepend(oldLength, prependLength) {
 /**
  * 加载更多历史数据（真实API版本）
  * @param {Function} callback - 回调函数(success)
- * @param {string} current_index - 指数ID
+ * @param {string} symbol - 指数ID
  */
-function loadMoreHistoryData(callback, current_index, use_mock_mode) {
-    console.log('开始加载更多历史数据...', {current_index, use_mock_mode})
+function loadMoreHistoryData(callback, symbol, use_mock_mode) {
+    console.log('开始加载更多历史数据...', {symbol, use_mock_mode})
 
     // 检查是否有当前数据
     if (!allKlineData || allKlineData.length === 0) {
@@ -1488,7 +1488,7 @@ function loadMoreHistoryData(callback, current_index, use_mock_mode) {
     // 🔧 构建API URL（Mock模式使用独立端点）
     const baseUrl = use_mock_mode ? '/api/v1/chart/data/mock' : '/api/v1/chart/data'
     const tradingPhaseParam = use_mock_mode ? `&trading_phase=${mock_trading_phase}` : ''
-    const url = `${baseUrl}?current_index=${encodeURIComponent(current_index)}&period=${current_period}&count=60&before=${beforeDate}&indicators=all${tradingPhaseParam}`
+    const url = `${baseUrl}?symbol=${encodeURIComponent(symbol)}&period=${current_period}&count=60&before=${beforeDate}&indicators=all${tradingPhaseParam}`
     console.log('📡 加载更多URL:', url)
 
     // 调用API
@@ -1579,21 +1579,21 @@ function loadMoreHistoryData(callback, current_index, use_mock_mode) {
 
 /**
  * 获取实时K线数据（Mock和真实使用相同机制）
- * @param {string} current_index - 指数ID
+ * @param {string} symbol - 指数ID
  * @param {boolean} use_mock_mode - 数据模式（true为mock，false为real）
  */
 function fetchRealtimeKline() {
-    if (!current_index) return
+    if (!symbol) return
 
-    const idxId = current_index
+    const idxId = symbol
     let url
 
     if (use_mock_mode) {
         // 🎭 Mock模式：使用mock接口，但机制与真实模式完全一样
-        url = `/api/v1/data/kline/realtime/mock?current_index=${encodeURIComponent(idxId)}&trading_phase=${mock_trading_phase}`
+        url = `/api/v1/data/kline/realtime/mock?symbol=${encodeURIComponent(idxId)}&trading_phase=${mock_trading_phase}`
         console.log('🎭 Mock模式 - 获取实时K线, trading_phase:', mock_trading_phase)
     } else {
-        url = `/api/v1/data/kline/realtime?current_index=${encodeURIComponent(idxId)}&period=${current_period || current_period}`
+        url = `/api/v1/data/kline/realtime?symbol=${encodeURIComponent(idxId)}&period=${current_period || current_period}`
         console.log(`🎯 真实模式 - 获取实时K线 (period=${current_period})`)
     }
 
@@ -1703,7 +1703,7 @@ function stopRealtimeKline() {
 
 /**
  * 启动实时K线（选择股票时调用）
- * @param {string} current_index - 指数ID
+ * @param {string} symbol - 指数ID
  * @param {boolean} use_mock_mode - 数据模式（true为mock，false为real）
  */
 function startRealtimeKline() {
@@ -1905,7 +1905,7 @@ function startInfiniteScrollDetection() {
                             hasMoreData = false
                             console.log('✅ 已到达最早数据')
                         }
-                    }, current_index, use_mock_mode)
+                    }, symbol, use_mock_mode)
                 }
             } else {
                 // 🔧 调试日志：输出为什么没有触发加载
@@ -1929,7 +1929,7 @@ function startInfiniteScrollDetection() {
     return {
         // 只导出data_explorer.html中使用的函数
         setCurrent: function(index,marketCode,useMockMode,mockTradingPhase='TRADING')  {
-            current_index = index;
+            symbol = index;
             current_market_code = marketCode;
             use_mock_mode=useMockMode;
             mock_trading_phase=mockTradingPhase;

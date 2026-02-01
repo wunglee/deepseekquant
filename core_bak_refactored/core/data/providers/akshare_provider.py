@@ -401,7 +401,7 @@ class AKShareDataProvider(BaseDataProvider):
         original_get, original_post, requests = self._config_proxy()
         if not self.available or self.ak is None:
             raise RuntimeError("AKShare不可用")
-        # 🔧 判断是个股还是指数，使用不同的 API
+
 
         try:
             market_code = MarketUtils.infer_market_from_symbol(symbol)

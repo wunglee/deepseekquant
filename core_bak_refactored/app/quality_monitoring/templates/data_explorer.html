@@ -325,6 +325,7 @@ function init() {
             default_indices: marketIndices
         });
     });
+    buildMarketSelector(completeMarkets)
     if (completeMarkets.length) {
         selectMarket(completeMarkets[0]); // 默认选择第一个市场（A股）
         console.log('✅ 默认选择第一个市场：', completeMarkets[0].name);
@@ -333,7 +334,22 @@ function init() {
     console.error('初始化失败: ' + err.message);
 });
 }
-
+function buildMarketSelector(markets) {
+    const container = document.getElementById('marketSelector')
+    container.innerHTML = ''
+    markets.forEach((m, idx) => {
+        const btn = document.createElement('button')
+        btn.className = 'btn btn-segment'
+        if (idx === 0) btn.classList.add('active')
+        btn.textContent = m.name
+        btn.onclick = () => {
+            container.querySelectorAll('.btn-segment').forEach(b => b.classList.remove('active'))
+            btn.classList.add('active')
+            selectMarket(m)
+        }
+        container.appendChild(btn)
+    })
+}
 /**
  * 更新市场标题和交易时间信息
  * @param {string} marketCode - 市场代码（CN、US、HK等）

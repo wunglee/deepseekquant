@@ -13,7 +13,7 @@ window.IntradayChart = (function() {
     let lastIntradayBatchIndex = 0
     let lastIntradayRequestTime = 0
     let virtualIntradayTime = 0  // 🎮 虚拟交易时间（秒），用于模拟模式
-    let current_index = null
+    let symbol = null
     let current_market_code = 'CN'
     let use_mock_mode = false
     let mock_trading_phase = 'TRADING'
@@ -172,7 +172,7 @@ window.IntradayChart = (function() {
                         type: 'line',
                         data: [],  // 初始为空，等待 renderCharts 填充
                         smooth: 0.6,
-                        current_index: 'none',
+                        symbol: 'none',
                         showSymbol: false,
                         lineStyle: { width: 2 },
                         itemStyle: { color: '#2563eb' },
@@ -188,7 +188,7 @@ window.IntradayChart = (function() {
                         },
                         connectNulls: true,
                         markLine: {
-                            current_index: 'none',
+                            symbol: 'none',
                             silent: false,
                             animation: false,
                             data: markLineData  // 午休分割线
@@ -199,7 +199,7 @@ window.IntradayChart = (function() {
                         type: 'line',
                         data: [],  // 初始为空，等待 renderCharts 填充
                         smooth: 0.6,
-                        current_index: 'none',
+                        symbol: 'none',
                         showSymbol: false,
                         lineStyle: { width: 1.5, color: '#f59e0b', type: 'dashed' },
                         connectNulls: true
@@ -249,7 +249,7 @@ window.IntradayChart = (function() {
                     data: [],  // 初始为空，等待 renderCharts 填充
                     barWidth: '80%',
                     markLine: {
-                        current_index: 'none',
+                        symbol: 'none',
                         silent: false,
                         animation: false,
                         data: markLineData  // 合并后的markLine数据（包含午休分割线和保留的其他线）
@@ -295,8 +295,8 @@ window.IntradayChart = (function() {
                             end: currentTime
                         };
                     },
-                    buildUrl: function(current_index, tickRange) {
-                        let url = `/api/v1/intraday/mock?current_index=${encodeURIComponent(current_index)}&trading_phase=${mock_trading_phase}`;
+                    buildUrl: function(symbol, tickRange) {
+                        let url = `/api/v1/intraday/mock?symbol=${encodeURIComponent(symbol)}&trading_phase=${mock_trading_phase}`;
     
                         // 🔧 传递last_price（用于保证价格连续性）
                         const intradayData = getData();
@@ -364,8 +364,8 @@ window.IntradayChart = (function() {
                             end: newEndTime
                         };
                     },
-                    buildUrl: function(current_index, tickRange) {
-                        let url = `/api/v1/intraday/data?current_index=${encodeURIComponent(current_index)}`;
+                    buildUrl: function(symbol, tickRange) {
+                        let url = `/api/v1/intraday/data?symbol=${encodeURIComponent(symbol)}`;
     
                         if (tickRange) {
                             url += `&tick_range=${encodeURIComponent(JSON.stringify(tickRange))}`;
@@ -823,7 +823,7 @@ function initializeIntradayTimeAxis(marketCode) {
                     type: 'line',
                     data: [],  // 初始为空，等待 renderCharts 填充
                     smooth: 0.6,
-                    current_index: 'none',
+                    symbol: 'none',
                     showSymbol: false,
                     lineStyle: { width: 2 },
                     itemStyle: { color: '#2563eb' },
@@ -839,7 +839,7 @@ function initializeIntradayTimeAxis(marketCode) {
                     },
                     connectNulls: true,
                     markLine: {
-                        current_index: 'none',
+                        symbol: 'none',
                         silent: false,
                         animation: false,
                         data: markLineData  // 午休分割线
@@ -850,7 +850,7 @@ function initializeIntradayTimeAxis(marketCode) {
                     type: 'line',
                     data: [],  // 初始为空，等待 renderCharts 填充
                     smooth: 0.6,
-                    current_index: 'none',
+                    symbol: 'none',
                     showSymbol: false,
                     lineStyle: { width: 1.5, color: '#f59e0b', type: 'dashed' },
                     connectNulls: true
@@ -900,7 +900,7 @@ function initializeIntradayTimeAxis(marketCode) {
                 data: [],  // 初始为空，等待 renderCharts 填充
                 barWidth: '80%',
                 markLine: {
-                    current_index: 'none',
+                    symbol: 'none',
                     silent: false,
                     animation: false,
                     data: markLineData  // 合并后的markLine数据（包含午休分割线和保留的其他线）
@@ -948,8 +948,8 @@ function getModeConfig(isInitial) {
                         end: currentTime
                     };
                 },
-                buildUrl: function(current_index, tickRange) {
-                    let url = `/api/v1/intraday/mock?current_index=${encodeURIComponent(current_index)}&trading_phase=${mock_trading_phase}`;
+                buildUrl: function(symbol, tickRange) {
+                    let url = `/api/v1/intraday/mock?symbol=${encodeURIComponent(symbol)}&trading_phase=${mock_trading_phase}`;
 
                     // 🔧 传递last_price（用于保证价格连续性）
                     const intradayData = getData();
@@ -1018,8 +1018,8 @@ function getModeConfig(isInitial) {
                         end: newEndTime
                     };
                 },
-                buildUrl: function(current_index, tickRange) {
-                    let url = `/api/v1/intraday/data?current_index=${encodeURIComponent(current_index)}`;
+                buildUrl: function(symbol, tickRange) {
+                    let url = `/api/v1/intraday/data?symbol=${encodeURIComponent(symbol)}`;
 
                     if (tickRange) {
                         url += `&tick_range=${encodeURIComponent(JSON.stringify(tickRange))}`;
@@ -1163,7 +1163,7 @@ function renderCharts(data, marketTimezone) {
     // 更新价格图表（只设置数据相关的配置）
     charts.price.setOption({
         title: {
-            text: (current_index ? current_index.name : '') + ' 分时图 (' + AppUtils.formatToMarketDateTimeStr(new Date(), marketTimezone) + ')',
+            text: (symbol ? symbol.name : '') + ' 分时图 (' + AppUtils.formatToMarketDateTimeStr(new Date(), marketTimezone) + ')',
             subtext: `昨收: ${yesterdayClose.toFixed(2)}  现价: ${currentPrice.toFixed(2)}  涨跌: ${change >= 0 ? '+' : ''}${change.toFixed(2)} (${changePercent.toFixed(2)}%)`,
             subtextStyle: {
                 color: change >= 0 ? '#ef4444' : '#10b981'
@@ -1189,7 +1189,7 @@ function renderCharts(data, marketTimezone) {
             {
                 data: priceData,
                 markLine: {
-                    current_index: 'none',
+                    symbol: 'none',
                     silent: false,
                     animation: false,
                     data: markLineData  // 重新设置markLine数据，包含午休分割线和昨收线
@@ -1293,7 +1293,7 @@ function updateChartsIncremental(newData, marketTimezone) {
             {
                 data: priceData,
                 markLine: {
-                    current_index: 'none',
+                    symbol: 'none',
                     silent: false,
                     animation: false,
                     data: markLineData  // 使用优化后的markLine数据
@@ -1474,7 +1474,7 @@ function clearChart() {
 }
 /**
  * 加载分时图数据
- * @param {string} current_index - 股票代码
+ * @param {string} symbol - 股票代码
  * @param {boolean} isInitial - 是否为首次加载
  */
 function loadData(isInitial = true) {
@@ -1533,7 +1533,7 @@ function loadData(isInitial = true) {
     }
 
     // 构建请求URL
-    let url = modeConfig.buildUrl(current_index, tickRange);
+    let url = modeConfig.buildUrl(symbol, tickRange);
 
     fetch(url)
         .then(r => {
@@ -1640,7 +1640,7 @@ function loadData(isInitial = true) {
     return {
         // 只导出data_explorer.html中使用的函数
         setCurrent: function(index,isStock,marketCode,useMockMode,mockTradingPhase='TRADING')  {
-            current_index = index;
+            symbol = index;
             current_market_code = marketCode;
             use_mock_mode=useMockMode;
             mock_trading_phase=mockTradingPhase;
