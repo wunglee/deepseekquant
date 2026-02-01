@@ -33,7 +33,7 @@
 #### 前端触发 (data_explorer.html)
 ```javascript
 // 第100-112行
-fetch(`/api/v1/data/index-prices?index_id=${index_id}&start_date=${start}&end_date=${end}`)
+fetch(`/api/v1/data/index-prices?symbol=${symbol}&start_date=${start}&end_date=${end}`)
   .then(r => r.json())
   .then(res => {
     const data = res.data || []
@@ -44,7 +44,7 @@ fetch(`/api/v1/data/index-prices?index_id=${index_id}&start_date=${start}&end_da
 ```
 
 **输入参数**:
-- `index_id`: 指数代码（如 `000300.SH`）
+- `symbol`: 指数代码（如 `000300.SH`）
 - `start_date`: 开始日期 `YYYY-MM-DD`
 - `end_date`: 结束日期 `YYYY-MM-DD`
 
@@ -57,10 +57,10 @@ fetch(`/api/v1/data/index-prices?index_id=${index_id}&start_date=${start}&end_da
 @self.app.route('/api/v1/data/index-prices')
 def get_index_prices_api():
     # 1. 参数验证
-    index_id = request.args.get('index_id', type=str)
+    symbol = request.args.get('symbol', type=str)
     start_date = request.args.get('start_date', type=str)
     end_date = request.args.get('end_date', type=str)
-    if not all([index_id, start_date, end_date]):
+    if not all([symbol, start_date, end_date]):
         return 400错误
     
     # 2. 获取数据提供者
@@ -69,7 +69,7 @@ def get_index_prices_api():
         return 503错误
     
     # 3. 调用数据提供者
-    df = provider.get_index_prices(index_id, start_date, end_date)
+    df = provider.get_index_prices(symbol, start_date, end_date)
     
     # 4. 格式转换
     data = df.to_dict(orient='records')
@@ -91,16 +91,16 @@ def get_index_prices_api():
 
 #### 数据提供者层 (historical_data_provider.py L125-190)
 ```python
-def get_index_prices(self, index_id: str, start_date: str, end_date: str):
+def get_index_prices(self, symbol: str, start_date: str, end_date: str):
     # 1. 优先使用缓存
-    cache_key = f"{index_id}:{start_date}:{end_date}"
+    cache_key = f"{symbol}:{start_date}:{end_date}"
     if cache_key in self._data_cache:
         return self._data_cache[cache_key]
     
     # 2. 区域化优先级（提高效率）
-    if index_id in A_SHARE_INDICES:
+    if symbol in A_SHARE_INDICES:
         priority_sources = ['akshare', 'tushare', 'yahoo']
-    elif index_id in HK_INDICES:
+    elif symbol in HK_INDICES:
         priority_sources = ['yahoo', 'akshare']
     else:  # 美股等
         priority_sources = ['yahoo', 'akshare']
@@ -116,7 +116,7 @@ def get_index_prices(self, index_id: str, start_date: str, end_date: str):
             continue
         
         try:
-            data = self.adapters[source].get_index_prices(index_id, start_date, end_date)
+            data = self.adapters[source].get_index_prices(symbol, start_date, end_date)
             
             # 数据质量验证
             quality_score = self._validate_data_quality(data, source)
@@ -125,7 +125,7 @@ def get_index_prices(self, index_id: str, start_date: str, end_date: str):
                 continue
             
             # 数据清洗
-            cleaned_data = self._clean_data(data, index_id)
+            cleaned_data = self._clean_data(data, symbol)
             
             # 缓存结果
             self._data_cache[cache_key] = cleaned_data
@@ -142,7 +142,7 @@ def get_index_prices(self, index_id: str, start_date: str, end_date: str):
             continue
     
     # 所有数据源都失败
-    raise ValueError(f"所有数据源均无法获取数据: {index_id}")
+    raise ValueError(f"所有数据源均无法获取数据: {symbol}")
 ```
 
 **✅ 高级特性**:
@@ -155,9 +155,9 @@ def get_index_prices(self, index_id: str, start_date: str, end_date: str):
 
 #### 具体数据源实现 (akshare_provider.py L93-151)
 ```python
-def get_index_prices(self, index_id: str, start_date, end_date):
+def get_index_prices(self, symbol: str, start_date, end_date):
     # 1. 代码映射（统一格式 → AKShare格式）
-    akshare_code = self.INDEX_MAPPING.get(index_id, index_id)
+    akshare_code = self.INDEX_MAPPING.get(symbol, symbol)
     # 例如: '000300.SH' → 'sh000300'
     
     # 2. 调用AKShare API
@@ -192,7 +192,7 @@ def get_index_prices(self, index_id: str, start_date, end_date):
 
 #### 前端触发 (data_explorer.html L114-126)
 ```javascript
-fetch(`/api/v1/data/index-returns?index_id=${index_id}&start_date=${start}&end_date=${end}`)
+fetch(`/api/v1/data/index-returns?symbol=${symbol}&start_date=${start}&end_date=${end}`)
   .then(r => r.json())
   .then(res => {
     const data = res.data || []
@@ -211,7 +211,7 @@ def get_index_returns_api():
     provider = getattr(self.quality_monitor, 'data_provider', None)
     
     # 调用收益率计算
-    series = provider.get_index_returns(index_id, start_date, end_date)
+    series = provider.get_index_returns(symbol, start_date, end_date)
     
     # 格式转换为JSON友好格式
     data = [
@@ -224,9 +224,9 @@ def get_index_returns_api():
 
 #### 数据提供者实现 (historical_data_provider.py L402-414)
 ```python
-def get_index_returns(self, index_id: str, start_date: str, end_date: str):
+def get_index_returns(self, symbol: str, start_date: str, end_date: str):
     # 1. 获取价格数据（复用 get_index_prices）
-    df = self.get_index_prices(index_id, start_date, end_date)
+    df = self.get_index_prices(symbol, start_date, end_date)
     df = df.set_index('date')
     
     # 2. 排除异常日（关键设计）
@@ -250,7 +250,7 @@ def get_index_returns(self, index_id: str, start_date: str, end_date: str):
 
 #### 前端触发 (data_explorer.html L128-142)
 ```javascript
-fetch(`/api/v1/data/event-window?index_id=${index_id}&event_date=${event_date}&event_type=${event_type}&window_days=10&baseline_days=20`)
+fetch(`/api/v1/data/event-window?symbol=${symbol}&event_date=${event_date}&event_type=${event_type}&window_days=10&baseline_days=20`)
   .then(r => r.json())
   .then(res => {
     const samples = res.event_window.samples || []
@@ -261,7 +261,7 @@ fetch(`/api/v1/data/event-window?index_id=${index_id}&event_date=${event_date}&e
 ```
 
 **输入参数**:
-- `index_id`: 指数代码
+- `symbol`: 指数代码
 - `event_date`: 事件日期
 - `event_type`: 事件类型 (`market_crash` / `policy_change`)
 - `window_days`: 窗口天数（默认10）
@@ -272,7 +272,7 @@ fetch(`/api/v1/data/event-window?index_id=${index_id}&event_date=${event_date}&e
 @self.app.route('/api/v1/data/event-window')
 def get_event_window_api():
     # 参数验证
-    index_id = request.args.get('index_id', type=str)
+    symbol = request.args.get('symbol', type=str)
     event_date = request.args.get('event_date', type=str)
     event_type = request.args.get('event_type', default='market_crash', type=str)
     window_days = request.args.get('window_days', type=int)  # 可选
@@ -280,7 +280,7 @@ def get_event_window_api():
     
     # 调用提供者
     result = provider.get_event_window_data(
-        index_id, event_date, event_type, 
+        symbol, event_date, event_type, 
         window_days, baseline_days
     )
     
@@ -311,7 +311,7 @@ def get_event_window_api():
 
 #### 数据提供者实现 (historical_data_provider.py L241-313)
 ```python
-def get_event_window_data(self, index_id, event_date, event_type, window_days, baseline_days):
+def get_event_window_data(self, symbol, event_date, event_type, window_days, baseline_days):
     # 1. 动态配置（根据事件类型）
     config = EVENT_WINDOW_CONFIGS.get(event_type, {
         'window_days': 30,      # 默认值
@@ -331,14 +331,14 @@ def get_event_window_data(self, index_id, event_date, event_type, window_days, b
     
     # 3. 获取基准期数据
     baseline_data = self.get_index_prices(
-        index_id, 
+        symbol, 
         baseline_start.strftime('%Y-%m-%d'),
         baseline_end.strftime('%Y-%m-%d')
     )
     
     # 4. 获取事件窗口数据
     event_data = self.get_index_prices(
-        index_id,
+        symbol,
         event_start.strftime('%Y-%m-%d'),
         event_end.strftime('%Y-%m-%d')
     )
@@ -375,12 +375,12 @@ def get_event_window_data(self, index_id, event_date, event_type, window_days, b
 ### 异常值处理 (historical_data_provider.py L315-372)
 
 ```python
-def _clean_data(self, data: pd.DataFrame, index_id: str):
+def _clean_data(self, data: pd.DataFrame, symbol: str):
     cleaned = data.copy()
     cleaned['returns'] = cleaned['close'].pct_change()
     
     # 1. 涨跌停检测（A股市场）
-    if index_id.endswith('.SH') or index_id.endswith('.SZ'):
+    if symbol.endswith('.SH') or symbol.endswith('.SZ'):
         cleaned['volume_ma20'] = cleaned['volume'].rolling(20).mean()
         
         limit_up_down = (
@@ -578,7 +578,7 @@ raise ValueError(f"所有数据源均无法获取数据")
 
 **请求参数**:
 ```
-index_id: string (必需) - 指数代码
+symbol: string (必需) - 指数代码
 start_date: string (必需) - 开始日期 YYYY-MM-DD
 end_date: string (必需) - 结束日期 YYYY-MM-DD
 ```
@@ -626,7 +626,7 @@ end_date: string (必需) - 结束日期 YYYY-MM-DD
 
 **请求参数**:
 ```
-index_id: string (必需)
+symbol: string (必需)
 event_date: string (必需) - 事件日期
 event_type: string (可选) - 默认 'market_crash'
 window_days: int (可选) - 窗口天数

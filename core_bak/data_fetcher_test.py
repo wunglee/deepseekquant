@@ -24,7 +24,7 @@ async def test_data_fetcher_init_with_mock_source():
         """Mock数据源适配器"""
         # 使用MockHistoricalDataProvider生成数据
         df = mock_provider.get_index_prices(
-            index_id=symbol,
+            symbol=symbol,
             start_date='2024-01-01',
             end_date='2024-01-31'
         )
@@ -75,7 +75,7 @@ async def test_data_fetcher_fetch_with_injected_mock():
     # Mock数据源适配器
     async def mock_fetch_data(symbol, period, interval, data_type, adjustments):
         df = mock_provider.get_index_prices(
-            index_id=symbol,
+            symbol=symbol,
             start_date='2024-01-01',
             end_date='2024-01-10'
         )

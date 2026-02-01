@@ -485,35 +485,6 @@ function rebuildLayout(isStock=false) {
         console.error('❌ 找不到分时图容器')
         return
     }
-
-    // 🔧 1. 停止定时器
-    if (intradayUpdateTimer) {
-        clearInterval(intradayUpdateTimer)
-        intradayUpdateTimer = null
-    }
-
-    // 🔧 2. 销毁旧的图表实例
-    if (intradayPriceChart) {
-        try {
-            intradayPriceChart.dispose()
-        } catch(e) {
-            console.warn('销毁价格图失败:', e)
-        }
-        intradayPriceChart = null
-    }
-    if (intradayVolumeChart) {
-        try {
-            intradayVolumeChart.dispose()
-        } catch(e) {
-            console.warn('销毁成交量图失败:', e)
-        }
-        intradayVolumeChart = null
-    }
-
-    // 🔧 3. 清空全局数据
-    intradayData = null
-    lastIntradayBatchIndex = 0
-    lastIntradayRequestTime = 0
     container.innerHTML=''
     // 🔧 5. 根据类型重建布局
     if (isStock) {
@@ -566,6 +537,15 @@ function rebuildLayout(isStock=false) {
         intradayVolumeChart = echarts.init(volumeChartDom)
         // 连接两个图表，确保 tooltip 同步
         echarts.connect([intradayPriceChart, intradayVolumeChart])
+        // 显示分时图相关元素
+                // 🔧 布局变化后，需要 resize 图表
+        setTimeout(() => {
+            const charts = getCharts()
+            if (charts.price) charts.price.resize()
+            if (charts.volume) charts.volume.resize()
+        }, 50)
+        document.getElementById('klineContainer').style.display = 'none'
+        document.getElementById('intradayContainer').style.display = 'block'
     } else {
         console.error('❌ 无法找到图表DOM元素')
     }
@@ -1441,18 +1421,36 @@ function generateTradingTimesWithLunchBreak(tradingTimes, firstStart, firstEnd, 
 
 
 function clearChart() {
-        // 显示分时图相关元素
-        document.getElementById('klineContainer').style.display = 'none'
-        document.getElementById('intradayContainer').style.display = 'block'
-        setTimeout(() => {
-            const charts = getCharts()
-            // 🔧 重要：容器从隐藏变为显示后，需要调用 resize() 重新计算图表尺寸
-            if (charts.price)
-                charts.price.resize()
-            if (charts.volume)
-                charts.volume.resize()
-            console.log('📐 分时图表已重新调整尺寸')
-        }, 100)
+        intradayData = null
+        lastIntradayBatchIndex = 0
+        lastIntradayRequestTime = 0
+        virtualIntradayTime = 0  // 🎮 虚拟交易时间（秒），用于模拟模式
+        symbol = null
+        current_market_code = 'CN'
+        use_mock_mode = false
+        mock_trading_phase = 'TRADING'
+        // 🔧 1. 停止定时器
+        if (intradayUpdateTimer) {
+            clearInterval(intradayUpdateTimer)
+            intradayUpdateTimer = null
+        }
+        // 🔧 2. 销毁旧的图表实例
+        if (intradayPriceChart) {
+            try {
+                intradayPriceChart.dispose()
+            } catch(e) {
+                console.warn('销毁价格图失败:', e)
+            }
+            intradayPriceChart = null
+        }
+        if (intradayVolumeChart) {
+            try {
+                intradayVolumeChart.dispose()
+            } catch(e) {
+                console.warn('销毁成交量图失败:', e)
+            }
+            intradayVolumeChart = null
+        }
 }
 /**
  * 加载分时图数据
@@ -1619,11 +1617,11 @@ function loadData(isInitial = true) {
     window.IntradayChart = {
         // 只导出data_explorer.html中使用的函数
         setCurrent: function(currentSymbol,isStock,marketCode,useMockMode,mockTradingPhase='TRADING')  {
+            clearChart();
             symbol = currentSymbol;
             current_market_code = marketCode;
             use_mock_mode=useMockMode;
             mock_trading_phase=mockTradingPhase;
-            clearChart();
             rebuildLayout(isStock=isStock);
             loadData(true);
         }

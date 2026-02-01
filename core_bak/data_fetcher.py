@@ -1345,7 +1345,7 @@ class DataFetcher:
 #     
 #     checker = DataQualityChecker()
 #     df = market_data_to_dataframe(market_data_list)
-#     report = checker.check_quality(df, index_id='000300.SH', enable_advanced_checks=True)
+#     report = checker.check_quality(df, symbol='000300.SH', enable_advanced_checks=True)
 #     ```
 # ============================================================================
 class DataQualityMonitorBasic:

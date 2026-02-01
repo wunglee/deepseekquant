@@ -92,7 +92,7 @@
 **参数**：
 | 参数 | 类型 | 必需 | 默认值 | 说明 |
 |------|------|------|--------|------|
-| `index_id` | string | ✅ | - | 股票/指数代码 |
+| `symbol` | string | ✅ | - | 股票/指数代码 |
 | `period` | string | ❌ | daily | 周期（daily/weekly/monthly） |
 | `count` | int | ❌ | 120 | 数据条数 |
 | `before` | string | ❌ | - | 获取此日期之前的数据（YYYY-MM-DD） |
@@ -451,7 +451,7 @@ def get_chart_data():
     获取图表数据（K线 + 技术指标 + 事件）
     
     参数:
-        - index_id: 股票/指数代码（必需）
+        - symbol: 股票/指数代码（必需）
         - period: 周期（daily/weekly/monthly，默认 daily）
         - count: 数据条数（默认 120）
         - before: 获取此日期之前的数据（YYYY-MM-DD）
@@ -477,16 +477,16 @@ def get_chart_data():
         )
         
         # 解析参数
-        index_id = request.args.get('index_id', type=str)
+        symbol = request.args.get('symbol', type=str)
         period = request.args.get('period', default='daily', type=str)
         count = request.args.get('count', default=120, type=int)
         before = request.args.get('before', type=str)
         indicators_param = request.args.get('indicators', default='all', type=str)
         
-        if not index_id:
+        if not symbol:
             return jsonify({
                 'status': 'error',
-                'message': 'index_id 参数必需',
+                'message': 'symbol 参数必需',
                 'error_code': 'MISSING_PARAMETER'
             }), 400
         
@@ -502,14 +502,14 @@ def get_chart_data():
         # 调用数据提供者获取数据
         if before:
             df = provider.get_kline_data(
-                index_id=index_id,
+                symbol=symbol,
                 period=period,
                 count=count,
                 before=before
             )
         else:
             df = provider.get_kline_data(
-                index_id=index_id,
+                symbol=symbol,
                 period=period,
                 count=count
             )
@@ -652,7 +652,7 @@ function loadKline(indexId) {
     isLoadingNewStock = true
     
     // 🔧 使用新的 chart API（包含所有指标）
-    const url = `/api/v1/data/chart?index_id=${encodeURIComponent(indexId)}&period=${currentPeriod}&count=120`
+    const url = `/api/v1/data/chart?symbol=${encodeURIComponent(indexId)}&period=${currentPeriod}&count=120`
     console.log('Fetching:', url)
     
     fetch(url)
@@ -1031,10 +1031,10 @@ function renderKline(data, events) {
 **示例**：
 ```bash
 # 仅获取 K 线和 MACD
-curl "/api/v1/data/chart?index_id=000300.SH&indicators=macd"
+curl "/api/v1/data/chart?symbol=000300.SH&indicators=macd"
 
 # 不获取指标（等同于 /api/v1/data/kline）
-curl "/api/v1/data/chart?index_id=000300.SH&indicators="
+curl "/api/v1/data/chart?symbol=000300.SH&indicators="
 ```
 
 ---

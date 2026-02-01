@@ -19,9 +19,9 @@
     let mock_trading_phase = 'TRADING'  // 模拟控制：BEFORE_OPEN, TRADING, AFTER_CLOSE外部传入，
     let current_period = 'daily' // 当前周期（内部状态）
     let current_indicator = 'VOL' // 当前指标（内部状态）
-    let current_market_code = 'CN'
-    let current_zoom = null
-    let symbol = null
+    let current_market_code = 'CN'// 当前市场（内部状态）
+    let current_zoom = null// 当前缩放（内部状态）
+    let current_symbol = null// 当前股票（内部状态）
     // 无限滚动相关状态
     let isLoadingMore = false  // 加载状态标志
     let hasMoreData = true      // 是否还有更多数据
@@ -36,7 +36,11 @@
 
     // ==================== 私有函数 ====================
     function getCharts() {
-        return { kline: kline_chart, indicator: indicator_chart, dataZoom: dataZoomChart };
+        return {
+            kline: kline_chart,
+            indicator: indicator_chart,
+            dataZoom: dataZoomChart
+        };
     }
     // ==================== 辅助函数 ====================
 
@@ -53,8 +57,7 @@
         container.querySelectorAll('.btn-segment').forEach(b => b.classList.remove('active'));
         element.classList.add('active');
         current_indicator = indicator;
-        const indicatorData = toIndicatorData(allKlineData);
-        updateIndicatorData(indicatorData);
+        renderIndicator();
     }
 
     function updateChartsIncremental(newData) {
@@ -62,7 +65,7 @@
         if (newData && newData.length > 0) {
             // 将新数据追加到现有数据
             allKlineData = allKlineData.concat(newData);
-            renderKline(symbol || '', allKlineData, allEvents);
+            renderKline();
         }
     }
     
@@ -105,16 +108,16 @@
                 pollInterval: 60000,
                 buildUrl: function(tickRange) {
                     // Mock模式：使用mock端点并传递trading_phase
-                    let url = `/api/v1/chart/data/mock?symbol=${encodeURIComponent(symbol || '')}&period=${current_period}&count=120&indicators=all&trading_phase=${mock_trading_phase}`;
+                    let url = `/api/v1/chart/data/mock?symbol=${encodeURIComponent(current_symbol.id || '')}&period=${current_period}&count=120&indicators=all&trading_phase=${mock_trading_phase}`;
                     return url;
                 },
                 buildRealtimeUrl: function() {
                     // Mock模式：使用mock端点获取实时K线
-                    return `/api/v1/data/kline/realtime/mock?symbol=${encodeURIComponent(symbol)}&trading_phase=${mock_trading_phase}`;
+                    return `/api/v1/data/kline/realtime/mock?symbol=${encodeURIComponent(current_symbol.id)}&trading_phase=${mock_trading_phase}`;
                 },
                 buildHistoryUrl: function(beforeDate) {
                     // Mock模式：使用mock端点获取历史数据
-                    return `/api/v1/chart/data/mock?symbol=${encodeURIComponent(symbol)}&period=${current_period}&count=60&before=${beforeDate}&indicators=all&trading_phase=${mock_trading_phase}`;
+                    return `/api/v1/chart/data/mock?symbol=${encodeURIComponent(current_symbol.id)}&period=${current_period}&count=60&before=${beforeDate}&indicators=all&trading_phase=${mock_trading_phase}`;
                 },
             };
         } else {
@@ -122,16 +125,16 @@
                 pollInterval: 60000,
                 buildUrl: function(tickRange) {
                     // 真实模式：使用标准端点
-                    let url = `/api/v1/chart/data?symbol=${encodeURIComponent(symbol.id || '')}&period=${current_period}&count=120&indicators=all`;
+                    let url = `/api/v1/chart/data?symbol=${encodeURIComponent(current_symbol.id || '')}&period=${current_period}&count=120&indicators=all`;
                     return url;
                 },
                 buildRealtimeUrl: function() {
                     // 真实模式：使用标准端点获取实时K线
-                    return `/api/v1/data/kline/realtime?symbol=${encodeURIComponent(symbol.id)}&period=${current_period}`;
+                    return `/api/v1/data/kline/realtime?symbol=${encodeURIComponent(current_symbol.id)}&period=${current_period}`;
                 },
                 buildHistoryUrl: function(beforeDate) {
                     // 真实模式：使用标准端点获取历史数据
-                    return `/api/v1/chart/data?symbol=${encodeURIComponent(symbol.id)}&period=${current_period}&count=60&before=${beforeDate}&indicators=all`;
+                    return `/api/v1/chart/data?symbol=${encodeURIComponent(current_symbol.id)}&period=${current_period}&count=60&before=${beforeDate}&indicators=all`;
                 },
             };
         }
@@ -203,49 +206,6 @@ function rebuildLayout() {
         console.error('❌ 找不到k线图容器')
         return
     }
-
-    // 🔧 1. 销毁旧的图表实例
-    if (kline_chart) {
-        try {
-            kline_chart.dispose()
-        } catch(e) {
-            console.warn('销毁k线图失败:', e)
-        }
-        kline_chart = null
-    }
-    if (indicator_chart) {
-        try {
-            indicator_chart.dispose()
-        } catch(e) {
-            console.warn('销毁技术指标图失败:', e)
-        }
-        indicator_chart = null
-    }
-
-    // 🔧 2. 清空全局数据
-     kline_chart = null
-     indicator_chart = null
-     dataZoomChart = null
-     allKlineData = []  // 所有K线数据
-     allEvents = []      // 所有事件数据
-     allIndicatorsData = {}  // 所有技术指标数据（后端API计算）
-     isLoadingNewStock = false  // 标记是否正在加载新股票（需要复位 dataZoom）
-     realtimeKlineTimer = null
-     currentRealtimeKline = null
-     mock_trading_phase = 'TRADING'  // 模拟控制：BEFORE_OPEN, TRADING, AFTER_CLOSE外部传入，不由kline_chart.js内部管理
-
-    // 无限滚动相关状态
-     isLoadingMore = false  // 加载状态标志
-     hasMoreData = true      // 是否还有更多数据
-     lastLoadPosition = -1   // 上次触发加载的位置（避免重复触发）
-     lastStartValue = -1     // 修复：初始值设为-1（无效值），第一次获取到真实值后才开始比较
-     userIsMoving = false    // 用户是否正在拖动
-     movingResetTimer = null // 拖动重置定时器
-     isAdjustingBySystem = false // 标记系统是否正在自动调整（避免误判为用户拖动）
-     infiniteScrollEnabled = false // 修复：标记是否启用无限滚动（防止首次加载时误触发）
-     initialLoadComplete = false  // 标记初始加载是否完成
-    // 🔧 5. 根据类型重建布局
-        // 指数：单列布局（只有图表）
      container.innerHTML = `
         <div style="display:flex; flex-direction:column;">
                 <!-- 周期切换（仅K线图显示） -->
@@ -288,67 +248,67 @@ function rebuildLayout() {
     if (kline_chart && indicator_chart && dataZoomChart) {
         echarts.connect([kline_chart, indicator_chart, dataZoomChart])
     }
-
-    return {
-        kline: kline_chart,
-        indicator: indicator_chart,
-        dataZoom: dataZoomChart
-    }
+    setTimeout(() => {
+        const charts = getCharts()
+        if (charts.kline)
+            charts.kline.resize()
+        if (charts.indicator)
+            charts.indicator.resize()
+        if (charts.dataZoom)
+            charts.dataZoom.resize()
+    }, 50)
+    // 显示K线相关元素
+    document.getElementById('klineContainer').style.display = 'block'
+    document.getElementById('intradayContainer').style.display = 'none'
 }
 // ==================== 图表渲染函数 ====================
 
 /**
  * 渲染技术指标图
- * @param {Array} data - K线数据
- * @param {Object} klineZoom - K线图的缩放位置
- * @param {string} indicator - 指标类型
  */
-function renderIndicator(data, klineZoom, indicator) {
-    console.log('renderIndicator called with data:', data, 'klineZoom:', klineZoom, 'indicator:', indicator)
-    console.log('📊 renderIndicator - 传入data数量:', data ? data.length : 0)
-    if (!data || !data.length) {
+function renderIndicator() {
+    console.log('renderIndicator called with allKlineData:', allKlineData, 'current_zoom:', current_zoom, 'current_indicator:', current_indicator)
+    console.log('📊 renderIndicator - allKlineData数量:', allKlineData ? allKlineData.length : 0)
+    if (!allKlineData || !allKlineData.length) {
         showEmpty()
         return
     }
-
-    // 💚 关键修复: 先clear()清空所有内容(包括graphic),再重新渲染
+    console.log('📊 renderIndicator - processedData数量:', allIndicatorsData.length)
     if (indicator_chart) {
-        indicator_chart.clear()
-    }
-
-    // 处理日期格式：从后端获取的时间字符串需要还原为Date
-    const indicatorData =toIndicatorData(data)
-
-    console.log('📊 renderIndicator - processedData数量:', indicatorData.length)
-
-    // 🔧 优先使用传入的 klineZoom 参数（确保与K线图完全对齐）
-    if (klineZoom) {
-        // 使用传入的 zoom 参数（来自 renderKline）
-        current_zoom = klineZoom
-        console.log('📊 技术指标使用传入的 dataZoom 位置:', current_zoom)
-    } else {
-        // 降级：尝试从 K 线图获取（用于其他场景，如切换指标）
-        current_zoom = { start: 75, end: 100 }  // 默认值
-        try {
-            if (kline_chart) {
-                const klineOption = kline_chart.getOption()
-                if (klineOption && klineOption.dataZoom && klineOption.dataZoom[0]) {
-                    current_zoom = {
-                        start: klineOption.dataZoom[0].start || 75,
-                        end: klineOption.dataZoom[0].end || 100
+        // 🔧 优先使用传入的 current_zoom 参数（确保与K线图完全对齐）
+        if (current_zoom) {
+            // 使用传入的 zoom 参数（来自 renderKline）
+            console.log('📊 技术指标使用current_zoom位置:', current_zoom)
+        } else {
+            // 降级：尝试从 K 线图获取（用于其他场景，如切换指标）
+            current_zoom = { start: 75, end: 100 }  // 默认值
+            try {
+                if (kline_chart) {
+                    const klineOption = kline_chart.getOption()
+                    if (klineOption && klineOption.dataZoom && klineOption.dataZoom[0]) {
+                        current_zoom = {
+                            start: klineOption.dataZoom[0].start || 75,
+                            end: klineOption.dataZoom[0].end || 100
+                        }
+                        console.log('📊 技术指标从 K 线图读取 dataZoom 位置:', current_zoom)
                     }
-                    console.log('📊 技术指标从 K 线图读取 dataZoom 位置:', current_zoom)
                 }
+            } catch(e) {
+                console.warn('无法获取 K 线图 dataZoom，使用默认值')
             }
-        } catch(e) {
-            console.warn('无法获取 K 线图 dataZoom，使用默认值')
         }
+        indicator_chart.clear()
+        const indicatorOption = getIndicatorOption()
+        console.log('Setting indicator_chart option:', indicatorOption)
+        indicator_chart.setOption(indicatorOption, true)  // 🔧 使用 true 强制清除旧配置
     }
+}
+function getIndicatorOption() {
+    let indicator_option
 
-    let option
-
-    if (indicator === 'VOL') {
-        option = {
+    if (current_indicator === 'VOL') {
+        const displayKlineData = toDisplayKlineData()
+        indicator_option = {
             title: { text: '成交量（Volume）', left: 'center', textStyle: { fontSize: 12 } },
             tooltip: {
                 trigger: 'axis',
@@ -374,7 +334,7 @@ function renderIndicator(data, klineZoom, indicator) {
             grid: { left: '8%', right: '8%', top: '15%', bottom: '15%' },
             xAxis: {
                 type: 'category',
-                data: indicatorData.map(d => d.date),
+                data: displayKlineData.map(d => d.date),
                 axisLabel: {
                     show: true,
                     margin: 12
@@ -403,13 +363,13 @@ function renderIndicator(data, klineZoom, indicator) {
             ],
             series: [{
                 type: 'bar',
-                data: indicatorData.map(d => d.volume),
+                data: displayKlineData.map(d => d.volume),
                 itemStyle: {
                     color: (params) => {
                         // 根据当天涨跌上色（红涨绿跌）
                         const idx = params.dataIndex
-                        if (idx >= indicatorData.length) return '#64748b'
-                        const data = indicatorData[idx]
+                        if (idx >= displayKlineData.length) return '#64748b'
+                        const data = displayKlineData[idx]
                         if (!data || data.close === null || data.open === null) return '#64748b'
                         return data.close >= data.open ? '#ef4444' : '#10b981'
                     }
@@ -417,7 +377,7 @@ function renderIndicator(data, klineZoom, indicator) {
                 barWidth: '60%'
             }]
         }
-    } else if (indicator === 'MACD') {
+    } else if (current_indicator === 'MACD') {
         // 🔧 使用后端计算的MACD数据（中国标准：柱状图×2）
         console.log('🗒️ 切换到MACD指标，当前 allIndicatorsData:', allIndicatorsData)
         console.log('🗒️ allIndicatorsData 的键:', Object.keys(allIndicatorsData))
@@ -430,7 +390,7 @@ function renderIndicator(data, klineZoom, indicator) {
             console.error('   - allIndicatorsData 对象:', allIndicatorsData)
             console.error('   - allIndicatorsData.macd:', allIndicatorsData.macd)
             console.error('   - 可能原因: 后端API未返回 macd 数据或字段名不匹配')
-            option = {
+            indicator_option = {
                 title: { text: 'MACD（数据为空）', left: 'center', textStyle: { fontSize: 12, color: '#ef4444' } },
                 grid: { left: '8%', right: '8%', top: '15%', bottom: '15%' },
                 xAxis: { type: 'category', data: [] },
@@ -445,7 +405,7 @@ function renderIndicator(data, klineZoom, indicator) {
 
             console.log('📊 MACD解析数据 - DIFF:', diff.filter(v => v !== null).length, 'DEA:', dea.filter(v => v !== null).length, 'MACD柱:', macdBar.filter(v => v !== null).length)
 
-            option = {
+            indicator_option = {
             title: {
                 text: 'MACD（指数平滑异同移动平均线）',
                 left: 'center',
@@ -570,13 +530,13 @@ function renderIndicator(data, klineZoom, indicator) {
             ]
         }
     }
-    } else if (indicator === 'RSI') {
+    } else if (current_indicator === 'RSI') {
         // 🔧 使用后端计算的RSI数据（更专业）
         const rsiData = allIndicatorsData.rsi || []
         const dates = rsiData.map(d => d.date)
         const rsi = rsiData.map(d => d.value)
 
-        option = {
+        indicator_option = {
             title: { text: 'RSI（相对强弱指标）', left: 'center', textStyle: { fontSize: 12 } },
             tooltip: {
                 trigger: 'axis',
@@ -662,7 +622,7 @@ function renderIndicator(data, klineZoom, indicator) {
                 }
             ]
         }
-    } else if (indicator === 'KDJ') {
+    } else if (current_indicator === 'KDJ') {
         // 🔧 使用后端计算的KDJ数据（更专业）
         const kdjData = allIndicatorsData.kdj || []
         const dates = kdjData.map(d => d.date)
@@ -677,7 +637,7 @@ function renderIndicator(data, klineZoom, indicator) {
         const yMin = Math.floor(minVal / 10) * 10  // 向下取整到10的倍数
         const yMax = Math.ceil(maxVal / 10) * 10   // 向上取整到10的倍数
 
-        option = {
+        indicator_option = {
             title: {
                 text: 'KDJ（随机指标）',
                 left: 'center',
@@ -774,13 +734,13 @@ function renderIndicator(data, klineZoom, indicator) {
                 }
             ]
         }
-    } else if (indicator === 'OBV') {
+    } else if (current_indicator === 'OBV') {
         // 🔧 使用后端计算的OBV数据（更专业）
         const obvData = allIndicatorsData.obv || []
         const dates = obvData.map(d => d.date)
         const obv = obvData.map(d => d.value)
 
-        option = {
+        indicator_option = {
             title: {
                 text: 'OBV（能量潮指标）',
                 left: 'center',
@@ -859,11 +819,11 @@ function renderIndicator(data, klineZoom, indicator) {
             }]
         }
     } else {
-        option = {
-            title: { text: indicator, left: 'center', textStyle: { fontSize: 12 } },
+        indicator_option = {
+            title: { text: current_indicator, left: 'center', textStyle: { fontSize: 12 } },
             tooltip: { trigger: 'axis' },
             grid: { left: '8%', right: '8%', top: '15%', bottom: '8%' },
-            xAxis: { type:'category', data: indicatorData.map(d=>d.date) },
+            xAxis: { type:'category', data: allIndicatorsData.map(d=>d.date) },
             yAxis: { type:'value' },
             dataZoom: [
                 {
@@ -875,22 +835,18 @@ function renderIndicator(data, klineZoom, indicator) {
                     throttle: 50
                 }
             ],
-            series: [{ type:'line', data: indicatorData.map(d=>d.close), smooth:true, itemStyle:{ color:'#94a3b8' } }]
+            series: [{ type:'line', data: allIndicatorsData.map(d=>d.close), smooth:true, itemStyle:{ color:'#94a3b8' } }]
         }
     }
-    console.log('Setting indicator_chart option:', option)
-    // 💚 图表已经通过 clear() 清空,直接设置新配置
-    if (indicator_chart) {
-        indicator_chart.setOption(option, true)  // 🔧 使用 true 强制清除旧配置
-    }
+    return indicator_option
 }
-
 /**
  * 渲染数据窗口控制条（统一放在页面底部）
- * @param {Array} dates - 日期数组
- * @param {Object} current_zoom - 当前缩放位置 {start, end}
  */
-function renderDataZoom(dates, current_zoom) {
+function renderDataZoom() {
+    const displayKlineData=toDisplayKlineData()
+    const dates = displayKlineData.map(d => d.date)
+    console.log('Processed dates:', dates)
     const option = {
         grid: {
             left: '8%',
@@ -956,9 +912,9 @@ function renderDataZoom(dates, current_zoom) {
     }
     console.log('🎯 数据窗口控制条已渲染，start:', current_zoom.start, 'end:', current_zoom.end)
 }
-function toIndicatorData(data) {
+function toDisplayKlineData() {
         // 处理日期格式：从后端获取的时间字符串需要还原为Date
-    const indicatorData = data.map(d => {
+    const displayKlineData = allKlineData.map(d => {
         let dateStr = d.date
         if (typeof dateStr === 'string') {
             // 使用 AppUtils.extractFromMarketDateTimeStr 正确解析时间字符串为市场时区Date对象
@@ -969,17 +925,14 @@ function toIndicatorData(data) {
         }
         return { ...d, date: dateStr }
     })
-    return indicatorData
+    return displayKlineData
 }
 /**
  * 渲染K线图
- * @param {string} symbol - 股票
- * @param {Array} data - K线数据
- * @param {Array} events - 事件数据
  */
-function renderKline(symbol,data, events) {
-    console.log('renderKline called with data:', data, 'events:', events)
-    if (!data || !data.length) {
+function renderKline() {
+    console.log('renderKline called with allKlineData:', allKlineData, 'allEvents:', allEvents)
+    if (!allKlineData || !allKlineData.length) {
         showEmpty()
         return
     }
@@ -1009,7 +962,7 @@ function renderKline(symbol,data, events) {
     // 如果没有保留的位置（新股票或首次加载），计算默认显示最近60天
     if (!current_zoom) {
         // 🔧 计算显示最近60天的dataZoom范围
-        const totalDays = data.length
+        const totalDays = allKlineData.length
         const displayDays = 60  // 显示最近60天
 
         if (totalDays <= displayDays) {
@@ -1028,19 +981,24 @@ function renderKline(symbol,data, events) {
     if (kline_chart) {
         kline_chart.clear()
     }
-
-
-    const indicatorData=toIndicatorData(data)
-    // 默认显示全部120个周期的数据，但通过dataZoom控制初始视图
-    const displayEvents = events || []
-
-    const ohlc = indicatorData.map(d => [d.open, d.close, d.low, d.high])
-    const dates = indicatorData.map(d => d.date)
-    console.log('📊 renderKline - displayData数量:', indicatorData.length)
-    console.log('Processed dates:', dates)
+    console.log('📊 renderKline - displayData数量:', allIndicatorsData.length)
+    const option =getKlineOption()
+    console.log('Setting kline_chart option:', option)
+    // 💚 使用 true 完全替换配置,确保清除所有旧配置(包括graphic)
+    if (kline_chart) {
+        kline_chart.setOption(option, true)
+    }
+    renderIndicator()
+    renderDataZoom()  // 🔧 渲染数据窗口控制条
+}
+function getKlineOption() {
+    const displayKlineData = toDisplayKlineData()
+    const ohlc = displayKlineData.map(d => [d.open, d.close, d.low, d.high])
     console.log('OHLC data:', ohlc)
-    const option = {
-        title: { text: `${symbol.name || ''} K线图`, left: 'center', textStyle: { fontSize: 14 } },
+    const dates = displayKlineData.map(d => d.date)
+    console.log('Processed dates:', dates)
+    const option ={
+        title: { text: `${current_symbol.name || ''} K线图`, left: 'center', textStyle: { fontSize: 14 } },
         tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
         legend: { data: ['K线', 'MA5', 'MA10', 'MA20'], bottom: 0 },
         grid: { left: '8%', right: '8%', top: '15%', bottom: '12%' },
@@ -1071,7 +1029,7 @@ function renderKline(symbol,data, events) {
                 }
                 // 🔧 暂时隐藏事件标记，让图表更清晰
                 // markPoint: {
-                //     data: (displayEvents||[]).map(e => {
+                //     data: (allEvents||[]).map(e => {
                 //         let evtDate = e.date
                 //         if (typeof evtDate === 'string' && evtDate.includes('GMT')) {
                 //             evtDate = new Date(evtDate).toISOString().split('T')[0]
@@ -1089,7 +1047,7 @@ function renderKline(symbol,data, events) {
             {
                 name:'MA5',
                 type:'line',
-                data: calcMA(indicatorData,5),
+                data: calcMA(allIndicatorsData,5),
                 smooth:true,
                 symbol: 'none',  // 🔧 移除圆点
                 lineStyle:{ opacity:0.6, color:'#f59e0b', width: 1.5 }
@@ -1097,7 +1055,7 @@ function renderKline(symbol,data, events) {
             {
                 name:'MA10',
                 type:'line',
-                data: calcMA(indicatorData,10),
+                data: calcMA(allIndicatorsData,10),
                 smooth:true,
                 symbol: 'none',  // 🔧 移除圆点
                 lineStyle:{ opacity:0.6, color:'#6366f1', width: 1.5 }
@@ -1105,31 +1063,23 @@ function renderKline(symbol,data, events) {
             {
                 name:'MA20',
                 type:'line',
-                data: calcMA(indicatorData,20),
+                data: calcMA(allIndicatorsData,20),
                 smooth:true,
                 symbol: 'none',  // 🔧 移除圆点
                 lineStyle:{ opacity:0.6, color:'#22c55e', width: 1.5 }
             }
         ]
-    }
-    console.log('Setting kline_chart option:', option)
-    // 💚 使用 true 完全替换配置,确保清除所有旧配置(包括graphic)
-    if (kline_chart) {
-        kline_chart.setOption(option, true)
-    }
-    // 🔧 传入 current_zoom 参数，确保对齐
-    renderIndicator(indicatorData, current_zoom, current_indicator)
-    renderDataZoom(dates, current_zoom)  // 🔧 渲染数据窗口控制条
+     }
+     return option
 }
 
 // ==================== 数据更新函数 ====================
 
 /**
  * 加载K线数据（主要数据加载函数）
- * @param {string} symbol - 指数ID
  */
 function loadData() {
-    console.log('🔍 开始加载K线数据:', { symbol, use_mock_mode })
+    console.log('🔍 开始加载K线数据:', { current_symbol, use_mock_mode })
     // 标记为加载新股票（会重置 dataZoom）
     isLoadingNewStock = true
 
@@ -1163,20 +1113,15 @@ function loadData() {
             }
 
             const chartData = result.data || {}
-            const klineData = chartData.kline || []
-            const eventsData = chartData.events || []
-            const indicatorsData = chartData.indicators || {}
+            allKlineData = chartData.kline || []
+            allEvents = chartData.events || []
+            allIndicatorsData = chartData.indicators || {}
 
-            // 更新全局数据
-            allKlineData = klineData
-            allEvents = eventsData
-            allIndicatorsData = indicatorsData
-
-            console.log(`📊 加载完成: ${klineData.length}条K线数据, ${eventsData.length}条事件, 指标类型:`, Object.keys(indicatorsData))
+            console.log(`📊 加载完成: ${allKlineData.length}条K线数据, ${allEvents.length}条事件, 指标类型:`, Object.keys(allIndicatorsData))
 
             // 渲染图表
             if (typeof renderKline === 'function') {
-                renderKline(symbol,klineData, eventsData)
+                renderKline()
 
                 // 标记初始加载完成（启用无限滚动）
                 initialLoadComplete = true
@@ -1197,23 +1142,20 @@ function loadData() {
 /**
  * 仅更新图表数据（不重新渲染，避免视觉跳动）
  * @param {Array} data - K线数据
- * @param {Array} events - 事件数据
  */
-function updateChartData(data, events) {
+function updateChartData() {
     if (!kline_chart) {
         console.error('kline_chart 未初始化')
         return
     }
 
     try {
-        // 处理日期格式：从后端获取的时间字符串需要还原为Date
-        const indicatorData = toIndicatorData(data)
-
-        const displayEvents = events || []
-        const ohlc = indicatorData.map(d => [d.open, d.close, d.low, d.high])
-        const dates = indicatorData.map(d => d.date)
+        const displayEvents = allEvents || []
+        const ohlc = allIndicatorsData.map(d => [d.open, d.close, d.low, d.high])
+        const dates = allIndicatorsData.map(d => d.date)
 
         // 🔧 关键优化：使用 lazyUpdate: true 延迟更新，不立即重绘
+
         kline_chart.setOption({
             xAxis: { data: dates },
             series: [
@@ -1237,14 +1179,14 @@ function updateChartData(data, events) {
                     //     })
                     // }
                 },
-                { name: 'MA5', data: calcMA(indicatorData, 5) },
-                { name: 'MA10', data: calcMA(indicatorData, 10) },
-                { name: 'MA20', data: calcMA(indicatorData, 20) }
+                { name: 'MA5', data: calcMA(allIndicatorsData, 5) },
+                { name: 'MA10', data: calcMA(allIndicatorsData, 10) },
+                { name: 'MA20', data: calcMA(allIndicatorsData, 20) }
             ]
         }, { notMerge: false, lazyUpdate: true })  // 🔧 lazyUpdate: true 延迟更新
 
         // 同步更新指标图
-        updateIndicatorData(indicatorData)
+        updateIndicatorData()
 
         // 🔧 同步更新数据窗口控制条的 xAxis 数据
         if (dataZoomChart) {
@@ -1253,7 +1195,7 @@ function updateChartData(data, events) {
             }, { notMerge: false, lazyUpdate: true })
         }
 
-        console.log('🔄 已更新图表数据（延迟重绘），总计', indicatorData.length, '条')
+        console.log('🔄 已更新图表数据（延迟重绘），总计', allIndicatorsData.length, '条')
     } catch(e) {
         console.error('更新图表数据失败:', e)
     }
@@ -1261,22 +1203,21 @@ function updateChartData(data, events) {
 
 /**
  * 仅更新指标图数据
- * @param {Array} indicatorData - 处理后的K线数据（仅用于 VOL）
  */
-function updateIndicatorData(indicatorData) {
+function updateIndicatorData() {
     if (!indicator_chart) {
         console.error('indicator_chart 未初始化')
         return
     }
-
+    const displayKlineData = toDisplayKlineData()
     try {
-        const dates = indicatorData.map(d => d.date)
+        const dates = displayKlineData.map(d => d.date)
 
         if (current_indicator === 'VOL') {
             indicator_chart.setOption({
                 xAxis: { data: dates },
                 series: [{
-                    data: indicatorData.map(d => d.volume),
+                    data: displayKlineData.map(d => d.volume),
                     itemStyle: {
                         color: (params) => {
                             // 根据当天涨跌上色（红涨绿跌）
@@ -1427,10 +1368,9 @@ function adjustDataZoomAfterPrepend(oldLength, prependLength) {
 /**
  * 加载更多历史数据（真实API版本）
  * @param {Function} callback - 回调函数(success)
- * @param {string} symbol - 指数ID
  */
-function loadMoreHistoryData(callback, symbol) {
-    console.log('开始加载更多历史数据...', {symbol, use_mock_mode})
+function loadMoreHistoryData(callback) {
+    console.log('开始加载更多历史数据...', {current_symbol, use_mock_mode})
 
     // 检查是否有当前数据
     if (!allKlineData || allKlineData.length === 0) {
@@ -1540,7 +1480,7 @@ function loadMoreHistoryData(callback, symbol) {
  * 获取实时K线数据（Mock和真实使用相同机制）
  */
 function fetchRealtimeKline() {
-    if (!symbol) return
+    if (!current_symbol) return
 
     // 🔧 使用getModeConfig构建实时K线URL
     const modeConfig = getModeConfig(false);
@@ -1584,7 +1524,7 @@ function fetchRealtimeKline() {
  */
 function updateRealtimeKlineOnChart(realtimeData) {
     if (!allKlineData || !allKlineData.length) return
-
+    if (realtimeData.trading_phase !== 'TRADING') return
     // 🔧 验证实时数据的完整性
     if (!realtimeData.date) {
         console.error('❌ 实时K线数据缺少date字段:', realtimeData)
@@ -1679,13 +1619,53 @@ function showLoading(show=true, text='加载中...') {
 }
 
 function clearChart(){
-        // 显示K线相关元素
-        document.getElementById('klineContainer').style.display = 'block'
-        document.getElementById('intradayContainer').style.display = 'none'
+        // 🔧清空全局数据
+         kline_chart = null
+         indicator_chart = null
+         dataZoomChart = null
+         allKlineData = []  // 所有K线数据
+         allEvents = []      // 所有事件数据
+         allIndicatorsData = {}  // 所有技术指标数据（后端API计算）
+         isLoadingNewStock = false  // 标记是否正在加载新股票（需要复位 dataZoom）
+         realtimeKlineTimer = null
+         currentRealtimeKline = null
+         mock_trading_phase = 'TRADING'  // 模拟控制：BEFORE_OPEN, TRADING, AFTER_CLOSE外部传入，不由kline_chart.js内部管理
+         current_period = 'daily' // 当前周期（内部状态）
+         current_indicator = 'VOL' // 当前指标（内部状态）
+         current_market_code = 'CN'// 当前市场（内部状态）
+         current_zoom = null// 当前缩放（内部状态）
+         current_symbol = null// 当前股票（内部状态）
+        // 无限滚动相关状态
+         isLoadingMore = false  // 加载状态标志
+         hasMoreData = true      // 是否还有更多数据
+         lastLoadPosition = -1   // 上次触发加载的位置（避免重复触发）
+         lastStartValue = -1     // 修复：初始值设为-1（无效值），第一次获取到真实值后才开始比较
+         userIsMoving = false    // 用户是否正在拖动
+         movingResetTimer = null // 拖动重置定时器
+         isAdjustingBySystem = false // 标记系统是否正在自动调整（避免误判为用户拖动）
+         infiniteScrollEnabled = false // 修复：标记是否启用无限滚动（防止首次加载时误触发）
+         initialLoadComplete = false  // 标记初始加载是否完成
         // 🔧 停止分时图更新（使用独立模块）
         if (realtimeKlineTimer) {
             clearInterval(realtimeKlineTimer)
             realtimeKlineTimer = null
+        }
+        // 🔧 1. 销毁旧的图表实例
+        if (kline_chart) {
+            try {
+                kline_chart.dispose()
+            } catch(e) {
+                console.warn('销毁k线图失败:', e)
+            }
+            kline_chart = null
+        }
+        if (indicator_chart) {
+            try {
+                indicator_chart.dispose()
+            } catch(e) {
+                console.warn('销毁技术指标图失败:', e)
+            }
+            indicator_chart = null
         }
 }
 /**
@@ -1840,7 +1820,7 @@ function startInfiniteScrollDetection() {
                             hasMoreData = false
                             console.log('✅ 已到达最早数据')
                         }
-                    }, symbol)
+                    }, current_symbol)
                 }
             } else {
                 // 🔧 调试日志：输出为什么没有触发加载
@@ -1864,11 +1844,11 @@ function startInfiniteScrollDetection() {
     window.KlineChart = {
         // 只导出data_explorer.html中使用的函数
         setCurrent: function(currentSymbol,marketCode,useMockMode,mockTradingPhase='TRADING')  {
-            symbol = currentSymbol;
+            clearChart();
+            current_symbol = currentSymbol;
             current_market_code = marketCode;
             use_mock_mode=useMockMode;
             mock_trading_phase=mockTradingPhase;
-            clearChart();
             rebuildLayout()
             loadData();
         },
