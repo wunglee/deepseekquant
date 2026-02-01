@@ -47,12 +47,12 @@ class HistoricalDataProvider(Protocol):
     - 为core_bak_refactored/core/data模块集成预留标准接口
     """
     
-    def get_index_prices(self, index_id: str, start_date: pd.Timestamp, end_date: pd.Timestamp) -> pd.DataFrame:
+    def get_index_prices(self, symbol: str, start_date: pd.Timestamp, end_date: pd.Timestamp) -> pd.DataFrame:
         """
         获取指数价格数据
         
         Args:
-            index_id: 指数代码（如'000300.SH'沪深300）
+            symbol: 指数代码（如'000300.SH'沪深300）
             start_date: 开始日期 (pd.Timestamp)
             end_date: 结束日期 (pd.Timestamp)
         
@@ -61,12 +61,12 @@ class HistoricalDataProvider(Protocol):
         """
         ...
     
-    def get_index_returns(self, index_id: str, start_date: pd.Timestamp, end_date: pd.Timestamp) -> pd.Series:
+    def get_index_returns(self, symbol: str, start_date: pd.Timestamp, end_date: pd.Timestamp) -> pd.Series:
         """
         获取指数收益率序列
         
         Args:
-            index_id: 指数代码
+            symbol: 指数代码
             start_date: 开始日期 (pd.Timestamp)
             end_date: 结束日期 (pd.Timestamp)
         

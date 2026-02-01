@@ -37,7 +37,7 @@ class DataUtilsTest(unittest.TestCase):
         provider = MockHistoricalDataProvider()
         event = EventConfig(
             event_id='unit_test_event',
-            index_id='000300.SH',
+            symbol='000300.SH',
             event_date='2015-06-15',
             event_type='market_crash',
             expected_decline=-0.3,

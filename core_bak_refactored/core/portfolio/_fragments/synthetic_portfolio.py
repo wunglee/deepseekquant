@@ -15,7 +15,7 @@ class SyntheticPortfolio:
     """
     portfolio_id: str
     name: str
-    composition: Dict[str, float]  # {index_id: weight}
+    composition: Dict[str, float]  # {symbol: weight}
     total_value: float = 1000000.0  # baseline 1,000,000
     metadata: Dict[str, Any] = field(default_factory=dict)
 

@@ -437,8 +437,8 @@ class QualityMonitoringService:
             logger.info("开始监控检查周期")
             
             # 使用真实数据提供者获取数据（禁止模拟数据）
-            index_id = self.config_manager.get_provider_config().default_index
-            if not index_id:
+            symbol = self.config_manager.get_provider_config().default_index
+            if not symbol:
                 raise RuntimeError("未配置默认指数代码，禁止使用模拟数据。请在配置中设置 data.default_index")
             
             # 🔧 统一使用 pd.Timestamp，不转换为字符串
@@ -447,7 +447,7 @@ class QualityMonitoringService:
             
             try:
                 # ✅ 直接传递 pd.Timestamp 对象，不转换为字符串
-                price_data = self.data_provider.get_index_prices(index_id, start_date, end_date, pd.Timestamp.now())
+                price_data = self.data_provider.get_index_prices(symbol, start_date, end_date, pd.Timestamp.now())
                 # 🔧 关键修复：将 PriceData 对象转换为 DataFrame
                 if hasattr(price_data, 'to_dataframe'):
                     data = price_data.to_dataframe()
@@ -469,7 +469,7 @@ class QualityMonitoringService:
             # 1. 执行质量检查
             quality_report = self.quality_checker.check_quality(
                 data=data,
-                index_id=index_id,  # 从配置获取默认指数
+                symbol=symbol,  # 从配置获取默认指数
                 expected_days=100
             )
             
@@ -505,7 +505,7 @@ class QualityMonitoringService:
                     metadata={
                         'quality_score': quality_report.overall_score,
                         'issues': quality_report.issues,
-                        'index_id': '000300.SH'
+                        'symbol': '000300.SH'
                     },
                     dedup_key=f"quality_{pd.Timestamp.now().strftime('%Y%m%d%H')}"
                 )

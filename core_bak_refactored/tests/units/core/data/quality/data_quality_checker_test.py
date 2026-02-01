@@ -28,7 +28,7 @@ class TestDataQualityChecker:
             'volume': [1000000] * 100
         })
         
-        report = checker.check_quality(data, index_id='000300.SH', expected_days=100)
+        report = checker.check_quality(data, symbol='000300.SH', expected_days=100)
         
         assert report.overall_score >= 0.9
         assert report.passed == True
@@ -46,7 +46,7 @@ class TestDataQualityChecker:
             'volume': [1000000] * 80
         })
         
-        report = checker.check_quality(data, index_id='000300.SH', expected_days=100)
+        report = checker.check_quality(data, symbol='000300.SH', expected_days=100)
         
         assert report.completeness_score == 0.9  # 80/100 = 0.8, 但质量算法有容错机制，实际返回0.9
         assert '数据不完整' in ' '.join(report.issues)
@@ -61,7 +61,7 @@ class TestDataQualityChecker:
             'volume': [1000000] * 100
         })
         
-        report = checker.check_quality(data, index_id='000300.SH')
+        report = checker.check_quality(data, symbol='000300.SH')
         
         # continuity_score在metadata中
         assert report.metadata['continuity_score'] < 0.9
@@ -81,7 +81,7 @@ class TestDataQualityChecker:
             'volume': [1000000] * 100
         })
         
-        report = checker.check_quality(data, index_id='000300.SH')
+        report = checker.check_quality(data, symbol='000300.SH')
         
         # accuracy_score对应原来的reasonableness
         assert report.accuracy_score <= 0.9  # 0.9也算合格
@@ -212,7 +212,7 @@ class TestDataQualityChecker:
             'volume': [1000000] * 100
         })
         
-        report_cn = checker.check_quality(data_cn, index_id='000300.SH', market='CN')
+        report_cn = checker.check_quality(data_cn, symbol='000300.SH', market='CN')
         assert report_cn.accuracy_score >= 0.9
         
         # US市场：20%熔断阈值
@@ -226,7 +226,7 @@ class TestDataQualityChecker:
             'volume': [1000000] * 100
         })
         
-        report_us = checker.check_quality(data_us, index_id='SPY', market='US')
+        report_us = checker.check_quality(data_us, symbol='SPY', market='US')
         assert report_us.accuracy_score >= 0.9
     
     def test_market_specific_gap_threshold(self):
@@ -244,7 +244,7 @@ class TestDataQualityChecker:
             'volume': [1000000] * 10
         })
         
-        report_cn = checker.check_quality(data_cn, index_id='000300.SH', market='CN')
+        report_cn = checker.check_quality(data_cn, symbol='000300.SH', market='CN')
         # 7天间隔在CN市场应通过（阈值=7）
         assert '异常时间间隔' not in ' '.join(report_cn.issues)
     
@@ -286,11 +286,11 @@ class TestDataQualityChecker:
         })
         
         # 检查两次
-        checker.check_quality(data1, index_id='000300.SH')
-        checker.check_quality(data2, index_id='000016.SH')
+        checker.check_quality(data1, symbol='000300.SH')
+        checker.check_quality(data2, symbol='000016.SH')
         
         history = checker.get_check_history()
         
         assert len(history) >= 2
-        assert history[-2].metadata['index_id'] == '000300.SH'
-        assert history[-1].metadata['index_id'] == '000016.SH'
+        assert history[-2].metadata['symbol'] == '000300.SH'
+        assert history[-1].metadata['symbol'] == '000016.SH'

@@ -167,7 +167,7 @@ class DatabaseService:
     
     def get_cached_data(
         self,
-        index_id: str,
+        symbol: str,
         start_date: pd.Timestamp,
         end_date: pd.Timestamp,
         source: str = None
@@ -176,7 +176,7 @@ class DatabaseService:
         从缓存获取数据
         
         Args:
-            index_id: 指数代码
+            symbol: 指数代码
             start_date: 开始日期 (pd.Timestamp)
             end_date: 结束日期 (pd.Timestamp)
             source: 数据源
@@ -191,23 +191,23 @@ class DatabaseService:
             start_time = pd.Timestamp.now()
             
             # 查询数据
-            df = self.repository.query_prices(index_id, start_date, end_date)
+            df = self.repository.query_prices(symbol, start_date, end_date)
             
             # 性能监控
             if self.monitoring_enabled:
                 elapsed = (pd.Timestamp.now() - start_time).total_seconds() * 1000
                 if elapsed > self.slow_query_threshold:
                     logger.warning(
-                        f"慢查询: {index_id} {start_date}~{end_date} "
+                        f"慢查询: {symbol} {start_date}~{end_date} "
                         f"耗时 {elapsed:.0f}ms"
                     )
             
             if df.empty:
-                logger.debug(f"缓存未命中: {index_id}")
+                logger.debug(f"缓存未命中: {symbol}")
                 return None
             
             logger.info(
-                f"缓存命中: {index_id} 返回 {len(df)} 条数据 "
+                f"缓存命中: {symbol} 返回 {len(df)} 条数据 "
                 f"({df['date'].min()} ~ {df['date'].max()})"
             )
             return df
@@ -218,7 +218,7 @@ class DatabaseService:
     
     def cache_data(
         self,
-        index_id: str,
+        symbol: str,
         data: pd.DataFrame,
         source: str
     ) -> bool:
@@ -226,7 +226,7 @@ class DatabaseService:
         缓存数据到数据库
         
         Args:
-            index_id: 指数代码
+            symbol: 指数代码
             data: 价格数据
             source: 数据源
         
@@ -240,13 +240,13 @@ class DatabaseService:
             start_time = pd.Timestamp.now()
             
             # 插入数据
-            row_count = self.repository.insert_prices(index_id, data, source)
+            row_count = self.repository.insert_prices(symbol, data, source)
             
             # 性能监控
             if self.monitoring_enabled:
                 elapsed = (pd.Timestamp.now() - start_time).total_seconds() * 1000
                 logger.info(
-                    f"数据已缓存: {index_id} 插入 {row_count} 条 "
+                    f"数据已缓存: {symbol} 插入 {row_count} 条 "
                     f"耗时 {elapsed:.0f}ms"
                 )
             
@@ -258,14 +258,14 @@ class DatabaseService:
     
     def get_incremental_update_params(
         self,
-        index_id: str,
+        symbol: str,
         requested_count: int
     ) -> Dict[str, Any]:
         """
         计算增量更新参数
         
         Args:
-            index_id: 指数代码
+            symbol: 指数代码
             requested_count: 请求的数据条数
         
         Returns:
@@ -283,7 +283,7 @@ class DatabaseService:
         
         try:
             # 检查本地数据
-            latest_date = self.repository.get_latest_date(index_id)
+            latest_date = self.repository.get_latest_date(symbol)
             
             if not latest_date:
                 # 没有本地数据,需要全量获取
@@ -350,7 +350,7 @@ class DatabaseService:
             
             # 索引数量
             result = self.database.fetch_one(
-                "SELECT COUNT(DISTINCT index_id) as count FROM index_prices"
+                "SELECT COUNT(DISTINCT symbol) as count FROM index_prices"
             )
             index_count = result['count'] if result else 0
             

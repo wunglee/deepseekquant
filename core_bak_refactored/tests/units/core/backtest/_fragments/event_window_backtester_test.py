@@ -43,12 +43,12 @@ class EventWindowBacktesterEnhancedInterfaceTest(unittest.TestCase):
 
     def test_backtester_with_datetime_parameters(self):
         class TestDataProvider(MockHistoricalDataProvider):
-            def get_index_prices(self, index_id: str, start_date, end_date):
+            def get_index_prices(self, symbol: str, start_date, end_date):
                 if isinstance(start_date, datetime):
                     start_date = start_date.strftime('%Y-%m-%d')
                 if isinstance(end_date, datetime):
                     end_date = end_date.strftime('%Y-%m-%d')
-                return super().get_index_prices(index_id, start_date, end_date)
+                return super().get_index_prices(symbol, start_date, end_date)
         
         provider = TestDataProvider()
         backtester = EventWindowBacktester(data_provider=provider)

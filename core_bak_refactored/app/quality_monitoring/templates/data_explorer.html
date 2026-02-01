@@ -264,7 +264,7 @@
  */
 
 // 🔧 删除：currentMarketKey - 前端不再判断市场，完全依赖后端 should_poll
-let currentIndex = null
+let currentSymbol = null
 let currentChartType = 'intraday'  // 🔧 修改：默认为分时图
 let globalDataMode = 'real'  // 'mock' 或 'real'，全局数据模式
 let mockTradingPhase = 'TRADING'  // 模拟控制：BEFORE_OPEN, TRADING, AFTER_CLOSE外部传入，
@@ -453,7 +453,7 @@ function buildIndexList(indices) {
         delBtn.onclick = (e) => {
             e.stopPropagation()
             row.remove()
-            if (currentIndex && currentIndex.id === item.id) {
+            if (currentSymbol && currentSymbol.id === item.id) {
                 const remaining = list.querySelectorAll('.list-item')
                 if (remaining.length) remaining[0].click()
                 else {
@@ -473,7 +473,7 @@ function buildIndexList(indices) {
 }
 
 function selectIndex(item) {
-    currentIndex = item
+    currentSymbol = item
     reload()
 }
 
@@ -527,18 +527,16 @@ function switchMode(mode, element) {
 }
 
 function reload(){
-    if (currentIndex && currentChartType === 'intraday') {
+    if (currentSymbol && currentChartType === 'intraday') {
         if (window.IntradayChart) {
-            const isIndex = currentIndex.type === 'index'
-            const isStock = !isIndex
-            window.IntradayChart.setCurrent(currentIndex.id,isStock,currentMarketCode, globalDataMode==='mock',mockTradingPhase)
+            window.IntradayChart.setCurrent(currentSymbol,currentSymbol.type !== 'index',currentMarketCode, globalDataMode==='mock',mockTradingPhase)
         } else {
             console.warn('⚠️ IntradayChart 未加载，跳过分时图重建和数据加载')
         }
-    } else if (currentIndex && currentChartType === 'kline') {
+    } else if (currentSymbol && currentChartType === 'kline') {
         if (window.KlineChart) {
             // 如果当前是K线图，也需要重新加载数据以应用新模式
-            window.KlineChart.setCurrent(currentIndex.id,currentMarketCode,globalDataMode==='mock',mockTradingPhase)
+            window.KlineChart.setCurrent(currentSymbol,currentMarketCode,globalDataMode==='mock',mockTradingPhase)
         }else {
             console.warn('⚠️ KlineChart 未加载，跳过k线图重建和数据加载')
         }
@@ -621,7 +619,7 @@ document.getElementById('indexAddButton').onclick = () => {
         delBtn.onclick = (e) => {
             e.stopPropagation()
             row.remove()
-            if (currentIndex && currentIndex.id === id) {
+            if (currentSymbol && currentSymbol.id === id) {
                 const remaining = list.querySelectorAll('.list-item')
                 if (remaining.length) remaining[0].click()
                 else {

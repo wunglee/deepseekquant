@@ -14,14 +14,14 @@ from core_bak_refactored.core.data.quality.quality_types import DataQualityRepor
 
 
 def check_dataframe_quality(df: pd.DataFrame,
-                           index_id: str = 'unknown',
+                           symbol: str = 'unknown',
                            expected_days: int = None,
                            market: str = None) -> DataQualityReport:
     """检查DataFrame的数据质量
     
     Args:
         df: 包含date, close, volume列的DataFrame
-        index_id: 指数代码
+        symbol: 指数代码
         expected_days: 期望天数
         market: 市场代码
         
@@ -29,7 +29,7 @@ def check_dataframe_quality(df: pd.DataFrame,
         数据质量报告
     """
     checker = DataQualityChecker()
-    return checker.check_quality(df, index_id, expected_days, market)
+    return checker.check_quality(df, symbol, expected_days, market)
 
 
 def get_quality_summary(reports: List[DataQualityReport]) -> Dict[str, Any]:

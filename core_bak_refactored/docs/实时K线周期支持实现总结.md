@@ -86,19 +86,19 @@ def get_realtime_kline():
     - 周线/月线：返回合并后的周期K柱（如果当天不是新周/新月，则合并到最后一个周期）
     
     参数：
-        index_id: 证券代码（必需）
+        symbol: 证券代码（必需）
         period: 周期（daily/weekly/monthly，默认 daily）
     """
-    index_id = request.args.get('index_id', type=str)
+    symbol = request.args.get('symbol', type=str)
     period = request.args.get('period', default='daily', type=str)  # 🆕 新增
 
     # 步骤1: 获取实时K线数据（日线维度）
-    realtime_kline = provider._get_today_k_column(symbol=index_id)
+    realtime_kline = provider._get_today_k_column(symbol=symbol)
 
     # 步骤2: 如果是周线/月线，需要合并到历史数据
     if period in ['weekly', 'monthly']:
         # 2.1 获取最后一个周期的历史数据
-        price_data = provider.get_index_prices(index_id, start_date, end_date, current_time, period)
+        price_data = provider.get_index_prices(symbol, start_date, end_date, current_time, period)
 
         # 2.2 调用合并逻辑
         merged_price_data = provider.merge_realtime_kline_to_period(
@@ -132,11 +132,11 @@ def get_realtime_kline():
 
 **关键改动**：
 ```python
-def assemble_chart_data(self, index_id, period, count, before, indicators, current_time):
+def assemble_chart_data(self, symbol, period, count, before, indicators, current_time):
     """组装完整的图表数据"""
     
     # 1. 获取K线数据
-    price_data_full = self._fetch_kline_data(index_id, period, count + warmup_count, before, current_time)
+    price_data_full = self._fetch_kline_data(symbol, period, count + warmup_count, before, current_time)
     
     # 🆕 2. 在交易时段，需要排除最后一个周期K柱（留给实时数据）
     exclude_last_bar = price_data_full.needs_realtime_kline
@@ -214,7 +214,7 @@ def merge_realtime_kline_to_period(self, price_data, realtime_kline, period, cur
 function fetchRealtimeKline() {
     const indexId = currentIndex.id
     // 🆕 传递period参数给后端
-    const url = `/api/v1/data/kline/realtime?index_id=${indexId}&period=${currentPeriod}`
+    const url = `/api/v1/data/kline/realtime?symbol=${indexId}&period=${currentPeriod}`
     
     fetch(url)
         .then(r => r.json())

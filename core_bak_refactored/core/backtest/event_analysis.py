@@ -29,7 +29,7 @@ class EventConfig:
     用于事件驱动分析（Event Study方法），定义事件窗口和预期效应
     """
     event_id: str
-    index_id: str
+    symbol: str
     event_date: str
     event_type: str
     expected_decline: float
@@ -72,7 +72,7 @@ class EventAnalyzer:
             >>> provider = MockHistoricalDataProvider()
             >>> event = EventConfig(
             ...     event_id='2020_covid_19',
-            ...     index_id='000300.SH',
+            ...     symbol='000300.SH',
             ...     event_date='2020-02-20',
             ...     event_type='pandemic',
             ...     expected_decline=-0.20,
@@ -84,7 +84,7 @@ class EventAnalyzer:
         """
         try:
             window_data = data_provider.get_event_window_data(
-                index_id=event.index_id,
+                symbol=event.symbol,
                 event_date=event.event_date,
                 window_days=window_days,
                 baseline_days=baseline_days

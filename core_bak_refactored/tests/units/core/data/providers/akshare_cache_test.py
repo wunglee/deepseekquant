@@ -399,7 +399,7 @@ class AKShareCacheIntegrationTest(unittest.TestCase):
         mock_datetime.now.return_value = pd.Timestamp(2020, 1, 20)
         
         # Mock API返回数据（只有从 2020-01-08 开始的数据）
-        def mock_fetch_side_effect(index_id, start, end, period):
+        def mock_fetch_side_effect(symbol, start, end, period):
             start_dt = pd.Timestamp(start)
             end_dt = pd.Timestamp(end)
             
@@ -468,7 +468,7 @@ class AKShareCacheIntegrationTest(unittest.TestCase):
         mock_datetime.now.return_value = pd.Timestamp(2025, 1, 16)
         
         # Mock API返回数据
-        def mock_fetch_side_effect(index_id, start, end, period):
+        def mock_fetch_side_effect(symbol, start, end, period):
             dates = pd.date_range(start, end, freq='D')
             df = pd.DataFrame({
                 'date': dates,

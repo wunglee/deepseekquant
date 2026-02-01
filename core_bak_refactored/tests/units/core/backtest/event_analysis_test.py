@@ -19,7 +19,7 @@ class EventAnalysisTest(unittest.TestCase):
         """测试事件配置创建"""
         event = EventConfig(
             event_id='test_event',
-            index_id='000300.SH',
+            symbol='000300.SH',
             event_date='2020-02-20',
             event_type='market_crash',
             expected_decline=-0.20,
@@ -27,7 +27,7 @@ class EventAnalysisTest(unittest.TestCase):
         )
         
         self.assertEqual(event.event_id, 'test_event')
-        self.assertEqual(event.index_id, '000300.SH')
+        self.assertEqual(event.symbol, '000300.SH')
         self.assertEqual(event.event_date, '2020-02-20')
         self.assertEqual(event.event_type, 'market_crash')
         self.assertEqual(event.expected_decline, -0.20)
@@ -78,7 +78,7 @@ class EventAnalysisTest(unittest.TestCase):
         provider = MockHistoricalDataProvider()
         event = EventConfig(
             event_id='test_event',
-            index_id='000300.SH',
+            symbol='000300.SH',
             event_date='2020-02-20',
             event_type='market_crash',
             expected_decline=-0.20,
@@ -101,7 +101,7 @@ class EventAnalysisTest(unittest.TestCase):
         
         event = EventConfig(
             event_id='test_event',
-            index_id='000300.SH',
+            symbol='000300.SH',
             event_date='2020-02-20',
             event_type='market_crash',
             expected_decline=-0.20,
@@ -122,7 +122,7 @@ class EventAnalysisTest(unittest.TestCase):
         
         event = EventConfig(
             event_id='test_event',
-            index_id='000300.SH',
+            symbol='000300.SH',
             event_date='2020-02-20',
             event_type='market_crash',
             expected_decline=-0.20,
@@ -141,7 +141,7 @@ class EventAnalysisTest(unittest.TestCase):
         provider = MockHistoricalDataProvider()
         event = EventConfig(
             event_id='covid_19_pandemic',
-            index_id='000300.SH',
+            symbol='000300.SH',
             event_date='2020-02-20',
             event_type='pandemic',
             expected_decline=-0.20,

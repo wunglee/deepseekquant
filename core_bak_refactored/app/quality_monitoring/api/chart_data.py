@@ -55,7 +55,7 @@ class ChartDataAssembler:
         self._indicator_service = indicator_service
     
     def assemble_chart_data(self,
-                           index_id: str,
+                           symbol: str,
                            period: str = 'daily',
                            count: int = 120,
                            before: Optional[pd.Timestamp] = None,
@@ -68,7 +68,7 @@ class ChartDataAssembler:
         - 交易时段：除最后一个周期（留给实时数据叠加）
         
         Args:
-            index_id: 股票/指数代码
+            symbol: 股票/指数代码
             period: 周期（daily/weekly/monthly）
             count: 数据条数
             before: 获取此日期之前的数据（pd.Timestamp 类型）
@@ -90,12 +90,12 @@ class ChartDataAssembler:
         try:
             # 🔧 如果没有传入market_local_time，自动获取市场本地时间
             if market_local_time is None:
-                market_local_time = MarketTimeUtils.get_market_time_now(index_id)
+                market_local_time = MarketTimeUtils.get_market_time_now(symbol)
             
             # 确保 market_local_time 带有正确的市场时区
-            market_local_time = MarketTimeUtils.to_market_time_by_symbol(market_local_time, index_id)
+            market_local_time = MarketTimeUtils.to_market_time_by_symbol(market_local_time, symbol)
             
-            logger.info(f"开始组装图表数据: index_id={index_id}, period={period}, count={count}, before={before}")
+            logger.info(f"开始组装图表数据: symbol={symbol}, period={period}, count={count}, before={before}")
             
             # 1. 获取K线数据（🔧 额外获取预热数据用于指标计算，返回 PriceData）
             logger.info("步骤1: 获取K线数据...")
@@ -106,11 +106,11 @@ class ChartDataAssembler:
                 warmup_count = 10  # 周线：10周预热（约2.5个月）
             else:
                 warmup_count = 30  # 日线：30天预热（约1个月）
-            price_data_full = self._fetch_kline_data(index_id, period, count + warmup_count, before, market_local_time)
+            price_data_full = self._fetch_kline_data(symbol, period, count + warmup_count, before, market_local_time)
             
             # 🔧 关键修复：数据为空时直接返回空结果（无限滚动到头）
             if price_data_full is None or price_data_full.count == 0:
-                logger.info(f"⚠️ 无数据：{index_id}，返回空结果（可能是无限滚动到头）")
+                logger.info(f"⚠️ 无数据：{symbol}，返回空结果（可能是无限滚动到头）")
                 return {
                     'kline': [],
                     'indicators': {},
@@ -141,7 +141,7 @@ class ChartDataAssembler:
                         'volume': int(last_record.volume)
                     }
                     # 构建缓存key
-                    cache_key = f"last_period_bar_{index_id}_{period}"
+                    cache_key = f"last_period_bar_{symbol}_{period}"
                     # 存入内存缓存（使用DataProvider的缓存机制）
                     self._data_provider._set_to_memory_cache_obj(cache_key, last_bar_for_cache)
                     logger.info(f"💾 缓存最后一个{period}K柱: date={last_bar_for_cache['date']}, open={last_bar_for_cache['open']:.2f}")
@@ -192,7 +192,7 @@ class ChartDataAssembler:
         
         except Exception as e:
             logger.error(f"组装图表数据失败: {e}", exc_info=True)
-            logger.error(f"  - index_id: {index_id}")
+            logger.error(f"  - symbol: {symbol}")
             logger.error(f"  - period: {period}")
             logger.error(f"  - count: {count}")
             logger.error(f"  - before: {before}")
@@ -202,7 +202,7 @@ class ChartDataAssembler:
             raise RuntimeError(f"图表数据组装失败: {str(e)}") from e
     
     def _fetch_kline_data(self,
-                         index_id: str,
+                         symbol: str,
                          period: str,
                          count: int,
                          before: Optional[pd.Timestamp],
@@ -215,7 +215,7 @@ class ChartDataAssembler:
         3. 外部API → 4-8秒
         
         Args:
-            index_id: 股票/指数代码
+            symbol: 股票/指数代码
             period: 周期
             count: 数据条数
             before: 截止日期（pd.Timestamp 类型）
@@ -226,7 +226,7 @@ class ChartDataAssembler:
         # 🔧 无限滚动处理：根据周期调整 end_date
         if before:
             # 确保 before 带有正确的市场时区
-            before = MarketTimeUtils.to_market_time_by_symbol(before, index_id)
+            before = MarketTimeUtils.to_market_time_by_symbol(before, symbol)
             
             # before 已经是 pd.Timestamp 类型
             if period == 'monthly':
@@ -246,9 +246,9 @@ class ChartDataAssembler:
             logger.info(f"🔄 无限滚动：before={self._format_timestamp_safe(before)}, period={period}, end_date={self._format_timestamp_safe(end_date)}")
         else:
             # 初次加载：end_date = 今天（目标市场本地时间）
-            end_date = MarketTimeUtils.get_market_time_now(index_id)
+            end_date = MarketTimeUtils.get_market_time_now(symbol)
             # 确保 end_date 带有正确的市场时区
-            end_date = MarketTimeUtils.to_market_time_by_symbol(end_date, index_id)
+            end_date = MarketTimeUtils.to_market_time_by_symbol(end_date, symbol)
         
         # 🔧 根据周期调整查询范围，确保获取足够的数据点
         # 💡 关键：akshare等数据源可能限制历史数据范围，需要足够的冗余
@@ -270,13 +270,13 @@ class ChartDataAssembler:
             start_date = end_date - pd.Timedelta(days=days_needed)
         
         # 确保 start_date 带有正确的市场时区
-        start_date = MarketTimeUtils.to_market_time_by_symbol(start_date, index_id)
+        start_date = MarketTimeUtils.to_market_time_by_symbol(start_date, symbol)
         
         # 💚 直接调用 DataProvider，三层缓存已封装在内
         # 🔧 对于不支持直接查询的数据源（如 AKShare），会返回日线数据
         # 🔧 关键修复：传入 pd.Timestamp 类型（UTC时间）
         price_data = self._data_provider.get_index_prices(
-            index_id,
+            symbol,
             start_date,
             end_date,
             market_local_time,
@@ -285,16 +285,16 @@ class ChartDataAssembler:
         
         # 🔧 关键修复：数据为空时直接返回，不抛异常（无限滚动到头是正常情况）
         if price_data is None or price_data.count == 0:
-            logger.info(f"⚠️ 无数据：{index_id}，返回空 PriceData（可能是无限滚动到头）")
+            logger.info(f"⚠️ 无数据：{symbol}，返回空 PriceData（可能是无限滚动到头）")
             # 返回空 PriceData 对象，而非抛异常
             # 🔧 使用目标市场时间
-            market_now = MarketTimeUtils.get_market_time_now(index_id)
+            market_now = MarketTimeUtils.get_market_time_now(symbol)
             # 确保 market_now 带有正确的市场时区
-            market_now = MarketTimeUtils.to_market_time_by_symbol(market_now, index_id)
+            market_now = MarketTimeUtils.to_market_time_by_symbol(market_now, symbol)
             
             return price_data if price_data else PriceData(
                 records=[],
-                symbol=index_id,
+                symbol=symbol,
                 start_date=market_now,
                 end_date=market_now,
                 count=0

@@ -242,7 +242,7 @@ class ChartDataAssemblerIntegrationTest(unittest.TestCase):
     def test_assemble_chart_data_success(self):
         """测试完整数据组装 - 成功场景"""
         result = self.assembler.assemble_chart_data(
-            index_id='000001.SH',
+            symbol='000001.SH',
             period='daily',
             count=120,
             before=None,
@@ -271,7 +271,7 @@ class ChartDataAssemblerIntegrationTest(unittest.TestCase):
     def test_assemble_chart_data_partial_indicators(self):
         """测试部分指标组装"""
         result = self.assembler.assemble_chart_data(
-            index_id='000001.SH',
+            symbol='000001.SH',
             period='daily',
             count=120,
             indicators='macd,rsi'
@@ -422,7 +422,7 @@ class TestPeriodBarCache(unittest.TestCase):
     
     def test_weekly_cache_on_exclude_last_bar(self):
         """测试：周线在交易时段排除最后一个K柱并缓存"""
-        index_id = '000001.SZ'
+        symbol = '000001.SZ'
         period = 'weekly'
         
         records = [
@@ -454,7 +454,7 @@ class TestPeriodBarCache(unittest.TestCase):
         
         price_data = PriceData(
             records=records,
-            symbol=index_id,
+            symbol=symbol,
             start_date=pd.Timestamp('2024-01-08'),
             end_date=pd.Timestamp('2024-01-28'),
             count=3,
@@ -465,7 +465,7 @@ class TestPeriodBarCache(unittest.TestCase):
         self.mock_indicator.calculate = Mock(return_value=({}, {}))
         
         result = self.assembler.assemble_chart_data(
-            index_id=index_id,
+            symbol=symbol,
             period=period,
             count=2,
             before=None,
@@ -473,7 +473,7 @@ class TestPeriodBarCache(unittest.TestCase):
             market_local_time=pd.Timestamp('2024-01-28 10:00:00')
         )
         
-        cache_key = f"last_period_bar_{index_id}_{period}"
+        cache_key = f"last_period_bar_{symbol}_{period}"
         self.assertIn(cache_key, self.cache_dict)
         
         cached_bar = self.cache_dict[cache_key]
@@ -484,10 +484,10 @@ class TestPeriodBarCache(unittest.TestCase):
     
     def test_realtime_kline_use_cache(self):
         """测试：实时K线接口从缓存读取最后一个K柱"""
-        index_id = '000001.SZ'
+        symbol = '000001.SZ'
         period = 'weekly'
         
-        cache_key = f"last_period_bar_{index_id}_{period}"
+        cache_key = f"last_period_bar_{symbol}_{period}"
         cached_bar = {
             'date': '2024-01-22',
             'open': 3100.0,
@@ -504,16 +504,16 @@ class TestPeriodBarCache(unittest.TestCase):
     
     def test_cache_miss_fallback(self):
         """测试：缓存未命中时的fallback机制"""
-        index_id = '000001.SZ'
+        symbol = '000001.SZ'
         period = 'weekly'
-        cache_key = f"last_period_bar_{index_id}_{period}"
+        cache_key = f"last_period_bar_{symbol}_{period}"
         
         cached_value = self._mock_get_cache(cache_key)
         self.assertIsNone(cached_value)
     
     def test_daily_no_cache(self):
         """测试：日线不缓存最后一个K柱"""
-        index_id = '000001.SZ'
+        symbol = '000001.SZ'
         period = 'daily'
         
         records = [
@@ -537,7 +537,7 @@ class TestPeriodBarCache(unittest.TestCase):
         
         price_data = PriceData(
             records=records,
-            symbol=index_id,
+            symbol=symbol,
             start_date=pd.Timestamp('2024-01-26'),
             end_date=pd.Timestamp('2024-01-27'),
             count=2,
@@ -548,7 +548,7 @@ class TestPeriodBarCache(unittest.TestCase):
         self.mock_indicator.calculate = Mock(return_value=({}, {}))
         
         result = self.assembler.assemble_chart_data(
-            index_id=index_id,
+            symbol=symbol,
             period=period,
             count=2,
             before=None,
@@ -556,5 +556,5 @@ class TestPeriodBarCache(unittest.TestCase):
             market_local_time=pd.Timestamp('2024-01-27 10:00:00')
         )
         
-        cache_key = f"last_period_bar_{index_id}_{period}"
+        cache_key = f"last_period_bar_{symbol}_{period}"
         self.assertNotIn(cache_key, self.cache_dict)

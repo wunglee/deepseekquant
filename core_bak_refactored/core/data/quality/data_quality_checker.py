@@ -52,7 +52,7 @@ class DataQualityChecker:
         checker = DataQualityChecker()
         
         # 单源质量检查
-        report = checker.check_quality(data, index_id='000300.SH')
+        report = checker.check_quality(data, symbol='000300.SH')
         if not report.passed:
             logger.warning(f"数据质量问题: {report.issues}")
         
@@ -162,7 +162,7 @@ class DataQualityChecker:
     
     def check_quality(self, 
                      data: pd.DataFrame,
-                     index_id: str = 'unknown',
+                     symbol: str = 'unknown',
                      expected_days: Optional[int] = None,
                      market: Optional[str] = None,
                      enable_advanced_checks: bool = True) -> DataQualityReport:
@@ -171,7 +171,7 @@ class DataQualityChecker:
         
         Args:
             data: 数据DataFrame（必须包含date, close, volume列）
-            index_id: 指数代码（用于日志）
+            symbol: 指数代码（用于日志）
             expected_days: 期望天数（用于完整性检查）
             market: 市场代码（用于差异化阈值）
             enable_advanced_checks: 是否启用增强检查（OHLC验证、时间序列异常检测）
@@ -191,7 +191,7 @@ class DataQualityChecker:
         continuity_score = self._check_continuity(data, issues, market)
         
         # 4. 合理性检查（价格波动、成交量异常）
-        reasonableness_score = self._check_reasonableness(data, index_id, issues, market)
+        reasonableness_score = self._check_reasonableness(data, symbol, issues, market)
         
         # 🔥 5. 时间序列一致性检查（增强功能，可选）
         if enable_advanced_checks:
@@ -225,7 +225,7 @@ class DataQualityChecker:
             missing_values=data.isnull().sum().sum() if not data.empty else 0,
             issues=issues,
             metadata={
-                'index_id': index_id,
+                'symbol': symbol,
                 'rows': len(data),
                 'expected_days': expected_days,
                 'timestamp': pd.Timestamp.now().isoformat(),
@@ -238,7 +238,7 @@ class DataQualityChecker:
         
         self._check_history.append(report)
         
-        logger.info(f"数据质量检查完成: {index_id}, 总分={report.overall_score:.2f}, "
+        logger.info(f"数据质量检查完成: {symbol}, 总分={report.overall_score:.2f}, "
                    f"问题数={len(issues)}, 高级检查={'启用' if enable_advanced_checks else '禁用'}")
         
         return report
@@ -325,7 +325,7 @@ class DataQualityChecker:
         
         return max(0.0, score)
     
-    def _check_reasonableness(self, data: pd.DataFrame, index_id: str, 
+    def _check_reasonableness(self, data: pd.DataFrame, symbol: str,
                             issues: List[str], market: Optional[str] = None) -> float:
         """合理性检查"""
         score = 1.0

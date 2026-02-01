@@ -53,7 +53,7 @@ class TestEventProvider:
         return [
             EventConfig(
                 event_id='2008_financial_crisis',
-                index_id='000300.SH',
+                symbol='000300.SH',
                 event_date='2008-09-15',
                 event_type='market_crash',
                 expected_decline=-0.40,
@@ -61,7 +61,7 @@ class TestEventProvider:
             ),
             EventConfig(
                 event_id='2015_china_market_crash',
-                index_id='000300.SH',
+                symbol='000300.SH',
                 event_date='2015-06-15',
                 event_type='market_crash',
                 expected_decline=-0.43,
@@ -69,7 +69,7 @@ class TestEventProvider:
             ),
             EventConfig(
                 event_id='covid_19_pandemic',
-                index_id='000300.SH',
+                symbol='000300.SH',
                 event_date='2020-02-20',
                 event_type='market_crash',
                 expected_decline=-0.20,
@@ -77,7 +77,7 @@ class TestEventProvider:
             ),
             EventConfig(
                 event_id='2022_russia_ukraine_conflict',
-                index_id='000300.SH',
+                symbol='000300.SH',
                 event_date='2022-02-24',
                 event_type='geopolitical_risk',
                 expected_decline=-0.12,
@@ -85,7 +85,7 @@ class TestEventProvider:
             ),
             EventConfig(
                 event_id='2011_eurozone_debt_crisis',
-                index_id='000300.SH',
+                symbol='000300.SH',
                 event_date='2011-09-01',
                 event_type='sovereign_debt_crisis',
                 expected_decline=-0.25,

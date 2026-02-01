@@ -182,7 +182,7 @@ class FinnhubDataProvider(BaseDataProvider, HistoricalDataProvider):
 
     def get_index_prices(
         self,
-        index_id: str,
+        symbol: str,
         start_date:pd.Timestamp,
         end_date: pd.Timestamp,
         market_local_time: pd.Timestamp,
@@ -192,7 +192,7 @@ class FinnhubDataProvider(BaseDataProvider, HistoricalDataProvider):
         获取指数历史价格数据
         
         Args:
-            index_id: 指数代码
+            symbol: 指数代码
             start_date: 开始日期 pd.Timestamp对象
             end_date: 结束日期 pd.Timestamp对象
             market_local_time: 目标市场当前本地时间（不带时区信息）
@@ -220,9 +220,9 @@ class FinnhubDataProvider(BaseDataProvider, HistoricalDataProvider):
             end_ts = int(end_dt.timestamp())
             
             # 标准化股票代码
-            symbol = self._normalize_symbol(index_id)
+            symbol = self._normalize_symbol(symbol)
             
-            logger.info(f"Fetching Finnhub data for {symbol} ({index_id}) from {start_date} to {end_date}")
+            logger.info(f"Fetching Finnhub data for {symbol} ({symbol}) from {start_date} to {end_date}")
             
             # 速率限制
             self._rate_limit_wait()
@@ -257,7 +257,7 @@ class FinnhubDataProvider(BaseDataProvider, HistoricalDataProvider):
             logger.info(f"Successfully fetched {len(df)} rows for {symbol}")
             
             # 返回PriceData对象
-            price_data = PriceData.from_dataframe(df, index_id)
+            price_data = PriceData.from_dataframe(df, symbol)
             self.set_needs_realtime_kline(price_data, market_local_time)
             return price_data
             
@@ -268,7 +268,7 @@ class FinnhubDataProvider(BaseDataProvider, HistoricalDataProvider):
             # 特殊处理 403 错误 - Finnhub 免费版不支持历史数据
             if '403' in error_msg or "You don't have access" in error_msg:
                 friendly_msg = (
-                    f"Finnhub 免费版不支持历史K线数据 ({index_id})。"
+                    f"Finnhub 免费版不支持历史K线数据 ({symbol})。"
                     "免费账户只能访问实时报价和公司信息。"
                     "如需历史数据，请使用 AKShare 或 Yahoo Finance。"
                 )
@@ -277,16 +277,16 @@ class FinnhubDataProvider(BaseDataProvider, HistoricalDataProvider):
             
             if isinstance(e, ValueError):
                 # 如果已经是ValueError，直接重新抛出
-                logger.error(f"Finnhub获取数据失败 ({index_id}): {e}")
+                logger.error(f"Finnhub获取数据失败 ({symbol}): {e}")
                 raise
             else:
                 # 其他异常包装为ValueError
-                logger.error(f"Finnhub获取数据失败 ({index_id}): {e}")
-                raise ValueError(f"Failed to fetch data for {index_id}: {e}")
+                logger.error(f"Finnhub获取数据失败 ({symbol}): {e}")
+                raise ValueError(f"Failed to fetch data for {symbol}: {e}")
 
     def get_index_returns(
         self,
-        index_id: str,
+        symbol: str,
         start_date:pd.Timestamp,
         end_date: pd.Timestamp
     ) -> pd.Series:
@@ -294,14 +294,14 @@ class FinnhubDataProvider(BaseDataProvider, HistoricalDataProvider):
         获取指数收益率序列
         
         Args:
-            index_id: 指数代码
+            symbol: 指数代码
             start_date: 开始日期
             end_date: 结束日期
         
         Returns:
             Series with date index and return values
         """
-        price_data = self.get_index_prices(index_id, start_date, end_date, MarketTimeUtils.get_market_time_now(index_id))
+        price_data = self.get_index_prices(symbol, start_date, end_date, MarketTimeUtils.get_market_time_now(symbol))
         df = price_data.to_dataframe().set_index('date')
         returns = df['close'].pct_change().dropna()
         return returns

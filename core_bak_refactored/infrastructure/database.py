@@ -288,7 +288,7 @@ class MarketDataRepository:
         # 创建指数价格表
         self.db.execute("""
             CREATE TABLE IF NOT EXISTS index_prices (
-                index_id TEXT NOT NULL,
+                symbol TEXT NOT NULL,
                 date TEXT NOT NULL,
                 open REAL,
                 high REAL,
@@ -297,37 +297,37 @@ class MarketDataRepository:
                 volume REAL,
                 source TEXT,
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (index_id, date)
+                PRIMARY KEY (symbol, date)
             )
         """)
         
         # 创建索引
         self.db.execute("""
             CREATE INDEX IF NOT EXISTS idx_index_date 
-            ON index_prices(index_id, date)
+            ON index_prices(symbol, date)
         """)
         
         # 创建数据源同步记录表
         self.db.execute("""
             CREATE TABLE IF NOT EXISTS sync_records (
-                index_id TEXT NOT NULL,
+                symbol TEXT NOT NULL,
                 source TEXT NOT NULL,
                 last_sync_date TEXT,
                 sync_count INTEGER DEFAULT 0,
                 updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (index_id, source)
+                PRIMARY KEY (symbol, source)
             )
         """)
         
         self.db.commit()
         logger.info("数据表已初始化")
     
-    def get_latest_date(self, index_id: str) -> Optional[pd.Timestamp]:
+    def get_latest_date(self, symbol: str) -> Optional[pd.Timestamp]:
         """
         获取指定指数的最新数据日期
         
         Args:
-            index_id: 指数代码
+            symbol: 指数代码
         
         Returns:
             最新日期（pd.Timestamp）或None
@@ -335,14 +335,14 @@ class MarketDataRepository:
         query = """
             SELECT MAX(date) as latest_date 
             FROM index_prices 
-            WHERE index_id = ?
+            WHERE symbol = ?
         """
-        result = self.db.fetch_one(query, (index_id,))
+        result = self.db.fetch_one(query, (symbol,))
         if result and result['latest_date']:
             return pd.to_datetime(result['latest_date'])
         return None
     
-    def get_date_range(self, index_id: str) -> Optional[Dict[str, pd.Timestamp]]:
+    def get_date_range(self, symbol: str) -> Optional[Dict[str, pd.Timestamp]]:
         """
         获取指定指数的数据日期范围
         
@@ -352,9 +352,9 @@ class MarketDataRepository:
         query = """
             SELECT MIN(date) as start_date, MAX(date) as end_date
             FROM index_prices
-            WHERE index_id = ?
+            WHERE symbol = ?
         """
-        result = self.db.fetch_one(query, (index_id,))
+        result = self.db.fetch_one(query, (symbol,))
         
         if result and result['start_date']:
             return {
@@ -365,7 +365,7 @@ class MarketDataRepository:
     
     def query_prices(
         self,
-        index_id: str,
+        symbol: str,
         start_date: pd.Timestamp,
         end_date: pd.Timestamp
     ) -> pd.DataFrame:
@@ -373,7 +373,7 @@ class MarketDataRepository:
         查询价格数据
         
         Args:
-            index_id: 指数代码
+            symbol: 指数代码
             start_date: 开始日期（pd.Timestamp）
             end_date: 结束日期（pd.Timestamp）
         
@@ -387,13 +387,13 @@ class MarketDataRepository:
         query = """
             SELECT date, open, high, low, close, volume, source
             FROM index_prices
-            WHERE index_id = ? 
+            WHERE symbol = ? 
               AND date >= ? 
               AND date <= ?
             ORDER BY date ASC
         """
         
-        rows = self.db.fetch_all(query, (index_id, start_date_str, end_date_str))
+        rows = self.db.fetch_all(query, (symbol, start_date_str, end_date_str))
         
         if not rows:
             return pd.DataFrame()
@@ -404,7 +404,7 @@ class MarketDataRepository:
     
     def insert_prices(
         self,
-        index_id: str,
+        symbol: str,
         data: pd.DataFrame,
         source: str
     ) -> int:
@@ -412,7 +412,7 @@ class MarketDataRepository:
         插入/更新价格数据
         
         Args:
-            index_id: 指数代码
+            symbol: 指数代码
             data: 价格数据（必须包含 date, close列）
             source: 数据来源
         
@@ -424,7 +424,7 @@ class MarketDataRepository:
         
         # 数据准备
         data = data.copy()
-        data['index_id'] = index_id
+        data['symbol'] = symbol
         data['source'] = source
         
         # 日期格式化
@@ -432,7 +432,7 @@ class MarketDataRepository:
             data['date'] = pd.to_datetime(data['date']).dt.strftime('%Y-%m-%d')
         
         # 只保留数据库表中存在的列（过滤掉计算列如 returns、is_limit等）
-        db_columns = ['index_id', 'date', 'open', 'high', 'low', 'close', 'volume', 'source']
+        db_columns = ['symbol', 'date', 'open', 'high', 'low', 'close', 'volume', 'source']
         available_columns = [col for col in db_columns if col in data.columns]
         data_to_insert = data[available_columns]
         
@@ -445,14 +445,14 @@ class MarketDataRepository:
         
         # 更新同步记录
         latest_date = data['date'].max()
-        self._update_sync_record(index_id, source, latest_date, row_count)
+        self._update_sync_record(symbol, source, latest_date, row_count)
         
-        logger.info(f"插入 {row_count} 条数据: {index_id} from {source}")
+        logger.info(f"插入 {row_count} 条数据: {symbol} from {source}")
         return row_count
     
     def _update_sync_record(
         self,
-        index_id: str,
+        symbol: str,
         source: str,
         last_date: pd.Timestamp,
         count: int
@@ -460,18 +460,18 @@ class MarketDataRepository:
         """更新同步记录"""
         query = """
             INSERT OR REPLACE INTO sync_records 
-            (index_id, source, last_sync_date, sync_count, updated_at)
+            (symbol, source, last_sync_date, sync_count, updated_at)
             VALUES (?, ?, ?, ?, ?)
         """
         self.db.execute(
             query,
-            (index_id, source, last_date.strftime('%Y-%m-%d'), count, pd.Timestamp.now().isoformat())
+            (symbol, source, last_date.strftime('%Y-%m-%d'), count, pd.Timestamp.now().isoformat())
         )
         self.db.commit()
     
     def get_missing_dates(
         self,
-        index_id: str,
+        symbol: str,
         start_date: pd.Timestamp,
         end_date: pd.Timestamp
     ) -> List[pd.Timestamp]:
@@ -479,7 +479,7 @@ class MarketDataRepository:
         获取缺失的日期
         
         Args:
-            index_id: 指数代码
+            symbol: 指数代码
             start_date: 开始日期（pd.Timestamp）
             end_date: 结束日期（pd.Timestamp）
         
@@ -487,7 +487,7 @@ class MarketDataRepository:
             缺失的日期列表（pd.Timestamp）
         """
         # 查询已有数据
-        existing = self.query_prices(index_id, start_date, end_date)
+        existing = self.query_prices(symbol, start_date, end_date)
         
         if existing.empty:
             # 全部缺失

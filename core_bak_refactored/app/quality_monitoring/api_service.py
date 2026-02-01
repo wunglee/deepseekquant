@@ -133,11 +133,11 @@ class DataQualityAPIService:
         self._register_mock_routes()  # 注册Mock端点
         self._setup_socketio_handlers()
 
-    def _create_chart_assembler(self, index_id: str, timeframe: str = 'daily') -> ChartDataAssembler:
+    def _create_chart_assembler(self, symbol: str, timeframe: str = 'daily') -> ChartDataAssembler:
         """动态创建图表数据组装器
         
         Args:
-            index_id: 股票/指数代码
+            symbol: 股票/指数代码
             timeframe: 时间周期
         
         Returns:
@@ -146,12 +146,12 @@ class DataQualityAPIService:
 
         # 1. 使用领域层服务选择数据提供者
         data_provider = self.provider_selector.select_provider_for_symbol(
-            symbol=index_id,
+            symbol=symbol,
             provider_factory=self.provider_factory
         )
 
         # 2. 推断市场（用于创建指标服务）
-        market_code = MarketUtils.infer_market_from_symbol(index_id)
+        market_code = MarketUtils.infer_market_from_symbol(symbol)
         market = market_code.value
 
         # 3. 创建指标服务（根据市场）
@@ -402,7 +402,7 @@ class DataQualityAPIService:
             """获取合并的图表数据（K线+技术指标+事件）【真实数据】
             
             查询参数：
-                - index_id: 股票/指数代码（必需）
+                - symbol: 股票/指数代码（必需）
                 - period: 周期（daily/weekly/monthly，默认 daily）
                 - count: 数据条数（默认 120）
                 - before: 获取此日期之前的数据（YYYY-MM-DD，已获取的K线日期，市场本地时间，可选）
@@ -449,11 +449,11 @@ class DataQualityAPIService:
             """
             try:
                 # 获取查询参数
-                index_id = request.args.get('index_id')
-                if not index_id:
+                symbol = request.args.get('symbol')
+                if not symbol:
                     return jsonify({
                         'status': 'error',
-                        'message': '缺少必需参数: index_id',
+                        'message': '缺少必需参数: symbol',
                         'error_code': 'MISSING_PARAMETER'
                     }), 400
 
@@ -465,7 +465,7 @@ class DataQualityAPIService:
                 before = None
                 if before_str:
                     try:
-                        before=MarketTimeUtils.to_market_time_by_symbol(pd.Timestamp(before_str), index_id)
+                        before=MarketTimeUtils.to_market_time_by_symbol(pd.Timestamp(before_str), symbol)
                     except Exception as e:
                         return jsonify({
                             'status': 'error',
@@ -491,15 +491,15 @@ class DataQualityAPIService:
                     }), 400
 
                 # 使用真实数据源
-                logger.info(f"🎯 使用真实数据源: {index_id}")
-                chart_assembler = self._create_chart_assembler(index_id, timeframe=period)
+                logger.info(f"🎯 使用真实数据源: {symbol}")
+                chart_assembler = self._create_chart_assembler(symbol, timeframe=period)
 
                 # 🔧 关键修复：将UTC时间转换为不带时区的市场本地时间
-                market_local_time = MarketTimeUtils.get_market_time_now(index_id)
+                market_local_time = MarketTimeUtils.get_market_time_now(symbol)
 
                 # 调用组装器
                 chart_data = chart_assembler.assemble_chart_data(
-                    index_id=index_id,
+                    symbol=symbol,
                     period=period,
                     count=count,
                     before=before,
@@ -508,12 +508,12 @@ class DataQualityAPIService:
                 )
 
                 # 使用目标市场时区的时间戳
-                timestamp_with_tz = MarketTimeUtils.get_market_time_now(index_id)
+                timestamp_with_tz = MarketTimeUtils.get_market_time_now(symbol)
                 return jsonify({
                     'status': 'success',
                     'data': chart_data,
                     'metadata': {
-                        'index_id': index_id,
+                        'symbol': symbol,
                         'period': period,
                         'count': len(chart_data.get('kline', [])),
                         'indicators': list(chart_data.get('indicators', {}).keys()),
@@ -1940,10 +1940,10 @@ class DataQualityAPIService:
         def get_index_prices_api():
             """获取指数价格数据（直接来自当前数据提供者）"""
             try:
-                index_id = request.args.get('index_id', type=str)
+                symbol = request.args.get('symbol', type=str)
                 start_date_str = request.args.get('start_date', type=str)
                 end_date_str = request.args.get('end_date', type=str)
-                if not all([index_id, start_date_str, end_date_str]):
+                if not all([symbol, start_date_str, end_date_str]):
                     return jsonify({'status': 'error', 'message': '缺少必要参数', 'error_code': 'MISSING_PARAMS'}), 400
                 # 🔧 统一使用 pd.Timestamp，不使用字符串日期
                 start_date = pd.to_datetime(start_date_str)
@@ -1953,8 +1953,8 @@ class DataQualityAPIService:
                     return jsonify({'status': 'error', 'message': '数据提供者不可用',
                                     'error_code': 'DATA_PROVIDER_UNAVAILABLE'}), 503
                 # 🔧 使用目标市场当前本地时间
-                market_local_time = MarketTimeUtils.get_market_time_now(index_id)
-                df = provider.get_index_prices(index_id, start_date, end_date, market_local_time)
+                market_local_time = MarketTimeUtils.get_market_time_now(symbol)
+                df = provider.get_index_prices(symbol, start_date, end_date, market_local_time)
                 data = df.to_dict(orient='records') if hasattr(df, 'to_dict') else []
                 return jsonify(
                     {'status': 'success', 'data': data, 'count': len(data), 'timestamp': pd.Timestamp.now().isoformat()})
@@ -1966,22 +1966,22 @@ class DataQualityAPIService:
         def get_index_returns_api():
             """获取指数收益率序列（排除异常日）"""
             try:
-                index_id = request.args.get('index_id', type=str)
+                symbol = request.args.get('symbol', type=str)
                 start_date_str = request.args.get('start_date', type=str)
                 end_date_str = request.args.get('end_date', type=str)
-                if not all([index_id, start_date_str, end_date_str]):
+                if not all([symbol, start_date_str, end_date_str]):
                     return jsonify({'status': 'error', 'message': '缺少必要参数', 'error_code': 'MISSING_PARAMS'}), 400
-                start_date =MarketTimeUtils.to_market_time_by_symbol(pd.to_datetime(start_date_str),index_id)
-                end_date = MarketTimeUtils.to_market_time_by_symbol(pd.to_datetime(end_date_str),index_id)
+                start_date =MarketTimeUtils.to_market_time_by_symbol(pd.to_datetime(start_date_str),symbol)
+                end_date = MarketTimeUtils.to_market_time_by_symbol(pd.to_datetime(end_date_str),symbol)
                 provider = getattr(self.quality_monitor, 'data_provider_config', None)
                 if not provider or not hasattr(provider, 'get_index_returns'):
                     return jsonify({'status': 'error', 'message': '数据提供者不可用',
                                     'error_code': 'DATA_PROVIDER_UNAVAILABLE'}), 503
-                series = provider.get_index_returns(index_id, start_date, end_date)
+                series = provider.get_index_returns(symbol, start_date, end_date)
                 data = [{'date': str(idx), 'return': float(val)} for idx, val in
                         (series.items() if hasattr(series, 'items') else [])]
                 # 使用目标市场时区的时间戳
-                timestamp_with_tz = MarketTimeUtils.get_market_time_now(index_id)
+                timestamp_with_tz = MarketTimeUtils.get_market_time_now(symbol)
                 return jsonify(
                     {'status': 'success', 'data': data, 'count': len(data), 'timestamp': timestamp_with_tz.isoformat()})
             except Exception as e:
@@ -1992,12 +1992,12 @@ class DataQualityAPIService:
         def get_event_window_api():
             """获取事件窗口数据（窗口+基准期）"""
             try:
-                index_id = request.args.get('index_id', type=str)
+                symbol = request.args.get('symbol', type=str)
                 event_date = request.args.get('event_date', type=str)
                 event_type = request.args.get('event_type', default='market_crash', type=str)
                 window_days = request.args.get('window_days', type=int)
                 baseline_days = request.args.get('baseline_days', type=int)
-                if not all([index_id, event_date]):
+                if not all([symbol, event_date]):
                     return jsonify({'status': 'error', 'message': '缺少必要参数', 'error_code': 'MISSING_PARAMS'}), 400
 
                 # 检查 quality_monitor 是否存在
@@ -2030,8 +2030,8 @@ class DataQualityAPIService:
                     }), 503
 
                 logger.info(
-                    f"调用 get_event_window_data: index_id={index_id}, event_date={event_date}, event_type={event_type}")
-                result = provider.get_event_window_data(index_id, event_date, event_type, window_days, baseline_days)
+                    f"调用 get_event_window_data: symbol={symbol}, event_date={event_date}, event_type={event_type}")
+                result = provider.get_event_window_data(symbol, event_date, event_type, window_days, baseline_days)
                 # 仅返回统计信息与样本，避免过大payload
                 event_records = result.get('event_window')
                 baseline_records = result.get('baseline')
@@ -2040,7 +2040,7 @@ class DataQualityAPIService:
                 baseline_data = baseline_records.head(200).to_dict(orient='records') if hasattr(baseline_records,
                                                                                                 'to_dict') else []
                 # 使用目标市场时区的时间戳
-                timestamp_with_tz = MarketTimeUtils.get_market_time_now(index_id)
+                timestamp_with_tz = MarketTimeUtils.get_market_time_now(symbol)
                 return jsonify({
                     'status': 'success',
                     'event_window': {'count': len(event_records) if hasattr(event_records, '__len__') else 0,
@@ -2074,16 +2074,16 @@ class DataQualityAPIService:
         @self.app.route('/api/v1/data/kline')
         def get_kline_data():
             try:
-                index_id = request.args.get('index_id', type=str)
+                symbol = request.args.get('symbol', type=str)
                 period = request.args.get('period', default='daily', type=str)
                 count = request.args.get('count', default=30, type=int)
                 before_str = request.args.get('before', type=str)  # 新增：获取此日期之前的数据
                 before = None
                 if before_str:
                     before = pd.Timestamp(before_str)
-                    before = MarketTimeUtils.to_market_time_by_symbol(before,index_id)
+                    before = MarketTimeUtils.to_market_time_by_symbol(before,symbol)
                     
-                if not index_id:
+                if not symbol:
                     return jsonify({'status': 'error', 'message': '缺少index_id', 'error_code': 'MISSING_PARAMS'}), 400
                     
                 # 走真实数据源路径
@@ -2102,13 +2102,13 @@ class DataQualityAPIService:
                         end_date = before
                     else:
                         # 🔧 获取目标市场当前时间
-                        end_date = MarketTimeUtils.get_market_time_now(index_id)
+                        end_date = MarketTimeUtils.get_market_time_now(symbol)
 
                     start_date = end_date - pd.Timedelta(days=days_needed)
                     
                     # ✅ 使用目标市场当前本地时间
-                    market_local_time = MarketTimeUtils.get_market_time_now(index_id)
-                    df = provider.get_index_prices(index_id, start_date, end_date, market_local_time)
+                    market_local_time = MarketTimeUtils.get_market_time_now(symbol)
+                    df = provider.get_index_prices(symbol, start_date, end_date, market_local_time)
                     if hasattr(df, 'empty') and df.empty:
                         # 生产环境：真实数据为空时返回错误
                         return jsonify({'status': 'error', 'message': '无数据', 'error_code': 'NO_DATA'}), 404
@@ -2175,7 +2175,7 @@ class DataQualityAPIService:
                         elif key == 'date' and hasattr(value, 'strftime'):
                             record[key] = value.strftime('%Y-%m-%d')
                 # 使用目标市场时区的时间戳
-                timestamp_with_tz = MarketTimeUtils.get_market_time_now(index_id)
+                timestamp_with_tz = MarketTimeUtils.get_market_time_now(symbol)
                 return jsonify(
                     {'status': 'success', 'data': data, 'period': period, 'count': len(data), 'events': events,
                      'timestamp': timestamp_with_tz.isoformat()})
@@ -2194,7 +2194,7 @@ class DataQualityAPIService:
             - 周线/月线：返回合并后的周期K柱（如果当天不是新周/新月，则合并到最后一个周期）
             
             参数：
-                index_id: 证券代码（必需）
+                symbol: 证券代码（必需）
                 period: 周期（daily/weekly/monthly，默认 daily）
             
             返回：
@@ -2213,24 +2213,24 @@ class DataQualityAPIService:
                 }
             """
             try:
-                index_id = request.args.get('index_id', type=str)
+                symbol = request.args.get('symbol', type=str)
                 period = request.args.get('period', default='daily', type=str)  # 🆕 新增：周期参数
                 
-                if not index_id:
+                if not symbol:
                     return jsonify({'status': 'error', 'message': '缺少index_id', 'error_code': 'MISSING_PARAMS'}), 400
                 
                 if period not in ['daily', 'weekly', 'monthly']:
                     return jsonify({'status': 'error', 'message': f'无效的period: {period}', 'error_code': 'INVALID_PERIOD'}), 400
 
-                provider = getattr(self.quality_monitor, 'data_provider_config', None)
+                provider = getattr(self.quality_monitor, 'data_provider', None)
                 if not provider:
                     return jsonify({'status': 'error', 'message': '数据提供者不可用',
                                     'error_code': 'DATA_PROVIDER_UNAVAILABLE'}), 503
 
                 try:
-                    result = provider.get_realtime_kline(index_id, period, provider)
+                    result = provider.get_realtime_kline(symbol, period, provider)
                     # 使用目标市场时区的时间戳
-                    timestamp_with_tz = MarketTimeUtils.get_market_time_now(index_id)
+                    timestamp_with_tz = MarketTimeUtils.get_market_time_now(symbol)
                     return jsonify({
                         'status': 'success',
                         'data': result,

@@ -69,11 +69,11 @@ class BacktestResult:
 class HistoricalDataProvider(Protocol):
     """历史数据提供者协议（依赖core/data模块）"""
     
-    def get_index_prices(self, index_id: str, start_date: pd.Timestamp, end_date: pd.Timestamp) -> pd.DataFrame:
+    def get_index_prices(self, symbol: str, start_date: pd.Timestamp, end_date: pd.Timestamp) -> pd.DataFrame:
         """获取指数价格数据"""
         ...
 
-    def get_index_returns(self, index_id: str, start_date: pd.Timestamp, end_date: pd.Timestamp)-> pd.DataFrame:
+    def get_index_returns(self, symbol: str, start_date: pd.Timestamp, end_date: pd.Timestamp)-> pd.DataFrame:
         """获取指数收益率序列"""
         ...
 
@@ -82,7 +82,7 @@ class HistoricalDataProvider(Protocol):
         """获取个股价格数据"""
         ...
 
-    def get_volatility_index(self, index_id: str, start_date: pd.Timestamp, end_date: pd.Timestamp)-> Dict[str, Any]:
+    def get_volatility_index(self, symbol: str, start_date: pd.Timestamp, end_date: pd.Timestamp)-> Dict[str, Any]:
         """获取波动率指数（如VIX）"""
         ...
         

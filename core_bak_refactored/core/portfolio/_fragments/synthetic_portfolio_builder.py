@@ -37,7 +37,7 @@ class SyntheticPortfolio:
     """
     portfolio_id: str
     name: str
-    composition: Dict[str, float]  # {index_id/sector: weight}
+    composition: Dict[str, float]  # {symbol/sector: weight}
     total_value: float = 1000000.0  # 100万基准
     metadata: Dict[str, Any] = field(default_factory=dict)
     

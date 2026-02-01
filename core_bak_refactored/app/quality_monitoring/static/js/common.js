@@ -28,7 +28,7 @@ function setActiveNav() {
 }
 
 // ========== ECharts 空状态渲染 ==========
-function showEmptyChart(chart, text = '暂无数据') {
+function showChartEmpty(chart, text = '暂无数据') {
     chart.setOption({
         xAxis: { show: false },
         yAxis: { show: false },
@@ -519,7 +519,7 @@ window.AppUtils = {
     setActiveNav,
     apiRequest,
     showToast,
-    showEmptyChart,
+    showChartEmpty,
     showChartLoading,
     formatDate,
     formatNumber,

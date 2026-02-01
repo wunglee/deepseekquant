@@ -4,7 +4,8 @@
  */
 
 // ==================== IntradayChart 模块对象 ====================
-window.IntradayChart = (function() {
+// 使用块级作用域避免 IIFE，支持更好的调试体验
+{
     // ==================== 私有状态 ====================
     let intradayPriceChart = null
     let intradayVolumeChart = null
@@ -85,21 +86,20 @@ window.IntradayChart = (function() {
         return tradingTimes
     }
     
-    function initializeIntradayTimeAxis(marketCode) {
-        if (!marketCode) {
+    function initializeIntradayTimeAxis() {
+        if (!current_market_code) {
             console.warn('⚠️ 当前市场代码未设置，无法初始化时间轴')
             return
         }
-        console.log('🔍 initializeIntradayTimeAxis - 当前市场:', marketCode)
+        console.log('🔍 initializeIntradayTimeAxis - 当前市场:', current_market_code)
         // 生成当前市场的完整交易时间轴
-        const timeAxisInfo = getFullTradingTimes(marketCode)
+        const timeAxisInfo = getFullTradingTimes()
         const fullTradingTimes = timeAxisInfo.tradingTimes
-        const lunchBreakRange = timeAxisInfo.lunchBreakRange
         const lunchBreakRange = timeAxisInfo.lunchBreakRange
         console.log('🔍 initializeIntradayTimeAxis - 时间轴长度:', fullTradingTimes.length, '午休范围:', lunchBreakRange)
     
         // 🔧 根据市场配置动态生成半小时时间点
-        const axisLabelConfig = generateTimeAxisLabelConfig(marketCode, fullTradingTimes)
+        const axisLabelConfig = generateTimeAxisLabelConfig(fullTradingTimes)
     
         // 设置图表的基础配置（与具体股票无关的时间轴和分割线）
         const charts = getCharts()
@@ -107,7 +107,7 @@ window.IntradayChart = (function() {
     
         if (charts.price && charts.volume) {
             // 准备基础markLine配置（用于午休分割线等）
-            const markLineData = makeLunchBreakLine(marketCode)
+            const markLineData = makeLunchBreakLine()
             console.log('🔍 initializeIntradayTimeAxis - markLineData:', markLineData)
     
             // 为价格图表设置完整的基础配置
@@ -285,7 +285,7 @@ window.IntradayChart = (function() {
                         };
                     },
                     buildUrl: function(symbol, tickRange) {
-                        let url = `/api/v1/intraday/mock?symbol=${encodeURIComponent(symbol)}&trading_phase=${mock_trading_phase}`;
+                        let url = `/api/v1/intraday/mock?symbol=${encodeURIComponent(symbol.id)}&trading_phase=${mock_trading_phase}`;
     
                         // 🔧 传递last_price（用于保证价格连续性）
                         const intradayData = getData();
@@ -354,7 +354,7 @@ window.IntradayChart = (function() {
                         };
                     },
                     buildUrl: function(symbol, tickRange) {
-                        let url = `/api/v1/intraday/data?symbol=${encodeURIComponent(symbol)}`;
+                        let url = `/api/v1/intraday/data?symbol=${encodeURIComponent(symbol.id)}`;
     
                         if (tickRange) {
                             url += `&tick_range=${encodeURIComponent(JSON.stringify(tickRange))}`;
@@ -368,16 +368,16 @@ window.IntradayChart = (function() {
         }
     }
     
-    function getFullTradingTimesInternal(marketCode) {
+    function getFullTradingTimesInternal() {
        // 优先使用统一的全局配置对象
-        const market = window.marketConfig?.[marketCode.toUpperCase()] ||
-                       window.marketsConfig?.find(m => m.code.toUpperCase() === marketCode.toUpperCase()) ||
+        const market = window.marketConfig?.[current_market_code.toUpperCase()] ||
+                       window.marketsConfig?.find(m => m.code.toUpperCase() === current_market_code.toUpperCase()) ||
                        (window.marketsConfig && typeof window.marketsConfig === 'object' ?
-                        window.marketsConfig[marketCode.toUpperCase()] : null);
+                        window.marketsConfig[current_market_code.toUpperCase()] : null);
     
         if (!market) {
-            console.error(`❌ 未找到市场 ${marketCode} 的配置，无法生成时间轴`)
-            throw new Error(`未找到市场 ${marketCode} 的配置，无法生成时间轴`)
+            console.error(`❌ 未找到市场 ${current_market_code} 的配置，无法生成时间轴`)
+            throw new Error(`未找到市场 ${current_market_code} 的配置，无法生成时间轴`)
         }
         // 检查 window.marketTradingTimes 是否已正确初始化
         if (typeof window.marketTradingTimes === 'undefined') {
@@ -385,8 +385,8 @@ window.IntradayChart = (function() {
         }
     
         // 返回缓存的时间轴（包含午休范围信息）
-        if (window.marketTradingTimes[marketCode]) {
-            return window.marketTradingTimes[marketCode]
+        if (window.marketTradingTimes[current_market_code]) {
+            return window.marketTradingTimes[current_market_code]
         }
     
         // 解构市场配置 - 根据配置格式处理
@@ -396,8 +396,8 @@ window.IntradayChart = (function() {
         const { open, close, lunch_start, lunch_end } = tradingHours;
     
         if (!open || !close) {
-            console.error(`❌ 市场 ${marketCode} 缺少交易时间配置，无法生成时间轴`)
-            throw new Error(`市场 ${marketCode} 缺少交易时间配置，无法生成时间轴`)
+            console.error(`❌ 市场 ${current_market_code} 缺少交易时间配置，无法生成时间轴`)
+            throw new Error(`市场 ${current_market_code} 缺少交易时间配置，无法生成时间轴`)
         }
     
         // 🔧 返回包含午休范围信息的时间轴
@@ -416,13 +416,13 @@ window.IntradayChart = (function() {
         } else {
             result.tradingTimes = generateTradingTimes(result.tradingTimes, start, end)
         }
-        window.marketTradingTimes[marketCode] = result
+        window.marketTradingTimes[current_market_code] = result
         return result
     }
     
-    function makeLunchBreakLine(marketCode) {
+    function makeLunchBreakLine() {
         // 如果有午休时间，则添加午休分割线
-        const upperMarketCode = marketCode?.toUpperCase()
+        const upperMarketCode = current_market_code?.toUpperCase()
         console.log('🔍 makeLunchBreakLine - 当前市场代码:', upperMarketCode)
     
         const market = window.marketConfig[upperMarketCode] || {}
@@ -589,14 +589,13 @@ function showLoading(show) {
 
 /**
  * 根据市场配置动态生成时间轴标签配置
- * @param {string} marketCode - 市场代码
  * @param {Array} fullTradingTimes - 完整的交易时间数组
  * @returns {Object} - ECharts x轴标签配置对象
  */
-function generateTimeAxisLabelConfig(marketCode, fullTradingTimes) {
+function generateTimeAxisLabelConfig(fullTradingTimes) {
     // 获取市场配置
-    const market = window.marketConfig?.[marketCode?.toUpperCase()] ||
-                   window.marketsConfig?.find(m => m.code.toUpperCase() === marketCode?.toUpperCase());
+    const market = window.marketConfig?.[current_market_code?.toUpperCase()] ||
+                   window.marketsConfig?.find(m => m.code.toUpperCase() === current_market_code?.toUpperCase());
 
     const tradingHours = market?.detailed_trading_hours || {};
     const { open, close, lunch_start, lunch_end } = tradingHours;
@@ -737,20 +736,20 @@ function generateTradingTimes(tradingTimes,start,end,stepSeconds = 5) {
 /**
  * 初始化分时图时间轴
  */
-function initializeIntradayTimeAxis(marketCode) {
-    if (!marketCode) {
+function initializeIntradayTimeAxis() {
+    if (!current_market_code) {
         console.warn('⚠️ 当前市场代码未设置，无法初始化时间轴')
         return
     }
-    console.log('🔍 initializeIntradayTimeAxis - 当前市场:', marketCode)
+    console.log('🔍 initializeIntradayTimeAxis - 当前市场:', current_market_code)
     // 生成当前市场的完整交易时间轴
-    const timeAxisInfo = getFullTradingTimes(marketCode)
+    const timeAxisInfo = getFullTradingTimes()
     const fullTradingTimes = timeAxisInfo.tradingTimes
     const lunchBreakRange = timeAxisInfo.lunchBreakRange
     console.log('🔍 initializeIntradayTimeAxis - 时间轴长度:', fullTradingTimes.length, '午休范围:', lunchBreakRange)
 
     // 🔧 根据市场配置动态生成半小时时间点
-    const axisLabelConfig = generateTimeAxisLabelConfig(marketCode, fullTradingTimes)
+    const axisLabelConfig = generateTimeAxisLabelConfig(fullTradingTimes)
 
     // 设置图表的基础配置（与具体股票无关的时间轴和分割线）
     const charts = getCharts()
@@ -758,7 +757,7 @@ function initializeIntradayTimeAxis(marketCode) {
 
     if (charts.price && charts.volume) {
         // 准备基础markLine配置（用于午休分割线等）
-        const markLineData = makeLunchBreakLine(marketCode)
+        const markLineData = makeLunchBreakLine()
         console.log('🔍 initializeIntradayTimeAxis - markLineData:', markLineData)
 
         // 为价格图表设置完整的基础配置
@@ -938,7 +937,7 @@ function getModeConfig(isInitial) {
                     };
                 },
                 buildUrl: function(symbol, tickRange) {
-                    let url = `/api/v1/intraday/mock?symbol=${encodeURIComponent(symbol)}&trading_phase=${mock_trading_phase}`;
+                    let url = `/api/v1/intraday/mock?symbol=${encodeURIComponent(symbol.id)}&trading_phase=${mock_trading_phase}`;
 
                     // 🔧 传递last_price（用于保证价格连续性）
                     const intradayData = getData();
@@ -1008,7 +1007,7 @@ function getModeConfig(isInitial) {
                     };
                 },
                 buildUrl: function(symbol, tickRange) {
-                    let url = `/api/v1/intraday/data?symbol=${encodeURIComponent(symbol)}`;
+                    let url = `/api/v1/intraday/data?symbol=${encodeURIComponent(symbol.id)}`;
 
                     if (tickRange) {
                         url += `&tick_range=${encodeURIComponent(JSON.stringify(tickRange))}`;
@@ -1024,19 +1023,18 @@ function getModeConfig(isInitial) {
 
 /**
  * 根据市场配置生成完整交易时段的时间轴
- * @param {string} marketCode - 市场代码
  * @returns {Object} 包含tradingTimes和lunchBreakRange的对象
  */
-function getFullTradingTimes(marketCode) {
+function getFullTradingTimes() {
    // 优先使用统一的全局配置对象
-    const market = window.marketConfig?.[marketCode.toUpperCase()] ||
-                   window.marketsConfig?.find(m => m.code.toUpperCase() === marketCode.toUpperCase()) ||
+    const market = window.marketConfig?.[current_market_code.toUpperCase()] ||
+                   window.marketsConfig?.find(m => m.code.toUpperCase() === current_market_code.toUpperCase()) ||
                    (window.marketsConfig && typeof window.marketsConfig === 'object' ?
-                    window.marketsConfig[marketCode.toUpperCase()] : null);
+                    window.marketsConfig[current_market_code.toUpperCase()] : null);
 
     if (!market) {
-        console.error(`❌ 未找到市场 ${marketCode} 的配置，无法生成时间轴`)
-        throw new Error(`未找到市场 ${marketCode} 的配置，无法生成时间轴`)
+        console.error(`❌ 未找到市场 ${current_market_code} 的配置，无法生成时间轴`)
+        throw new Error(`未找到市场 ${current_market_code} 的配置，无法生成时间轴`)
     }
     // 检查 window.marketTradingTimes 是否已正确初始化
     if (typeof window.marketTradingTimes === 'undefined') {
@@ -1044,8 +1042,8 @@ function getFullTradingTimes(marketCode) {
     }
 
     // 返回缓存的时间轴（包含午休范围信息）
-    if (window.marketTradingTimes[marketCode]) {
-        return window.marketTradingTimes[marketCode]
+    if (window.marketTradingTimes[current_market_code]) {
+        return window.marketTradingTimes[current_market_code]
     }
 
     // 解构市场配置 - 根据配置格式处理
@@ -1055,8 +1053,8 @@ function getFullTradingTimes(marketCode) {
     const { open, close, lunch_start, lunch_end } = tradingHours;
 
     if (!open || !close) {
-        console.error(`❌ 市场 ${marketCode} 缺少交易时间配置，无法生成时间轴`)
-        throw new Error(`市场 ${marketCode} 缺少交易时间配置，无法生成时间轴`)
+        console.error(`❌ 市场 ${current_market_code} 缺少交易时间配置，无法生成时间轴`)
+        throw new Error(`市场 ${current_market_code} 缺少交易时间配置，无法生成时间轴`)
     }
 
     // 🔧 返回包含午休范围信息的时间轴
@@ -1075,7 +1073,7 @@ function getFullTradingTimes(marketCode) {
     } else {
         result.tradingTimes = generateTradingTimes(result.tradingTimes, start, end)
     }
-    window.marketTradingTimes[marketCode] = result
+    window.marketTradingTimes[current_market_code] = result
     return result
 }
 
@@ -1100,7 +1098,7 @@ function renderCharts(data, marketTimezone) {
     const change = parseFloat(data.change)
     const changePercent = parseFloat(data.change_percent)
 
-    const timeAxisInfo = getFullTradingTimes(current_market_code)
+    const timeAxisInfo = getFullTradingTimes()
     const fullTradingTimes = timeAxisInfo.tradingTimes
     const lunchBreakRange = timeAxisInfo.lunchBreakRange
 
@@ -1230,7 +1228,7 @@ function updateChartsIncremental(newData, marketTimezone) {
 
     // 🔧 生成完整交易时段（与 renderCharts 相同，5秒级别）
     // 🔧 使用统一的 getFullTradingTimes 函数，避免重复逻辑和时间计算错误
-    const timeAxisInfo = getFullTradingTimes(current_market_code) || { tradingTimes: [] }
+    const timeAxisInfo = getFullTradingTimes() || { tradingTimes: [] }
     const fullTradingTimes = timeAxisInfo.tradingTimes
     const lunchBreakRange = timeAxisInfo.lunchBreakRange
 
@@ -1304,9 +1302,9 @@ function updateChartsIncremental(newData, marketTimezone) {
  * 创建午休分割线
  * @returns {Array} markLine数据
  */
-function makeLunchBreakLine(marketCode) {
+function makeLunchBreakLine() {
     // 如果有午休时间，则添加午休分割线
-    const upperMarketCode = marketCode?.toUpperCase()
+    const upperMarketCode = current_market_code?.toUpperCase()
     console.log('🔍 makeLunchBreakLine - 当前市场代码:', upperMarketCode)
 
     const market = window.marketConfig[upperMarketCode] || {}
@@ -1446,11 +1444,6 @@ function clearChart() {
         // 显示分时图相关元素
         document.getElementById('klineContainer').style.display = 'none'
         document.getElementById('intradayContainer').style.display = 'block'
-//        document.getElementById('klineChart').style.display = 'none'
-//        document.querySelector('.indicator-area').style.display = 'none'
-//        document.getElementById('dataZoomContainer').style.display = 'none'
-//        document.getElementById('intradayPhaseSelector').style.display = 'block'
-//        document.getElementById('klinePhaseSelector').style.display = 'none'
         setTimeout(() => {
             const charts = getCharts()
             // 🔧 重要：容器从隐藏变为显示后，需要调用 resize() 重新计算图表尺寸
@@ -1463,7 +1456,6 @@ function clearChart() {
 }
 /**
  * 加载分时图数据
- * @param {string} symbol - 股票代码
  * @param {boolean} isInitial - 是否为首次加载
  */
 function loadData(isInitial = true) {
@@ -1476,7 +1468,7 @@ function loadData(isInitial = true) {
         setRequestTime(0)  // 重置时间
         // 设置初始状态（根据模式）
         modeConfig.setupInitialState();
-        initializeIntradayTimeAxis(current_market_code)
+        initializeIntradayTimeAxis()
     }
     showLoading(true)
     // 🔧 计算 TickRange（时间范围）
@@ -1566,7 +1558,7 @@ function loadData(isInitial = true) {
 
                 if (res.data.should_poll) {
                     const pollInterval = modeConfig.pollInterval;
-                    const newTimer = setInterval(() => {
+                    const newTimer = window.setInterval(() => {
                         loadData(false)
                     }, pollInterval)
                     intradayUpdateTimer = newTimer;
@@ -1624,10 +1616,10 @@ function loadData(isInitial = true) {
 
     
     // ==================== 公共接口 ====================
-    return {
+    window.IntradayChart = {
         // 只导出data_explorer.html中使用的函数
-        setCurrent: function(index,isStock,marketCode,useMockMode,mockTradingPhase='TRADING')  {
-            symbol = index;
+        setCurrent: function(currentSymbol,isStock,marketCode,useMockMode,mockTradingPhase='TRADING')  {
+            symbol = currentSymbol;
             current_market_code = marketCode;
             use_mock_mode=useMockMode;
             mock_trading_phase=mockTradingPhase;
@@ -1636,6 +1628,6 @@ function loadData(isInitial = true) {
             loadData(true);
         }
     };
-})(); // End of IntradayChart module
+} // End of IntradayChart module block
 
 

@@ -23,7 +23,7 @@ def test_check_dataframe_quality():
         'volume': [1000000] * 100
     })
     
-    report = check_dataframe_quality(df, index_id='000300.SH', expected_days=100)
+    report = check_dataframe_quality(df, symbol='000300.SH', expected_days=100)
     
     assert isinstance(report, DataQualityReport)
     assert report.overall_score >= 0.9
@@ -38,7 +38,7 @@ def test_check_dataframe_quality_with_market():
         'volume': [5000000] * 50
     })
     
-    report = check_dataframe_quality(df, index_id='HSI', market='HK')
+    report = check_dataframe_quality(df, symbol='HSI', market='HK')
     
     assert isinstance(report, DataQualityReport)
     assert report.overall_score > 0.0

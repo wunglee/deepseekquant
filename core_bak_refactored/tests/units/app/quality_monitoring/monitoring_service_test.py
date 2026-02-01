@@ -18,8 +18,8 @@ class StubProvider:
         self.last_index_id = None
         self.last_start = None
         self.last_end = None
-    def get_index_prices(self, index_id, start_date, end_date):
-        self.last_index_id = index_id
+    def get_index_prices(self, symbol, start_date, end_date):
+        self.last_index_id = symbol
         self.last_start = start_date
         self.last_end = end_date
         dates = pd.date_range(end=pd.Timestamp.now(), periods=100)

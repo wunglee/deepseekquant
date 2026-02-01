@@ -9,7 +9,7 @@ Provider 基类 - 数据提供者封装
 使用示例:
     provider = AKShareDataProvider()
     price_data = provider.get_index_prices(
-        index_id='000300.SH',
+        symbol='000300.SH',
         start_date='2025-01-01',
         end_date='2025-01-31',
         current_time=pd.Timestamp.now()
@@ -59,7 +59,7 @@ class BaseDataProvider(HistoricalDataProvider):
         self._memory_cache = {}  # 分时数据缓存字典
 
     def _get_with_cache(self,
-                        index_id: str,
+                        symbol: str,
                         start_date: pd.Timestamp,
                         end_date: pd.Timestamp,
                         market_local_time: pd.Timestamp,
@@ -68,7 +68,7 @@ class BaseDataProvider(HistoricalDataProvider):
         带缓存的数据获取（核心方法）
         
         Args:
-            index_id: 指数代码
+            symbol: 指数代码
             start_date: 开始日期 (YYYY-MM-DD)
             end_date: 结束日期 (YYYY-MM-DD)
             market_local_time: 目标市场当前本地时间（必须带市场时区信息）
@@ -77,36 +77,36 @@ class BaseDataProvider(HistoricalDataProvider):
         Returns:
             PriceData 对象
         """
-        logger.debug(f"📋 带缓存查询: {index_id}, {start_date} ~ {end_date}, period={period}")
+        logger.debug(f"📋 带缓存查询: {symbol}, {start_date} ~ {end_date}, period={period}")
 
         # 确保市场本地时间带有正确的时区
-        market_local_time = MarketTimeUtils.to_market_time_by_symbol(market_local_time, index_id)
+        market_local_time = MarketTimeUtils.to_market_time_by_symbol(market_local_time, symbol)
 
         # 使用缓存管理器获取数据（period 是数据的本质属性，必须传给缓存层）
         result_df = self._cache_manager.get_data(
-            symbol=index_id,
+            symbol=symbol,
             from_date=start_date,
             to_date=end_date,
             period=period,  # 数据粒度/K线类型，必须作为缓存键的一部分
             db_fetch_func=None,  # ThreeLayerCacheManager 内部处理数据库缓存
-            api_fetch_func=lambda s, e, period: self._fetch_from_external_api(index_id, s, e, period),
+            api_fetch_func=lambda s, e, period: self._fetch_from_external_api(symbol, s, e, period),
             current_time=market_local_time  # 传递 market_local_time 参数
         )
 
         # 转换为 PriceData
         if result_df is not None and not result_df.empty:
-            price_data = PriceData.from_dataframe(result_df, index_id)
+            price_data = PriceData.from_dataframe(result_df, symbol)
             logger.info(f"✅ 返回数据: {len(result_df)} 条")
         else:
             # 返回空 PriceData
             price_data = PriceData(
                 records=[],
-                symbol=index_id,
+                symbol=symbol,
                 start_date=start_date,
                 end_date=end_date,
                 count=0
             )
-            logger.warning(f"⚠️ 所有缓存都无数据: {index_id} {start_date}~{end_date}")
+            logger.warning(f"⚠️ 所有缓存都无数据: {symbol} {start_date}~{end_date}")
 
         # 设置 needs_realtime_kline 标记
         if price_data and price_data.count > 0:
@@ -115,14 +115,14 @@ class BaseDataProvider(HistoricalDataProvider):
 
         return price_data
 
-    def _fetch_from_external_api(self, index_id: str, start_date: pd.Timestamp, end_date: pd.Timestamp, period: str) -> \
+    def _fetch_from_external_api(self, symbol: str, start_date: pd.Timestamp, end_date: pd.Timestamp, period: str) -> \
     Optional[
         pd.DataFrame]:
         """
         从 API 获取数据（为缓存管理器提供回调）
         
         Args:
-            index_id: 指数代码
+            symbol: 指数代码
             start_date: 开始日期
             end_date: 结束日期
             period: 周期
@@ -132,7 +132,7 @@ class BaseDataProvider(HistoricalDataProvider):
         """
         try:
             # 调用子类实现的 API 获取方法（子类负责周期转换）
-            result = self._fetch_history_kline_from_external_api(index_id, start_date, end_date, period)
+            result = self._fetch_history_kline_from_external_api(symbol, start_date, end_date, period)
 
             # 处理不同类型的返回值（支持 mock 测试）
             if isinstance(result, pd.DataFrame):
@@ -145,7 +145,7 @@ class BaseDataProvider(HistoricalDataProvider):
             else:
                 return None
         except Exception as e:
-            logger.error(f"❌ API查询失败: {index_id} {start_date}~{end_date}, error={e}")
+            logger.error(f"❌ API查询失败: {symbol} {start_date}~{end_date}, error={e}")
 
         return None
 
@@ -282,13 +282,13 @@ class BaseDataProvider(HistoricalDataProvider):
     # 数据获取接口（对外提供，自动使用缓存）
     # ========================================================================
 
-    def get_index_prices(self, index_id: str, start_date: pd.Timestamp, end_date: pd.Timestamp,
+    def get_index_prices(self, symbol: str, start_date: pd.Timestamp, end_date: pd.Timestamp,
                          market_local_time: pd.Timestamp, period: str = 'daily'):
         """
         获取指数价格数据（对外接口，自动使用缓存）
         
         Args:
-            index_id: 指数代码
+            symbol: 指数代码
             start_date: 开始日期 (YYYY-MM-DD)
             end_date: 结束日期 (YYYY-MM-DD)
             market_local_time: 目标市场当前本地时间（必须带市场时区信息）
@@ -297,7 +297,7 @@ class BaseDataProvider(HistoricalDataProvider):
         Returns:
             PriceData: 价格数据对象
         """
-        return self._get_with_cache(index_id, start_date, end_date, market_local_time, period)
+        return self._get_with_cache(symbol, start_date, end_date, market_local_time, period)
 
     def get_stock_prices(self, stock_id: str, start_date: pd.Timestamp, end_date: pd.Timestamp,
                          market_local_time: pd.Timestamp, period: str = 'daily'):
@@ -316,7 +316,7 @@ class BaseDataProvider(HistoricalDataProvider):
         """
         return self._get_with_cache(stock_id, start_date, end_date, market_local_time, period)
 
-    def get_index_returns(self, index_id: str,
+    def get_index_returns(self, symbol: str,
                           start_date: pd.Timestamp,
                           end_date: pd.Timestamp) -> pd.Series:
         """
@@ -327,7 +327,7 @@ class BaseDataProvider(HistoricalDataProvider):
         自动获取当前市场时间并确保时区正确
         
         Args:
-            index_id: 指数代码
+            symbol: 指数代码
             start_date: 开始日期
             end_date: 结束日期
         
@@ -337,10 +337,10 @@ class BaseDataProvider(HistoricalDataProvider):
         # 获取价格数据
         from core_bak_refactored.core.share.market.market_time_utils import MarketTimeUtils
 
-        market_local_time = MarketTimeUtils.get_market_time_now(index_id)
+        market_local_time = MarketTimeUtils.get_market_time_now(symbol)
         # 确保市场本地时间带有正确的时区
-        market_local_time = MarketTimeUtils.to_market_time_by_symbol(market_local_time, index_id)
-        price_data = self.get_index_prices(index_id, start_date, end_date, market_local_time)
+        market_local_time = MarketTimeUtils.to_market_time_by_symbol(market_local_time, symbol)
+        price_data = self.get_index_prices(symbol, start_date, end_date, market_local_time)
 
         if not price_data or price_data.count == 0:
             return pd.Series(dtype=float)
@@ -403,7 +403,7 @@ class BaseDataProvider(HistoricalDataProvider):
             intraday_data = self._build_empty_intraday_data(market_local_time, symbol, trading_phase)
         elif trading_phase == TradingPhase.AFTER_CLOSE:
             last_trade_date = MarketTimeUtils.get_last_trade_date(market_code, market_local_time)
-            last_trade_date_cache_key = f"intraday_{symbol}_{last_trade_date.strftime('%Y-%m-%d')}_TRADING"
+            last_trade_date_cache_key = f"intraday_{symbol}_{last_trade_date.strftime('%Y-%m-%d')}_AFTER_CLOSE"
             if self._enable_memory_cache:
                 date_cache = self._get_from_memory_cache(last_trade_date_cache_key)
                 intraday_data = IntradayData.from_any(date_cache)
@@ -767,18 +767,18 @@ class BaseDataProvider(HistoricalDataProvider):
             count=len(records)
         )
 
-    def get_realtime_kline(self, index_id, period, provider):
+    def get_realtime_kline(self, symbol, period, provider):
         # 🆕 步骤1: 获取实时K线数据（日线维度）
-        realtime_kline = provider._get_today_k_column(symbol=index_id)
+        realtime_kline = provider._get_today_k_column(symbol=symbol)
         # 🆕 步骤2: 如果是周线/月线，需要合并到历史数据
         if period in ['weekly', 'monthly']:
             # 2.1 从缓存读取最后一个周期K柱（由第一个接口缓存）
-            cache_key = f"last_period_bar_{index_id}_{period}"
+            cache_key = f"last_period_bar_{symbol}_{period}"
             last_period_bar = provider._get_from_memory_cache(cache_key)
 
             if last_period_bar:
                 # 2.2 使用缓存的最后一个K柱进行合并
-                date = MarketTimeUtils.to_market_time_by_symbol(pd.Timestamp(last_period_bar['date']), index_id)
+                date = MarketTimeUtils.to_market_time_by_symbol(pd.Timestamp(last_period_bar['date']), symbol)
                 logger.info(f"💾 从缓存读取最后一个{period}K柱: date={date}")
 
                 # 构造PriceData对象（只包含最后一个K柱）
@@ -793,14 +793,14 @@ class BaseDataProvider(HistoricalDataProvider):
 
                 price_data = PriceData(
                     records=[last_record],
-                    symbol=index_id,
+                    symbol=symbol,
                     start_date=last_record.date,
                     end_date=last_record.date,
                     count=1
                 )
 
                 # 2.3 调用合并逻辑
-                market_local_time = MarketTimeUtils.get_market_time_now(index_id)
+                market_local_time = MarketTimeUtils.get_market_time_now(symbol)
                 merged_price_data = provider.merge_realtime_kline_to_period(
                     price_data=price_data,
                     realtime_kline=realtime_kline,
@@ -824,12 +824,12 @@ class BaseDataProvider(HistoricalDataProvider):
             else:
                 # 缓存中没有，需要查询历史数据（fallback机制）
                 logger.warning(f"⚠️ {period}线 - 缓存未命中，需要查询历史数据")
-                market_local_time = MarketTimeUtils.get_market_time_now(index_id)
+                market_local_time = MarketTimeUtils.get_market_time_now(symbol)
                 end_date = market_local_time
                 start_date = end_date - pd.Timedelta(days=90)
 
                 price_data: PriceData = provider.get_index_prices(
-                    index_id,
+                    symbol,
                     start_date,
                     end_date,
                     market_local_time,

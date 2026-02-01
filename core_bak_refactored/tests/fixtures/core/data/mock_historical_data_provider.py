@@ -112,12 +112,12 @@ class MockHistoricalDataProvider:
 
         return prices
 
-    def get_index_prices(self, index_id: str, start_date: pd.Timestamp | str, end_date: pd.Timestamp | str, current_time: pd.Timestamp) -> pd.DataFrame:
+    def get_index_prices(self, symbol: str, start_date: pd.Timestamp | str, end_date: pd.Timestamp | str, current_time: pd.Timestamp) -> pd.DataFrame:
         """
         获取指数价格数据
         
         Args:
-            index_id: 指数代码
+            symbol: 指数代码
             start_date: 开始日期（pd.Timestamp 或 str）
             end_date: 结束日期（pd.Timestamp 或 str）
             current_time: 当前时间（pd.Timestamp）
@@ -198,8 +198,8 @@ class MockHistoricalDataProvider:
             'volume': volumes
         })
 
-    def get_index_returns(self, index_id: str, start_date: pd.Timestamp | str, end_date: pd.Timestamp | str) -> pd.Series:
-        df = self.get_index_prices(index_id, start_date, end_date, pd.Timestamp.now())
+    def get_index_returns(self, symbol: str, start_date: pd.Timestamp | str, end_date: pd.Timestamp | str) -> pd.Series:
+        df = self.get_index_prices(symbol, start_date, end_date, pd.Timestamp.now())
         returns = df['close'].pct_change().fillna(0)
         returns.index = df['date']
         return returns
@@ -259,12 +259,12 @@ class MockHistoricalDataProvider:
             'volume': volumes
         })
     
-    def get_volatility_index(self, index_id: str, start_date: pd.Timestamp | str, end_date: pd.Timestamp | str) -> pd.Series:
+    def get_volatility_index(self, symbol: str, start_date: pd.Timestamp | str, end_date: pd.Timestamp | str) -> pd.Series:
         """
         获取波动率指数（Mock实现，接口与YahooFinanceDataProvider一致）
         
         Args:
-            index_id: 指数代码
+            symbol: 指数代码
             start_date: 开始日期（pd.Timestamp 或 str）
             end_date: 结束日期（pd.Timestamp 或 str）
         
@@ -276,7 +276,7 @@ class MockHistoricalDataProvider:
         dates = pd.date_range(start, end, freq='B')
         n_days = len(dates)
         
-        np.random.seed(hash(str(start) + str(end) + index_id) % 2**32)
+        np.random.seed(hash(str(start) + str(end) + symbol) % 2**32)
         vol = np.random.normal(0.2, 0.05, n_days)
         vol = np.clip(vol, 0.05, 0.5)
         return pd.Series(vol, index=dates)
@@ -308,7 +308,7 @@ class MockHistoricalDataProvider:
             'missing_values': missing_values,
         }
 
-    def get_event_window_data(self, index_id: str, event_date: str,
+    def get_event_window_data(self, symbol: str, event_date: str,
                               window_days: int = 30, baseline_days: int = 252) -> Dict[str, pd.DataFrame]:
         event_dt = pd.to_datetime(event_date)
         baseline_start = event_dt - pd.Timedelta(days=baseline_days + window_days + 100)
@@ -316,7 +316,7 @@ class MockHistoricalDataProvider:
         event_start = event_dt - pd.Timedelta(days=window_days + 30)
         event_end = event_dt + pd.Timedelta(days=window_days + 30)
 
-        baseline_data = self.get_index_prices(index_id, baseline_start.strftime('%Y-%m-%d'), baseline_end.strftime('%Y-%m-%d'), pd.Timestamp.now())
+        baseline_data = self.get_index_prices(symbol, baseline_start.strftime('%Y-%m-%d'), baseline_end.strftime('%Y-%m-%d'), pd.Timestamp.now())
         # 基于baseline统计进行校准生成事件段数据
         r = baseline_data['close'].pct_change().dropna().values
         if r.size > 5:

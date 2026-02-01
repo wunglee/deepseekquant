@@ -159,7 +159,7 @@ class TushareDataProvider(BaseDataProvider):
     
     def get_index_prices(
         self,
-        index_id: str,
+        symbol: str,
         start_date:pd.Timestamp,
         end_date: pd.Timestamp,
         current_time: pd.Timestamp,
@@ -169,7 +169,7 @@ class TushareDataProvider(BaseDataProvider):
         获取指数历史价格数据
         
         Args:
-            index_id: 指数ID（如 "000001.SH"）
+            symbol: 指数ID（如 "000001.SH"）
             start_date: 开始日期
             end_date: 结束日期
             
@@ -186,24 +186,24 @@ class TushareDataProvider(BaseDataProvider):
         start_date_str = start_date.strftime('%Y%m%d')
         end_date_str = end_date.strftime('%Y%m%d')
         
-        logger.info(f"Fetching index data for {index_id} from {start_date_str} to {end_date_str}")
+        logger.info(f"Fetching index data for {symbol} from {start_date_str} to {end_date_str}")
         
         try:
             # 调用Tushare API获取指数行情数据
-            df = self.ts_pro.index_daily(ts_code=index_id, start_date=start_date_str, end_date=end_date_str)
+            df = self.ts_pro.index_daily(ts_code=symbol, start_date=start_date_str, end_date=end_date_str)
             
             if df is None or df.empty:
-                raise ValueError(f"No data returned for {index_id}")
+                raise ValueError(f"No data returned for {symbol}")
             
             # 标准化数据格式
-            standardized_data = self._standardize_format(df, index_id)
+            standardized_data = self._standardize_format(df, symbol)
             self.set_needs_realtime_kline(standardized_data, current_time)
-            logger.info(f"Successfully fetched {len(standardized_data.records)} records for {index_id}")
+            logger.info(f"Successfully fetched {len(standardized_data.records)} records for {symbol}")
             return standardized_data
             
         except Exception as e:
-            logger.error(f"Failed to fetch data for {index_id}: {e}")
-            raise ValueError(f"Failed to fetch data for {index_id}: {str(e)}")
+            logger.error(f"Failed to fetch data for {symbol}: {e}")
+            raise ValueError(f"Failed to fetch data for {symbol}: {str(e)}")
     
     def get_stock_prices(
         self,

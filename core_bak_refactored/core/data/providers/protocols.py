@@ -254,7 +254,7 @@ class HistoricalDataProvider(ABC):
     """
 
     @abstractmethod
-    def get_index_prices(self, index_id: str,
+    def get_index_prices(self, symbol: str,
                          start_date: pd.Timestamp,
                          end_date: pd.Timestamp,
                          market_local_time: pd.Timestamp,
@@ -263,7 +263,7 @@ class HistoricalDataProvider(ABC):
         获取指数价格数据
         
         Args:
-            index_id: 指数代码（如'000300.SH'沪深300）
+            symbol: 指数代码（如'000300.SH'沪深300）
             start_date: 开始日期 'YYYY-MM-DD'
             end_date: 结束日期 'YYYY-MM-DD'
             market_local_time: 目标市场当前本地时间（不带时区信息）
@@ -289,14 +289,14 @@ class HistoricalDataProvider(ABC):
         pass
 
     @abstractmethod
-    def get_index_returns(self, index_id: str,
+    def get_index_returns(self, symbol: str,
                           start_date: pd.Timestamp,
                           end_date: pd.Timestamp) -> pd.Series:
         """
         获取指数收益率序列
         
         Args:
-            index_id: 指数代码
+            symbol: 指数代码
             start_date: 开始日期
             end_date: 结束日期
         
@@ -330,12 +330,12 @@ class HistoricalDataProvider(ABC):
         """
         pass
 
-    def get_realtime_kline(self, index_id, period, provider):
+    def get_realtime_kline(self, symbol, period, provider):
         """
         获取实时K线数据（指数）
 
         Args:
-            index_id: 指数代码
+            symbol: 指数代码
             period: K线周期
             provider: 数据提供者实例
 
