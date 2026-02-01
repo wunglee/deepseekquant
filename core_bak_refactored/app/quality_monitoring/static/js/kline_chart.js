@@ -30,44 +30,18 @@ window.KlineChart = (function() {
     let isAdjustingBySystem = false // 标记系统是否正在自动调整（避免误判为用户拖动）
     let infiniteScrollEnabled = false // 修复：标记是否启用无限滚动（防止首次加载时误触发）
     let initialLoadComplete = false  // 标记初始加载是否完成
-    
+    let use_mock_mode=false
     // ==================== 私有函数 ====================
     function getCharts() {
         return { kline: kline_chart, indicator: indicator_chart, dataZoom: dataZoomChart };
     }
     
-    function getData() {
-        return allKlineData;
-    }
-    
-    function setData(data) {
-        allKlineData = data;
-    }
-    
-    function getTimer() {
-        return realtimeKlineTimer;
-    }
-    
-    function setTimer(timer) {
-        realtimeKlineTimer = timer;
-    }
-    
-    function showError(message) {
-        showEmpty('kline', message);
-    }
-    
-    function renderCharts(data, getMarketTimezoneFn) {
-        renderKline(symbol?.name || '', data, allEvents, getMarketTimezoneFn);
-    }
-    
-    function updateChartsIncremental(newData, getMarketTimezoneFn) {
+    function updateChartsIncremental(newData) {
         // K线图增量更新逻辑
         if (newData && newData.length > 0) {
             // 将新数据追加到现有数据
             allKlineData = allKlineData.concat(newData);
-            
-            // 重新渲染图表
-            renderCharts(allKlineData, getMarketTimezoneFn);
+            renderKline(symbol?.name || '', allKlineData, allEvents);
         }
     }
     
@@ -239,10 +213,9 @@ function rebuildLayout() {
      isAdjustingBySystem = false // 标记系统是否正在自动调整（避免误判为用户拖动）
      infiniteScrollEnabled = false // 修复：标记是否启用无限滚动（防止首次加载时误触发）
      initialLoadComplete = false  // 标记初始加载是否完成
-     container.innerHTML=''
     // 🔧 5. 根据类型重建布局
         // 指数：单列布局（只有图表）
-    container.innerHTML += `
+     container.innerHTML = `
         <div style="display:flex; flex-direction:column;">
                 <!-- 周期切换（仅K线图显示） -->
                 <div id="periodSelector" class="segmented-control" style="margin-bottom:8px;">
@@ -285,7 +258,11 @@ function rebuildLayout() {
         echarts.connect([kline_chart, indicator_chart, dataZoomChart])
     }
 
-    return { kline: kline_chart, indicator: indicator_chart, dataZoom: dataZoomChart }
+    return {
+        kline: kline_chart,
+        indicator: indicator_chart,
+        dataZoom: dataZoomChart
+    }
 }
 
 
@@ -313,9 +290,8 @@ function selectIndicator(indicator, element) {
  * @param {Array} data - K线数据
  * @param {Object} klineZoom - K线图的缩放位置
  * @param {string} indicator - 指标类型
- * @param {Function} getMarketTimezoneFn - 获取市场时区的函数
  */
-function renderIndicator(data, klineZoom, indicator, getMarketTimezoneFn) {
+function renderIndicator(data, klineZoom, indicator) {
     console.log('renderIndicator called with data:', data, 'klineZoom:', klineZoom, 'indicator:', indicator)
     console.log('📊 renderIndicator - 传入data数量:', data ? data.length : 0)
     if (!data || !data.length) {
@@ -333,7 +309,7 @@ function renderIndicator(data, klineZoom, indicator, getMarketTimezoneFn) {
         let dateStr = d.date
         if (typeof dateStr === 'string') {
             // 使用 AppUtils.extractFromMarketDateTimeStr 正确解析时间字符串为市场时区Date对象
-            const marketTimezone = getMarketTimezoneFn();
+            const marketTimezone = AppUtils.getMarketTimezone(current_market_code);
             const marketDate = AppUtils.extractFromMarketDateTimeStr(dateStr, marketTimezone)
             // 使用 AppUtils.formatToMarketDateTimeStr 格式化为标准日期字符串
             dateStr = AppUtils.extractFromDateStr(AppUtils.formatToMarketDateTimeStr(marketDate, marketTimezone), marketTimezone)
@@ -985,9 +961,8 @@ function renderDataZoom(dates, currentZoom) {
  * @param {string} stock_id - 股票名称
  * @param {Array} data - K线数据
  * @param {Array} events - 事件数据
- * @param {Object} getMarketTimezoneFn - 获取市场时区的函数
  */
-function renderKline(stock_id,data, events, getMarketTimezoneFn) {
+function renderKline(stock_id,data, events) {
     console.log('renderKline called with data:', data, 'events:', events)
     if (!data || !data.length) {
         showEmpty('kline', '暂无数据')
@@ -1045,7 +1020,7 @@ function renderKline(stock_id,data, events, getMarketTimezoneFn) {
         let dateStr = d.date
         if (typeof dateStr === 'string') {
             // 使用 AppUtils.extractFromMarketDateTimeStr 正确解析时间字符串为市场时区Date对象
-            const marketTimezone = getMarketTimezoneFn();
+            const marketTimezone = AppUtils.getMarketTimezone(current_market_code);
             const marketDate = AppUtils.extractFromMarketDateTimeStr(dateStr, marketTimezone)
             // 使用 AppUtils.formatToMarketDateTimeStr 格式化为标准日期字符串
             dateStr = AppUtils.extractFromDateStr(AppUtils.formatToMarketDateTimeStr(marketDate, marketTimezone), marketTimezone)
@@ -1141,7 +1116,7 @@ function renderKline(stock_id,data, events, getMarketTimezoneFn) {
         kline_chart.setOption(option, true)
     }
     // 🔧 传入 currentZoom 参数，确保对齐
-    renderIndicator(displayData, currentZoom, current_indicator, getMarketTimezoneFn)
+    renderIndicator(displayData, currentZoom, current_indicator)
     renderDataZoom(dates, currentZoom)  // 🔧 渲染数据窗口控制条
 }
 
@@ -1226,9 +1201,8 @@ function loadData() {
  * 仅更新图表数据（不重新渲染，避免视觉跳动）
  * @param {Array} data - K线数据
  * @param {Array} events - 事件数据
- * @param {Object} getMarketTimezoneFn - 获取市场时区的函数
  */
-function updateChartData(data, events, getMarketTimezoneFn) {
+function updateChartData(data, events) {
     if (!kline_chart) {
         console.error('kline_chart 未初始化')
         return
@@ -1240,7 +1214,7 @@ function updateChartData(data, events, getMarketTimezoneFn) {
             let dateStr = d.date
             if (typeof dateStr === 'string') {
                 // 使用 AppUtils.extractFromMarketDateTimeStr 正确解析时间字符串为市场时区Date对象
-                const marketTimezone = getMarketTimezoneFn();
+                const marketTimezone = AppUtils.getMarketTimezone(current_market_code);
                 const marketDate = AppUtils.extractFromMarketDateTimeStr(dateStr, marketTimezone)
                 // 使用 AppUtils.formatToMarketDateTimeStr 格式化为标准日期字符串
                 dateStr = AppUtils.extractFromDateStr(AppUtils.formatToMarketDateTimeStr(marketDate, marketTimezone), marketTimezone)
@@ -1283,7 +1257,7 @@ function updateChartData(data, events, getMarketTimezoneFn) {
         }, { notMerge: false, lazyUpdate: true })  // 🔧 lazyUpdate: true 延迟更新
 
         // 同步更新指标图
-        updateIndicatorData(processedData, getMarketTimezoneFn)
+        updateIndicatorData(processedData)
 
         // 🔧 同步更新数据窗口控制条的 xAxis 数据
         if (dataZoomChart) {
@@ -1301,9 +1275,8 @@ function updateChartData(data, events, getMarketTimezoneFn) {
 /**
  * 仅更新指标图数据
  * @param {Array} processedData - 处理后的K线数据（仅用于 VOL）
- * @param {Object} getMarketTimezoneFn - 获取市场时区的函数
  */
-function updateIndicatorData(processedData, getMarketTimezoneFn) {
+function updateIndicatorData(processedData) {
     if (!indicator_chart) {
         console.error('indicator_chart 未初始化')
         return
@@ -1469,7 +1442,7 @@ function adjustDataZoomAfterPrepend(oldLength, prependLength) {
  * @param {Function} callback - 回调函数(success)
  * @param {string} symbol - 指数ID
  */
-function loadMoreHistoryData(callback, symbol, use_mock_mode) {
+function loadMoreHistoryData(callback, symbol) {
     console.log('开始加载更多历史数据...', {symbol, use_mock_mode})
 
     // 检查是否有当前数据
@@ -1579,8 +1552,6 @@ function loadMoreHistoryData(callback, symbol, use_mock_mode) {
 
 /**
  * 获取实时K线数据（Mock和真实使用相同机制）
- * @param {string} symbol - 指数ID
- * @param {boolean} use_mock_mode - 数据模式（true为mock，false为real）
  */
 function fetchRealtimeKline() {
     if (!symbol) return
@@ -1703,8 +1674,6 @@ function stopRealtimeKline() {
 
 /**
  * 启动实时K线（选择股票时调用）
- * @param {string} symbol - 指数ID
- * @param {boolean} use_mock_mode - 数据模式（true为mock，false为real）
  */
 function startRealtimeKline() {
     stopRealtimeKline()  // 先停止之前的轮询
@@ -1747,10 +1716,9 @@ function clearChart(){
 //        // 默认隐藏K线的交易时段选择器（需要切换到Mock模式才显示）
 //        document.getElementById('klinePhaseSelector').style.display = 'none'
         // 🔧 停止分时图更新（使用独立模块）
-        const timer = getTimer()
-        if (timer) {
-            clearInterval(timer)
-            setTimer(null)
+        if (realtimeKlineTimer) {
+            clearInterval(realtimeKlineTimer)
+            realtimeKlineTimer = null
         }
 }
 /**
@@ -1905,7 +1873,7 @@ function startInfiniteScrollDetection() {
                             hasMoreData = false
                             console.log('✅ 已到达最早数据')
                         }
-                    }, symbol, use_mock_mode)
+                    }, symbol)
                 }
             } else {
                 // 🔧 调试日志：输出为什么没有触发加载

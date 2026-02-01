@@ -30,15 +30,7 @@ window.IntradayChart = (function() {
     function setData(data) {
         intradayData = data;
     }
-    
-    function getTimer() {
-        return intradayUpdateTimer;
-    }
-    
-    function setTimer(timer) {
-        intradayUpdateTimer = timer;
-    }
-    
+
     function getBatchIndex() {
         return lastIntradayBatchIndex;
     }
@@ -61,10 +53,6 @@ window.IntradayChart = (function() {
     
     function setVirtualTime(time) {
         virtualIntradayTime = time;
-    }
-    
-    function setUseMockMode(useMock) {
-        use_mock_mode = useMock;
     }
     
     function generateTradingTimesInternal(tradingTimes, start, end, stepSeconds = 5) {
@@ -106,6 +94,7 @@ window.IntradayChart = (function() {
         // 生成当前市场的完整交易时间轴
         const timeAxisInfo = getFullTradingTimes(marketCode)
         const fullTradingTimes = timeAxisInfo.tradingTimes
+        const lunchBreakRange = timeAxisInfo.lunchBreakRange
         const lunchBreakRange = timeAxisInfo.lunchBreakRange
         console.log('🔍 initializeIntradayTimeAxis - 时间轴长度:', fullTradingTimes.length, '午休范围:', lunchBreakRange)
     
@@ -1570,11 +1559,9 @@ function loadData(isInitial = true) {
                 }
 
                 renderCharts(res.data, marketTimezone)
-
-                const timer = getTimer()
-                if (timer) {
-                    clearInterval(timer)
-                    setTimer(null)
+                if (intradayUpdateTimer) {
+                    clearInterval(intradayUpdateTimer)
+                    intradayUpdateTimer = null;
                 }
 
                 if (res.data.should_poll) {
@@ -1582,7 +1569,7 @@ function loadData(isInitial = true) {
                     const newTimer = setInterval(() => {
                         loadData(false)
                     }, pollInterval)
-                    setTimer(newTimer)
+                    intradayUpdateTimer = newTimer;
                 }
 
                 // 🔧 如果不是指数，更新盘口和成交明细（等待DOM渲染完成）
