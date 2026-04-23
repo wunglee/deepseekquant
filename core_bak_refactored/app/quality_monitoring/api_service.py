@@ -1948,7 +1948,10 @@ class DataQualityAPIService:
                 # 🔧 统一使用 pd.Timestamp，不使用字符串日期
                 start_date = pd.to_datetime(start_date_str)
                 end_date = pd.to_datetime(end_date_str)
-                provider = getattr(self.quality_monitor, 'data_provider_config', None)
+                provider = self.provider_selector.select_provider_for_symbol(
+                    symbol=symbol,
+                    provider_factory=self.provider_factory
+                )
                 if not provider or not hasattr(provider, 'get_index_prices'):
                     return jsonify({'status': 'error', 'message': '数据提供者不可用',
                                     'error_code': 'DATA_PROVIDER_UNAVAILABLE'}), 503
@@ -1973,7 +1976,10 @@ class DataQualityAPIService:
                     return jsonify({'status': 'error', 'message': '缺少必要参数', 'error_code': 'MISSING_PARAMS'}), 400
                 start_date =MarketTimeUtils.to_market_time_by_symbol(pd.to_datetime(start_date_str),symbol)
                 end_date = MarketTimeUtils.to_market_time_by_symbol(pd.to_datetime(end_date_str),symbol)
-                provider = getattr(self.quality_monitor, 'data_provider_config', None)
+                provider = self.provider_selector.select_provider_for_symbol(
+                    symbol=symbol,
+                    provider_factory=self.provider_factory
+                )
                 if not provider or not hasattr(provider, 'get_index_returns'):
                     return jsonify({'status': 'error', 'message': '数据提供者不可用',
                                     'error_code': 'DATA_PROVIDER_UNAVAILABLE'}), 503
@@ -2010,7 +2016,10 @@ class DataQualityAPIService:
                     }), 503
 
                 # 检查 data_provider_config 是否存在
-                provider = getattr(self.quality_monitor, 'data_provider_config', None)
+                provider = self.provider_selector.select_provider_for_symbol(
+                    symbol=symbol,
+                    provider_factory=self.provider_factory
+                )
                 if not provider:
                     logger.error(f"data_provider_config 不存在。quality_monitor 属性: {dir(self.quality_monitor)}")
                     return jsonify({
@@ -2058,7 +2067,10 @@ class DataQualityAPIService:
         def get_cross_validation_log_api():
             """获取数据源交叉验证日志"""
             try:
-                provider = getattr(self.quality_monitor, 'data_provider_config', None)
+                provider = self.provider_selector.select_provider_for_symbol(
+                    symbol=symbol,
+                    provider_factory=self.provider_factory
+                )
                 if not provider or not hasattr(provider, 'get_cross_validation_log'):
                     return jsonify({'status': 'error', 'message': '数据提供者不可用',
                                     'error_code': 'DATA_PROVIDER_UNAVAILABLE'}), 503
@@ -2087,7 +2099,10 @@ class DataQualityAPIService:
                     return jsonify({'status': 'error', 'message': '缺少index_id', 'error_code': 'MISSING_PARAMS'}), 400
                     
                 # 走真实数据源路径
-                provider = getattr(self.quality_monitor, 'data_provider_config', None)
+                provider = self.provider_selector.select_provider_for_symbol(
+                    symbol=symbol,
+                    provider_factory=self.provider_factory
+                )
                 if not provider or not hasattr(provider, 'get_index_prices'):
                     # 生产环境：数据提供者不可用时返回错误，不降级为Mock
                     return jsonify({'status': 'error', 'message': '数据提供者不可用',
@@ -2221,8 +2236,11 @@ class DataQualityAPIService:
                 
                 if period not in ['daily', 'weekly', 'monthly']:
                     return jsonify({'status': 'error', 'message': f'无效的period: {period}', 'error_code': 'INVALID_PERIOD'}), 400
-
-                provider = getattr(self.quality_monitor, 'data_provider', None)
+                # 1. 使用领域层服务选择数据提供者
+                provider = self.provider_selector.select_provider_for_symbol(
+                    symbol=symbol,
+                    provider_factory=self.provider_factory
+                )
                 if not provider:
                     return jsonify({'status': 'error', 'message': '数据提供者不可用',
                                     'error_code': 'DATA_PROVIDER_UNAVAILABLE'}), 503

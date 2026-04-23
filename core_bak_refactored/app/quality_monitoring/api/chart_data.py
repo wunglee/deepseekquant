@@ -710,9 +710,9 @@ class ChartDataAssembler:
             raise  # 不要包装，直接抛出
         
         except Exception as e:
-            logger.error(f"组装分时数据失败: {e}", exc_info=True)
+            logger.error(f"分时获取数据失败: {e}", exc_info=True)
             logger.error(f"  - symbol: {symbol}")
             logger.error(f"  - tick_range: {tick_range}")
             logger.error(f"  - 错误类型: {type(e).__name__}")
             logger.error(f"  - 错误详情: {str(e)}")
-            raise RuntimeError(f"分时数据组装失败: {str(e)}") from e
+            raise RuntimeError(f"分时数据获取失败: {str(e)}") from e
